@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, BookOpen, ChevronDown, ChevronUp, FlaskConical, Globe, GraduationCap, Info, Sparkles } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
+import AILearningTryoutSection from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -555,6 +556,9 @@ const AILearningCoursesLanding = () => {
   // If on a topic page, show the learning content (only if subject exists)
   if (topicSlug && subjectKey && assessmentSlug === 'practice-paper' && selectedSubject) {
     return <AILearningPracticePaperPage />;
+  }
+  if (topicSlug && subjectKey && assessmentSlug === 'tryout-section' && selectedSubject) {
+    return <AILearningTryoutSection />;
   }
 
   if (topicSlug && subjectKey && selectedSubject) {

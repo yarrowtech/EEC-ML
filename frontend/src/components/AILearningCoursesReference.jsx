@@ -38,6 +38,7 @@ const MATERIALS = [
 
 const ASSESSMENT_ITEMS = [
   { title: 'Practice Papers', description: 'Three difficulty levels with instant feedback' },
+  { title: 'Tryout Section', description: 'Timed trial set to test your topic readiness' },
   { title: 'Self-Assessment', description: 'Quick quizzes and flashcards for review' },
 ];
 
@@ -195,6 +196,10 @@ const AILearningCoursesReference = () => {
   };
 
   const isPracticeUnlocked = overallProgress >= 75;
+  const isAssessmentItemClickable = (itemTitle) => {
+    const normalizedTitle = String(itemTitle || '').toLowerCase();
+    return isPracticeUnlocked && (normalizedTitle === 'practice papers' || normalizedTitle === 'tryout section');
+  };
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
   const readingContent = TOPIC_READING_CONTENT[String(topicSlug || '').trim().toLowerCase()] || {
@@ -295,8 +300,13 @@ const AILearningCoursesReference = () => {
 
   const handleAssessmentItemClick = (itemTitle) => {
     const normalizedTitle = String(itemTitle || '').toLowerCase();
-    if (normalizedTitle !== 'practice papers') return;
-    navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/practice-paper`);
+    if (normalizedTitle === 'practice papers') {
+      navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/practice-paper`);
+      return;
+    }
+    if (normalizedTitle === 'tryout section') {
+      navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
+    }
   };
 
   const toggleFullscreen = async () => {
@@ -622,8 +632,8 @@ const AILearningCoursesReference = () => {
                   key={idx}
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-3 rounded-xl border text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: isPracticeUnlocked ? '#c0c7d0' : '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                  className={`w-full p-3 rounded-xl border text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     {isPracticeUnlocked ? (
@@ -770,8 +780,8 @@ const AILearningCoursesReference = () => {
                   key={idx}
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-2 rounded-lg border text-xs text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                  className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-1 mb-1">
                     {isPracticeUnlocked ? (
@@ -904,8 +914,8 @@ const AILearningCoursesReference = () => {
                   key={idx}
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-2 rounded-lg border text-xs text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                  className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-1 mb-1">
                     {isPracticeUnlocked ? (
