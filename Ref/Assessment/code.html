@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>EduAdmin - Assessment Creator</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary": "#006c4a",
+                    "on-primary": "#ffffff",
+                    "surface": "#f8f9ff",
+                    "on-secondary-fixed-variant": "#005137",
+                    "background": "#f8f9ff",
+                    "surface-container-low": "#eef4ff",
+                    "on-primary-fixed": "#001453",
+                    "tertiary": "#611e00",
+                    "on-secondary-fixed": "#002114",
+                    "secondary-container": "#82f5c1",
+                    "on-surface": "#121c28",
+                    "tertiary-container": "#872d00",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-primary-fixed-variant": "#173bab",
+                    "on-surface-variant": "#444653",
+                    "surface-container-lowest": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "tertiary-fixed": "#ffdbce",
+                    "surface-variant": "#d9e3f4",
+                    "secondary-fixed": "#85f8c4",
+                    "on-primary-container": "#a8b8ff",
+                    "on-tertiary-container": "#ffa583",
+                    "surface-dim": "#d1dbec",
+                    "surface-container": "#e5eeff",
+                    "surface-tint": "#3755c3",
+                    "outline": "#757684",
+                    "on-tertiary-fixed-variant": "#802a00",
+                    "on-secondary-container": "#00714e",
+                    "inverse-surface": "#27313e",
+                    "error": "#ba1a1a",
+                    "outline-variant": "#c4c5d5",
+                    "error-container": "#ffdad6",
+                    "surface-container-high": "#dfe9fa",
+                    "primary-container": "#1e40af",
+                    "on-error-container": "#93000a",
+                    "primary-fixed": "#dde1ff",
+                    "primary": "#00288e",
+                    "on-background": "#121c28",
+                    "surface-container-highest": "#d9e3f4",
+                    "surface-bright": "#f8f9ff",
+                    "on-error": "#ffffff",
+                    "on-tertiary-fixed": "#380d00",
+                    "primary-fixed-dim": "#b8c4ff",
+                    "secondary-fixed-dim": "#68dba9",
+                    "tertiary-fixed-dim": "#ffb59a",
+                    "inverse-primary": "#b8c4ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "md": "1.5rem",
+                    "sm": "1rem",
+                    "xs": "0.5rem",
+                    "xl": "3rem",
+                    "lg": "2rem",
+                    "gutter": "1.5rem",
+                    "base": "4px",
+                    "margin": "2rem",
+                    "max_width": "1440px"
+            },
+            "fontFamily": {
+                    "h2": ["Lexend"],
+                    "label-md": ["Lexend"],
+                    "h3": ["Lexend"],
+                    "body-lg": ["Lexend"],
+                    "label-sm": ["Lexend"],
+                    "body-md": ["Lexend"],
+                    "h1": ["Lexend"]
+            },
+            "fontSize": {
+                    "h2": ["1.875rem", {"lineHeight": "2.25rem", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-md": ["0.875rem", {"lineHeight": "1.25rem", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                    "h3": ["1.5rem", {"lineHeight": "2rem", "fontWeight": "500"}],
+                    "body-lg": ["1.125rem", {"lineHeight": "1.75rem", "fontWeight": "400"}],
+                    "label-sm": ["0.75rem", {"lineHeight": "1rem", "fontWeight": "600"}],
+                    "body-md": ["1rem", {"lineHeight": "1.5rem", "fontWeight": "400"}],
+                    "h1": ["2.25rem", {"lineHeight": "2.75rem", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .sidebar-active {
+            background-color: #ebf0ff;
+            color: #00288e;
+            border-right: 4px solid #00288e;
+            font-weight: 700;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full w-64 flex flex-col py-6 px-4 z-50 bg-slate-50 dark:bg-slate-900 border-r border-gray-200 dark:border-gray-800 transition-all duration-200 ease-in-out">
+<div class="mb-8 px-2">
+<h1 class="text-xl font-extrabold text-blue-900 dark:text-blue-500 font-['Lexend'] tracking-tight">EduAdmin</h1>
+<p class="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-1">Academic Portal</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-sm font-['Lexend'] text-sm font-medium transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-sm font-['Lexend'] text-sm font-medium transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="menu_book">menu_book</span>
+<span>Subjects</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border-r-4 border-blue-800 font-bold font-['Lexend'] text-sm transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="assignment_turned_in">assignment_turned_in</span>
+<span>Assessments</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-sm font-['Lexend'] text-sm font-medium transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span>Students</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                Create Assessment
+            </button>
+</div>
+</aside>
+<!-- TopNavBar -->
+<header class="fixed top-0 right-0 left-64 h-16 flex items-center justify-between px-8 z-40 bg-white dark:bg-slate-950 border-b border-gray-200 dark:border-gray-800 shadow-sm font-['Lexend'] text-sm tracking-tight">
+<div class="flex items-center bg-slate-100 dark:bg-slate-900 px-4 py-2 rounded-full w-96">
+<span class="material-symbols-outlined text-slate-400 mr-2" data-icon="search">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full" placeholder="Search assessments or curriculum..." type="text"/>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-slate-500 hover:text-slate-800 transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-slate-500 hover:text-slate-800 transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="h-8 w-8 rounded-full overflow-hidden border-2 border-primary-fixed">
+<img alt="Teacher profile photo" class="w-full h-full object-cover" data-alt="professional portrait of a smiling female educator in a bright modern office setting with soft natural light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuABkgq2PNm4xTtOrTKqvGtosTp-VNakSm0RtcqCtii0-Wym9qUq0Ob2_aW7sWLbb71O2jlb9r5e9NwfLwnHP4BM4_Kn1dmgtHBMhaoBF7-agtzG4C8ZTP433IXt6mEHwJaz-WrsCU0OWQu-vMzSnAD9RQII1llzjsInlkOqaGyulQ3eN5QzLpu7phia6t3fV-wSJypt35Pifl4Qic9Cidp9IiiMgZmvVFhoxr93ZwcQ-Ntaz4pR4RpRGkyVHlG04mm99_43qVbt-Xjf"/>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="ml-64 pt-16 min-h-screen">
+<div class="max-w-[1440px] mx-auto p-margin">
+<!-- Header Section -->
+<div class="flex items-end justify-between mb-lg">
+<div>
+<nav class="flex items-center gap-2 text-slate-500 text-label-sm mb-xs">
+<span>Assessments</span>
+<span class="material-symbols-outlined text-xs" data-icon="chevron_right">chevron_right</span>
+<span class="text-primary font-bold">New Assessment</span>
+</nav>
+<h2 class="font-h1 text-h1 text-blue-900">Make Question Paper</h2>
+<p class="text-on-surface-variant font-body-md mt-1">Design institutional-grade assessments with multi-level difficulty.</p>
+</div>
+<div class="flex gap-sm">
+<button class="px-6 py-2.5 border border-outline rounded-lg text-label-md hover:bg-surface-container-low transition-colors">Save Draft</button>
+<button class="px-6 py-2.5 bg-primary text-on-primary rounded-lg text-label-md flex items-center gap-2 shadow-md hover:shadow-lg transition-all">
+<span class="material-symbols-outlined text-sm" data-icon="publish">publish</span>
+                        Finalize Paper
+                    </button>
+</div>
+</div>
+<!-- Bento Layout Content -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Left Column: Assessment Settings -->
+<div class="col-span-12 lg:col-span-8 space-y-gutter">
+<!-- Basic Info Card -->
+<div class="bg-surface-container-lowest p-lg rounded-xl border border-gray-200 shadow-sm">
+<div class="grid grid-cols-2 gap-lg">
+<div class="space-y-xs">
+<label class="font-label-md text-on-surface-variant">Assessment Title</label>
+<input class="w-full bg-surface border-outline-variant rounded-lg p-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" placeholder="e.g., Advanced Calculus Midterm" type="text"/>
+</div>
+<div class="space-y-xs">
+<label class="font-label-md text-on-surface-variant">Subject / Module</label>
+<select class="w-full bg-surface border-outline-variant rounded-lg p-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all appearance-none">
+<option>Mathematics - Grade 12</option>
+<option>Physics - Advanced Mechanics</option>
+<option>Computer Science - Algorithms</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Question Builder -->
+<div class="bg-surface-container-lowest rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+<!-- Difficulty Tabs -->
+<div class="flex border-b border-gray-100 bg-surface-container-low">
+<button class="flex-1 py-4 font-label-md text-primary border-b-2 border-primary bg-white">Basic (04)</button>
+<button class="flex-1 py-4 font-label-md text-slate-500 hover:text-primary transition-colors">Intermediate (00)</button>
+<button class="flex-1 py-4 font-label-md text-slate-500 hover:text-primary transition-colors">Advanced (00)</button>
+</div>
+<!-- Question List -->
+<div class="p-lg space-y-lg">
+<!-- Question Card -->
+<div class="group relative bg-white border border-outline-variant rounded-lg p-lg hover:border-primary-container hover:shadow-md transition-all">
+<div class="flex justify-between items-start mb-sm">
+<div class="flex items-center gap-3">
+<span class="bg-surface-container-high text-primary font-bold w-8 h-8 rounded-full flex items-center justify-center text-xs">01</span>
+<span class="text-xs font-label-sm uppercase tracking-wider text-secondary bg-secondary-container px-2 py-0.5 rounded-full">Multiple Choice</span>
+</div>
+<div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1.5 hover:bg-slate-100 rounded text-slate-400"><span class="material-symbols-outlined text-sm" data-icon="drag_indicator">drag_indicator</span></button>
+<button class="p-1.5 hover:bg-slate-100 rounded text-slate-400"><span class="material-symbols-outlined text-sm" data-icon="edit">edit</span></button>
+<button class="p-1.5 hover:bg-red-50 rounded text-error"><span class="material-symbols-outlined text-sm" data-icon="delete">delete</span></button>
+</div>
+</div>
+<div class="mb-md">
+<h4 class="font-h3 text-body-lg text-on-surface mb-xs">Determine the derivative of f(x) = 3x² + 2x - 5 with respect to x.</h4>
+<div class="grid grid-cols-2 gap-sm mt-md pl-6 border-l-2 border-primary-fixed">
+<div class="p-3 bg-surface-container-lowest border border-gray-100 rounded text-sm">A) 6x + 2</div>
+<div class="p-3 bg-surface-container-lowest border border-gray-100 rounded text-sm">B) 3x + 2</div>
+<div class="p-3 bg-surface-container-lowest border border-gray-100 rounded text-sm">C) 6x - 5</div>
+<div class="p-3 bg-surface-container-lowest border border-gray-100 rounded text-sm">D) 2x + 3</div>
+</div>
+</div>
+<div class="flex items-center justify-between border-t border-gray-50 pt-sm">
+<div class="flex gap-lg">
+<div class="flex items-center gap-2 text-on-surface-variant text-label-sm">
+<span class="material-symbols-outlined text-sm" data-icon="stars">stars</span>
+                                            Points: 05
+                                        </div>
+<div class="flex items-center gap-2 text-on-surface-variant text-label-sm">
+<span class="material-symbols-outlined text-sm" data-icon="schedule">schedule</span>
+                                            Est. Time: 2 mins
+                                        </div>
+</div>
+<span class="text-xs text-slate-400">Created: 12 Oct 2023</span>
+</div>
+</div>
+<!-- Add Question Zone -->
+<div class="border-2 border-dashed border-primary-fixed rounded-xl p-xl flex flex-col items-center justify-center text-center bg-blue-50/20 hover:bg-blue-50/40 transition-colors cursor-pointer">
+<div class="bg-primary-fixed text-primary w-12 h-12 rounded-full flex items-center justify-center mb-md">
+<span class="material-symbols-outlined text-lg" data-icon="add_circle">add_circle</span>
+</div>
+<h3 class="font-h3 text-blue-900">Add Question</h3>
+<p class="text-on-surface-variant text-sm mt-1 max-w-xs">Select from Basic difficulty templates or create a custom prompt.</p>
+<div class="flex gap-sm mt-md">
+<button class="px-4 py-2 bg-white border border-primary text-primary font-label-md rounded-lg hover:bg-primary hover:text-white transition-all">Multiple Choice</button>
+<button class="px-4 py-2 bg-white border border-primary text-primary font-label-md rounded-lg hover:bg-primary hover:text-white transition-all">True/False</button>
+<button class="px-4 py-2 bg-white border border-primary text-primary font-label-md rounded-lg hover:bg-primary hover:text-white transition-all">Short Answer</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Summary & Preview -->
+<div class="col-span-12 lg:col-span-4 space-y-gutter">
+<!-- Paper Stats Card -->
+<div class="bg-surface-container-lowest p-lg rounded-xl border border-gray-200 shadow-sm">
+<h4 class="font-h3 text-h3 text-blue-900 mb-lg">Assessment Summary</h4>
+<div class="space-y-md">
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary" data-icon="format_list_numbered">format_list_numbered</span>
+<span class="text-on-surface font-label-md">Total Questions</span>
+</div>
+<span class="font-bold text-lg">04</span>
+</div>
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary" data-icon="score">score</span>
+<span class="text-on-surface font-label-md">Maximum Points</span>
+</div>
+<span class="font-bold text-lg">20</span>
+</div>
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-tertiary" data-icon="timer">timer</span>
+<span class="text-on-surface font-label-md">Total Duration</span>
+</div>
+<span class="font-bold text-lg">15m</span>
+</div>
+</div>
+<!-- Difficulty Breakdown -->
+<div class="mt-lg">
+<h5 class="text-label-sm text-slate-500 uppercase tracking-widest mb-md">Difficulty Mix</h5>
+<div class="space-y-sm">
+<div>
+<div class="flex justify-between text-xs font-bold mb-1">
+<span>BASIC</span>
+<span>100%</span>
+</div>
+<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 100%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs font-bold mb-1">
+<span>INTERMEDIATE</span>
+<span>0%</span>
+</div>
+<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+<div class="h-full bg-blue-300" style="width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs font-bold mb-1">
+<span>ADVANCED</span>
+<span>0%</span>
+</div>
+<div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+<div class="h-full bg-tertiary" style="width: 0%"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Live Preview Card -->
+<div class="bg-inverse-surface text-inverse-on-surface p-lg rounded-xl shadow-xl">
+<div class="flex justify-between items-center mb-lg">
+<h4 class="font-h3 text-h3 text-white">Paper Preview</h4>
+<button class="text-primary-fixed-dim text-label-sm flex items-center gap-1 hover:underline">
+<span class="material-symbols-outlined text-sm" data-icon="open_in_full">open_in_full</span> Fullscreen
+                            </button>
+</div>
+<div class="bg-white/5 rounded-lg p-md aspect-[3/4] overflow-y-auto custom-scrollbar border border-white/10">
+<div class="space-y-lg text-[10px] text-white/70">
+<div class="text-center border-b border-white/10 pb-md">
+<p class="font-bold text-white text-xs uppercase tracking-tighter">Academic Year 2023-24</p>
+<p>Mid-Semester Assessment</p>
+</div>
+<div class="space-y-sm">
+<p class="font-bold text-white">Section A: Basic Concepts</p>
+<div class="space-y-xs opacity-60">
+<div class="flex gap-2"><span>1.</span> <span>Determine the derivative of f(x) = 3x² + 2x - 5 with respect to x...</span></div>
+<div class="flex gap-2"><span>2.</span> <span>Solve for 'y' in the linear equation 2y + 4 = 12...</span></div>
+<div class="flex gap-2"><span>3.</span> <span>Which of the following is a prime number?</span></div>
+<div class="flex gap-2"><span>4.</span> <span>Calculate the area of a circle with radius 7cm...</span></div>
+</div>
+</div>
+<div class="mt-xl pt-md border-t border-white/5 flex justify-center italic">
+                                    End of Preview - Section B Pending
+                                </div>
+</div>
+</div>
+<button class="w-full mt-lg py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg font-label-md transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="print">print</span>
+                            Download PDF Sample
+                        </button>
+</div>
+<!-- File Upload Zone -->
+<div class="bg-surface-container-lowest p-lg rounded-xl border-2 border-dashed border-primary/20 flex flex-col items-center text-center">
+<span class="material-symbols-outlined text-primary text-4xl mb-sm" data-icon="upload_file">upload_file</span>
+<h4 class="font-label-md text-on-surface">Bulk Import Questions</h4>
+<p class="text-xs text-on-surface-variant mt-1 mb-md">Import from .CSV, .XLSX or institutional question bank.</p>
+<button class="text-primary font-bold text-label-sm hover:underline">Select Files</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- FAB (Suppressed based on rules as this is a focused creation screen, however, if needed for context): -->
+<!-- Rule says: "You MUST suppress the FAB on Settings, Profile, Details, and Transactional screens." This is a creation/transactional flow. -->
+</body></html>

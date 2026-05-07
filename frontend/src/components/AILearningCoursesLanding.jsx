@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, BookOpen, ChevronDown, ChevronUp, FlaskConical, Globe, GraduationCap, Info, Sparkles } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
+import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -467,9 +468,10 @@ const AILearningCoursesLanding = () => {
   const [contexts, setContexts] = useState([]);
 
   // Parse URL params manually
-  const urlMatch = location.pathname.match(/\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/]+)(?:\/topic\/([^/]+))?/);
+  const urlMatch = location.pathname.match(/\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/]+)(?:\/topic\/([^/]+))?(?:\/assessment\/([^/]+))?/);
   const subjectKey = urlMatch?.[1] ? decodeURIComponent(urlMatch[1]) : null;
   const topicSlug = urlMatch?.[2] ? decodeURIComponent(urlMatch[2]) : null;
+  const assessmentSlug = urlMatch?.[3] ? decodeURIComponent(urlMatch[3]) : null;
 
   useEffect(() => {
     const fetchAssignedSubjects = async () => {
@@ -551,6 +553,10 @@ const AILearningCoursesLanding = () => {
   }, [topicSlug, subjectKey, selectedSubject, loading, navigate]);
 
   // If on a topic page, show the learning content (only if subject exists)
+  if (topicSlug && subjectKey && assessmentSlug === 'practice-paper' && selectedSubject) {
+    return <AILearningPracticePaperPage />;
+  }
+
   if (topicSlug && subjectKey && selectedSubject) {
     return <AILearningCoursesReference />;
   }

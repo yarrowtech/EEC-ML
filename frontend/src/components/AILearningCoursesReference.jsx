@@ -41,9 +41,64 @@ const ASSESSMENT_ITEMS = [
   { title: 'Self-Assessment', description: 'Quick quizzes and flashcards for review' },
 ];
 
+const TOPIC_READING_CONTENT = {
+  'number system': {
+    intro: 'The Number System helps us understand how numbers are formed, classified, and used in calculations. It builds a strong base for algebra, geometry, and advanced mathematics. In real learning, this topic is more than definitions. It teaches students to reason about values, magnitude, accuracy, and representation. From school arithmetic to scientific computation, number sense is the first skill that supports every later mathematical decision.',
+    sections: [
+      {
+        title: 'Core Concepts',
+        text: 'Students learn natural numbers, whole numbers, integers, rational numbers, and irrational numbers. They also understand decimal expansion and how different number types relate to each other. A key conceptual milestone is recognizing that each set is nested within a larger set, and that every new set solves a limitation of the previous one. For example, integers solve subtraction limitations of whole numbers, and rational numbers solve division limitations of integers.',
+      },
+      {
+        title: 'Why It Matters',
+        text: 'This topic improves number sense and accuracy in operations. It is essential for solving equations, comparing quantities, and interpreting real-life data in science and economics. Number-system fluency also supports estimation, error-checking, and confidence during complex calculations. Students who are strong in this topic make fewer sign mistakes, better unit judgments, and more reliable interpretations of graphs and numerical data.',
+      },
+      {
+        title: 'How To Practice',
+        text: 'Practice classification, conversion between fractions and decimals, and comparison problems. Solve mixed worksheets regularly and verify each answer using estimation. Build a routine: start with conceptual warm-ups, move to procedural questions, then end with application word problems. Keep an error notebook to record recurring mistakes such as sign confusion, incorrect decimal placement, and weak fraction simplification.',
+      },
+      {
+        title: 'Real-World Connections',
+        text: 'Number systems appear in budgeting, engineering measurements, coding, stock trends, and scientific notation used in physics and chemistry. Decimals and fractions guide pricing and discounts, integers represent losses and gains, and irrational numbers appear in geometry formulas. Understanding where each number type belongs helps students choose correct operations in practical scenarios.',
+      },
+      {
+        title: 'Common Mistakes and Fixes',
+        text: 'Frequent errors include treating all decimals as terminating, mishandling negative signs, and incorrectly ordering rational numbers. To fix these, students should convert values to a common form before comparison, write each operation line by line, and perform reverse checks. Rechecking with approximate values is one of the fastest ways to catch incorrect answers before submission.',
+      },
+    ],
+  },
+  algebra: {
+    intro: 'Algebra is the language of patterns and relationships. It uses variables and expressions to represent unknown values and solve practical and abstract problems. It helps students move from arithmetic thinking to generalized reasoning. Instead of solving one value at a time, algebra teaches methods that solve whole classes of problems.',
+    sections: [
+      {
+        title: 'Core Concepts',
+        text: 'Students study terms, coefficients, algebraic expressions, identities, and linear equations. They learn how to simplify expressions and solve for unknowns step by step. Correct structure matters: identifying like terms, applying operation order, and preserving equality across transformations are core habits.',
+      },
+      {
+        title: 'Why It Matters',
+        text: 'Algebra develops logical reasoning and forms the foundation for higher topics such as coordinate geometry, trigonometry, and calculus. It also supports data modeling, computer programming logic, and analytical decision-making in many careers.',
+      },
+      {
+        title: 'How To Practice',
+        text: 'Focus on writing every transformation clearly, checking signs carefully, and substituting solutions back into equations for validation. Practice by mixing simplification, equation solving, and word problems so conceptual transfer becomes automatic.',
+      },
+      {
+        title: 'Application Thinking',
+        text: 'Algebra models speed-distance-time, pricing, growth patterns, and break-even analysis. Turning word statements into equations is a high-value skill that improves both exam performance and practical problem-solving.',
+      },
+      {
+        title: 'Exam Strategy',
+        text: 'Read each question twice, define unknowns first, and keep steps aligned to avoid sign or bracket mistakes. In revision, prioritize mixed sets that combine identities, linear equations, and substitution-based checking.',
+      },
+    ],
+  },
+};
+
 const AILearningCoursesReference = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isDetailsView = searchParams.get('view') === 'details';
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -53,6 +108,7 @@ const AILearningCoursesReference = () => {
   const [overallProgress, setOverallProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const moduleRef = useRef(null);
+  const detailsViewRef = useRef(null);
 
   // Extract topic from URL
   const urlMatch = location.pathname.match(/\/topic\/([^/]+)$/);
@@ -139,6 +195,109 @@ const AILearningCoursesReference = () => {
   };
 
   const isPracticeUnlocked = overallProgress >= 75;
+  const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
+  const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
+  const readingContent = TOPIC_READING_CONTENT[String(topicSlug || '').trim().toLowerCase()] || {
+    intro: 'Read this topic carefully to strengthen conceptual understanding before moving to practice and assessments.',
+    sections: [
+      {
+        title: 'Topic Overview',
+        text: 'This section contains study guidance for the selected topic. Review definitions, solved examples, and key formulas before attempting questions.',
+      },
+      {
+        title: 'Learning Strategy',
+        text: 'Break the chapter into small concepts, practice each concept daily, and revise mistakes through an error log.',
+      },
+    ],
+  };
+
+  const openDetailsPage = () => {
+    navigate(
+      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}?view=details`
+    );
+  };
+
+  const closeDetailsPage = () => {
+    navigate(
+      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}`,
+      { replace: true }
+    );
+  };
+  const goBackToSubjectTopics = () => {
+    navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}`);
+  };
+  const toggleDetailsFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement && detailsViewRef.current) {
+        await detailsViewRef.current.requestFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      setError('Fullscreen mode is not available on this device/browser.');
+    }
+  };
+  const detailSections = useMemo(() => ([
+    { id: 'introduction', title: 'Introduction', text: readingContent.intro },
+    ...readingContent.sections.map((section, index) => ({
+      id: `section-${index + 1}`,
+      title: section.title,
+      text: section.text,
+    })),
+  ]), [readingContent]);
+  const [activeDetailSection, setActiveDetailSection] = useState('introduction');
+  const detailSectionRefs = useRef({});
+  const detailsScrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!isDetailsView) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible[0]?.target?.id) {
+          setActiveDetailSection(visible[0].target.id);
+        }
+      },
+      { rootMargin: '-20% 0px -55% 0px', threshold: [0.2, 0.4, 0.6] }
+    );
+
+    detailSections.forEach((section) => {
+      const node = detailSectionRefs.current[section.id];
+      if (node) observer.observe(node);
+    });
+
+    return () => observer.disconnect();
+  }, [isDetailsView, detailSections]);
+
+  const detailProgress = useMemo(() => {
+    const idx = detailSections.findIndex((section) => section.id === activeDetailSection);
+    if (idx < 0) return 0;
+    return Math.round(((idx + 1) / detailSections.length) * 100);
+  }, [activeDetailSection, detailSections]);
+
+  const jumpToDetailSection = (sectionId) => {
+    const node = detailSectionRefs.current[sectionId];
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleDetailsScroll = () => {
+    const container = detailsScrollRef.current;
+    if (!container || !detailSections.length) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom <= 8) {
+      setActiveDetailSection(detailSections[detailSections.length - 1].id);
+    }
+  };
+
+  const handleAssessmentItemClick = (itemTitle) => {
+    const normalizedTitle = String(itemTitle || '').toLowerCase();
+    if (normalizedTitle !== 'practice papers') return;
+    navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/practice-paper`);
+  };
 
   const toggleFullscreen = async () => {
     try {
@@ -154,12 +313,135 @@ const AILearningCoursesReference = () => {
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === moduleRef.current);
+      const isDetailsFullscreen = document.fullscreenElement === detailsViewRef.current;
+      const isLearningFullscreen = document.fullscreenElement === moduleRef.current;
+      setIsFullscreen(isDetailsFullscreen || isLearningFullscreen);
     };
 
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
+
+  if (isDetailsView) {
+    return (
+      <div
+        ref={(node) => {
+          detailsViewRef.current = node;
+          detailsScrollRef.current = node;
+        }}
+        onScroll={handleDetailsScroll}
+        className="h-screen overflow-y-auto bg-[#f9f9f7] px-4 py-5 md:px-8 lg:px-12"
+        style={{ fontFamily: 'Work Sans, sans-serif', color: '#1a1c1b' }}
+      >
+        <div className="mx-auto max-w-[1200px]">
+          <div className="mb-5 flex items-center gap-2">
+            <button
+              onClick={closeDetailsPage}
+              className="inline-flex items-center gap-2 rounded border border-[#c4c7c7] bg-white px-3 py-2 text-sm font-semibold text-[#2f3130] hover:bg-[#f4f4f2]"
+            >
+              <ArrowLeft size={16} /> Back
+            </button>
+            <button
+              onClick={toggleDetailsFullscreen}
+              className="inline-flex items-center gap-2 rounded border border-[#c4c7c7] bg-white px-3 py-2 text-sm font-semibold text-[#2f3130] hover:bg-[#f4f4f2]"
+            >
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+            </button>
+          </div>
+
+          <section className="relative min-h-[420px] rounded overflow-hidden">
+            <img
+              alt="Topic cover"
+              className="absolute inset-0 h-full w-full object-cover"
+              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPcy9M6aEX_21YYZwpZqit5NcXlZqs15W9c4XW8kG9iGkvycGh_kYPIqXj5YKYud58IjEwCxWPJcjir6ndjWeLU7IrE4o9xNPsAvQW2gzdwSXhA9QKh2zh6AeXU2pJnKSObeVH5w38mKTlafryBC7LA0yaGMGUqVKo3EzyFyaSBB7_nQzeazhUYDXfaP1Rn6wFG7s0mCs6DqnfjP594oKHutJVB3iqTgcz5gj6kpISXIcuTLIPaITH1c-NkMVVlvM37DTLMWmP8kQ"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/45 to-black/20" />
+            <div className="relative flex h-full flex-col justify-end px-5 pb-10 sm:px-10">
+              <span className="mb-3 text-[10px] uppercase tracking-[0.16em] text-white/80">Topic Reader</span>
+              <h1 className="text-4xl font-semibold leading-tight tracking-[-0.02em] text-white sm:text-6xl" style={{ fontFamily: 'Newsreader, serif' }}>
+                {topicSlug}
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-xl">
+                A comprehensive learning experience designed to help you master key concepts through structured practice, visual aids, and interactive materials.
+              </p>
+            </div>
+          </section>
+
+          <main className="mt-10 flex flex-col gap-10 md:flex-row md:gap-14">
+            <aside className="hidden w-1/4 md:block">
+              <div className="sticky top-8">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-[#444748]">Reading Progress</p>
+                <div className="mt-4 flex">
+                  <div className="mr-4 relative w-[2px] bg-[#dbdbdb]">
+                    <div className="absolute left-0 top-0 w-[2px] bg-black transition-all duration-300" style={{ height: `${detailProgress}%` }} />
+                  </div>
+                  <div className="space-y-6 text-xs uppercase tracking-[0.12em] text-[#444748]">
+                    {detailSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => jumpToDetailSection(section.id)}
+                        className={`block text-left hover:text-black ${activeDetailSection === section.id ? 'text-black font-semibold' : 'text-[#444748]'}`}
+                      >
+                        {section.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="mt-6 text-sm text-[#444748]">{detailProgress}% read</p>
+              </div>
+            </aside>
+
+            <div className="mx-auto w-full max-w-[720px]">
+              <article className="text-[20px] leading-[1.85] text-[#1a1c1b]" style={{ fontFamily: 'Newsreader, serif' }}>
+                <section
+                  id="introduction"
+                  ref={(node) => {
+                    detailSectionRefs.current.introduction = node;
+                  }}
+                  className="mb-12 scroll-mt-24"
+                >
+                  <h2 className="mb-6 text-3xl italic text-black">Understanding the Landscape</h2>
+                  <p className="mb-6">{readingContent.intro}</p>
+                </section>
+
+                <div className="my-12">
+                  <img
+                    className="aspect-video w-full rounded object-cover"
+                    alt="Topic inline visual"
+                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFvrS7k6fBFpvew6Q3BLld583PcM3nKdKP_LC4GJPPITQloaLhSZV1jsAJPqCxMBv5htj8emBhzSxuI876N-gsnrGOKQSRgQkQFIsUbOqnHsTgdLnWyVuNKmlyEKhEukVdSlBbruFxLu-XLwTBdqaYXg4zs2KZrvDaoyq1RLozs1osmcf9vVVjVOKYSq_o2GJnuvJoc3fiNpwyqHnBHbQkcCQEQr_fuqpxVVp2OddInG2fzoXRR326-3vQ5GNupv9NtjqPtgQNUxw"
+                  />
+                  <p className="mt-3 text-sm italic text-[#444748]" style={{ fontFamily: 'Work Sans, sans-serif' }}>
+                    Fig 1.1: Foundational ideas and conceptual structure of {topicSlug}.
+                  </p>
+                </div>
+
+                {readingContent.sections.map((section, index) => (
+                  <section
+                    key={section.title}
+                    id={`section-${index + 1}`}
+                    ref={(node) => {
+                      detailSectionRefs.current[`section-${index + 1}`] = node;
+                    }}
+                    className="mb-12 scroll-mt-24"
+                  >
+                    <h3 className="mb-6 text-3xl italic text-black">{section.title}</h3>
+                    <p className="mb-6">{section.text}</p>
+                    {index === 0 && (
+                      <blockquote className="mb-6 border-l-2 border-[#6e5c40] pl-6 text-2xl italic leading-snug text-[#6e5c40]">
+                        "Clear concepts create confident problem solvers."
+                      </blockquote>
+                    )}
+                  </section>
+                ))}
+              </article>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -171,7 +453,7 @@ const AILearningCoursesReference = () => {
       <header className="h-14 border-b flex items-center justify-between px-4 sm:px-6 z-50 sticky top-0 flex-shrink-0" style={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(12px)', borderColor: '#e7e8e9' }}>
         <div className="flex items-center gap-2 sm:gap-6 flex-1 min-w-0">
           <button
-            onClick={() => navigate(-1)}
+            onClick={goBackToSubjectTopics}
             className="inline-flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-bold hover:bg-slate-50 transition-colors rounded-lg px-2 py-1 sm:px-3"
             style={{ color: '#004b71' }}
           >
@@ -245,7 +527,12 @@ const AILearningCoursesReference = () => {
           </section>
 
           {/* Large Featured Section - Center */}
-          <section className="col-span-6 row-span-6 relative rounded-3xl overflow-hidden shadow-2xl" style={{ border: '4px solid white' }}>
+          <section
+            className="col-span-6 row-span-6 relative rounded-3xl overflow-hidden shadow-2xl cursor-pointer"
+            style={{ border: '4px solid white' }}
+            onClick={openDetailsPage}
+            title={`Open ${topicSlug} details`}
+          >
             <img
               alt="Featured learning visualization"
               className="absolute inset-0 w-full h-full object-cover"
@@ -331,7 +618,13 @@ const AILearningCoursesReference = () => {
                 Measure mastery through structured practice and self-assessment tools.
               </p>
               {ASSESSMENT_ITEMS.map((item, idx) => (
-                <div key={idx} className="p-3 rounded-xl border" style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: isPracticeUnlocked ? '#c0c7d0' : '#c0c7d0' }}>
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAssessmentItemClick(item.title)}
+                  className={`w-full p-3 rounded-xl border text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: isPracticeUnlocked ? '#c0c7d0' : '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                >
                   <div className="flex items-center gap-2 mb-1">
                     {isPracticeUnlocked ? (
                       <CheckCircle2 size={16} style={{ color: '#004b71' }} />
@@ -350,7 +643,7 @@ const AILearningCoursesReference = () => {
                       📌 Complete 75% to unlock
                     </p>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </section>
@@ -402,7 +695,12 @@ const AILearningCoursesReference = () => {
           </section>
 
           {/* Featured Section */}
-          <section className="col-span-2 relative rounded-2xl overflow-hidden shadow-lg h-[45vw] min-h-[280px] max-h-[420px]" style={{ border: '3px solid white' }}>
+          <section
+            className="col-span-2 relative rounded-2xl overflow-hidden shadow-lg h-[45vw] min-h-[280px] max-h-[420px] cursor-pointer"
+            style={{ border: '3px solid white' }}
+            onClick={openDetailsPage}
+            title={`Open ${topicSlug} details`}
+          >
             <img
               alt="Featured learning visualization"
               className="absolute inset-0 w-full h-full object-cover object-center"
@@ -468,7 +766,13 @@ const AILearningCoursesReference = () => {
             </div>
             <div className="overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin' }}>
               {ASSESSMENT_ITEMS.map((item, idx) => (
-                <div key={idx} className="p-2 rounded-lg border text-xs" style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0' }}>
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAssessmentItemClick(item.title)}
+                  className={`w-full p-2 rounded-lg border text-xs text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                >
                   <div className="flex items-center gap-1 mb-1">
                     {isPracticeUnlocked ? (
                       <CheckCircle2 size={14} style={{ color: '#004b71' }} />
@@ -482,7 +786,7 @@ const AILearningCoursesReference = () => {
                   <p className="text-[9px]" style={{ color: '#40484f' }}>
                     {item.description}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
           </section>
@@ -491,7 +795,12 @@ const AILearningCoursesReference = () => {
         {/* Mobile Layout (below md) */}
         <div className="md:hidden space-y-3">
           {/* Featured Section First */}
-          <section className="relative rounded-2xl overflow-hidden shadow-lg h-[56vw] min-h-[220px] max-h-[360px]" style={{ border: '3px solid white' }}>
+          <section
+            className="relative rounded-2xl overflow-hidden shadow-lg h-[56vw] min-h-[220px] max-h-[360px] cursor-pointer"
+            style={{ border: '3px solid white' }}
+            onClick={openDetailsPage}
+            title={`Open ${topicSlug} details`}
+          >
             <img
               alt="Featured learning visualization"
               className="absolute inset-0 w-full h-full object-cover object-center"
@@ -591,7 +900,13 @@ const AILearningCoursesReference = () => {
             </div>
             <div className="space-y-2">
               {ASSESSMENT_ITEMS.map((item, idx) => (
-                <div key={idx} className="p-2 rounded-lg border text-xs" style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0' }}>
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAssessmentItemClick(item.title)}
+                  className={`w-full p-2 rounded-lg border text-xs text-left ${isPracticeUnlocked && item.title === 'Practice Papers' ? 'hover:shadow-sm' : ''}`}
+                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isPracticeUnlocked && item.title === 'Practice Papers' ? 'pointer' : 'default' }}
+                >
                   <div className="flex items-center gap-1 mb-1">
                     {isPracticeUnlocked ? (
                       <CheckCircle2 size={14} style={{ color: '#004b71' }} />
@@ -605,11 +920,12 @@ const AILearningCoursesReference = () => {
                   <p className="text-[9px]" style={{ color: '#40484f' }}>
                     {item.description}
                   </p>
-                </div>
+                </button>
               ))}
             </div>
           </section>
         </div>
+
       </main>
 
       {/* Error Notification */}
