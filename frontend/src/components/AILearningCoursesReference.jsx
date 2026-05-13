@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
 import {
   ArrowLeft,
   BookOpen,
   CheckCircle2,
-  Lock,
   Target,
   Layers,
   Maximize2,
@@ -108,6 +108,7 @@ const AILearningCoursesReference = () => {
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const moduleRef = useRef(null);
   const detailsViewRef = useRef(null);
 
@@ -200,6 +201,7 @@ const AILearningCoursesReference = () => {
     const normalizedTitle = String(itemTitle || '').toLowerCase();
     return isPracticeUnlocked && (normalizedTitle === 'practice papers' || normalizedTitle === 'tryout section');
   };
+  const getAssessmentStatusText = (itemTitle) => (isAssessmentItemClickable(itemTitle) ? 'Ready to start' : 'Unlocks at 75% progress');
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
   const readingContent = TOPIC_READING_CONTENT[String(topicSlug || '').trim().toLowerCase()] || {
@@ -306,6 +308,123 @@ const AILearningCoursesReference = () => {
     }
     if (normalizedTitle === 'tryout section') {
       navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
+    }
+  };
+  const goToTryoutSection = () => {
+    navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 16;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const ensureSpace = (required = 8) => {
+        if (y + required > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+
+      const addTitle = (text) => {
+        ensureSpace(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(20, 34, 62);
+        doc.setFontSize(16);
+        doc.text(text, margin, y);
+        y += 8;
+      };
+
+      const addHeading = (text) => {
+        ensureSpace(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(17, 24, 39);
+        doc.setFontSize(12);
+        doc.text(text, margin, y);
+        y += 6;
+      };
+
+      const addParagraph = (text) => {
+        const lines = doc.splitTextToSize(String(text || ''), contentWidth);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(55, 65, 81);
+        doc.setFontSize(10);
+        lines.forEach((line) => {
+          ensureSpace(5);
+          doc.text(line, margin, y);
+          y += 4.8;
+        });
+        y += 1.5;
+      };
+
+      const addBullet = (text) => {
+        const bulletIndent = 4;
+        const wrapped = doc.splitTextToSize(String(text || ''), contentWidth - bulletIndent - 2);
+        wrapped.forEach((line, idx) => {
+          ensureSpace(5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(55, 65, 81);
+          doc.setFontSize(10);
+          doc.text(idx === 0 ? '•' : ' ', margin, y);
+          doc.text(line, margin + bulletIndent, y);
+          y += 4.8;
+        });
+      };
+
+      addTitle(`${topicSlug} - Smart Learning Resources`);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(107, 114, 128);
+      doc.text(`Subject: ${subjectSlug}`, margin, y);
+      y += 5;
+      doc.text(`Generated on: ${new Date().toLocaleString('en-IN')}`, margin, y);
+      y += 7;
+
+      addHeading('Reading Mode Content');
+      addParagraph(readingContent.intro);
+      readingContent.sections.forEach((section, index) => {
+        addHeading(`${index + 1}. ${section.title}`);
+        addParagraph(section.text);
+      });
+
+      addHeading('Learning Objectives');
+      LEARNING_OBJECTIVES.forEach((objective) => addBullet(objective));
+      y += 3;
+
+      addHeading('Instructional Flow');
+      LEARNING_STEPS.forEach((step, index) => {
+        addBullet(`${index + 1}. ${step.type} - ${step.title} (${step.duration} min)`);
+      });
+      y += 3;
+
+      addHeading('Materials');
+      MATERIALS.forEach((material) => addBullet(`${material.title}: ${material.description}`));
+      y += 3;
+
+      addHeading('Assessment Resources');
+      ASSESSMENT_ITEMS.forEach((item) => addBullet(`${item.title}: ${item.description}`));
+      y += 3;
+
+      if (assignedMentors.length) {
+        addHeading('Assigned Mentors');
+        assignedMentors.forEach((mentor) => addBullet(mentor));
+      }
+
+      const safeTopic = String(topicSlug || 'topic')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      doc.save(`smart-learning-${safeTopic || 'topic'}-resources.pdf`);
+    } catch (err) {
+      setError('Unable to generate PDF right now. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -448,6 +567,54 @@ const AILearningCoursesReference = () => {
               </article>
             </div>
           </main>
+          <footer className="mt-8 border-t border-[#d7d9d8] pt-5 pb-3">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={goToTryoutSection}
+                className="inline-flex items-center rounded-2xl px-8 py-4 text-base font-bold text-white transition-all duration-500 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#9cc3ff] focus:ring-offset-2 group"
+                style={{
+                  background: 'linear-gradient(135deg, #0f6fff 0%, #4f8dff 100%)',
+                  boxShadow: '0 8px 20px rgba(15, 111, 255, 0.25), 0 0 30px rgba(79, 141, 255, 0.15)',
+                  animation: 'tryoutSoftEntrance 800ms cubic-bezier(0.34, 1.56, 0.64, 1), tryoutSoftGlow 3.5s ease-in-out 900ms infinite',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  Try Tryout
+                  <svg className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+          </footer>
+          <style>{`
+            @keyframes tryoutSoftEntrance {
+              0% {
+                opacity: 0;
+                transform: translateY(20px) scale(0.95);
+              }
+              100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+            @keyframes tryoutSoftGlow {
+              0%, 100% {
+                transform: translateY(0);
+                filter: drop-shadow(0 8px 20px rgba(15, 111, 255, 0.25));
+              }
+              50% {
+                transform: translateY(-3px);
+                filter: drop-shadow(0 12px 28px rgba(15, 111, 255, 0.35));
+              }
+            }
+            button[style*="tryoutSoftEntrance"]:hover {
+              transform: translateY(-4px);
+            }
+          `}</style>
         </div>
       </div>
     );
@@ -483,8 +650,15 @@ const AILearningCoursesReference = () => {
             {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
           </button>
-          <button className="px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-1 sm:gap-2 text-white" style={{ backgroundColor: '#006494' }}>
-            <Download size={14} className="sm:w-4" /> <span className="hidden sm:inline">Download PDF</span>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-1 sm:gap-2 text-white disabled:opacity-70 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#006494' }}
+          >
+            <Download size={14} className="sm:w-4" />
+            <span className="hidden sm:inline">{downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</span>
           </button>
         </div>
       </header>
@@ -633,14 +807,10 @@ const AILearningCoursesReference = () => {
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
                   className={`w-full p-3 rounded-xl border text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
+                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    {isPracticeUnlocked ? (
-                      <CheckCircle2 size={16} style={{ color: '#004b71' }} />
-                    ) : (
-                      <Lock size={16} style={{ color: '#40484f' }} />
-                    )}
+                    <CheckCircle2 size={16} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
                     <h4 className="text-xs font-bold truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
                       {item.title}
                     </h4>
@@ -648,11 +818,9 @@ const AILearningCoursesReference = () => {
                   <p className="text-[10px]" style={{ color: '#40484f' }}>
                     {item.description}
                   </p>
-                  {!isPracticeUnlocked && idx === 0 && (
-                    <p className="text-[9px] font-bold mt-2" style={{ color: '#5f4200' }}>
-                      📌 Complete 75% to unlock
-                    </p>
-                  )}
+                  <p className="mt-2 text-[10px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
+                    {getAssessmentStatusText(item.title)}
+                  </p>
                 </button>
               ))}
             </div>
@@ -781,20 +949,19 @@ const AILearningCoursesReference = () => {
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
                   className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
+                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-1 mb-1">
-                    {isPracticeUnlocked ? (
-                      <CheckCircle2 size={14} style={{ color: '#004b71' }} />
-                    ) : (
-                      <Lock size={14} style={{ color: '#40484f' }} />
-                    )}
+                    <CheckCircle2 size={14} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
                     <h4 className="font-bold text-[11px] truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
                       {item.title}
                     </h4>
                   </div>
                   <p className="text-[9px]" style={{ color: '#40484f' }}>
                     {item.description}
+                  </p>
+                  <p className="mt-1 text-[9px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
+                    {getAssessmentStatusText(item.title)}
                   </p>
                 </button>
               ))}
@@ -915,20 +1082,19 @@ const AILearningCoursesReference = () => {
                   type="button"
                   onClick={() => handleAssessmentItemClick(item.title)}
                   className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isPracticeUnlocked ? '#ffffff' : '#f3f4f5', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
+                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
                 >
                   <div className="flex items-center gap-1 mb-1">
-                    {isPracticeUnlocked ? (
-                      <CheckCircle2 size={14} style={{ color: '#004b71' }} />
-                    ) : (
-                      <Lock size={14} style={{ color: '#40484f' }} />
-                    )}
+                    <CheckCircle2 size={14} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
                     <h4 className="font-bold text-[11px] truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
                       {item.title}
                     </h4>
                   </div>
                   <p className="text-[9px]" style={{ color: '#40484f' }}>
                     {item.description}
+                  </p>
+                  <p className="mt-1 text-[9px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
+                    {getAssessmentStatusText(item.title)}
                   </p>
                 </button>
               ))}
