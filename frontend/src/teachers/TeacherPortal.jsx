@@ -37,6 +37,7 @@ import AttendanceManagement from './AttendanceManagement';
 import TeacherDashboard from './TeacherDashboard';
 import LessonPlanDashboard from './LessonPlanDashboard';
 import SmartTeachingLessonPlanner from './SmartTeachingLessonPlanner';
+import LessonPlannerWizard from './components/LessonPlannerWizard';
 import TeacherChat from './TeacherChat';
 import StudentAnalyticsPortal from './StudentAnalyticsPortal';
 import AILearningPath from './AILearningPath';
@@ -823,6 +824,7 @@ const TeacherPortal = () => {
               <Route path="weak-students" element={<Navigate to="/teacher/student-analytics" replace />} />
               <Route path="smart-teaching" element={<AIPoweredTeaching />} />
               <Route path="smart-teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
+              <Route path="smart-teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
               <Route path="ai-powered-teaching" element={<Navigate to="/teacher/smart-teaching" replace />} />
               <Route path="academic-alcove" element={<TeacherAlcove />} />
               <Route path="ai-learning/:studentId/:subject" element={<AILearningPath />} />

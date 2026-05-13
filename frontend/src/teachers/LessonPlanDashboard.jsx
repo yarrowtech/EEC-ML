@@ -807,8 +807,8 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
 
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border-[2.5px] border-purple-300 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
-            <div className="p-5 border-b border-purple-100 flex items-center justify-between bg-purple-50/40">
+          <div className="bg-white rounded-3xl border-[2.5px] border-purple-300 w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-xl">
+            <div className="p-5 border-b border-purple-100 flex items-center justify-between bg-purple-50/40 rounded-t-3xl">
               <h2 className="text-xl font-semibold text-gray-900">
                 {editingPlanId ? 'Edit Lesson Plan' : 'Create Lesson Plan'}
               </h2>

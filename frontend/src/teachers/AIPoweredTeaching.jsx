@@ -7,6 +7,10 @@ import {
 import RichTextMaterialEditor from './components/RichTextMaterialEditor';
 import PracticePaperBuilder from './components/PracticePaperBuilder';
 import toast from 'react-hot-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 
 const AIPoweredTeaching = () => {
   const navigate = useNavigate();
@@ -225,43 +229,44 @@ const AIPoweredTeaching = () => {
 
   // Material card component
   const MaterialCard = ({ material }) => (
-    <div className="bg-white rounded-xl border border-slate-200 hover:border-blue-200 hover:shadow-md transition-all p-4">
+    <Card className="border-slate-200 transition-all hover:border-blue-200 hover:shadow-md">
+      <CardContent className="p-4">
       <div className="flex items-start justify-between mb-2">
         <h3 className="font-semibold text-[15px] text-slate-900 line-clamp-2">{material.title}</h3>
         <div className="flex gap-2">
           {material.status === 'draft' && (
-            <button
+            <Button
               onClick={() => handlePublish(material._id)}
-              className="p-1.5 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+              size="icon-sm"
+              variant="ghost"
+              className="text-blue-700 hover:bg-blue-50"
               title="Publish"
             >
               <FileCheck className="w-4 h-4" />
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => handleDelete(material._id)}
-            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            size="icon-sm"
+            variant="ghost"
+            className="text-red-600 hover:bg-red-50"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
       <p className="text-sm text-slate-600 line-clamp-2 mb-3">{material.content?.replace(/<[^>]*>/g, '')}</p>
 
       <div className="flex flex-wrap gap-2 mb-3">
-        <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${
-          material.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
-          material.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
-          'bg-slate-100 text-slate-700'
-        }`}>
+        <Badge variant={material.status === 'published' ? 'success' : material.status === 'scheduled' ? 'secondary' : 'muted'}>
           {material.status}
-        </span>
+        </Badge>
         {material.attachments?.length > 0 && (
-          <span className="text-[11px] px-2 py-1 bg-amber-100 text-amber-700 rounded-full font-semibold">
+          <Badge variant="warning">
             {material.attachments.length} file(s)
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -269,31 +274,37 @@ const AIPoweredTeaching = () => {
         <p>{material.subjectName} • {material.className}-{material.sectionName}</p>
         <p>{new Date(material.createdAt).toLocaleDateString()}</p>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 
   // Practice paper card component
   const PaperCard = ({ paper }) => (
-    <div className="bg-white rounded-xl border border-slate-200 hover:border-blue-200 hover:shadow-md transition-all p-4">
+    <Card className="border-slate-200 transition-all hover:border-blue-200 hover:shadow-md">
+      <CardContent className="p-4">
       <div className="flex items-start justify-between mb-2">
         <h3 className="font-semibold text-[15px] text-slate-900 line-clamp-2">{paper.title}</h3>
         <div className="flex gap-2">
           {paper.status === 'draft' && (
-            <button
+            <Button
               onClick={() => handlePublishPaper(paper._id)}
-              className="p-1.5 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+              size="icon-sm"
+              variant="ghost"
+              className="text-blue-700 hover:bg-blue-50"
               title="Publish"
             >
               <FileCheck className="w-4 h-4" />
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => handleDeletePaper(paper._id)}
-            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            size="icon-sm"
+            variant="ghost"
+            className="text-red-600 hover:bg-red-50"
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -310,42 +321,36 @@ const AIPoweredTeaching = () => {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-3">
-        <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${
-          paper.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
-          paper.status === 'draft' ? 'bg-slate-100 text-slate-700' :
-          'bg-amber-100 text-amber-700'
-        }`}>
+        <Badge variant={paper.status === 'published' ? 'success' : paper.status === 'draft' ? 'muted' : 'warning'}>
           {paper.status}
-        </span>
-        <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${
-          paper.difficulty === 'easy' ? 'bg-blue-100 text-blue-700' :
-          paper.difficulty === 'hard' ? 'bg-red-100 text-red-700' :
-          'bg-amber-100 text-amber-700'
-        }`}>
+        </Badge>
+        <Badge variant={paper.difficulty === 'hard' ? 'destructive' : paper.difficulty === 'easy' ? 'secondary' : 'warning'}>
           {paper.difficulty}
-        </span>
+        </Badge>
       </div>
 
       <div className="text-xs text-slate-500 space-y-0.5">
         <p>{paper.className} - {paper.sectionName}</p>
         <p>{new Date(paper.createdAt).toLocaleDateString()}</p>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 
   // Render - Material Editor
   if (showEditor) {
     return (
       <div className="p-6">
-        <button
+        <Button
+          variant="outline"
           onClick={() => {
             setShowEditor(false);
             setEditingMaterial(null);
           }}
-          className="mb-4 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+          className="mb-4"
         >
           ← Back
-        </button>
+        </Button>
         <RichTextMaterialEditor
           material={editingMaterial}
           classId={selectedClassId}
@@ -377,12 +382,13 @@ const AIPoweredTeaching = () => {
   if (showPaperBuilder) {
     return (
       <div className="p-6">
-        <button
+        <Button
+          variant="outline"
           onClick={() => setShowPaperBuilder(false)}
-          className="mb-4 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+          className="mb-4"
         >
           ← Back
-        </button>
+        </Button>
         <PracticePaperBuilder
           classId={selectedClassId}
           sectionId={selectedSectionId}
@@ -417,14 +423,23 @@ const AIPoweredTeaching = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <button
+              <Button
+                variant="outline"
                 onClick={() => navigate('/teacher/smart-teaching/lesson-planner')}
-                className="px-4 py-2.5 border border-slate-300 bg-white text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2"
+                className="rounded-xl"
               >
                 <BookOpen className="w-4 h-4" />
                 Lesson Planner
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/teacher/smart-teaching/lesson-planner-wizard')}
+                className="rounded-xl"
+              >
+                <BookOpen className="w-4 h-4" />
+                Planner Wizard
+              </Button>
+              <Button
                 onClick={() => {
                   if (activeTab === 'materials') {
                     setEditingMaterial(null);
@@ -433,11 +448,11 @@ const AIPoweredTeaching = () => {
                     setShowPaperBuilder(true);
                   }
                 }}
-                className="px-5 py-2.5 bg-[#00288e] text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
+                className="rounded-xl bg-[#00288e] hover:bg-[#001f6f]"
               >
                 <Plus className="w-4 h-4" />
                 {activeTab === 'materials' ? 'New Material' : 'New Paper'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -445,92 +460,75 @@ const AIPoweredTeaching = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {activeTab === 'materials' ? (
             <>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Materials</p>
-                <p className="text-2xl font-semibold text-[#001453]">{materials.length}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Published</p>
-                <p className="text-2xl font-semibold text-[#006c4a]">{materials.filter(m => m.status === 'published').length}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Classes</p>
-                <p className="text-2xl font-semibold text-[#001453]">{allocations.length}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Subjects</p>
-                <p className="text-2xl font-semibold text-[#001453]">{subjects.length}</p>
-              </div>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Materials</p><p className="text-2xl font-semibold text-[#001453]">{materials.length}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Published</p><p className="text-2xl font-semibold text-[#006c4a]">{materials.filter(m => m.status === 'published').length}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Classes</p><p className="text-2xl font-semibold text-[#001453]">{allocations.length}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Subjects</p><p className="text-2xl font-semibold text-[#001453]">{subjects.length}</p></CardContent></Card>
             </>
           ) : (
             <>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Papers</p>
-                <p className="text-2xl font-semibold text-[#001453]">{papers.length}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Published</p>
-                <p className="text-2xl font-semibold text-[#006c4a]">{papers.filter(p => p.status === 'published').length}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Total Questions</p>
-                <p className="text-2xl font-semibold text-[#001453]">{papers.reduce((sum, p) => sum + (p.totalQuestions || 0), 0)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-500 mb-2">Total Marks</p>
-                <p className="text-2xl font-semibold text-[#001453]">{papers.reduce((sum, p) => sum + (p.totalMarks || 0), 0)}</p>
-              </div>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Papers</p><p className="text-2xl font-semibold text-[#001453]">{papers.length}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Published</p><p className="text-2xl font-semibold text-[#006c4a]">{papers.filter(p => p.status === 'published').length}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Total Questions</p><p className="text-2xl font-semibold text-[#001453]">{papers.reduce((sum, p) => sum + (p.totalQuestions || 0), 0)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-slate-500 mb-2">Total Marks</p><p className="text-2xl font-semibold text-[#001453]">{papers.reduce((sum, p) => sum + (p.totalMarks || 0), 0)}</p></CardContent></Card>
             </>
           )}
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4 md:p-5 mb-6">
+        <Card className="border-slate-200 shadow-sm mb-6">
+          <CardHeader className="p-4 md:p-5">
+            <CardTitle className="text-base">Manage Content</CardTitle>
+            <CardDescription>Filter and organize materials and practice papers.</CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 md:px-5 md:pb-5 pt-0">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="inline-flex items-center rounded-lg bg-[#eef4ff] p-1">
-              <button
+              <Button
                 onClick={() => setActiveTab('materials')}
-                className={`px-3 py-2 text-sm rounded-md font-semibold transition-colors ${
-                  activeTab === 'materials' ? 'bg-white text-[#00288e] shadow-sm' : 'text-slate-600 hover:text-[#00288e]'
-                }`}
+                variant={activeTab === 'materials' ? 'secondary' : 'ghost'}
+                className={activeTab === 'materials' ? 'text-[#00288e]' : 'text-slate-600 hover:text-[#00288e]'}
               >
                 <FileText className="w-4 h-4 inline mr-2" />
                 Teaching Materials
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setActiveTab('papers')}
-                className={`px-3 py-2 text-sm rounded-md font-semibold transition-colors ${
-                  activeTab === 'papers' ? 'bg-white text-[#00288e] shadow-sm' : 'text-slate-600 hover:text-[#00288e]'
-                }`}
+                variant={activeTab === 'papers' ? 'secondary' : 'ghost'}
+                className={activeTab === 'papers' ? 'text-[#00288e]' : 'text-slate-600 hover:text-[#00288e]'}
               >
                 <ClipboardList className="w-4 h-4 inline mr-2" />
                 Practice Papers
-              </button>
+              </Button>
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-lg border transition-colors ${viewMode === 'grid' ? 'bg-[#eef4ff] border-[#b8c4ff] text-[#00288e]' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                size="icon-sm"
+                variant={viewMode === 'grid' ? 'secondary' : 'outline'}
+                className={viewMode === 'grid' ? 'text-[#00288e]' : 'text-slate-600'}
               >
                 <Grid className="w-4 h-4" />
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-lg border transition-colors ${viewMode === 'list' ? 'bg-[#eef4ff] border-[#b8c4ff] text-[#00288e]' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                size="icon-sm"
+                variant={viewMode === 'list' ? 'secondary' : 'outline'}
+                className={viewMode === 'list' ? 'text-[#00288e]' : 'text-slate-600'}
               >
                 <ListIcon className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="relative md:col-span-2">
               <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-              <input
+              <Input
                 type="text"
                 placeholder={`Search ${activeTab === 'materials' ? 'materials' : 'papers'}...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:border-[#b8c4ff] focus:outline-none focus:ring-2 focus:ring-[#dde1ff]"
+                className="pl-9 bg-slate-50 focus:bg-white"
               />
             </div>
             <select
@@ -557,7 +555,8 @@ const AIPoweredTeaching = () => {
               </select>
             )}
           </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {loading ? (
           <div className="flex justify-center py-16">
@@ -568,15 +567,15 @@ const AIPoweredTeaching = () => {
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-14 text-center">
               <FileText className="w-11 h-11 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-600 mb-4">No materials yet</p>
-              <button
+              <Button
                 onClick={() => {
                   setEditingMaterial(null);
                   setShowEditor(true);
                 }}
-                className="px-4 py-2 bg-[#00288e] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+                className="bg-[#00288e] hover:bg-[#001f6f]"
               >
                 Create First Material
-              </button>
+              </Button>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
@@ -592,12 +591,12 @@ const AIPoweredTeaching = () => {
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-14 text-center">
               <ClipboardList className="w-11 h-11 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-600 mb-4">No practice papers yet</p>
-              <button
+              <Button
                 onClick={() => setShowPaperBuilder(true)}
-                className="px-4 py-2 bg-[#00288e] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition-opacity"
+                className="bg-[#00288e] hover:bg-[#001f6f]"
               >
                 Create First Paper
-              </button>
+              </Button>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
