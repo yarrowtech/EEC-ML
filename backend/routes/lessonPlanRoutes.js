@@ -9,6 +9,8 @@ const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const Timetable = require('../models/Timetable');
 const StudentUser = require('../models/StudentUser');
+const TeachingMaterial = require('../models/TeachingMaterial');
+const PracticePaper = require('../models/PracticePaper');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const normalizeString = (value) => String(value || '').trim();
@@ -39,6 +41,9 @@ const sanitizePlannerContent = (value) => {
               studyMaterials: normalizeStringList(subTopic?.studyMaterials),
               mindMaps: normalizeStringList(subTopic?.mindMaps),
               worksheets: normalizeStringList(subTopic?.worksheets),
+              referenceMaterials: normalizeStringList(subTopic?.referenceMaterials),
+              tryoutSections: normalizeStringList(subTopic?.tryoutSections),
+              selfAssessments: normalizeStringList(subTopic?.selfAssessments),
               questionPapers: {
                 basic: normalizeString(subTopic?.questionPapers?.basic),
                 intermediate: normalizeString(subTopic?.questionPapers?.intermediate),
@@ -766,6 +771,161 @@ router.put('/teacher/:id', authTeacher, async (req, res) => {
     res.json({ message: 'Lesson plan updated', plan: existing });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/teacher/:id/publish-subtopic', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    const id = req.params?.id;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const { chapterIndex, topicIndex, subTopicIndex, publishPracticePaper = true } = req.body || {};
+    if (![chapterIndex, topicIndex, subTopicIndex].every((v) => Number.isInteger(v) && v >= 0)) {
+      return res.status(400).json({ error: 'chapterIndex, topicIndex and subTopicIndex must be non-negative integers' });
+    }
+
+    const filter = { _id: id, schoolId, teacherId };
+    if (campusId) filter.campusId = campusId;
+
+    const plan = await LessonPlan.findOne(filter).lean();
+    if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
+
+    const planner = sanitizePlannerContent(plan.plannerContent);
+    const chapter = planner?.chapters?.[chapterIndex];
+    const topic = chapter?.topics?.[topicIndex];
+    const subTopic = topic?.subTopics?.[subTopicIndex];
+
+    if (!chapter || !topic || !subTopic) {
+      return res.status(404).json({ error: 'Subtopic not found in planner content' });
+    }
+
+    const normalizeLinks = (arr) => (Array.isArray(arr) ? arr.map((x) => String(x || '').trim()).filter(Boolean) : []);
+    const allLinks = [
+      ...normalizeLinks(subTopic.studyMaterials),
+      ...normalizeLinks(subTopic.mindMaps),
+      ...normalizeLinks(subTopic.worksheets),
+      ...normalizeLinks(subTopic.referenceMaterials),
+      ...normalizeLinks(subTopic.tryoutSections),
+      ...normalizeLinks(subTopic.selfAssessments),
+    ];
+
+    const attachments = allLinks
+      .filter((item, idx, arr) => arr.indexOf(item) === idx)
+      .filter((item) => /^https?:\/\//i.test(item))
+      .map((url, idx) => ({
+        name: 'Resource ' + (idx + 1),
+        url,
+        size: 0,
+        type: 'link'
+      }));
+
+    const esc = (value) => String(value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const sectionHtml = (label, values) => {
+      const list = normalizeLinks(values);
+      if (!list.length) return '';
+      const safeItems = list.map((v) => '<li>' + esc(v) + '</li>').join('');
+      return '<h3>' + esc(label) + '</h3><ul>' + safeItems + '</ul>';
+    };
+
+    const materialTitle = [
+      plan.subject || 'Subject',
+      chapter.title || ('Chapter ' + (chapterIndex + 1)),
+      topic.title || ('Topic ' + (topicIndex + 1)),
+      subTopic.title || ('Sub Topic ' + (subTopicIndex + 1)),
+    ].join(' • ');
+
+    const materialContent = [
+      '<h2>' + esc(materialTitle) + '</h2>',
+      sectionHtml('Learning Paths', subTopic.learningPaths),
+      sectionHtml('Study Materials', subTopic.studyMaterials),
+      sectionHtml('Mind Maps', subTopic.mindMaps),
+      sectionHtml('Worksheets', subTopic.worksheets),
+      sectionHtml('Reference Materials', subTopic.referenceMaterials),
+      sectionHtml('Tryout Sections', subTopic.tryoutSections),
+      sectionHtml('Self Assessments', subTopic.selfAssessments),
+    ].filter(Boolean).join('');
+
+    const material = await TeachingMaterial.create({
+      schoolId,
+      campusId: campusId || null,
+      title: materialTitle,
+      content: materialContent,
+      materialType: 'note',
+      typeLabel: 'Lesson Planner Material',
+      classId: plan.classId,
+      sectionId: plan.sectionId,
+      subjectId: plan.subjectId,
+      className: plan.className || '',
+      sectionName: plan.sectionName || '',
+      subjectName: plan.subject || '',
+      teacherId: plan.teacherId,
+      teacherName: plan.teacherName || 'Teacher',
+      status: 'published',
+      publishedAt: new Date(),
+      priority: 'medium',
+      difficulty: 'intermediate',
+      category: 'reference',
+      tags: ['lesson-plan', 'smart-learning', 'auto-published'],
+      attachments,
+    });
+
+    let paper = null;
+    if (publishPracticePaper) {
+      const outline = subTopic?.questionPapers || {};
+      const mkQuestion = (label, difficulty, marks) => ({
+        questionText: String(outline?.[label] || '').trim() || ((subTopic.title || 'Sub Topic') + ' (' + label + ')'),
+        questionType: 'short_answer',
+        options: [],
+        correctAnswer: '',
+        explanation: '',
+        marks,
+        difficulty,
+      });
+
+      const questions = [
+        mkQuestion('basic', 'easy', 2),
+        mkQuestion('intermediate', 'medium', 3),
+        mkQuestion('advanced', 'hard', 5),
+      ];
+
+      paper = await PracticePaper.create({
+        schoolId,
+        campusId: campusId || null,
+        teachingMaterialId: material._id,
+        title: materialTitle + ' • Practice Paper',
+        description: 'Auto-generated from lesson planner subtopic: ' + (subTopic.title || 'Sub Topic'),
+        paperType: 'practice_set',
+        classId: plan.classId,
+        sectionId: plan.sectionId,
+        subjectId: plan.subjectId,
+        className: plan.className || '',
+        sectionName: plan.sectionName || '',
+        subjectName: plan.subject || '',
+        teacherId: plan.teacherId,
+        teacherName: plan.teacherName || 'Teacher',
+        questions,
+        duration: 20,
+        difficulty: 'mixed',
+        chapter: chapter.title || '',
+        topics: [topic.title || '', subTopic.title || ''].filter(Boolean),
+        passingPercentage: 40,
+        status: 'published',
+        publishedAt: new Date(),
+        tags: ['lesson-plan', 'smart-learning', 'auto-published'],
+      });
+    }
+
+    return res.status(201).json({
+      message: 'Published to student portal',
+      material,
+      paper,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

@@ -16,6 +16,7 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
 const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback/context`;
+const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials?limit=100`;
 
 const LEARNING_STEPS = [
   { id: 'step1', title: 'Introduction & Overview', duration: 10, type: 'The Hook' },
@@ -104,6 +105,7 @@ const AILearningCoursesReference = () => {
   const [stats, setStats] = useState(null);
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
+  const [teacherMaterials, setTeacherMaterials] = useState([]);
   const [activeStep, setActiveStep] = useState('step1');
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
@@ -162,14 +164,16 @@ const AILearningCoursesReference = () => {
           'Content-Type': 'application/json',
         };
 
-        const [dashRes, contextRes] = await Promise.all([
+        const [dashRes, contextRes, materialsRes] = await Promise.all([
           fetchCachedJson(DASHBOARD_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
+          fetchCachedJson(STUDENT_MATERIALS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
         ]);
 
         setStats(dashRes?.data?.stats || null);
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
+        setTeacherMaterials(Array.isArray(materialsRes?.data?.materials) ? materialsRes.data.materials : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       }
@@ -186,6 +190,28 @@ const AILearningCoursesReference = () => {
     });
     return Array.from(teacherSet);
   }, [contexts]);
+
+  const filteredTeacherMaterials = useMemo(() => {
+    const subjectKey = String(subjectSlug || '').trim().toLowerCase();
+    const topicKey = String(topicSlug || '').trim().toLowerCase();
+
+    return teacherMaterials.filter((material) => {
+      const materialSubject = String(material?.subjectName || '').trim().toLowerCase();
+      const title = String(material?.title || '').trim().toLowerCase();
+      const content = String(material?.content || '').trim().toLowerCase();
+      const subjectMatch = !subjectKey || materialSubject === subjectKey || materialSubject.includes(subjectKey);
+      const topicMatch = !topicKey || title.includes(topicKey) || content.includes(topicKey);
+      return subjectMatch && topicMatch;
+    });
+  }, [teacherMaterials, subjectSlug, topicSlug]);
+
+  const learningMaterials = useMemo(() => {
+    if (!filteredTeacherMaterials.length) return MATERIALS;
+    return filteredTeacherMaterials.slice(0, 6).map((material) => ({
+      title: material.title,
+      description: material.typeLabel || material.category || 'Study Material',
+    }));
+  }, [filteredTeacherMaterials]);
 
   // Helper functions
   const toggleStepComplete = (stepId) => {
@@ -404,7 +430,7 @@ const AILearningCoursesReference = () => {
       y += 3;
 
       addHeading('Materials');
-      MATERIALS.forEach((material) => addBullet(`${material.title}: ${material.description}`));
+      learningMaterials.forEach((material) => addBullet(`${material.title}: ${material.description}`));
       y += 3;
 
       addHeading('Assessment Resources');
@@ -777,7 +803,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {MATERIALS.map((material, idx) => (
+              {learningMaterials.map((material, idx) => (
                 <div key={idx} className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
                   <span className="text-2xl flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
@@ -922,7 +948,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
             <div className="overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin' }}>
-              {MATERIALS.map((material, idx) => (
+              {learningMaterials.map((material, idx) => (
                 <div key={idx} className="p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
                   <span className="text-lg flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
@@ -1055,7 +1081,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
             <div className="space-y-2">
-              {MATERIALS.map((material, idx) => (
+              {learningMaterials.map((material, idx) => (
                 <div key={idx} className="p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
                   <span className="text-lg flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}

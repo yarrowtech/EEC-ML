@@ -12,9 +12,35 @@ import {
   Trash2,
   X,
   CheckSquare,
+  Upload,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const STUDENT_PORTAL_TOPIC_TEMPLATES = {
+  hindi: [
+    { title: 'क्यों जीमल और कैसे - केसालिया', subtopics: ['पाठ परिचय', 'मुख्य शब्दार्थ', 'अभ्यास प्रश्न'] },
+    { title: 'कब आऊँ', subtopics: ['कवि परिचय', 'भावार्थ', 'वस्तुनिष्ठ प्रश्न'] },
+    { title: 'मेरे संग की औरतें', subtopics: ['पाठ सार', 'चरित्र विश्लेषण', 'लघु उत्तरीय प्रश्न'] },
+  ],
+  english: [
+    { title: 'Reading Comprehension', subtopics: ['Passage 1', 'Passage 2', 'Inference Questions'] },
+    { title: 'Grammar Quest', subtopics: ['Tenses', 'Subject Verb Agreement', 'Modals'] },
+    { title: 'Writing Skills', subtopics: ['Notice', 'Letter', 'Essay'] },
+  ],
+  mathematics: [
+    { title: 'Number System', subtopics: ['Rational Numbers', 'Operations', 'Word Problems'] },
+    { title: 'Algebra', subtopics: ['Expressions', 'Identities', 'Linear Equations'] },
+    { title: 'Geometry', subtopics: ['Triangles', 'Circles', 'Constructions'] },
+  ],
+  science: [
+    { title: 'Physics Basics', subtopics: ['Force', 'Motion', 'Energy'] },
+    { title: 'Chemistry Basics', subtopics: ['Atoms', 'Compounds', 'Reactions'] },
+    { title: 'Biology Basics', subtopics: ['Cell', 'Tissues', 'Nutrition'] },
+  ],
+};
+
+const normalizeSubjectKey = (value) => String(value || '').trim().toLowerCase();
 
 const emptyForm = {
   classId: '',
@@ -36,6 +62,9 @@ const createEmptySubTopic = () => ({
   studyMaterials: [''],
   mindMaps: [''],
   worksheets: [''],
+  referenceMaterials: [''],
+  tryoutSections: [''],
+  selfAssessments: [''],
   questionPapers: {
     basic: '',
     intermediate: '',
@@ -98,6 +127,18 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
   const [editingStatusId, setEditingStatusId] = useState('');
   const [savingStatus, setSavingStatus] = useState(false);
   const [statusForm, setStatusForm] = useState(emptyStatusForm);
+  const [uploadingAssetKey, setUploadingAssetKey] = useState('');
+  const [publishingSubtopicKey, setPublishingSubtopicKey] = useState('');
+
+  const plannerArrayFields = useMemo(() => ([
+    ['learningPaths', 'Learning Path'],
+    ['studyMaterials', 'Study Material (upload/link/text)'],
+    ['mindMaps', 'Mind Map'],
+    ['worksheets', 'Worksheet'],
+    ['referenceMaterials', 'Reference Material'],
+    ['tryoutSections', 'Tryout Section'],
+    ['selfAssessments', 'Self Assessment'],
+  ]), []);
 
   const authHeaders = () => {
     const token = localStorage.getItem('token');
@@ -220,6 +261,15 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                     worksheets: Array.isArray(subTopic?.worksheets) && subTopic.worksheets.length
                       ? subTopic.worksheets
                       : [''],
+                    referenceMaterials: Array.isArray(subTopic?.referenceMaterials) && subTopic.referenceMaterials.length
+                      ? subTopic.referenceMaterials
+                      : [''],
+                    tryoutSections: Array.isArray(subTopic?.tryoutSections) && subTopic.tryoutSections.length
+                      ? subTopic.tryoutSections
+                      : [''],
+                    selfAssessments: Array.isArray(subTopic?.selfAssessments) && subTopic.selfAssessments.length
+                      ? subTopic.selfAssessments
+                      : [''],
                     questionPapers: {
                       basic: subTopic?.questionPapers?.basic || '',
                       intermediate: subTopic?.questionPapers?.intermediate || '',
@@ -334,6 +384,50 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
       subTopic.questionPapers[level] = value;
     });
 
+  const handlePlannerFileUpload = async (chapterIndex, topicIndex, subTopicIndex, field, entryIndex) => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.txt';
+
+    picker.onchange = async (event) => {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+
+      const uploadKey = [chapterIndex, topicIndex, subTopicIndex, field, entryIndex].join(':');
+      try {
+        setUploadingAssetKey(uploadKey);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folder', 'lesson_planner_assets');
+        formData.append('tags', 'lesson_planner,smart_learning,teacher_upload');
+
+        const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+          body: formData,
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || data?.message || 'Upload failed');
+
+        const uploaded = data?.files?.[0];
+        const url = uploaded?.secure_url || uploaded?.url || '';
+        if (!url) throw new Error('Upload URL not found');
+
+        updateSubTopicArrayItem(chapterIndex, topicIndex, subTopicIndex, field, entryIndex, url);
+      } catch (err) {
+        setError(err?.message || 'Failed to upload file');
+      } finally {
+        setUploadingAssetKey('');
+      }
+    };
+
+    picker.click();
+  };
+
   const openCreateModal = async () => {
     setEditingPlanId('');
     setForm(emptyForm);
@@ -434,6 +528,37 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
     }
   };
 
+  const loadStudentPortalTemplate = () => {
+    const subjectKey = normalizeSubjectKey(form.subject);
+    const templateTopics = STUDENT_PORTAL_TOPIC_TEMPLATES[subjectKey] || [];
+
+    if (!templateTopics.length) {
+      setError('No student-portal template found for this subject yet. Add chapters manually.');
+      return;
+    }
+
+    if (!window.confirm('Replace current chapter/topic structure with student-portal template?')) return;
+
+    setForm((prev) => {
+      const chapter = createEmptyChapter();
+      chapter.title = (prev.subject || 'Subject') + ' Smart Learning Plan';
+      chapter.topics = templateTopics.map((topic) => ({
+        id: 'topic-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        title: topic.title,
+        subTopics: (topic.subtopics || []).map((sub) => ({
+          ...createEmptySubTopic(),
+          title: sub,
+        })),
+      }));
+
+      return {
+        ...prev,
+        plannerContent: { chapters: [chapter] },
+      };
+    });
+    setError('');
+  };
+
   const onSubjectChange = (subjectId) => {
     if (!subjectId) {
       setForm((prev) => ({ ...prev, subjectId: '', subject: '' }));
@@ -487,6 +612,30 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
       setError(err.message || (editingPlanId ? 'Failed to update lesson plan' : 'Failed to create lesson plan'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const publishSubtopicToStudentPortal = async (chapterIndex, topicIndex, subTopicIndex) => {
+    if (!selectedPlan?._id) return;
+
+    const key = [selectedPlan._id, chapterIndex, topicIndex, subTopicIndex].join(':');
+    try {
+      setPublishingSubtopicKey(key);
+      setError('');
+
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/${selectedPlan._id}/publish-subtopic`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ chapterIndex, topicIndex, subTopicIndex, publishPracticePaper: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to publish subtopic');
+
+      window.alert('Published to student portal successfully.');
+    } catch (err) {
+      setError(err.message || 'Failed to publish subtopic');
+    } finally {
+      setPublishingSubtopicKey('');
     }
   };
 
@@ -724,13 +873,26 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                               </p>
                               <div className="mt-1 space-y-1">
                                 {(topic.subTopics || []).map((subTopic, subTopicIndex) => (
-                                  <p key={subTopic.id || subTopicIndex} className="text-xs text-gray-600">
-                                    Sub Topic {chapterIndex + 1}.{topicIndex + 1}.{subTopicIndex + 1}: {subTopic.title || 'Untitled'} •
-                                    LP: {(subTopic.learningPaths || []).filter(Boolean).length} •
-                                    Materials: {(subTopic.studyMaterials || []).filter(Boolean).length} •
-                                    Mind Maps: {(subTopic.mindMaps || []).filter(Boolean).length} •
-                                    Worksheets: {(subTopic.worksheets || []).filter(Boolean).length}
-                                  </p>
+                                  <div key={subTopic.id || subTopicIndex} className="flex items-start justify-between gap-2 text-xs text-gray-600">
+                                    <p>
+                                      Sub Topic {chapterIndex + 1}.{topicIndex + 1}.{subTopicIndex + 1}: {subTopic.title || 'Untitled'} •
+                                      LP: {(subTopic.learningPaths || []).filter(Boolean).length} •
+                                      Materials: {(subTopic.studyMaterials || []).filter(Boolean).length} •
+                                      Mind Maps: {(subTopic.mindMaps || []).filter(Boolean).length} •
+                                      Worksheets: {(subTopic.worksheets || []).filter(Boolean).length} •
+                                      References: {(subTopic.referenceMaterials || []).filter(Boolean).length} •
+                                      Tryout: {(subTopic.tryoutSections || []).filter(Boolean).length} •
+                                      Self Assess: {(subTopic.selfAssessments || []).filter(Boolean).length}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => publishSubtopicToStudentPortal(chapterIndex, topicIndex, subTopicIndex)}
+                                      disabled={publishingSubtopicKey === [selectedPlan._id, chapterIndex, topicIndex, subTopicIndex].join(':')}
+                                      className="shrink-0 rounded border border-emerald-300 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                                    >
+                                      {publishingSubtopicKey === [selectedPlan._id, chapterIndex, topicIndex, subTopicIndex].join(':') ? 'Publishing...' : 'Publish to Student Portal'}
+                                    </button>
+                                  </div>
                                 ))}
                               </div>
                             </div>
@@ -972,20 +1134,32 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-900">
-                      Structured Lesson Planner
+                      Structured Lesson Planner (Student Portal Aligned)
                     </h3>
                     <p className="text-xs text-gray-600">
                       Assigned Subject: {form.subject || 'Select allocated subject first'}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addChapter}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-purple-300 text-purple-700 bg-white text-xs"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Add Chapter
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isSmartVariant && (
+                      <button
+                        type="button"
+                        onClick={loadStudentPortalTemplate}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 bg-white text-xs"
+                      >
+                        <BookOpen className="w-3 h-3" />
+                        Load Student Portal Template
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={addChapter}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-purple-300 text-purple-700 bg-white text-xs"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Chapter
+                    </button>
+                  </div>
                 </div>
 
                 {sanitizePlannerContent(form.plannerContent).chapters.length === 0 ? (
@@ -1063,12 +1237,7 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                                   </button>
                                 </div>
 
-                                {[
-                                  ['learningPaths', 'Learning Path'],
-                                  ['studyMaterials', 'Study Material (upload/link/text)'],
-                                  ['mindMaps', 'Mind Map'],
-                                  ['worksheets', 'Worksheet'],
-                                ].map(([field, label]) => (
+                                {plannerArrayFields.map(([field, label]) => (
                                   <div key={field} className="rounded-md border border-slate-200 bg-white p-2">
                                     <p className="text-xs font-medium text-slate-700 mb-2">{label}</p>
                                     {(subTopic[field] || ['']).map((entry, entryIndex) => (
@@ -1089,6 +1258,16 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                                           className="flex-1 border border-slate-200 rounded px-2 py-1 text-xs"
                                           placeholder={`Add ${label.toLowerCase()}`}
                                         />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handlePlannerFileUpload(chapterIndex, topicIndex, subTopicIndex, field, entryIndex)
+                                          }
+                                          className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-blue-200 text-blue-700"
+                                        >
+                                          <Upload className="w-3 h-3" />
+                                          {uploadingAssetKey === [chapterIndex, topicIndex, subTopicIndex, field, entryIndex].join(':') ? 'Uploading...' : 'Upload'}
+                                        </button>
                                         <button
                                           type="button"
                                           onClick={() =>

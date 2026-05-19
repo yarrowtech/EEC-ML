@@ -341,24 +341,29 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       });
     }
 
-    const filters = {
-      schoolId: req.schoolId,
-      status: 'published',
+    const classAccessFilter = {
       $or: [
-        { classId: student.classId },
-        { className: student.className }
+        { classId: student.classId, sectionId: student.sectionId },
+        { className: student.className, sectionName: student.sectionName }
       ]
     };
 
-    if (subject) filters.subjectId = new mongoose.Types.ObjectId(subject);
-    if (paperType) filters.paperType = paperType;
+    const filters = {
+      schoolId: req.schoolId,
+      status: 'published',
+      $and: [
+        classAccessFilter,
+        {
+          $or: [
+            { expiresAt: { $exists: false } },
+            { expiresAt: { $gt: new Date() } }
+          ]
+        }
+      ]
+    };
 
-    // Don't show expired papers
-    filters.$or = [
-      ...(filters.$or || []),
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } }
-    ];
+    if (subject && mongoose.Types.ObjectId.isValid(subject)) filters.subjectId = new mongoose.Types.ObjectId(subject);
+    if (paperType) filters.paperType = paperType;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -388,10 +393,22 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
 // GET SINGLE: Get paper details to start attempt
 router.get('/student/papers/:id', authStudent, async (req, res, next) => {
   try {
+    const student = await StudentUser.findById(req.userId).lean();
+    if (!student) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
-      status: 'published'
+      status: 'published',
+      $or: [
+        { classId: student.classId, sectionId: student.sectionId },
+        { className: student.className, sectionName: student.sectionName }
+      ]
     });
 
     if (!paper) {
@@ -445,10 +462,22 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
       });
     }
 
+    const student = await StudentUser.findById(req.userId).lean();
+    if (!student) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
-      status: 'published'
+      status: 'published',
+      $or: [
+        { classId: student.classId, sectionId: student.sectionId },
+        { className: student.className, sectionName: student.sectionName }
+      ]
     });
 
     if (!paper) {
@@ -558,10 +587,22 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
 // GET RESULTS: Get student's attempt history
 router.get('/student/papers/:id/attempts', authStudent, async (req, res, next) => {
   try {
+    const student = await StudentUser.findById(req.userId).lean();
+    if (!student) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
-      status: 'published'
+      status: 'published',
+      $or: [
+        { classId: student.classId, sectionId: student.sectionId },
+        { className: student.className, sectionName: student.sectionName }
+      ]
     }).lean();
 
     if (!paper) {

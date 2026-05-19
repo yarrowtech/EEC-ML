@@ -34,23 +34,28 @@ router.get('/', async (req, res, next) => {
       });
     }
 
+    const accessFilters = [
+      { classId: studentInfo.classId, sectionId: studentInfo.sectionId },
+      { className: studentInfo.className, sectionName: studentInfo.sectionName }
+    ];
+
     const filters = {
       schoolId: req.schoolId,
       status: 'published',
       materialType: { $ne: 'folder' },
-      $or: [
-        { classId: studentInfo.classId, sectionId: studentInfo.sectionId },
-        { className: studentInfo.className, sectionName: studentInfo.sectionName }
+      $and: [
+        { $or: accessFilters },
+        {
+          $or: [
+            { expiresAt: { $exists: false } },
+            { expiresAt: { $gt: new Date() } }
+          ]
+        }
       ]
     };
 
     // Apply optional filters
-    if (subject) {
-      filters.$or = [
-        ...filters.$or,
-        { subjectId: new mongoose.Types.ObjectId(subject) }
-      ];
-    }
+    if (subject && mongoose.Types.ObjectId.isValid(subject)) filters.subjectId = new mongoose.Types.ObjectId(subject);
     if (category) filters.category = category;
     if (tags) {
       const tagArray = Array.isArray(tags) ? tags : [tags];
@@ -61,13 +66,6 @@ router.get('/', async (req, res, next) => {
     if (search) {
       filters.$text = { $search: search };
     }
-
-    // Check expiration
-    filters.$or = [
-      ...(filters.$or || []),
-      { expiresAt: { $exists: false } },
-      { expiresAt: { $gt: new Date() } }
-    ];
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -97,11 +95,23 @@ router.get('/', async (req, res, next) => {
 // GET: Get single material details
 router.get('/:id', async (req, res, next) => {
   try {
+    const studentInfo = await getStudentClassSection(req.userId);
+    if (!studentInfo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student profile not found'
+      });
+    }
+
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
       status: 'published',
-      materialType: { $ne: 'folder' }
+      materialType: { $ne: 'folder' },
+      $or: [
+        { classId: studentInfo.classId, sectionId: studentInfo.sectionId },
+        { className: studentInfo.className, sectionName: studentInfo.sectionName }
+      ]
     }).lean();
 
     if (!material) {
