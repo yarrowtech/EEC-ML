@@ -6,6 +6,7 @@ import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 import AILearningTryoutSection from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 
 const CARD_STYLES = [
   {
@@ -34,47 +35,14 @@ const CARD_STYLES = [
   },
 ];
 
-const SUBJECT_TOPICS = {
-  hindi: [
-    { title: 'क्यों जीमल और कैसे - केसालिया', subtopics: ['पाठ परिचय', 'मुख्य शब्दार्थ', 'अभ्यास प्रश्न'] },
-    { title: 'कब आऊँ', subtopics: ['कवि परिचय', 'भावार्थ', 'वस्तुनिष्ठ प्रश्न'] },
-    { title: 'मेरे संग की औरतें', subtopics: ['पाठ सार', 'चरित्र विश्लेषण', 'लघु उत्तरीय प्रश्न'] },
-    { title: 'डायरी का एक पन्ना', subtopics: ['प्रसंग', 'व्याख्या', 'दीर्घ उत्तरीय प्रश्न'] },
-    { title: 'साना-साना हाथ जोड़ि', subtopics: ['शब्दार्थ', 'व्याख्या', 'मूल्य आधारित प्रश्न'] },
-  ],
-  english: [
-    { title: 'Reading Comprehension', subtopics: ['Passage 1', 'Passage 2', 'Inference Questions'] },
-    { title: 'Grammar Quest', subtopics: ['Tenses', 'Subject Verb Agreement', 'Modals'] },
-    { title: 'Writing Skills', subtopics: ['Notice', 'Letter', 'Essay'] },
-  ],
-  mathematics: [
-    { title: 'Number System', subtopics: ['Rational Numbers', 'Operations', 'Word Problems'] },
-    { title: 'Algebra', subtopics: ['Expressions', 'Identities', 'Linear Equations'] },
-    { title: 'Geometry', subtopics: ['Triangles', 'Circles', 'Constructions'] },
-  ],
-  science: [
-    { title: 'Physics Basics', subtopics: ['Force', 'Motion', 'Energy'] },
-    { title: 'Chemistry Basics', subtopics: ['Atoms', 'Compounds', 'Reactions'] },
-    { title: 'Biology Basics', subtopics: ['Cell', 'Tissues', 'Nutrition'] },
-  ],
-};
-
 const normalize = (value) => String(value || '').trim().toLowerCase();
-
-const resolveTopicsForSubject = (subjectName) => {
-  const key = normalize(subjectName);
-  if (SUBJECT_TOPICS[key]) return SUBJECT_TOPICS[key];
-
-  // Return empty array if no topics found for this subject
-  return [];
-};
 
 const SubjectTopicsView = ({ subject, onBack }) => {
   const navigate = useNavigate();
   const [openTopicIndex, setOpenTopicIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
-  const topics = useMemo(() => resolveTopicsForSubject(subject.title), [subject.title]);
+  const topics = useMemo(() => Array.isArray(subject?.topics) ? subject.topics : [], [subject]);
 
   const normalizedCompletedSubtopics = useMemo(() => {
     if (!completedSubtopics || typeof completedSubtopics !== 'object' || Array.isArray(completedSubtopics)) {
@@ -467,6 +435,7 @@ const AILearningCoursesLanding = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [contexts, setContexts] = useState([]);
+  const [smartLearningMap, setSmartLearningMap] = useState([]);
 
   // Parse URL params manually
   const urlMatch = location.pathname.match(/\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/]+)(?:\/topic\/([^/]+))?(?:\/assessment\/([^/]+))?/);
@@ -488,20 +457,27 @@ const AILearningCoursesLanding = () => {
           return;
         }
 
-        const res = await fetch(`${API_BASE}/api/student/auth/teacher-feedback/context`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
+        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-        if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
+        const [contextRes, mapRes] = await Promise.all([
+          fetch(`${API_BASE}/api/student/auth/teacher-feedback/context`, { headers }),
+          fetch(SMART_LEARNING_MAP_ENDPOINT, { headers }),
+        ]);
+
+        if (!contextRes.ok) {
+          const payload = await contextRes.json().catch(() => ({}));
           throw new Error(payload?.error || 'Failed to load assigned subjects');
         }
 
-        const data = await res.json();
-        setContexts(Array.isArray(data?.teachers) ? data.teachers : []);
+        if (!mapRes.ok) {
+          const payload = await mapRes.json().catch(() => ({}));
+          throw new Error(payload?.error || 'Failed to load smart learning map');
+        }
+
+        const contextData = await contextRes.json();
+        const mapData = await mapRes.json();
+        setContexts(Array.isArray(contextData?.teachers) ? contextData.teachers : []);
+        setSmartLearningMap(Array.isArray(mapData?.subjects) ? mapData.subjects : []);
       } catch (err) {
         setError(err?.message || 'Unable to load assigned subjects');
       } finally {
@@ -533,12 +509,16 @@ const AILearningCoursesLanding = () => {
       if (classLabel) item.classNames.add(classLabel);
     });
 
-    return Array.from(map.values()).map((item) => ({
-      ...item,
-      teacherCount: item.teacherNames.size,
-      classCount: item.classNames.size,
-    }));
-  }, [contexts]);
+    return Array.from(map.values()).map((item) => {
+      const fromMap = smartLearningMap.find((m) => normalize(m.key || m.title) === item.key);
+      return {
+        ...item,
+        topics: Array.isArray(fromMap?.topics) ? fromMap.topics : [],
+        teacherCount: item.teacherNames.size,
+        classCount: item.classNames.size,
+      };
+    }).filter((item) => Array.isArray(item.topics) && item.topics.length > 0);
+  }, [contexts, smartLearningMap]);
 
   const selectedSubject = useMemo(() => {
     if (!subjectKey) return null;
@@ -598,8 +578,8 @@ const AILearningCoursesLanding = () => {
             ) : assignedSubjects.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
                 <Sparkles className="mx-auto mb-3 text-slate-300" size={32} />
-                <p className="text-lg font-bold text-slate-800">No assigned subjects found</p>
-                <p className="mt-1 text-sm text-slate-500">Please contact your class teacher if this looks incorrect.</p>
+                <p className="text-lg font-bold text-slate-800">No real smart-learning data found</p>
+                <p className="mt-1 text-sm text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

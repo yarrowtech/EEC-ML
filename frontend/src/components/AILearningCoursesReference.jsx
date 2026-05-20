@@ -16,7 +16,9 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
 const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback/context`;
-const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials?limit=100`;
+const STUDENT_learningMaterials_ENDPOINT = `${API_BASE}/api/student/materials?limit=100`;
+const STUDENT_PAPERS_ENDPOINT = `${API_BASE}/api/practice-papers/student/papers?limit=100`;
+
 
 const LEARNING_STEPS = [
   { id: 'step1', title: 'Introduction & Overview', duration: 10, type: 'The Hook' },
@@ -31,71 +33,6 @@ const LEARNING_OBJECTIVES = [
   'Synthesize knowledge to create meaningful connections between related topics',
 ];
 
-const MATERIALS = [
-  { title: 'Interactive Learning', description: 'Smart practice exercises' },
-  { title: 'Visual Aids', description: 'Mindmaps and diagrams' },
-  { title: 'Study Materials', description: 'Detailed notes and guides' },
-];
-
-const ASSESSMENT_ITEMS = [
-  { title: 'Practice Papers', description: 'Three difficulty levels with instant feedback' },
-  { title: 'Tryout Section', description: 'Timed trial set to test your topic readiness' },
-  { title: 'Self-Assessment', description: 'Quick quizzes and flashcards for review' },
-];
-
-const TOPIC_READING_CONTENT = {
-  'number system': {
-    intro: 'The Number System helps us understand how numbers are formed, classified, and used in calculations. It builds a strong base for algebra, geometry, and advanced mathematics. In real learning, this topic is more than definitions. It teaches students to reason about values, magnitude, accuracy, and representation. From school arithmetic to scientific computation, number sense is the first skill that supports every later mathematical decision.',
-    sections: [
-      {
-        title: 'Core Concepts',
-        text: 'Students learn natural numbers, whole numbers, integers, rational numbers, and irrational numbers. They also understand decimal expansion and how different number types relate to each other. A key conceptual milestone is recognizing that each set is nested within a larger set, and that every new set solves a limitation of the previous one. For example, integers solve subtraction limitations of whole numbers, and rational numbers solve division limitations of integers.',
-      },
-      {
-        title: 'Why It Matters',
-        text: 'This topic improves number sense and accuracy in operations. It is essential for solving equations, comparing quantities, and interpreting real-life data in science and economics. Number-system fluency also supports estimation, error-checking, and confidence during complex calculations. Students who are strong in this topic make fewer sign mistakes, better unit judgments, and more reliable interpretations of graphs and numerical data.',
-      },
-      {
-        title: 'How To Practice',
-        text: 'Practice classification, conversion between fractions and decimals, and comparison problems. Solve mixed worksheets regularly and verify each answer using estimation. Build a routine: start with conceptual warm-ups, move to procedural questions, then end with application word problems. Keep an error notebook to record recurring mistakes such as sign confusion, incorrect decimal placement, and weak fraction simplification.',
-      },
-      {
-        title: 'Real-World Connections',
-        text: 'Number systems appear in budgeting, engineering measurements, coding, stock trends, and scientific notation used in physics and chemistry. Decimals and fractions guide pricing and discounts, integers represent losses and gains, and irrational numbers appear in geometry formulas. Understanding where each number type belongs helps students choose correct operations in practical scenarios.',
-      },
-      {
-        title: 'Common Mistakes and Fixes',
-        text: 'Frequent errors include treating all decimals as terminating, mishandling negative signs, and incorrectly ordering rational numbers. To fix these, students should convert values to a common form before comparison, write each operation line by line, and perform reverse checks. Rechecking with approximate values is one of the fastest ways to catch incorrect answers before submission.',
-      },
-    ],
-  },
-  algebra: {
-    intro: 'Algebra is the language of patterns and relationships. It uses variables and expressions to represent unknown values and solve practical and abstract problems. It helps students move from arithmetic thinking to generalized reasoning. Instead of solving one value at a time, algebra teaches methods that solve whole classes of problems.',
-    sections: [
-      {
-        title: 'Core Concepts',
-        text: 'Students study terms, coefficients, algebraic expressions, identities, and linear equations. They learn how to simplify expressions and solve for unknowns step by step. Correct structure matters: identifying like terms, applying operation order, and preserving equality across transformations are core habits.',
-      },
-      {
-        title: 'Why It Matters',
-        text: 'Algebra develops logical reasoning and forms the foundation for higher topics such as coordinate geometry, trigonometry, and calculus. It also supports data modeling, computer programming logic, and analytical decision-making in many careers.',
-      },
-      {
-        title: 'How To Practice',
-        text: 'Focus on writing every transformation clearly, checking signs carefully, and substituting solutions back into equations for validation. Practice by mixing simplification, equation solving, and word problems so conceptual transfer becomes automatic.',
-      },
-      {
-        title: 'Application Thinking',
-        text: 'Algebra models speed-distance-time, pricing, growth patterns, and break-even analysis. Turning word statements into equations is a high-value skill that improves both exam performance and practical problem-solving.',
-      },
-      {
-        title: 'Exam Strategy',
-        text: 'Read each question twice, define unknowns first, and keep steps aligned to avoid sign or bracket mistakes. In revision, prioritize mixed sets that combine identities, linear equations, and substitution-based checking.',
-      },
-    ],
-  },
-};
-
 const AILearningCoursesReference = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -106,6 +43,7 @@ const AILearningCoursesReference = () => {
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
   const [teacherMaterials, setTeacherMaterials] = useState([]);
+  const [practicePapers, setPracticePapers] = useState([]);
   const [activeStep, setActiveStep] = useState('step1');
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
@@ -164,16 +102,18 @@ const AILearningCoursesReference = () => {
           'Content-Type': 'application/json',
         };
 
-        const [dashRes, contextRes, materialsRes] = await Promise.all([
+        const [dashRes, contextRes, materialsRes, papersRes] = await Promise.all([
           fetchCachedJson(DASHBOARD_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
-          fetchCachedJson(STUDENT_MATERIALS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
+          fetchCachedJson(STUDENT_learningMaterials_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
+          fetchCachedJson(STUDENT_PAPERS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
         ]);
 
         setStats(dashRes?.data?.stats || null);
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
         setTeacherMaterials(Array.isArray(materialsRes?.data?.materials) ? materialsRes.data.materials : []);
+        setPracticePapers(Array.isArray(papersRes?.data?.papers) ? papersRes.data.papers : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       }
@@ -206,12 +146,21 @@ const AILearningCoursesReference = () => {
   }, [teacherMaterials, subjectSlug, topicSlug]);
 
   const learningMaterials = useMemo(() => {
-    if (!filteredTeacherMaterials.length) return MATERIALS;
     return filteredTeacherMaterials.slice(0, 6).map((material) => ({
       title: material.title,
       description: material.typeLabel || material.category || 'Study Material',
     }));
   }, [filteredTeacherMaterials]);
+
+  const assessmentItems = useMemo(() => {
+    const papersCount = practicePapers.filter((paper) => String(paper?.title || '').toLowerCase().includes(String(topicSlug || '').toLowerCase()) || !topicSlug).length;
+    const tryoutCount = filteredTeacherMaterials.filter((m) => String(m?.typeLabel || '').toLowerCase().includes('tryout')).length;
+    return [
+      { title: 'Practice Papers', description: papersCount > 0 ? `${papersCount} real papers available` : 'No real paper found' },
+      { title: 'Tryout Section', description: tryoutCount > 0 ? `${tryoutCount} real tryout resources available` : 'No real tryout found' },
+      { title: 'Self-Assessment', description: 'Based on published class materials only' },
+    ];
+  }, [practicePapers, filteredTeacherMaterials, topicSlug]);
 
   // Helper functions
   const toggleStepComplete = (stepId) => {
@@ -230,19 +179,19 @@ const AILearningCoursesReference = () => {
   const getAssessmentStatusText = (itemTitle) => (isAssessmentItemClickable(itemTitle) ? 'Ready to start' : 'Unlocks at 75% progress');
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
-  const readingContent = TOPIC_READING_CONTENT[String(topicSlug || '').trim().toLowerCase()] || {
-    intro: 'Read this topic carefully to strengthen conceptual understanding before moving to practice and assessments.',
-    sections: [
-      {
-        title: 'Topic Overview',
-        text: 'This section contains study guidance for the selected topic. Review definitions, solved examples, and key formulas before attempting questions.',
-      },
-      {
-        title: 'Learning Strategy',
-        text: 'Break the chapter into small concepts, practice each concept daily, and revise mistakes through an error log.',
-      },
-    ],
-  };
+  const readingContent = useMemo(() => {
+    if (!filteredTeacherMaterials.length) return { intro: '', sections: [] };
+
+    const strip = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const first = filteredTeacherMaterials[0];
+    const intro = strip(first?.content).slice(0, 900);
+    const sections = filteredTeacherMaterials.slice(1, 6).map((item) => ({
+      title: item.title || 'Learning Note',
+      text: strip(item.content).slice(0, 1200),
+    })).filter((sec) => sec.text);
+
+    return { intro, sections };
+  }, [filteredTeacherMaterials]);
 
   const openDetailsPage = () => {
     navigate(
@@ -434,7 +383,7 @@ const AILearningCoursesReference = () => {
       y += 3;
 
       addHeading('Assessment Resources');
-      ASSESSMENT_ITEMS.forEach((item) => addBullet(`${item.title}: ${item.description}`));
+      assessmentItems.forEach((item) => addBullet(`${item.title}: ${item.description}`));
       y += 3;
 
       if (assignedMentors.length) {
@@ -827,7 +776,7 @@ const AILearningCoursesReference = () => {
               <p className="text-xs italic leading-relaxed mb-4" style={{ color: '#40484f' }}>
                 Measure mastery through structured practice and self-assessment tools.
               </p>
-              {ASSESSMENT_ITEMS.map((item, idx) => (
+              {assessmentItems.map((item, idx) => (
                 <button
                   key={idx}
                   type="button"
@@ -969,7 +918,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Assessment</h2>
             </div>
             <div className="overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin' }}>
-              {ASSESSMENT_ITEMS.map((item, idx) => (
+              {assessmentItems.map((item, idx) => (
                 <button
                   key={idx}
                   type="button"
@@ -1102,7 +1051,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Assessment</h2>
             </div>
             <div className="space-y-2">
-              {ASSESSMENT_ITEMS.map((item, idx) => (
+              {assessmentItems.map((item, idx) => (
                 <button
                   key={idx}
                   type="button"

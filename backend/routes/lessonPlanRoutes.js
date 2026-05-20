@@ -950,4 +950,91 @@ router.delete('/teacher/:id', authTeacher, async (req, res) => {
   }
 });
 
+
+router.get('/student/smart-learning-map', authStudent, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const studentId = req.user?.id || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+
+    const studentFilter = { _id: studentId, schoolId };
+    if (campusId) studentFilter.campusId = campusId;
+    const student = await StudentUser.findOne(studentFilter).lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const classId = student.classId || null;
+    const sectionId = student.sectionId || null;
+
+    const planFilter = { schoolId };
+    if (campusId) planFilter.campusId = campusId;
+
+    if (classId && sectionId) {
+      planFilter.classId = classId;
+      planFilter.sectionId = sectionId;
+    } else {
+      const className = normalizeLower(student.grade);
+      const sectionName = normalizeLower(student.section);
+      if (!className || !sectionName) return res.json({ subjects: [] });
+      planFilter.className = { $regex: '^' + escapeRegex(className) + '$', $options: 'i' };
+      planFilter.sectionName = { $regex: '^' + escapeRegex(sectionName) + '$', $options: 'i' };
+    }
+
+    const plans = await LessonPlan.find(planFilter).sort({ date: -1, createdAt: -1 }).lean();
+    if (!plans.length) return res.json({ subjects: [] });
+
+    const subjectMap = new Map();
+
+    plans.forEach((plan) => {
+      const subjectKey = normalizeLower(plan.subject) || normalizeLower(plan.subjectName) || normalizeLower(plan.title);
+      const subjectTitle = normalizeString(plan.subject) || normalizeString(plan.subjectName) || 'Subject';
+      if (!subjectKey) return;
+
+      if (!subjectMap.has(subjectKey)) {
+        subjectMap.set(subjectKey, {
+          key: subjectKey,
+          title: subjectTitle,
+          topics: new Map(),
+        });
+      }
+
+      const subjectEntry = subjectMap.get(subjectKey);
+      const planner = sanitizePlannerContent(plan.plannerContent);
+      (planner.chapters || []).forEach((chapter) => {
+        (chapter.topics || []).forEach((topic) => {
+          const topicTitle = normalizeString(topic.title);
+          if (!topicTitle) return;
+          const topicKey = normalizeLower(topicTitle);
+          if (!subjectEntry.topics.has(topicKey)) {
+            subjectEntry.topics.set(topicKey, {
+              title: topicTitle,
+              subtopics: new Set(),
+            });
+          }
+          const topicEntry = subjectEntry.topics.get(topicKey);
+          (topic.subTopics || []).forEach((sub) => {
+            const subTitle = normalizeString(sub.title);
+            if (subTitle) topicEntry.subtopics.add(subTitle);
+          });
+        });
+      });
+    });
+
+    const subjects = Array.from(subjectMap.values()).map((subject) => ({
+      key: subject.key,
+      title: subject.title,
+      topics: Array.from(subject.topics.values()).map((topic) => ({
+        title: topic.title,
+        subtopics: Array.from(topic.subtopics),
+      })),
+    }));
+
+    return res.json({ subjects });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
 module.exports = router;
