@@ -11,14 +11,39 @@ const getFileType = (name = '') => {
   if (lower.endsWith('.pdf')) return 'pdf';
   if (lower.endsWith('.doc') || lower.endsWith('.docx')) return 'docx';
   if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return 'ppt';
+  if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) return 'sheet';
   if (/\.(jpg|jpeg|png|gif|webp)$/.test(lower)) return 'image';
   return 'file';
 };
 
+const defaultContentUploads = {
+  'Upload Worksheet': [],
+  'Upload Tryout': [],
+  Assessments: [],
+  Experiments: [],
+  'Report Upload': [],
+  'Explanation Attachments': [],
+};
+
+const enrichChapter = (chapter) => ({
+  ...chapter,
+  lessonDate: chapter.lessonDate || '',
+  introductionText: chapter.introductionText || chapter.description || '',
+  explanation: chapter.explanation || '',
+  recap: chapter.recap || '',
+  teacherNotes: chapter.teacherNotes || '',
+  evaluation: chapter.evaluation || { participation: '', remarks: '', behaviour: '', progress: '', tag: '' },
+  contentUploads: { ...defaultContentUploads, ...(chapter.contentUploads || {}) },
+  worksheetFiles: chapter.worksheetFiles || [],
+  worksheetLink: chapter.worksheetLink || '',
+  history: chapter.history || [],
+});
+
 const AIPoweredTeaching = () => {
+  const seeded = initialChapters.map(enrichChapter);
   const [lessonTitle, setLessonTitle] = useState('Algebra Foundations - Term 1');
-  const [chapters, setChapters] = useState(initialChapters);
-  const [activeChapterId, setActiveChapterId] = useState(initialChapters[0]?.id || null);
+  const [chapters, setChapters] = useState(seeded);
+  const [activeChapterId, setActiveChapterId] = useState(seeded[0]?.id || null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,44 +59,33 @@ const AIPoweredTeaching = () => {
     return chapters.filter((chapter) => chapter.title.toLowerCase().includes(query));
   }, [chapters, searchQuery]);
 
-  const activeChapter = useMemo(
-    () => chapters.find((chapter) => chapter.id === activeChapterId) || null,
-    [chapters, activeChapterId],
-  );
+  const activeChapter = useMemo(() => chapters.find((chapter) => chapter.id === activeChapterId) || null, [chapters, activeChapterId]);
 
   const progress = useMemo(() => {
     if (!chapters.length) return 0;
     const completed = chapters.reduce((sum, chapter) => {
       const hasTitle = chapter.title && chapter.title !== 'Untitled Chapter';
-      const hasDescription = chapter.description && chapter.description.replace(/<[^>]*>/g, '').trim().length > 0;
+      const hasDate = Boolean(chapter.lessonDate);
+      const hasIntro = (chapter.introductionText || '').replace(/<[^>]*>/g, '').trim().length > 0;
       const hasAssessment = chapter.assessments.length > 0;
-      return sum + [hasTitle, hasDescription, hasAssessment].filter(Boolean).length;
+      return sum + [hasTitle, hasDate, hasIntro, hasAssessment].filter(Boolean).length;
     }, 0);
-    return Math.round((completed / (chapters.length * 3)) * 100);
+    return Math.round((completed / (chapters.length * 4)) * 100);
   }, [chapters]);
 
   const touchAutosave = () => {
     setAutosaveStatus('Saving...');
-    window.setTimeout(() => {
-      setAutosaveStatus('Saved just now');
-    }, 600);
+    window.setTimeout(() => setAutosaveStatus('Saved just now'), 600);
   };
 
   const updateChapter = (id, updater) => {
-    setChapters((prev) => prev.map((chapter) => (chapter.id === id ? updater(chapter) : chapter)));
+    setChapters((prev) => prev.map((chapter) => (chapter.id === id ? enrichChapter(updater(chapter)) : chapter)));
     touchAutosave();
   };
 
   const handleAddChapter = () => {
     const nextId = `ch-${Date.now()}`;
-    const chapter = {
-      id: nextId,
-      title: 'Untitled Chapter',
-      duration: durationOptions[0],
-      description: '',
-      files: [],
-      assessments: [],
-    };
+    const chapter = enrichChapter({ id: nextId, title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
     setChapters((prev) => [...prev, chapter]);
     setActiveChapterId(nextId);
     setDrawerOpen(true);
@@ -92,7 +106,6 @@ const AIPoweredTeaching = () => {
 
   const handleChapterDrop = (targetId) => {
     if (!draggedChapterId || draggedChapterId === targetId) return;
-
     setChapters((prev) => {
       const next = [...prev];
       const from = next.findIndex((item) => item.id === draggedChapterId);
@@ -102,85 +115,93 @@ const AIPoweredTeaching = () => {
       next.splice(to, 0, moved);
       return next;
     });
-
     setDraggedChapterId(null);
     touchAutosave();
   };
 
-  const addFileToActiveChapter = (file) => {
-    if (!activeChapterId || !file) return;
-
-    const nextFile = {
-      id: `f-${Date.now()}`,
-      name: file.name || 'Video Link',
-      type: file.type === 'video' ? 'video' : getFileType(file.name || ''),
-    };
-
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, files: [...chapter.files, nextFile] }));
-  };
-
-  const removeFileFromActiveChapter = (fileId) => {
-    if (!activeChapterId) return;
-    updateChapter(activeChapterId, (chapter) => ({
-      ...chapter,
-      files: chapter.files.filter((file) => file.id !== fileId),
-    }));
-  };
-
   const addAssessmentToActiveChapter = () => {
     if (!activeChapterId) return;
-    const next = {
-      id: `a-${Date.now()}`,
-      title: '',
-      type: assessmentTypes[0],
-      dueDate: '',
-      marks: 0,
-    };
+    const next = { id: `a-${Date.now()}`, title: '', type: assessmentTypes[0], dueDate: '', marks: 0 };
     updateChapter(activeChapterId, (chapter) => ({ ...chapter, assessments: [...chapter.assessments, next] }));
   };
 
   const updateAssessmentInActiveChapter = (assessmentId, nextAssessment) => {
     if (!activeChapterId) return;
-    updateChapter(activeChapterId, (chapter) => ({
-      ...chapter,
-      assessments: chapter.assessments.map((assessment) =>
-        assessment.id === assessmentId ? nextAssessment : assessment,
-      ),
-    }));
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, assessments: chapter.assessments.map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
+  };
+
+  const addContentFile = (file, bucket) => {
+    if (!activeChapterId || !file || !bucket) return;
+    const nextFile = { id: `f-${Date.now()}`, name: file.name || 'Uploaded file', type: getFileType(file.name || ''), progress: 100 };
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
+  };
+
+  const removeContentFile = (fileId, bucket) => {
+    if (!activeChapterId || !bucket) return;
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: (chapter.contentUploads[bucket] || []).filter((file) => file.id !== fileId) } }));
+  };
+
+  const addWorksheetFile = (file) => {
+    if (!activeChapterId || !file) return;
+    const nextFile = { id: `wf-${Date.now()}`, name: file.name, type: getFileType(file.name), progress: 100 };
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
+  };
+
+  const removeWorksheetFile = (fileId) => {
+    if (!activeChapterId) return;
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, worksheetFiles: (chapter.worksheetFiles || []).filter((file) => file.id !== fileId) }));
+  };
+
+  const applyAiSuggestion = () => {
+    if (!activeChapterId) return;
+    const aiText = '<ul><li>Connect topic with real-life examples.</li><li>Ask one diagnostic question before explanation.</li><li>Conclude with a quick reflective exit ticket.</li></ul>';
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, introductionText: aiText }));
+    toast.success('AI lesson suggestion applied');
+  };
+
+  const saveVersion = () => {
+    if (!activeChapterId || !activeChapter) return;
+    const snapshot = { ...activeChapter, history: undefined };
+    const item = { id: `v-${Date.now()}`, label: `Version ${new Date().toLocaleTimeString()}`, snapshot };
+    updateChapter(activeChapterId, (chapter) => ({ ...chapter, history: [...(chapter.history || []), item] }));
+    toast.success('Lesson version saved');
+  };
+
+  const restoreVersion = (versionId) => {
+    if (!activeChapterId) return;
+    updateChapter(activeChapterId, (chapter) => {
+      const target = (chapter.history || []).find((item) => item.id === versionId);
+      return target ? { ...enrichChapter(target.snapshot), history: chapter.history } : chapter;
+    });
+    toast.success('Lesson version restored');
+  };
+
+  const handlePublish = () => {
+    const missing = chapters.filter((chapter) => !chapter.lessonDate || !(chapter.introductionText || '').replace(/<[^>]*>/g, '').trim());
+    if (missing.length) {
+      toast.error('Add Date and Introduction for all chapters before publishing');
+      return;
+    }
+    toast.success('Lesson plan published');
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-4 md:p-6">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-4 dark:bg-slate-950 md:p-6">
       <Toaster position="top-right" />
       <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
         <HeaderActions
           title={lessonTitle}
-          onTitleChange={(value) => {
-            setLessonTitle(value);
-            touchAutosave();
-          }}
-          onSave={() => {
-            setAutosaveStatus('Saved just now');
-            toast.success('Draft saved');
-          }}
-          onPublish={() => toast.success('Lesson plan published')}
+          onTitleChange={(value) => { setLessonTitle(value); touchAutosave(); }}
+          onSave={() => { setAutosaveStatus('Saved just now'); toast.success('Draft saved'); }}
+          onPublish={handlePublish}
           autosaveStatus={autosaveStatus}
           progress={progress}
           classValue={selectedClass}
           sectionValue={selectedSection}
           subjectValue={selectedSubject}
-          onClassChange={(value) => {
-            setSelectedClass(value);
-            touchAutosave();
-          }}
-          onSectionChange={(value) => {
-            setSelectedSection(value);
-            touchAutosave();
-          }}
-          onSubjectChange={(value) => {
-            setSelectedSubject(value);
-            touchAutosave();
-          }}
+          onClassChange={(value) => { setSelectedClass(value); touchAutosave(); }}
+          onSectionChange={(value) => { setSelectedSection(value); touchAutosave(); }}
+          onSubjectChange={(value) => { setSelectedSubject(value); touchAutosave(); }}
         />
 
         <div className="flex min-h-[78vh] gap-4">
@@ -189,10 +210,7 @@ const AIPoweredTeaching = () => {
             activeChapterId={activeChapterId}
             query={searchQuery}
             onQueryChange={setSearchQuery}
-            onSelect={(id) => {
-              setActiveChapterId(id);
-              setDrawerOpen(true);
-            }}
+            onSelect={(id) => { setActiveChapterId(id); setDrawerOpen(true); }}
             onAdd={handleAddChapter}
             onDelete={handleDeleteChapter}
             onRename={(id, title) => updateChapter(id, (chapter) => ({ ...chapter, title }))}
@@ -202,7 +220,7 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="flex-1 rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm">
+          <div className="flex-1 rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             {drawerOpen && activeChapter ? (
               <DrawerModal
                 open={drawerOpen}
@@ -211,21 +229,22 @@ const AIPoweredTeaching = () => {
                 assessmentTypes={assessmentTypes}
                 onClose={() => setDrawerOpen(false)}
                 onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
-                onAddFile={addFileToActiveChapter}
-                onRemoveFile={removeFileFromActiveChapter}
+                onAddContentFile={addContentFile}
+                onRemoveContentFile={removeContentFile}
+                onAddWorksheetFile={addWorksheetFile}
+                onRemoveWorksheetFile={removeWorksheetFile}
                 onAddAssessment={addAssessmentToActiveChapter}
                 onUpdateAssessment={updateAssessmentInActiveChapter}
+                onApplyAiSuggestion={applyAiSuggestion}
+                onSaveVersion={saveVersion}
+                onRestoreVersion={restoreVersion}
               />
             ) : (
-              <div className="flex h-full min-h-[70vh] items-center justify-center rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center">
+              <div className="flex h-full min-h-[70vh] items-center justify-center rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="max-w-md space-y-2 px-6">
-                  <div className="mx-auto w-fit rounded-2xl bg-blue-100 p-3 text-blue-600">
-                    <BookOpenCheck className="size-6" />
-                  </div>
-                  <h2 className="text-xl font-semibold text-slate-800">Chapter Workspace</h2>
-                  <p className="text-sm text-slate-600">
-                    Click any chapter on the left to open its lesson planning modal in this right-side workspace.
-                  </p>
+                  <div className="mx-auto w-fit rounded-2xl bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/40"><BookOpenCheck className="size-6" /></div>
+                  <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Chapter Workspace</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Click any chapter on the left to open its lesson planning modal in this right-side workspace.</p>
                 </div>
               </div>
             )}

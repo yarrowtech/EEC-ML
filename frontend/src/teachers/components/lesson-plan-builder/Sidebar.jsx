@@ -24,7 +24,7 @@ const Sidebar = ({
       animate={{ width: collapsed ? 88 : 320 }}
       className="relative shrink-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/90 shadow-sm"
     >
-      <div className="flex h-full flex-col p-3">
+      <div className="flex h-full min-h-0 flex-col p-3">
         <div className="mb-3 flex items-center justify-between">
           {!collapsed && <h2 className="text-sm font-semibold text-slate-700">Chapters</h2>}
           <Button variant="ghost" size="icon-sm" onClick={onToggleCollapse}>
@@ -44,7 +44,7 @@ const Sidebar = ({
           </div>
         )}
 
-        <div className="flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
           {chapters.map((chapter) => (
             <ChapterItem
               key={chapter.id}

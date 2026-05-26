@@ -1,11 +1,16 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Plus, X } from 'lucide-react';
+import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Sparkles, UserCheck, X } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
+import UploadDropzone from './UploadDropzone';
 import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
+
+const evaluationTags = ['Excellent', 'Good', 'Needs Improvement'];
 
 const DrawerModal = ({
   open,
@@ -14,94 +19,157 @@ const DrawerModal = ({
   assessmentTypes,
   onClose,
   onUpdate,
-  onAddFile,
-  onRemoveFile,
+  onAddContentFile,
+  onRemoveContentFile,
+  onAddWorksheetFile,
+  onRemoveWorksheetFile,
   onAddAssessment,
   onUpdateAssessment,
+  onApplyAiSuggestion,
+  onSaveVersion,
+  onRestoreVersion,
 }) => {
+  if (!chapter) return null;
+
+  const dayLabel = chapter.lessonDate
+    ? new Date(chapter.lessonDate).toLocaleDateString('en-US', { weekday: 'long' })
+    : '';
+
+  const exportPdf = () => {
+    const doc = new jsPDF();
+    doc.text(chapter.title || 'Lesson Plan', 14, 20);
+    doc.text(`Date: ${chapter.lessonDate || '-'}`, 14, 30);
+    doc.text(`Day: ${dayLabel || '-'}`, 14, 38);
+    doc.text(`Introduction: ${(chapter.introductionText || '').replace(/<[^>]*>/g, '').slice(0, 300)}`, 14, 48, { maxWidth: 180 });
+    doc.text(`Explanation: ${(chapter.explanation || '').slice(0, 350)}`, 14, 85, { maxWidth: 180 });
+    doc.save(`${chapter.title || 'lesson-plan'}.pdf`);
+  };
+
   return (
     <AnimatePresence mode="wait">
-      {open && chapter && (
+      {open && (
         <motion.section
           key={chapter.id}
           initial={{ x: 80, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 80, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-          className="h-full rounded-2xl border border-blue-100 bg-slate-50 p-5 shadow-sm"
+          className="h-full rounded-2xl border border-blue-100 bg-slate-50 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-950"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-800">{chapter.title}</h3>
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
-              <X className="size-4" />
-            </Button>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={onSaveVersion}><RefreshCcw className="size-4" /> Save Version</Button>
+              <Button variant="outline" size="sm" onClick={() => window.print()}><FileText className="size-4" /> Print</Button>
+              <Button variant="outline" size="sm" onClick={exportPdf}><FileText className="size-4" /> Export PDF</Button>
+              <Button variant="ghost" size="icon-sm" onClick={onClose}><X className="size-4" /></Button>
+            </div>
           </div>
 
-          <div className="h-[calc(100%-3rem)] overflow-y-auto pr-1">
-            <section className="mb-5 space-y-2">
-              <p className="text-sm font-medium text-slate-700">Duration</p>
-              <select
-                value={chapter.duration}
-                onChange={(event) => onUpdate({ ...chapter, duration: event.target.value })}
-                className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"
-              >
-                {durations.map((duration) => (
-                  <option key={duration} value={duration}>
-                    {duration}
-                  </option>
+          <div className="h-[calc(100%-3rem)] space-y-4 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-1 flex items-center gap-2 text-xs text-slate-500"><Calendar className="size-4" /> Date</p>
+                <Input type="date" value={chapter.lessonDate || ''} onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })} />
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-1 text-xs text-slate-500">Day</p>
+                <Input value={dayLabel} readOnly />
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-1 text-xs text-slate-500">Duration</p>
+                <select value={chapter.duration} onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm">
+                  {durations.map((duration) => <option key={duration} value={duration}>{duration}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <details open className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-100">Content</summary>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <UploadDropzone title="Upload Worksheet" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+                <UploadDropzone title="Upload Tryout" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Tryout'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+                <UploadDropzone title="Assessments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+                <UploadDropzone title="Experiments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []} onAddFile={onAddContentFile} onRemoveContentFile={onRemoveContentFile} onRemoveFile={onRemoveContentFile} />
+                <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              </div>
+            </details>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100"><Lightbulb className="size-4" /> Introduction</p>
+                <Button size="sm" variant="outline" onClick={onApplyAiSuggestion}><Sparkles className="size-4" /> AI Suggestion</Button>
+              </div>
+              <RichTextEditor value={chapter.introductionText || ''} onChange={(value) => onUpdate({ ...chapter, introductionText: value })} placeholder="Write lesson introduction..." />
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100"><ListChecks className="size-4" /> Explanation</p>
+              <Textarea rows={5} value={chapter.explanation || ''} onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })} placeholder="Add step-by-step explanations..." className="mb-3" />
+              <Input type="file" accept="image/*,video/*,.pdf,.doc,.docx" onChange={(e) => onAddContentFile(e.target.files?.[0] || null, 'Explanation Attachments')} />
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100"><ClipboardCheck className="size-4" /> Recapitulation</p>
+              <Textarea rows={3} value={chapter.recap || ''} onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })} placeholder="Quick recap bullet points..." className="mb-2" />
+              <Textarea rows={2} value={chapter.teacherNotes || ''} onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })} placeholder="Teacher notes" />
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100"><UserCheck className="size-4" /> Children Evaluation</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input value={chapter.evaluation?.participation || ''} onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, participation: e.target.value } })} placeholder="Participation rating" />
+                <Input value={chapter.evaluation?.remarks || ''} onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, remarks: e.target.value } })} placeholder="Performance remarks" />
+                <Input value={chapter.evaluation?.behaviour || ''} onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, behaviour: e.target.value } })} placeholder="Behaviour observations" />
+                <Input value={chapter.evaluation?.progress || ''} onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, progress: e.target.value } })} placeholder="Progress tracking" />
+              </div>
+              <div className="mt-2 flex gap-2">
+                {evaluationTags.map((tag) => (
+                  <button key={tag} type="button" onClick={() => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, tag } })} className={`rounded-full px-3 py-1 text-xs ${chapter.evaluation?.tag === tag ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                    {tag}
+                  </button>
                 ))}
-              </select>
+              </div>
             </section>
 
-            <section className="mb-5 space-y-2">
-              <p className="text-sm font-medium text-slate-700">Lesson Description</p>
-              <RichTextEditor
-                value={chapter.description}
-                onChange={(value) => onUpdate({ ...chapter, description: value })}
-                placeholder="Write lesson objectives and explanation..."
-              />
-            </section>
-
-            <section className="mb-5 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-slate-700">Study Materials</p>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
-                    onChange={(event) => onAddFile(event.target.files?.[0] || null)}
-                    className="max-w-52 rounded-xl text-xs"
-                  />
-                  <Button variant="outline" onClick={() => onAddFile({ name: 'Video Link', type: 'video' })}>
-                    Add Video Link
-                  </Button>
-                </div>
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100"><FlaskConical className="size-4" /> Worksheet</p>
+              <div className="mb-2 flex gap-2">
+                <Input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(e) => onAddWorksheetFile(e.target.files?.[0] || null)} />
+                <Input value={chapter.worksheetLink || ''} onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })} placeholder="Link existing worksheet" />
               </div>
               <div className="space-y-2">
-                {chapter.files.map((file) => (
-                  <FileUploadCard key={file.id} file={file} onRemove={onRemoveFile} />
+                {(chapter.worksheetFiles || []).map((file) => (
+                  <FileUploadCard key={file.id} file={file} onRemove={onRemoveWorksheetFile} />
                 ))}
               </div>
             </section>
 
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-700">Assessment</p>
-                <Button variant="outline" onClick={onAddAssessment} className="rounded-xl">
-                  <Plus className="size-4" /> + Add Assessment
-                </Button>
+            <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-100">Assessments</p>
+                <Button variant="outline" onClick={onAddAssessment}>+ Add Assessment</Button>
               </div>
               <div className="space-y-2">
                 {chapter.assessments.map((assessment) => (
-                  <AssessmentCard
-                    key={assessment.id}
-                    assessment={assessment}
-                    types={assessmentTypes}
-                    onChange={(next) => onUpdateAssessment(assessment.id, next)}
-                  />
+                  <AssessmentCard key={assessment.id} assessment={assessment} types={assessmentTypes} onChange={(next) => onUpdateAssessment(assessment.id, next)} />
                 ))}
               </div>
             </section>
+
+            {!!chapter.history?.length && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-100">Lesson History</p>
+                <div className="space-y-2">
+                  {chapter.history.slice(-5).reverse().map((item) => (
+                    <div key={item.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-2 text-xs dark:border-slate-700">
+                      <span>{item.label}</span>
+                      <Button size="xs" variant="outline" onClick={() => onRestoreVersion(item.id)}>Restore</Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </motion.section>
       )}
