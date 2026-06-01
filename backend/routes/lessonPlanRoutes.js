@@ -9,8 +9,11 @@ const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const Timetable = require('../models/Timetable');
 const StudentUser = require('../models/StudentUser');
+const StudentProgress = require('../models/StudentProgress');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const PracticePaper = require('../models/PracticePaper');
+const Assignment = require('../models/Assignment');
+const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const normalizeString = (value) => String(value || '').trim();
@@ -18,6 +21,394 @@ const normalizeLower = (value) => String(value || '').trim().toLowerCase();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeStringList = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
+
+const SMART_TEACHING_SOURCE_FIELDS = [
+  { key: 'learningPaths', label: 'Learning Path', learningType: 'note', materialType: 'note', category: 'theory' },
+  { key: 'studyMaterials', label: 'Notes', learningType: 'note', materialType: 'note', category: 'theory' },
+  { key: 'mindMaps', label: 'Mind Map', learningType: 'mind_map', materialType: 'interactive', category: 'revision' },
+  { key: 'referenceMaterials', label: 'Reference Material', learningType: 'pdf', materialType: 'reading', category: 'reference' },
+  { key: 'tryoutSections', label: 'Practice', learningType: 'practice', materialType: 'worksheet', category: 'practice' },
+  { key: 'selfAssessments', label: 'Assessment', learningType: 'assessment', materialType: 'interactive', category: 'assessment' },
+  { key: 'worksheets', label: 'Worksheet', learningType: 'worksheet', materialType: 'worksheet', category: 'practice' },
+];
+
+const normalizeIdValue = (value) => normalizeString(value);
+
+const toPlainText = (items) => normalizeStringList(items).join('\n').trim();
+
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const inferAttachmentType = (value) => {
+  const text = normalizeString(value);
+  if (!text) return 'text';
+  if (/youtube\.com|youtu\.be/i.test(text)) return 'video';
+  if (/\.pdf(\?|#|$)/i.test(text)) return 'pdf';
+  if (/\.pptx?(\?|#|$)/i.test(text)) return 'ppt';
+  if (/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(text)) return 'video';
+  if (/^https?:\/\//i.test(text)) return 'link';
+  return 'text';
+};
+
+const buildAttachmentList = (items) =>
+  normalizeStringList(items)
+    .filter((item) => /^https?:\/\//i.test(item))
+    .map((item, index) => ({
+      name: `Resource ${index + 1}`,
+      url: item,
+      size: 0,
+      type: inferAttachmentType(item),
+    }));
+
+const buildMaterialContent = (label, title, items) => {
+  const normalized = normalizeStringList(items);
+  if (!normalized.length) return '';
+  const body = normalized.map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+  return [
+    `<h2>${escapeHtml(title)}</h2>`,
+    `<h3>${escapeHtml(label)}</h3>`,
+    `<ul>${body}</ul>`,
+  ].join('');
+};
+
+const buildSourceMaterialPayloads = ({ plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex }) => {
+  const chapterId = normalizeIdValue(chapter?.id) || `chapter-${chapterIndex + 1}`;
+  const topicId = normalizeIdValue(topic?.id) || `topic-${chapterIndex + 1}-${topicIndex + 1}`;
+  const subTopicId = normalizeIdValue(subTopic?.id) || `subtopic-${chapterIndex + 1}-${topicIndex + 1}-${subTopicIndex + 1}`;
+  const chapterTitle = normalizeString(chapter?.title) || `Chapter ${chapterIndex + 1}`;
+  const topicTitle = normalizeString(topic?.title) || `Topic ${topicIndex + 1}`;
+  const subTopicTitle = normalizeString(subTopic?.title) || `Sub Topic ${subTopicIndex + 1}`;
+  const baseTitle = [plan.subject || 'Subject', chapterTitle, topicTitle, subTopicTitle].join(' • ');
+
+  const payloads = [];
+
+  SMART_TEACHING_SOURCE_FIELDS.forEach((field) => {
+    const items = normalizeStringList(subTopic?.[field.key]);
+    if (!items.length) return;
+    payloads.push({
+      title: `${baseTitle} • ${field.label}`,
+      content: buildMaterialContent(field.label, baseTitle, items),
+      attachments: buildAttachmentList(items),
+      materialType: field.materialType,
+      learningType: field.learningType,
+      typeLabel: field.label,
+      category: field.category,
+      chapterId,
+      chapterTitle,
+      topicTitle,
+      subTopicTitle,
+      sourceSubTopicId: subTopicId,
+    });
+  });
+
+  return {
+    baseTitle,
+    chapterId,
+    chapterTitle,
+    topicTitle,
+    subTopicTitle,
+    payloads,
+  };
+};
+
+const createPublishedStudentNotification = async ({ schoolId, campusId, plan, chapterTitle, topicTitle, subTopicTitle }) => {
+  const messageParts = [plan.subject || 'Subject', chapterTitle, topicTitle, subTopicTitle].filter(Boolean);
+  await Notification.create({
+    schoolId,
+    campusId: campusId || null,
+    title: 'New Smart Teaching content published',
+    message: `${messageParts.join(' • ')} is now available in Smart Learning.`,
+    audience: 'Student',
+    classId: plan.classId,
+    sectionId: plan.sectionId,
+    subjectId: plan.subjectId,
+    createdByType: 'teacher',
+    createdByTeacherId: plan.teacherId,
+    createdByName: plan.teacherName || '',
+    className: plan.className || '',
+    sectionName: plan.sectionName || '',
+    subjectName: plan.subject || '',
+    type: 'class_note',
+    typeLabel: 'Smart Learning content',
+    priority: 'medium',
+    category: 'academic',
+  });
+};
+
+const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex, publishAssignment = true, publishPracticePaper = true }) => {
+  const base = buildSourceMaterialPayloads({ plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex });
+  const createdMaterials = [];
+
+  for (const payload of base.payloads) {
+    const materialFilter = {
+      schoolId,
+      sourceLessonPlanId: plan._id,
+      sourceSubTopicId: payload.sourceSubTopicId,
+      learningType: payload.learningType,
+      chapterId: base.chapterId,
+      topicTitle: base.topicTitle,
+      subTopicTitle: base.subTopicTitle,
+    };
+    if (campusId) materialFilter.campusId = campusId;
+
+    let material = await TeachingMaterial.findOne(materialFilter);
+    if (material) {
+      if (material.content !== payload.content || material.title !== payload.title) {
+        material.versions = material.versions || [];
+        material.versions.push({
+          versionNumber: Number(material.currentVersion || 1),
+          content: material.content || '',
+          title: material.title || '',
+          attachments: Array.isArray(material.attachments) ? material.attachments : [],
+          editedBy: plan.teacherId,
+          editedAt: new Date(),
+          changeDescription: 'Auto-published update',
+        });
+        material.currentVersion = Number(material.currentVersion || 1) + 1;
+      }
+      material.title = payload.title;
+      material.content = payload.content;
+      material.materialType = payload.materialType;
+      material.learningType = payload.learningType;
+      material.typeLabel = payload.typeLabel;
+      material.classId = plan.classId;
+      material.sectionId = plan.sectionId;
+      material.subjectId = plan.subjectId;
+      material.className = plan.className || '';
+      material.sectionName = plan.sectionName || '';
+      material.subjectName = plan.subject || '';
+      material.chapterId = base.chapterId;
+      material.chapterTitle = base.chapterTitle;
+      material.topicTitle = base.topicTitle;
+      material.subTopicTitle = base.subTopicTitle;
+      material.sourceLessonPlanId = plan._id;
+      material.sourceSubTopicId = payload.sourceSubTopicId;
+      material.teacherId = plan.teacherId;
+      material.teacherName = plan.teacherName || 'Teacher';
+      material.status = 'published';
+      material.publishedForStudentPortal = true;
+      material.publishedAt = new Date();
+      material.priority = 'medium';
+      material.difficulty = 'intermediate';
+      material.category = payload.category;
+      material.tags = ['lesson-plan', 'smart-learning', 'auto-published'];
+      material.attachments = payload.attachments;
+      await material.save();
+    } else {
+      material = await TeachingMaterial.create({
+        schoolId,
+        campusId: campusId || null,
+        title: payload.title,
+        content: payload.content,
+        materialType: payload.materialType,
+        learningType: payload.learningType,
+        typeLabel: payload.typeLabel,
+        classId: plan.classId,
+        sectionId: plan.sectionId,
+        subjectId: plan.subjectId,
+        className: plan.className || '',
+        sectionName: plan.sectionName || '',
+        subjectName: plan.subject || '',
+        chapterId: base.chapterId,
+        chapterTitle: base.chapterTitle,
+        topicTitle: base.topicTitle,
+        subTopicTitle: base.subTopicTitle,
+        sourceLessonPlanId: plan._id,
+        sourceSubTopicId: payload.sourceSubTopicId,
+        teacherId: plan.teacherId,
+        teacherName: plan.teacherName || 'Teacher',
+        status: 'published',
+        publishedForStudentPortal: true,
+        publishedAt: new Date(),
+        priority: 'medium',
+        difficulty: 'intermediate',
+        category: payload.category,
+        tags: ['lesson-plan', 'smart-learning', 'auto-published'],
+        attachments: payload.attachments,
+      });
+    }
+    createdMaterials.push(material);
+  }
+
+  let assignment = null;
+  const worksheetItems = normalizeStringList(subTopic?.worksheets);
+  if (publishAssignment && worksheetItems.length > 0) {
+    const assignmentFilter = {
+      schoolId,
+      sourceLessonPlanId: plan._id,
+      chapterId: base.chapterId,
+      topicTitle: base.topicTitle,
+      subTopicTitle: base.subTopicTitle,
+      type: 'Worksheet',
+    };
+    if (campusId) assignmentFilter.campusId = campusId;
+    assignment = await Assignment.findOne(assignmentFilter);
+    if (assignment) {
+      assignment.teacherId = plan.teacherId;
+      assignment.title = `${base.baseTitle} • Worksheet Assignment`;
+      assignment.description = toPlainText(worksheetItems) || `Auto-published worksheet from ${base.subTopicTitle}`;
+      assignment.subject = plan.subject || '';
+      assignment.topic = base.topicTitle;
+      assignment.difficulty = 'Medium';
+      assignment.class = plan.className || '';
+      assignment.section = plan.sectionName || '';
+      assignment.classId = plan.classId;
+      assignment.sectionId = plan.sectionId;
+      assignment.chapterId = base.chapterId;
+      assignment.chapterTitle = base.chapterTitle;
+      assignment.topicTitle = base.topicTitle;
+      assignment.subTopicTitle = base.subTopicTitle;
+      assignment.sourceLessonPlanId = plan._id;
+      assignment.marks = Math.max(10, worksheetItems.length * 10);
+      assignment.attachments = buildAttachmentList(worksheetItems);
+      assignment.submissionFormat = 'text';
+      assignment.status = 'active';
+      assignment.publishedForStudentPortal = true;
+      assignment.dueDate = plan.date || new Date();
+      await assignment.save();
+    } else {
+      assignment = await Assignment.create({
+        schoolId,
+        campusId: campusId || null,
+        teacherId: plan.teacherId,
+        title: `${base.baseTitle} • Worksheet Assignment`,
+        description: toPlainText(worksheetItems) || `Auto-published worksheet from ${base.subTopicTitle}`,
+        subject: plan.subject || '',
+        topic: base.topicTitle,
+        type: 'Worksheet',
+        difficulty: 'Medium',
+        class: plan.className || '',
+        section: plan.sectionName || '',
+        classId: plan.classId,
+        sectionId: plan.sectionId,
+        chapterId: base.chapterId,
+        chapterTitle: base.chapterTitle,
+        topicTitle: base.topicTitle,
+        subTopicTitle: base.subTopicTitle,
+        sourceLessonPlanId: plan._id,
+        marks: Math.max(10, worksheetItems.length * 10),
+        attachments: buildAttachmentList(worksheetItems),
+        submissionFormat: 'text',
+        status: 'active',
+        publishedForStudentPortal: true,
+        dueDate: plan.date || new Date(),
+      });
+    }
+  }
+
+  let paper = null;
+  if (publishPracticePaper) {
+    const outline = subTopic?.questionPapers || {};
+    const mkQuestion = (label, difficulty, marks) => ({
+      questionText: String(outline?.[label] || '').trim() || `${base.subTopicTitle} (${label})`,
+      questionType: 'short_answer',
+      options: [],
+      correctAnswer: '',
+      explanation: '',
+      marks,
+      difficulty,
+    });
+
+    const hasAnyOutline = Boolean(
+      normalizeString(outline?.basic) || normalizeString(outline?.intermediate) || normalizeString(outline?.advanced)
+    );
+
+    if (hasAnyOutline) {
+      const questions = [
+        mkQuestion('basic', 'easy', 2),
+        mkQuestion('intermediate', 'medium', 3),
+        mkQuestion('advanced', 'hard', 5),
+      ];
+
+      const paperFilter = {
+        schoolId,
+        sourceLessonPlanId: plan._id,
+        chapterId: base.chapterId,
+        topicTitle: base.topicTitle,
+        subTopicTitle: base.subTopicTitle,
+        paperType: 'practice_set',
+      };
+      if (campusId) paperFilter.campusId = campusId;
+      paper = await PracticePaper.findOne(paperFilter);
+      if (paper) {
+        paper.teachingMaterialId = createdMaterials[0]?._id || null;
+        paper.title = `${base.baseTitle} • Practice Paper`;
+        paper.description = `Auto-generated from lesson planner subtopic: ${base.subTopicTitle}`;
+        paper.classId = plan.classId;
+        paper.sectionId = plan.sectionId;
+        paper.subjectId = plan.subjectId;
+        paper.className = plan.className || '';
+        paper.sectionName = plan.sectionName || '';
+        paper.subjectName = plan.subject || '';
+        paper.chapterId = base.chapterId;
+        paper.chapterTitle = base.chapterTitle;
+        paper.topicTitle = base.topicTitle;
+        paper.subTopicTitle = base.subTopicTitle;
+        paper.sourceLessonPlanId = plan._id;
+        paper.teacherId = plan.teacherId;
+        paper.teacherName = plan.teacherName || 'Teacher';
+        paper.questions = questions;
+        paper.duration = 20;
+        paper.difficulty = 'mixed';
+        paper.chapter = base.chapterTitle;
+        paper.topics = [base.topicTitle, base.subTopicTitle].filter(Boolean);
+        paper.passingPercentage = 40;
+        paper.status = 'published';
+        paper.publishedForStudentPortal = true;
+        paper.publishedAt = new Date();
+        paper.tags = ['lesson-plan', 'smart-learning', 'auto-published'];
+        await paper.save();
+      } else {
+        paper = await PracticePaper.create({
+          schoolId,
+          campusId: campusId || null,
+          teachingMaterialId: createdMaterials[0]?._id || null,
+          title: `${base.baseTitle} • Practice Paper`,
+          description: `Auto-generated from lesson planner subtopic: ${base.subTopicTitle}`,
+          paperType: 'practice_set',
+          classId: plan.classId,
+          sectionId: plan.sectionId,
+          subjectId: plan.subjectId,
+          className: plan.className || '',
+          sectionName: plan.sectionName || '',
+          subjectName: plan.subject || '',
+          chapterId: base.chapterId,
+          chapterTitle: base.chapterTitle,
+          topicTitle: base.topicTitle,
+          subTopicTitle: base.subTopicTitle,
+          sourceLessonPlanId: plan._id,
+          teacherId: plan.teacherId,
+          teacherName: plan.teacherName || 'Teacher',
+          questions,
+          duration: 20,
+          difficulty: 'mixed',
+          chapter: base.chapterTitle,
+          topics: [base.topicTitle, base.subTopicTitle].filter(Boolean),
+          passingPercentage: 40,
+          status: 'published',
+          publishedForStudentPortal: true,
+          publishedAt: new Date(),
+          tags: ['lesson-plan', 'smart-learning', 'auto-published'],
+        });
+      }
+    }
+  }
+
+  await createPublishedStudentNotification({
+    schoolId,
+    campusId,
+    plan,
+    chapterTitle: base.chapterTitle,
+    topicTitle: base.topicTitle,
+    subTopicTitle: base.subTopicTitle,
+  });
+
+  return { materials: createdMaterials, assignment, paper };
+};
 
 const sanitizePlannerContent = (value) => {
   if (!value || typeof value !== 'object') return { chapters: [] };
@@ -384,6 +775,11 @@ router.put('/admin/:id', adminAuth, async (req, res) => {
     if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
 
     Object.assign(existing, resolved.data, { updatedBy: req.admin?.id || null });
+    if (existing.status === 'published') {
+      existing.status = 'draft';
+      existing.publishedAt = null;
+      existing.publishedBy = null;
+    }
     await existing.save();
 
     res.json({ message: 'Lesson plan updated', plan: existing });
@@ -766,9 +1162,70 @@ router.put('/teacher/:id', authTeacher, async (req, res) => {
     if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
 
     Object.assign(existing, resolved.data);
+    if (existing.status === 'published') {
+      existing.status = 'draft';
+      existing.publishedAt = null;
+      existing.publishedBy = null;
+    }
     await existing.save();
 
     res.json({ message: 'Lesson plan updated', plan: existing });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/teacher/:id/publish', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    const id = req.params?.id;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const filter = { _id: id, schoolId, teacherId };
+    if (campusId) filter.campusId = campusId;
+
+    const plan = await LessonPlan.findOne(filter);
+    if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
+
+    const planner = sanitizePlannerContent(plan.plannerContent);
+    const publishedArtifacts = [];
+
+    for (let chapterIndex = 0; chapterIndex < (planner.chapters || []).length; chapterIndex += 1) {
+      const chapter = planner.chapters[chapterIndex];
+      for (let topicIndex = 0; topicIndex < (chapter.topics || []).length; topicIndex += 1) {
+        const topic = chapter.topics[topicIndex];
+        for (let subTopicIndex = 0; subTopicIndex < (topic.subTopics || []).length; subTopicIndex += 1) {
+          const subTopic = topic.subTopics[subTopicIndex];
+          const artifacts = await publishSmartLearningArtifacts({
+            schoolId,
+            campusId,
+            plan,
+            chapter,
+            topic,
+            subTopic,
+            chapterIndex,
+            topicIndex,
+            subTopicIndex,
+          });
+          publishedArtifacts.push(artifacts);
+        }
+      }
+    }
+
+    plan.status = 'published';
+    plan.publishedAt = new Date();
+    plan.publishedBy = teacherId;
+    plan.publishedVersion = (Number(plan.publishedVersion) || 0) + 1;
+    await plan.save();
+
+    res.json({
+      message: 'Lesson plan published to Smart Learning',
+      plan,
+      publishedCount: publishedArtifacts.length,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -803,126 +1260,26 @@ router.post('/teacher/:id/publish-subtopic', authTeacher, async (req, res) => {
       return res.status(404).json({ error: 'Subtopic not found in planner content' });
     }
 
-    const normalizeLinks = (arr) => (Array.isArray(arr) ? arr.map((x) => String(x || '').trim()).filter(Boolean) : []);
-    const allLinks = [
-      ...normalizeLinks(subTopic.studyMaterials),
-      ...normalizeLinks(subTopic.mindMaps),
-      ...normalizeLinks(subTopic.worksheets),
-      ...normalizeLinks(subTopic.referenceMaterials),
-      ...normalizeLinks(subTopic.tryoutSections),
-      ...normalizeLinks(subTopic.selfAssessments),
-    ];
-
-    const attachments = allLinks
-      .filter((item, idx, arr) => arr.indexOf(item) === idx)
-      .filter((item) => /^https?:\/\//i.test(item))
-      .map((url, idx) => ({
-        name: 'Resource ' + (idx + 1),
-        url,
-        size: 0,
-        type: 'link'
-      }));
-
-    const esc = (value) => String(value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const sectionHtml = (label, values) => {
-      const list = normalizeLinks(values);
-      if (!list.length) return '';
-      const safeItems = list.map((v) => '<li>' + esc(v) + '</li>').join('');
-      return '<h3>' + esc(label) + '</h3><ul>' + safeItems + '</ul>';
-    };
-
-    const materialTitle = [
-      plan.subject || 'Subject',
-      chapter.title || ('Chapter ' + (chapterIndex + 1)),
-      topic.title || ('Topic ' + (topicIndex + 1)),
-      subTopic.title || ('Sub Topic ' + (subTopicIndex + 1)),
-    ].join(' • ');
-
-    const materialContent = [
-      '<h2>' + esc(materialTitle) + '</h2>',
-      sectionHtml('Learning Paths', subTopic.learningPaths),
-      sectionHtml('Study Materials', subTopic.studyMaterials),
-      sectionHtml('Mind Maps', subTopic.mindMaps),
-      sectionHtml('Worksheets', subTopic.worksheets),
-      sectionHtml('Reference Materials', subTopic.referenceMaterials),
-      sectionHtml('Tryout Sections', subTopic.tryoutSections),
-      sectionHtml('Self Assessments', subTopic.selfAssessments),
-    ].filter(Boolean).join('');
-
-    const material = await TeachingMaterial.create({
+    const artifacts = await publishSmartLearningArtifacts({
       schoolId,
-      campusId: campusId || null,
-      title: materialTitle,
-      content: materialContent,
-      materialType: 'note',
-      typeLabel: 'Lesson Planner Material',
-      classId: plan.classId,
-      sectionId: plan.sectionId,
-      subjectId: plan.subjectId,
-      className: plan.className || '',
-      sectionName: plan.sectionName || '',
-      subjectName: plan.subject || '',
-      teacherId: plan.teacherId,
-      teacherName: plan.teacherName || 'Teacher',
-      status: 'published',
-      publishedAt: new Date(),
-      priority: 'medium',
-      difficulty: 'intermediate',
-      category: 'reference',
-      tags: ['lesson-plan', 'smart-learning', 'auto-published'],
-      attachments,
+      campusId,
+      plan,
+      chapter,
+      topic,
+      subTopic,
+      chapterIndex,
+      topicIndex,
+      subTopicIndex,
+      publishAssignment: true,
+      publishPracticePaper,
     });
-
-    let paper = null;
-    if (publishPracticePaper) {
-      const outline = subTopic?.questionPapers || {};
-      const mkQuestion = (label, difficulty, marks) => ({
-        questionText: String(outline?.[label] || '').trim() || ((subTopic.title || 'Sub Topic') + ' (' + label + ')'),
-        questionType: 'short_answer',
-        options: [],
-        correctAnswer: '',
-        explanation: '',
-        marks,
-        difficulty,
-      });
-
-      const questions = [
-        mkQuestion('basic', 'easy', 2),
-        mkQuestion('intermediate', 'medium', 3),
-        mkQuestion('advanced', 'hard', 5),
-      ];
-
-      paper = await PracticePaper.create({
-        schoolId,
-        campusId: campusId || null,
-        teachingMaterialId: material._id,
-        title: materialTitle + ' • Practice Paper',
-        description: 'Auto-generated from lesson planner subtopic: ' + (subTopic.title || 'Sub Topic'),
-        paperType: 'practice_set',
-        classId: plan.classId,
-        sectionId: plan.sectionId,
-        subjectId: plan.subjectId,
-        className: plan.className || '',
-        sectionName: plan.sectionName || '',
-        subjectName: plan.subject || '',
-        teacherId: plan.teacherId,
-        teacherName: plan.teacherName || 'Teacher',
-        questions,
-        duration: 20,
-        difficulty: 'mixed',
-        chapter: chapter.title || '',
-        topics: [topic.title || '', subTopic.title || ''].filter(Boolean),
-        passingPercentage: 40,
-        status: 'published',
-        publishedAt: new Date(),
-        tags: ['lesson-plan', 'smart-learning', 'auto-published'],
-      });
-    }
 
     return res.status(201).json({
       message: 'Published to student portal',
-      material,
-      paper,
+      ...artifacts,
+      material: artifacts.materials?.[0] || null,
+      paper: artifacts.paper || null,
+      assignment: artifacts.assignment || null,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -984,55 +1341,492 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const plans = await LessonPlan.find(planFilter).sort({ date: -1, createdAt: -1 }).lean();
     if (!plans.length) return res.json({ subjects: [] });
 
-    const subjectMap = new Map();
+    const publishedPlans = plans.filter((plan) => plan.status !== 'draft');
+    const planIds = publishedPlans.map((plan) => plan._id);
+    const materialFilter = {
+      schoolId,
+      status: 'published',
+      publishedForStudentPortal: true,
+      sourceLessonPlanId: { $in: planIds },
+    };
+    const paperFilter = {
+      schoolId,
+      status: 'published',
+      publishedForStudentPortal: true,
+      sourceLessonPlanId: { $in: planIds },
+    };
+    const assignmentFilter = {
+      schoolId,
+      status: 'active',
+      publishedForStudentPortal: true,
+      sourceLessonPlanId: { $in: planIds },
+    };
+    if (campusId) {
+      materialFilter.campusId = campusId;
+      paperFilter.campusId = campusId;
+      assignmentFilter.campusId = campusId;
+    }
 
-    plans.forEach((plan) => {
+    const [materials, papers, assignments] = await Promise.all([
+      TeachingMaterial.find(materialFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
+      PracticePaper.find(paperFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
+      Assignment.find(assignmentFilter).sort({ dueDate: -1, createdAt: -1 }).lean(),
+    ]);
+
+    const makeContentBucket = () => ({
+      materials: [],
+      assignments: [],
+      assessments: [],
+    });
+
+    const subjectMap = new Map();
+    const seenContentKeys = new Set();
+
+    const getSubjectEntry = (plan) => {
       const subjectKey = normalizeLower(plan.subject) || normalizeLower(plan.subjectName) || normalizeLower(plan.title);
       const subjectTitle = normalizeString(plan.subject) || normalizeString(plan.subjectName) || 'Subject';
-      if (!subjectKey) return;
-
+      if (!subjectKey) return null;
       if (!subjectMap.has(subjectKey)) {
         subjectMap.set(subjectKey, {
           key: subjectKey,
           title: subjectTitle,
+          chapters: new Map(),
+          topics: new Map(),
+          contentMetrics: {
+            materials: 0,
+            assignments: 0,
+            assessments: 0,
+          },
+        });
+      }
+      return subjectMap.get(subjectKey);
+    };
+
+    const ensureChapterTopicSubTopic = (subjectEntry, chapter, topic, subTopic) => {
+      const chapterTitle = normalizeString(chapter?.title) || 'Chapter';
+      const topicTitle = normalizeString(topic?.title) || 'Topic';
+      const subTopicTitle = normalizeString(subTopic?.title) || 'Sub Topic';
+      const chapterId = normalizeIdValue(chapter?.id) || chapterTitle.toLowerCase();
+      const topicId = normalizeIdValue(topic?.id) || topicTitle.toLowerCase();
+      const subTopicId = normalizeIdValue(subTopic?.id) || subTopicTitle.toLowerCase();
+
+      if (!subjectEntry.chapters.has(chapterId)) {
+        subjectEntry.chapters.set(chapterId, {
+          id: chapterId,
+          title: chapterTitle,
           topics: new Map(),
         });
       }
+      const chapterEntry = subjectEntry.chapters.get(chapterId);
 
-      const subjectEntry = subjectMap.get(subjectKey);
+      if (!chapterEntry.topics.has(topicId)) {
+        chapterEntry.topics.set(topicId, {
+          id: topicId,
+          title: topicTitle,
+          subtopics: new Map(),
+        });
+      }
+      const topicEntry = chapterEntry.topics.get(topicId);
+
+      if (!subjectEntry.topics.has(topicId)) {
+        subjectEntry.topics.set(topicId, {
+          title: topicTitle,
+          subtopics: new Set(),
+        });
+      }
+
+      if (!topicEntry.subtopics.has(subTopicId)) {
+        topicEntry.subtopics.set(subTopicId, {
+          id: subTopicId,
+          title: subTopicTitle,
+          ...makeContentBucket(),
+        });
+      }
+
+      return topicEntry.subtopics.get(subTopicId);
+    };
+
+    const attachPublishedContent = (doc, bucketKey) => {
+      const plan = publishedPlans.find((item) => String(item._id) === String(doc.sourceLessonPlanId));
+      if (!plan) return;
+      const planner = sanitizePlannerContent(plan.plannerContent);
+      const chapter = (planner.chapters || []).find((item) => normalizeIdValue(item.id) === normalizeIdValue(doc.chapterId) || normalizeString(item.title) === normalizeString(doc.chapterTitle));
+      const topic = chapter?.topics?.find((item) => normalizeString(item.title) === normalizeString(doc.topicTitle));
+      const subTopic = topic?.subTopics?.find((item) => normalizeString(item.title) === normalizeString(doc.subTopicTitle));
+      const subjectEntry = getSubjectEntry(plan);
+      if (!subjectEntry || !chapter || !topic || !subTopic) return;
+      const subTopicEntry = ensureChapterTopicSubTopic(subjectEntry, chapter, topic, subTopic);
+      const dedupeKey = [
+        String(doc.sourceLessonPlanId || ''),
+        bucketKey,
+        String(doc.chapterId || ''),
+        normalizeString(doc.topicTitle),
+        normalizeString(doc.subTopicTitle),
+        normalizeString(doc.learningType || doc.materialType || doc.paperType || ''),
+      ].join('::');
+      if (seenContentKeys.has(dedupeKey)) return;
+      seenContentKeys.add(dedupeKey);
+
+      const baseItem = {
+        id: String(doc._id),
+        title: doc.title || '',
+        type: bucketKey,
+        learningType: doc.learningType || doc.materialType || doc.paperType || 'note',
+        status: doc.status || 'published',
+        publishedAt: doc.publishedAt || doc.createdAt || null,
+      };
+
+      if (bucketKey === 'materials') {
+        subTopicEntry.materials.push({
+          ...baseItem,
+          attachments: Array.isArray(doc.attachments) ? doc.attachments : [],
+          views: doc.views || 0,
+          downloads: doc.downloads || 0,
+          viewsBy: Array.isArray(doc.viewedBy) ? doc.viewedBy.length : 0,
+        });
+        subjectEntry.contentMetrics.materials += 1;
+      } else if (bucketKey === 'assignments') {
+        subTopicEntry.assignments.push({
+          ...baseItem,
+          dueDate: doc.dueDate || null,
+          marks: doc.marks || 0,
+          submissions: Array.isArray(doc.submissions) ? doc.submissions.length : 0,
+        });
+        subjectEntry.contentMetrics.assignments += 1;
+      } else if (bucketKey === 'assessments') {
+        subTopicEntry.assessments.push({
+          ...baseItem,
+          duration: doc.duration || 0,
+          totalQuestions: doc.totalQuestions || 0,
+          attempts: doc.totalAttempts || 0,
+          averageScore: doc.averageScore || 0,
+        });
+        subjectEntry.contentMetrics.assessments += 1;
+      }
+    };
+
+    materials.forEach((doc) => attachPublishedContent(doc, 'materials'));
+    assignments.forEach((doc) => attachPublishedContent(doc, 'assignments'));
+    papers.forEach((doc) => attachPublishedContent(doc, 'assessments'));
+
+    publishedPlans.forEach((plan) => {
+      const subjectEntry = getSubjectEntry(plan);
+      if (!subjectEntry) return;
       const planner = sanitizePlannerContent(plan.plannerContent);
       (planner.chapters || []).forEach((chapter) => {
+        const chapterId = normalizeIdValue(chapter.id) || normalizeString(chapter.title).toLowerCase();
+        if (!subjectEntry.chapters.has(chapterId)) {
+          subjectEntry.chapters.set(chapterId, {
+            id: chapterId,
+            title: normalizeString(chapter.title) || 'Chapter',
+            topics: new Map(),
+          });
+        }
+        const chapterEntry = subjectEntry.chapters.get(chapterId);
         (chapter.topics || []).forEach((topic) => {
-          const topicTitle = normalizeString(topic.title);
-          if (!topicTitle) return;
-          const topicKey = normalizeLower(topicTitle);
-          if (!subjectEntry.topics.has(topicKey)) {
-            subjectEntry.topics.set(topicKey, {
-              title: topicTitle,
+          const topicId = normalizeIdValue(topic.id) || normalizeString(topic.title).toLowerCase();
+          if (!chapterEntry.topics.has(topicId)) {
+            chapterEntry.topics.set(topicId, {
+              id: topicId,
+              title: normalizeString(topic.title) || 'Topic',
+              subtopics: new Map(),
+            });
+          }
+          if (!subjectEntry.topics.has(topicId)) {
+            subjectEntry.topics.set(topicId, {
+              title: normalizeString(topic.title) || 'Topic',
               subtopics: new Set(),
             });
           }
-          const topicEntry = subjectEntry.topics.get(topicKey);
-          (topic.subTopics || []).forEach((sub) => {
-            const subTitle = normalizeString(sub.title);
-            if (subTitle) topicEntry.subtopics.add(subTitle);
+          const topicEntry = chapterEntry.topics.get(topicId);
+          (topic.subTopics || []).forEach((subTopic) => {
+            const subTopicId = normalizeIdValue(subTopic.id) || normalizeString(subTopic.title).toLowerCase();
+            if (!topicEntry.subtopics.has(subTopicId)) {
+              topicEntry.subtopics.set(subTopicId, {
+                id: subTopicId,
+                title: normalizeString(subTopic.title) || 'Sub Topic',
+                materials: [],
+                assignments: [],
+                assessments: [],
+              });
+            }
           });
         });
       });
     });
 
-    const subjects = Array.from(subjectMap.values()).map((subject) => ({
-      key: subject.key,
-      title: subject.title,
-      topics: Array.from(subject.topics.values()).map((topic) => ({
-        title: topic.title,
-        subtopics: Array.from(topic.subtopics),
-      })),
-    }));
+    const subjects = Array.from(subjectMap.values()).map((subject) => {
+      const topics = new Map();
+      const chapters = Array.from(subject.chapters.values()).map((chapter) => {
+        const chapterTopics = Array.from(chapter.topics.values()).map((topic) => {
+          const subtopics = Array.from(topic.subtopics.values()).map((subTopic) => ({
+            ...subTopic,
+            completedContents: (subTopic.materials.length + subTopic.assignments.length + subTopic.assessments.length),
+          }));
+          subtopics.forEach((subTopic) => {
+            const topicKey = topic.title.toLowerCase();
+            if (!topics.has(topicKey)) {
+              topics.set(topicKey, {
+                title: topic.title,
+                subtopics: new Set(),
+              });
+            }
+            const topicSummary = topics.get(topicKey);
+            topicSummary.subtopics.add(subTopic.title);
+          });
+          return {
+            id: topic.id,
+            title: topic.title,
+            subtopics,
+          };
+        });
+
+        return {
+          id: chapter.id,
+          title: chapter.title,
+          topics: chapterTopics,
+        };
+      });
+
+      return {
+        key: subject.key,
+        title: subject.title,
+        chapters,
+        topics: Array.from(subject.topics.values()).map((topic) => ({
+          title: topic.title,
+          subtopics: Array.from(topic.subtopics.values()).map((subTopic) => subTopic.title),
+        })),
+        contentMetrics: subject.contentMetrics,
+      };
+    });
 
     return res.json({ subjects });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/student/smart-learning-overview', authStudent, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const studentId = req.user?.id || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+
+    const studentFilter = { _id: studentId, schoolId };
+    if (campusId) studentFilter.campusId = campusId;
+    const student = await StudentUser.findOne(studentFilter).lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const classId = student.classId || null;
+    const sectionId = student.sectionId || null;
+    const scopeFilter = { schoolId, status: 'published', publishedForStudentPortal: true };
+    if (campusId) scopeFilter.campusId = campusId;
+    const studentScope = {};
+    if (classId) studentScope.classId = classId;
+    if (sectionId) studentScope.sectionId = sectionId;
+    const legacyScope = (!classId || !sectionId) && student.grade && student.section
+      ? {
+          className: { $regex: `^${escapeRegex(normalizeLower(student.grade))}$`, $options: 'i' },
+          sectionName: { $regex: `^${escapeRegex(normalizeLower(student.section))}$`, $options: 'i' },
+        }
+      : null;
+
+    const [materials, papers, assignments, progress] = await Promise.all([
+      TeachingMaterial.find(legacyScope ? { ...scopeFilter, ...legacyScope } : { ...scopeFilter, ...studentScope }).lean(),
+      PracticePaper.find(legacyScope ? { ...scopeFilter, ...legacyScope } : { ...scopeFilter, ...studentScope }).lean(),
+      Assignment.find({
+        schoolId,
+        status: 'active',
+        publishedForStudentPortal: true,
+        ...(campusId ? { campusId } : {}),
+        ...(legacyScope ? legacyScope : studentScope),
+      }).lean(),
+      StudentProgress.findOne({ schoolId, studentId }).lean(),
+    ]);
+
+    const submissionIds = new Set((progress?.submissions || []).map((item) => String(item.assignmentId || '')).filter(Boolean));
+    const completedMaterials = materials.filter((item) => Array.isArray(item.completedBy) && item.completedBy.some((entry) => String(entry.studentId) === String(studentId))).length;
+    const viewedMaterials = materials.filter((item) => Array.isArray(item.viewedBy) && item.viewedBy.some((entry) => String(entry.studentId) === String(studentId))).length;
+    const completedPapers = papers.filter((item) => Array.isArray(item.studentAttempts) && item.studentAttempts.some((attempt) => String(attempt.studentId) === String(studentId) && attempt.submittedAt)).length;
+    const submittedAssignments = assignments.filter((item) => submissionIds.has(String(item._id))).length;
+    const totalContent = materials.length + papers.length + assignments.length;
+    const completedContent = completedMaterials + completedPapers + submittedAssignments;
+    const overallProgress = totalContent > 0 ? Math.round((completedContent / totalContent) * 100) : 0;
+
+    const subjectBuckets = new Map();
+    [...materials, ...papers, ...assignments].forEach((item) => {
+      const subjectName = normalizeString(item.subjectName || item.subject || '') || 'Subject';
+      if (!subjectBuckets.has(subjectName)) {
+        subjectBuckets.set(subjectName, {
+          subject: subjectName,
+          total: 0,
+          completed: 0,
+        });
+      }
+      const bucket = subjectBuckets.get(subjectName);
+      bucket.total += 1;
+      const isCompleted =
+        (Array.isArray(item.completedBy) && item.completedBy.some((entry) => String(entry.studentId) === String(studentId))) ||
+        (Array.isArray(item.studentAttempts) && item.studentAttempts.some((attempt) => String(attempt.studentId) === String(studentId) && attempt.submittedAt)) ||
+        submissionIds.has(String(item._id));
+      if (isCompleted) bucket.completed += 1;
+    });
+
+    res.json({
+      overallProgress,
+      learningHours: Math.round(
+        materials.reduce((sum, item) => {
+          const view = Array.isArray(item.viewedBy)
+            ? item.viewedBy.find((entry) => String(entry.studentId) === String(studentId))
+            : null;
+          return sum + Number(view?.timeSpent || 0);
+        }, 0) / 3600 * 100
+      ) / 100,
+      completedChapters: materials.length + papers.length + assignments.length > 0 ? Array.from(new Set([
+        ...materials.filter((item) => Array.isArray(item.completedBy) && item.completedBy.some((entry) => String(entry.studentId) === String(studentId))).map((item) => item.chapterTitle || item.chapterId || ''),
+        ...papers.filter((item) => Array.isArray(item.studentAttempts) && item.studentAttempts.some((attempt) => String(attempt.studentId) === String(studentId) && attempt.submittedAt)).map((item) => item.chapterTitle || item.chapterId || ''),
+        ...assignments.filter((item) => submissionIds.has(String(item._id))).map((item) => item.chapterTitle || item.chapterId || ''),
+      ].filter(Boolean))).length : 0,
+      pendingChapters: Math.max(0, materials.length + papers.length + assignments.length - completedContent),
+      assignmentStatus: {
+        total: assignments.length,
+        submitted: submittedAssignments,
+        pending: Math.max(0, assignments.length - submittedAssignments),
+      },
+      assessmentScores: papers.map((item) => ({
+        id: String(item._id),
+        title: item.title || '',
+        averageScore: Number(item.averageScore || 0),
+        attempts: Number(item.totalAttempts || 0),
+      })),
+      subjectProgress: Array.from(subjectBuckets.values()).map((bucket) => ({
+        ...bucket,
+        progress: bucket.total > 0 ? Math.round((bucket.completed / bucket.total) * 100) : 0,
+      })),
+      contentTotals: {
+        materials: materials.length,
+        assessments: papers.length,
+        assignments: assignments.length,
+      },
+      viewedMaterials,
+      completedMaterials,
+      completedAssessments: completedPapers,
+      submittedAssignments,
+      subjects: Array.from(subjectBuckets.values()).map((bucket) => ({
+        key: normalizeLower(bucket.subject),
+        title: bucket.subject,
+        total: bucket.total,
+        completed: bucket.completed,
+        progress: bucket.total > 0 ? Math.round((bucket.completed / bucket.total) * 100) : 0,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/teacher/smart-learning-analytics', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const scopeFilter = {
+      schoolId,
+      teacherId,
+      status: 'published',
+      publishedForStudentPortal: true,
+    };
+    if (campusId) scopeFilter.campusId = campusId;
+
+    const [plans, materials, papers, assignments, progressDocs] = await Promise.all([
+      LessonPlan.find({
+        schoolId,
+        teacherId,
+        status: 'published',
+        ...(campusId ? { campusId } : {}),
+      }).lean(),
+      TeachingMaterial.find(scopeFilter).lean(),
+      PracticePaper.find(scopeFilter).lean(),
+      Assignment.find({
+        schoolId,
+        teacherId,
+        status: 'active',
+        publishedForStudentPortal: true,
+        ...(campusId ? { campusId } : {}),
+      }).lean(),
+      StudentProgress.find({ schoolId }).select('studentId submissions progressMetrics').lean(),
+    ]);
+
+    const totalViews = materials.reduce((sum, item) => sum + Number(item.views || 0), 0);
+    const totalDownloads = materials.reduce((sum, item) => sum + Number(item.downloads || 0), 0);
+    const materialCompletion = materials.reduce((sum, item) => sum + (Array.isArray(item.completedBy) ? item.completedBy.length : 0), 0);
+    const assessmentAttempts = papers.reduce((sum, item) => sum + Number(item.totalAttempts || 0), 0);
+    const averageAssessmentScore = papers.length > 0
+      ? Math.round(papers.reduce((sum, item) => sum + Number(item.averageScore || 0), 0) / papers.length)
+      : 0;
+    const studentIdsReached = new Set();
+    materials.forEach((item) => (item.viewedBy || []).forEach((entry) => studentIdsReached.add(String(entry.studentId))));
+    materials.forEach((item) => (item.completedBy || []).forEach((entry) => studentIdsReached.add(String(entry.studentId))));
+    papers.forEach((item) => (item.studentAttempts || []).forEach((entry) => studentIdsReached.add(String(entry.studentId))));
+    progressDocs.forEach((doc) => (doc.submissions || []).forEach((submission) => studentIdsReached.add(String(submission.studentId || doc.studentId || ''))));
+
+    const chapterTitles = new Set([
+      ...plans.map((plan) => String(plan.title || '').trim()).filter(Boolean),
+      ...materials.map((item) => String(item.chapterTitle || '').trim()).filter(Boolean),
+      ...papers.map((item) => String(item.chapterTitle || '').trim()).filter(Boolean),
+      ...assignments.map((item) => String(item.chapterTitle || '').trim()).filter(Boolean),
+    ]);
+
+    res.json({
+      contentMetrics: {
+        totalChapters: chapterTitles.size,
+        totalNotes: materials.filter((item) => item.learningType === 'note').length,
+        totalPDFs: materials.filter((item) => item.learningType === 'pdf').length,
+        totalPPTs: materials.filter((item) => item.learningType === 'ppt').length,
+        totalVideos: materials.filter((item) => item.learningType === 'video').length,
+        totalAssignments: assignments.length,
+        totalAssessments: papers.length,
+      },
+      engagement: {
+        studentsReached: studentIdsReached.size,
+        contentViews: totalViews,
+        averageCompletionPercent: materials.length + papers.length + assignments.length > 0
+          ? Math.round(((materialCompletion + assessmentAttempts + assignments.length) / (materials.length + papers.length + assignments.length)) * 100)
+          : 0,
+        learningHours: Math.round((materials.reduce((sum, item) => {
+          const seconds = (item.viewedBy || []).reduce((inner, entry) => inner + Number(entry.timeSpent || 0), 0);
+          return sum + seconds;
+        }, 0) / 3600) * 100) / 100,
+      },
+      assessmentMetrics: {
+        attemptCount: assessmentAttempts,
+        averageScore: averageAssessmentScore,
+        passRate: papers.length > 0
+          ? Math.round((papers.filter((item) => Number(item.passRate || 0) > 0).length / papers.length) * 100)
+          : 0,
+      },
+      assignmentMetrics: {
+        totalAssignments: assignments.length,
+        pendingSubmissions: Math.max(0, assignments.length - progressDocs.reduce((sum, doc) => sum + (doc.submissions || []).length, 0)),
+        submissionRate: assignments.length > 0
+          ? Math.round((progressDocs.reduce((sum, doc) => sum + (doc.submissions || []).length, 0) / assignments.length) * 100)
+          : 0,
+      },
+      totals: {
+        materials: materials.length,
+        papers: papers.length,
+        assignments: assignments.length,
+        planCount: plans.length,
+        downloads: totalDownloads,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

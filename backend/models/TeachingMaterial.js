@@ -85,6 +85,12 @@ const teachingMaterialSchema = new mongoose.Schema({
     default: 'note',
     index: true
   },
+  learningType: {
+    type: String,
+    enum: ['note', 'pdf', 'ppt', 'video', 'assignment', 'worksheet', 'practice', 'assessment', 'reference', 'mind_map', 'interactive'],
+    default: 'note',
+    index: true
+  },
   typeLabel: {
     type: String,
     default: 'Study Material',
@@ -112,6 +118,17 @@ const teachingMaterialSchema = new mongoose.Schema({
   className: { type: String, default: '' },
   sectionName: { type: String, default: '' },
   subjectName: { type: String, default: '' },
+  chapterId: { type: String, default: '', index: true },
+  chapterTitle: { type: String, default: '', index: true },
+  topicTitle: { type: String, default: '', index: true },
+  subTopicTitle: { type: String, default: '', index: true },
+  sourceLessonPlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LessonPlan',
+    default: null,
+    index: true
+  },
+  sourceSubTopicId: { type: String, default: '', index: true },
 
   // Organization
   folderId: {
@@ -149,6 +166,7 @@ const teachingMaterialSchema = new mongoose.Schema({
     default: 'draft',
     index: true
   },
+  publishedForStudentPortal: { type: Boolean, default: false, index: true },
   publishedAt: { type: Date, index: true },
   scheduledFor: { type: Date, index: true },
   expiresAt: { type: Date, index: true },

@@ -21,6 +21,15 @@ const lessonPlanSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: () => ({ chapters: [] })
     },
+    status: {
+      type: String,
+      enum: ['draft', 'published', 'archived'],
+      default: 'draft',
+      index: true
+    },
+    publishedAt: { type: Date, default: null, index: true },
+    publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser', default: null },
+    publishedVersion: { type: Number, default: 0 },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }
   },
