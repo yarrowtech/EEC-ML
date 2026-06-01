@@ -1,6 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Sparkles, UserCheck, X } from 'lucide-react';
+import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,8 @@ const DrawerModal = ({
   onApplyAiSuggestion,
   onSaveVersion,
   onRestoreVersion,
+  onPublishChapter,
+  isPublishing = false,
 }) => {
   if (!chapter) return null;
 
@@ -50,14 +52,14 @@ const DrawerModal = ({
       {open && (
         <motion.section
           key={chapter.id}
-          initial={{ x: 80, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 80, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-          className="flex h-full min-h-0 flex-col rounded-2xl border border-blue-100 bg-slate-50 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.2 }}
+          className="flex flex-col rounded-2xl border-2 border-blue-200 bg-gradient-to-b from-white to-slate-50/80 p-5 shadow-lg dark:border-slate-600 dark:from-slate-900 dark:to-slate-950/80"
         >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 p-3 dark:from-slate-800 dark:to-slate-800">
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={onSaveVersion}><RefreshCcw className="size-4" /> Save Version</Button>
               <Button variant="outline" size="sm" onClick={() => window.print()}><FileText className="size-4" /> Print</Button>
@@ -170,6 +172,29 @@ const DrawerModal = ({
                 </div>
               </section>
             )}
+
+            {/* Publish Button Section */}
+            <section className="rounded-2xl border-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 shadow-lg dark:border-emerald-700 dark:from-emerald-900/30 dark:to-teal-900/30">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-emerald-900 dark:text-emerald-100">Ready to Publish?</h3>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">Make this chapter available to students in Smart Learning</p>
+                </div>
+                <Button
+                  onClick={onPublishChapter}
+                  disabled={isPublishing}
+                  className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-3 font-bold text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50"
+                >
+                  {isPublishing ? (
+                    <>Publishing...</>
+                  ) : (
+                    <>
+                      <Send className="size-4" /> Publish Chapter
+                    </>
+                  )}
+                </Button>
+              </div>
+            </section>
           </div>
         </motion.section>
       )}

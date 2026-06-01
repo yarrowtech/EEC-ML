@@ -42,17 +42,18 @@ const enrichChapter = (chapter) => ({
 });
 
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+const asIdString = (value) => (value ? String(value) : '');
+const chapterKey = (value) => String(value || '').trim().toLowerCase();
 
 const AIPoweredTeaching = () => {
-  const seeded = initialChapters.map(enrichChapter);
-  const [lessonTitle, setLessonTitle] = useState('Algebra Foundations - Term 1');
-  const [chapters, setChapters] = useState(seeded);
-  const [activeChapterId, setActiveChapterId] = useState(seeded[0]?.id || null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [chapters, setChapters] = useState([]);
+  const [openChapterIds, setOpenChapterIds] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
-  const [autosaveStatus, setAutosaveStatus] = useState('Saved 2m ago');
+  const [autosaveStatus, setAutosaveStatus] = useState('Not saved');
+  const [currentDraftId, setCurrentDraftId] = useState(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
@@ -83,13 +84,246 @@ const AIPoweredTeaching = () => {
     setSubjectOptions(Array.isArray(data?.subjects) ? data.subjects : []);
   };
 
+  const loadChaptersForSelection = async (classId, sectionId, subjectId) => {
+    if (!classId || !sectionId || !subjectId) return;
+
+    try {
+      // Fetch all lesson plans so we can include both saved drafts and published plans.
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/my`, {
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to fetch lesson plans');
+
+      const allPlans = Array.isArray(data) ? data : [];
+      const matchingPlans = allPlans.filter((plan) => {
+        const planClassId = asIdString(plan?.classId?._id || plan?.classId);
+        const planSectionId = asIdString(plan?.sectionId?._id || plan?.sectionId);
+        const planSubjectId = asIdString(plan?.subjectId?._id || plan?.subjectId);
+        return (
+          planClassId === asIdString(classId) &&
+          planSectionId === asIdString(sectionId) &&
+          planSubjectId === asIdString(subjectId)
+        );
+      });
+
+      if (matchingPlans.length > 0) {
+        const merged = [];
+        const seen = new Set();
+
+        matchingPlans.forEach((plan) => {
+          const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+          raw.forEach((chapter, idx) => {
+            const title = String(chapter?.title || '').trim();
+            const key = chapterKey(title || chapter?.id || `${plan?._id}-draft-${idx}`);
+            if (seen.has(key)) return;
+            seen.add(key);
+            merged.push(
+              enrichChapter({
+                id: chapter?.id || `draft-${plan?._id}-${idx}`,
+                ...chapter,
+                title: title || `Chapter ${merged.length + 1}`,
+              })
+            );
+          });
+
+          const plannerChapters = Array.isArray(plan?.plannerContent?.chapters)
+            ? plan.plannerContent.chapters
+            : [];
+          plannerChapters.forEach((chapter, idx) => {
+            const title = String(chapter?.title || '').trim();
+            const key = chapterKey(title || chapter?.id || `${plan?._id}-published-${idx}`);
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            const firstSubTopic = chapter?.topics?.[0]?.subTopics?.[0];
+            merged.push(
+              enrichChapter({
+                id: chapter?.id || `published-${plan?._id}-${idx}`,
+                title: title || `Chapter ${merged.length + 1}`,
+                introductionText: firstSubTopic?.title || '',
+                explanation: Array.isArray(firstSubTopic?.learningPaths)
+                  ? firstSubTopic.learningPaths.join('\n')
+                  : '',
+                teacherNotes: Array.isArray(firstSubTopic?.referenceMaterials)
+                  ? firstSubTopic.referenceMaterials.join('\n')
+                  : '',
+              })
+            );
+          });
+        });
+
+        setChapters(merged);
+        setOpenChapterIds([]);
+
+        // Keep autosave linked to the most recent matching draft, if present.
+        const latestMatchingDraft = matchingPlans.find((plan) => plan?.isDraft === true);
+        setCurrentDraftId(latestMatchingDraft?._id || null);
+        setAutosaveStatus('Loaded');
+
+        if (merged.length > 0) {
+          toast.success(`Loaded ${merged.length} existing ${merged.length === 1 ? 'chapter' : 'chapters'}`);
+        }
+      } else {
+        // No existing draft/published chapter for this selection, start fresh.
+        setChapters([]);
+        setOpenChapterIds([]);
+        setCurrentDraftId(null);
+        setAutosaveStatus('Not saved');
+      }
+    } catch (err) {
+      console.error('Error loading chapters for selection:', err);
+      toast.error('Failed to load existing chapters');
+    }
+  };
+
+
+  const loadDraft = async (draftId, options = { showToast: true, openChapters: false, updateSelection: true }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to load draft');
+
+      const draft = data?.data;
+      if (!draft) throw new Error('Draft not found');
+
+      setCurrentDraftId(draft._id);
+
+      const loadedChapters = Array.isArray(draft.rawChapters) ? draft.rawChapters.map(enrichChapter) : [];
+      setChapters(loadedChapters);
+
+      console.log('Loaded draft:', { id: draft._id, chapterCount: loadedChapters.length, chapters: loadedChapters.map(c => c.title) });
+
+      // Only open chapters if explicitly requested
+      if (options.openChapters) {
+        setOpenChapterIds(loadedChapters.map(ch => ch.id));
+      } else {
+        setOpenChapterIds([]);
+      }
+
+      // Only update selection if requested (not when loading from class/section/subject selection)
+      if (options.updateSelection !== false) {
+        setSelectedClass(draft.classId || '');
+        setSelectedSection(draft.sectionId || '');
+        setSelectedSubject(draft.subjectId || '');
+
+        if (draft.classId) {
+          await loadOptions({ classId: draft.classId });
+          if (draft.sectionId) {
+            await loadOptions({ classId: draft.classId, sectionId: draft.sectionId });
+          }
+        }
+      }
+
+      // Save to localStorage so we can reload on refresh
+      localStorage.setItem('currentLessonPlanDraft', draft._id);
+
+      setAutosaveStatus('Loaded');
+      if (options.showToast) {
+        toast.success('Draft loaded successfully');
+      }
+      setInitialLoadComplete(true);
+    } catch (err) {
+      console.error('Failed to load draft:', err);
+      toast.error(err?.message || 'Failed to load draft');
+    }
+  };
+
+  const createNewDraft = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          title: 'Lesson Plan Draft',
+          rawChapters: chapters,
+          classId: selectedClass,
+          sectionId: selectedSection,
+          subjectId: selectedSubject,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to create draft');
+
+      const draftId = data?.data?._id;
+      setCurrentDraftId(draftId);
+
+      // Save to localStorage
+      if (draftId) {
+        localStorage.setItem('currentLessonPlanDraft', draftId);
+      }
+
+      setAutosaveStatus('Draft created');
+      toast.success('New draft created');
+      return draftId;
+    } catch (err) {
+      toast.error(err?.message || 'Failed to create draft');
+      return null;
+    }
+  };
+
+  const saveDraft = async () => {
+    try {
+      let draftId = currentDraftId;
+
+      if (!draftId) {
+        draftId = await createNewDraft();
+        if (!draftId) return;
+      }
+
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          title: 'Lesson Plan Draft',
+          rawChapters: chapters,
+          classId: selectedClass,
+          sectionId: selectedSection,
+          subjectId: selectedSubject,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save draft');
+
+      setAutosaveStatus('Saved just now');
+    } catch (err) {
+      setAutosaveStatus('Save failed');
+      toast.error(err?.message || 'Failed to save draft');
+    }
+  };
+
+  const debouncedSaveDraft = useMemo(() => {
+    let timeoutId = null;
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      setAutosaveStatus('Saving...');
+      timeoutId = setTimeout(() => {
+        saveDraft();
+      }, 2000);
+    };
+  }, [currentDraftId, chapters, selectedClass, selectedSection, selectedSubject]);
+
   useEffect(() => {
     const userType = localStorage.getItem('userType');
     if (userType !== 'Teacher') return;
 
-    loadOptions().catch((err) => {
-      toast.error(err?.message || 'Failed to load teaching options');
-    });
+    const initializePage = async () => {
+      try {
+        // Load options first
+        await loadOptions().catch((err) => {
+          toast.error(err?.message || 'Failed to load teaching options');
+        });
+
+        setInitialLoadComplete(true);
+      } catch (err) {
+        console.error('Initialization error:', err);
+        setInitialLoadComplete(true);
+      }
+    };
+
+    initializePage();
   }, []);
 
   const filteredChapters = useMemo(() => {
@@ -98,23 +332,14 @@ const AIPoweredTeaching = () => {
     return chapters.filter((chapter) => chapter.title.toLowerCase().includes(query));
   }, [chapters, searchQuery]);
 
-  const activeChapter = useMemo(() => chapters.find((chapter) => chapter.id === activeChapterId) || null, [chapters, activeChapterId]);
-
-  const progress = useMemo(() => {
-    if (!chapters.length) return 0;
-    const completed = chapters.reduce((sum, chapter) => {
-      const hasTitle = chapter.title && chapter.title !== 'Untitled Chapter';
-      const hasDate = Boolean(chapter.lessonDate);
-      const hasIntro = (chapter.introductionText || '').replace(/<[^>]*>/g, '').trim().length > 0;
-      const hasAssessment = chapter.assessments.length > 0;
-      return sum + [hasTitle, hasDate, hasIntro, hasAssessment].filter(Boolean).length;
-    }, 0);
-    return Math.round((completed / (chapters.length * 4)) * 100);
-  }, [chapters]);
+  const openChapters = useMemo(() => {
+    return openChapterIds
+      .map(id => chapters.find(ch => ch.id === id))
+      .filter(Boolean);
+  }, [chapters, openChapterIds]);
 
   const touchAutosave = () => {
-    setAutosaveStatus('Saving...');
-    window.setTimeout(() => setAutosaveStatus('Saved just now'), 600);
+    debouncedSaveDraft();
   };
 
   const updateChapter = (id, updater) => {
@@ -123,23 +348,22 @@ const AIPoweredTeaching = () => {
   };
 
   const handleAddChapter = () => {
+    // Must select class/section/subject first
+    if (!selectedClass || !selectedSection || !selectedSubject) {
+      toast.error('Please select class, section, and subject first');
+      return;
+    }
+
     const nextId = `ch-${Date.now()}`;
     const chapter = enrichChapter({ id: nextId, title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
     setChapters((prev) => [...prev, chapter]);
-    setActiveChapterId(nextId);
-    setDrawerOpen(true);
+    setOpenChapterIds((prev) => [...prev, nextId]);
     touchAutosave();
   };
 
   const handleDeleteChapter = (id) => {
-    setChapters((prev) => {
-      const next = prev.filter((chapter) => chapter.id !== id);
-      if (activeChapterId === id) {
-        setActiveChapterId(next[0]?.id || null);
-        setDrawerOpen(Boolean(next.length));
-      }
-      return next;
-    });
+    setChapters((prev) => prev.filter((chapter) => chapter.id !== id));
+    setOpenChapterIds((prev) => prev.filter((chapterId) => chapterId !== id));
     touchAutosave();
   };
 
@@ -158,57 +382,63 @@ const AIPoweredTeaching = () => {
     touchAutosave();
   };
 
-  const addAssessmentToActiveChapter = () => {
-    if (!activeChapterId) return;
+  const handleCloseChapter = (id) => {
+    setOpenChapterIds((prev) => prev.filter((chapterId) => chapterId !== id));
+  };
+
+  const addAssessmentToActiveChapter = (chapterId) => {
+    if (!chapterId) return;
     const next = { id: `a-${Date.now()}`, title: '', type: assessmentTypes[0], dueDate: '', marks: 0 };
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, assessments: [...chapter.assessments, next] }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: [...chapter.assessments, next] }));
   };
 
-  const updateAssessmentInActiveChapter = (assessmentId, nextAssessment) => {
-    if (!activeChapterId) return;
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, assessments: chapter.assessments.map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
+  const updateAssessmentInActiveChapter = (chapterId, assessmentId, nextAssessment) => {
+    if (!chapterId) return;
+    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: chapter.assessments.map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
   };
 
-  const addContentFile = (file, bucket) => {
-    if (!activeChapterId || !file || !bucket) return;
+  const addContentFile = (chapterId, file, bucket) => {
+    if (!chapterId || !file || !bucket) return;
     const nextFile = { id: `f-${Date.now()}`, name: file.name || 'Uploaded file', type: getFileType(file.name || ''), progress: 100 };
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
   };
 
-  const removeContentFile = (fileId, bucket) => {
-    if (!activeChapterId || !bucket) return;
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: (chapter.contentUploads[bucket] || []).filter((file) => file.id !== fileId) } }));
+  const removeContentFile = (chapterId, fileId, bucket) => {
+    if (!chapterId || !bucket) return;
+    updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: (chapter.contentUploads[bucket] || []).filter((file) => file.id !== fileId) } }));
   };
 
-  const addWorksheetFile = (file) => {
-    if (!activeChapterId || !file) return;
+  const addWorksheetFile = (chapterId, file) => {
+    if (!chapterId || !file) return;
     const nextFile = { id: `wf-${Date.now()}`, name: file.name, type: getFileType(file.name), progress: 100 };
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
   };
 
-  const removeWorksheetFile = (fileId) => {
-    if (!activeChapterId) return;
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, worksheetFiles: (chapter.worksheetFiles || []).filter((file) => file.id !== fileId) }));
+  const removeWorksheetFile = (chapterId, fileId) => {
+    if (!chapterId) return;
+    updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: (chapter.worksheetFiles || []).filter((file) => file.id !== fileId) }));
   };
 
-  const applyAiSuggestion = () => {
-    if (!activeChapterId) return;
+  const applyAiSuggestion = (chapterId) => {
+    if (!chapterId) return;
     const aiText = '<ul><li>Connect topic with real-life examples.</li><li>Ask one diagnostic question before explanation.</li><li>Conclude with a quick reflective exit ticket.</li></ul>';
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, introductionText: aiText }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, introductionText: aiText }));
     toast.success('AI lesson suggestion applied');
   };
 
-  const saveVersion = () => {
-    if (!activeChapterId || !activeChapter) return;
-    const snapshot = { ...activeChapter, history: undefined };
+  const saveVersion = (chapterId) => {
+    if (!chapterId) return;
+    const chapter = chapters.find(ch => ch.id === chapterId);
+    if (!chapter) return;
+    const snapshot = { ...chapter, history: undefined };
     const item = { id: `v-${Date.now()}`, label: `Version ${new Date().toLocaleTimeString()}`, snapshot };
-    updateChapter(activeChapterId, (chapter) => ({ ...chapter, history: [...(chapter.history || []), item] }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, history: [...(chapter.history || []), item] }));
     toast.success('Lesson version saved');
   };
 
-  const restoreVersion = (versionId) => {
-    if (!activeChapterId) return;
-    updateChapter(activeChapterId, (chapter) => {
+  const restoreVersion = (chapterId, versionId) => {
+    if (!chapterId) return;
+    updateChapter(chapterId, (chapter) => {
       const target = (chapter.history || []).find((item) => item.id === versionId);
       return target ? { ...enrichChapter(target.snapshot), history: chapter.history } : chapter;
     });
@@ -254,34 +484,72 @@ const AIPoweredTeaching = () => {
     return { chapters: validChapters };
   };
 
-  const handlePublish = async () => {
-    const missing = chapters.filter((chapter) => !chapter.lessonDate || !(chapter.introductionText || '').replace(/<[^>]*>/g, '').trim());
-    if (missing.length) {
-      toast.error('Add Date and Introduction for all chapters before publishing');
+  const handlePublishChapter = async (chapterId) => {
+    const chapter = chapters.find(ch => ch.id === chapterId);
+    if (!chapter) {
+      toast.error('Chapter not found');
       return;
     }
 
+    // Validation
     if (!selectedClass || !selectedSection || !selectedSubject) {
       toast.error('Select class, section and subject before publishing');
       return;
     }
 
+    if (!chapter.title || chapter.title === 'Untitled Chapter') {
+      toast.error('Please add a title to this chapter');
+      return;
+    }
+
     const selectedSubjectOption = subjectOptions.find((item) => item.subjectId === selectedSubject);
-    const date = chapters.find((chapter) => chapter.lessonDate)?.lessonDate || new Date().toISOString().slice(0, 10);
+
+    // Use chapter's date if available, otherwise use today's date
+    const date = chapter.lessonDate || new Date().toISOString().slice(0, 10);
+
+    // Create planner content for this single chapter
+    const chapterTitle = String(chapter.title || '').trim();
+    const subtopicTitle = stripHtml(chapter.introductionText) || 'Overview';
+
+    const singleChapterContent = {
+      chapters: [{
+        id: 'chapter-1',
+        title: chapterTitle,
+        topics: [{
+          id: 'topic-1',
+          title: chapterTitle,
+          subTopics: [{
+            id: 'subtopic-1',
+            title: subtopicTitle,
+            learningPaths: chapter.explanation ? [stripHtml(chapter.explanation)] : [],
+            studyMaterials: chapter.worksheetLink ? [String(chapter.worksheetLink).trim()] : [],
+            mindMaps: [],
+            worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
+            referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
+            tryoutSections: (chapter.assessments || []).map((a) => String(a.title || '').trim()).filter(Boolean),
+            selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
+            questionPapers: {
+              basic: (chapter.assessments || [])[0]?.title || '',
+              intermediate: (chapter.assessments || [])[1]?.title || '',
+              advanced: (chapter.assessments || [])[2]?.title || '',
+            },
+          }],
+        }],
+      }]
+    };
 
     const payload = {
       classId: selectedClass,
       sectionId: selectedSection,
       subjectId: selectedSubject,
-      title: String(lessonTitle || 'Smart Teaching Plan').trim(),
+      title: chapterTitle,
       subject: selectedSubjectOption?.subjectName || 'Subject',
       date,
-      learningObjectives: chapters.map((chapter) => stripHtml(chapter.introductionText)).filter(Boolean),
-      materialsNeeded: chapters
-        .flatMap((chapter) => Object.values(chapter.contentUploads || {}).flatMap((files) => (files || []).map((file) => file?.name).filter(Boolean)))
-        .filter(Boolean),
-      additionalNotes: chapters.map((chapter) => stripHtml(chapter.teacherNotes)).filter(Boolean).join(' | '),
-      plannerContent: buildPlannerContent(),
+      learningObjectives: stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle],
+      materialsNeeded: Object.values(chapter.contentUploads || {})
+        .flatMap((files) => (files || []).map((file) => file?.name).filter(Boolean)),
+      additionalNotes: stripHtml(chapter.teacherNotes) || '',
+      plannerContent: singleChapterContent,
     };
 
     try {
@@ -292,14 +560,30 @@ const AIPoweredTeaching = () => {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to publish lesson plan');
+      if (!res.ok) throw new Error(data?.error || 'Failed to publish chapter');
 
-      toast.success('Published. This now appears in Student Smart Learning.');
+      toast.success(`Chapter "${chapterTitle}" published successfully!`);
     } catch (err) {
-      toast.error(err?.message || 'Failed to publish lesson plan');
+      toast.error(err?.message || 'Failed to publish chapter');
     } finally {
       setPublishing(false);
     }
+  };
+
+  const handleNewPlan = () => {
+    setCurrentDraftId(null);
+    setChapters([]);
+    setOpenChapterIds([]);
+    setSelectedClass('');
+    setSelectedSection('');
+    setSelectedSubject('');
+    setAutosaveStatus('Not saved');
+    setInitialLoadComplete(true);
+
+    // Clear saved draft from localStorage
+    localStorage.removeItem('currentLessonPlanDraft');
+
+    toast.success('Started new plan');
   };
 
   return (
@@ -307,12 +591,7 @@ const AIPoweredTeaching = () => {
       <Toaster position="top-right" />
       <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-4">
         <HeaderActions
-          title={lessonTitle}
-          onTitleChange={(value) => { setLessonTitle(value); touchAutosave(); }}
-          onSave={() => { setAutosaveStatus('Saved just now'); toast.success('Draft saved'); }}
-          onPublish={handlePublish}
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
-          progress={progress}
           classValue={selectedClass}
           sectionValue={selectedSection}
           subjectValue={selectedSubject}
@@ -324,25 +603,41 @@ const AIPoweredTeaching = () => {
             setSelectedSection('');
             setSelectedSubject('');
             setSubjectOptions([]);
+            // Clear chapters when class changes
+            setChapters([]);
+            setOpenChapterIds([]);
+            setCurrentDraftId(null);
+            localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: value });
-            touchAutosave();
           }}
           onSectionChange={async (value) => {
             setSelectedSection(value);
             setSelectedSubject('');
+            // Clear chapters when section changes
+            setChapters([]);
+            setOpenChapterIds([]);
+            setCurrentDraftId(null);
+            localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: selectedClass, sectionId: value });
-            touchAutosave();
           }}
-          onSubjectChange={(value) => { setSelectedSubject(value); touchAutosave(); }}
+          onSubjectChange={async (value) => {
+            setSelectedSubject(value);
+            // Load existing chapters for this class/section/subject combination
+            await loadChaptersForSelection(selectedClass, selectedSection, value);
+          }}
         />
 
         <div className="flex flex-1 min-h-0 gap-4">
           <Sidebar
             chapters={filteredChapters}
-            activeChapterId={activeChapterId}
+            activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
             query={searchQuery}
             onQueryChange={setSearchQuery}
-            onSelect={(id) => { setActiveChapterId(id); setDrawerOpen(true); }}
+            onSelect={(id) => {
+              if (!openChapterIds.includes(id)) {
+                setOpenChapterIds((prev) => [...prev, id]);
+              }
+            }}
             onAdd={handleAddChapter}
             onDelete={handleDeleteChapter}
             onRename={(id, title) => updateChapter(id, (chapter) => ({ ...chapter, title }))}
@@ -353,30 +648,54 @@ const AIPoweredTeaching = () => {
           />
 
           <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
-            {drawerOpen && activeChapter ? (
-              <DrawerModal
-                open={drawerOpen}
-                chapter={activeChapter}
-                durations={durationOptions}
-                assessmentTypes={assessmentTypes}
-                onClose={() => setDrawerOpen(false)}
-                onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
-                onAddContentFile={addContentFile}
-                onRemoveContentFile={removeContentFile}
-                onAddWorksheetFile={addWorksheetFile}
-                onRemoveWorksheetFile={removeWorksheetFile}
-                onAddAssessment={addAssessmentToActiveChapter}
-                onUpdateAssessment={updateAssessmentInActiveChapter}
-                onApplyAiSuggestion={applyAiSuggestion}
-                onSaveVersion={saveVersion}
-                onRestoreVersion={restoreVersion}
-              />
+            {openChapters.length > 0 ? (
+              <div className="h-full min-h-0 space-y-6 overflow-y-auto pb-8 pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+                {openChapters.map((chapter) => (
+                  <DrawerModal
+                    key={chapter.id}
+                    open={true}
+                    chapter={chapter}
+                    durations={durationOptions}
+                    assessmentTypes={assessmentTypes}
+                    onClose={() => handleCloseChapter(chapter.id)}
+                    onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
+                    onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}
+                    onRemoveContentFile={(fileId, bucket) => removeContentFile(chapter.id, fileId, bucket)}
+                    onAddWorksheetFile={(file) => addWorksheetFile(chapter.id, file)}
+                    onRemoveWorksheetFile={(fileId) => removeWorksheetFile(chapter.id, fileId)}
+                    onAddAssessment={() => addAssessmentToActiveChapter(chapter.id)}
+                    onUpdateAssessment={(assessmentId, nextAssessment) => updateAssessmentInActiveChapter(chapter.id, assessmentId, nextAssessment)}
+                    onApplyAiSuggestion={() => applyAiSuggestion(chapter.id)}
+                    onSaveVersion={() => saveVersion(chapter.id)}
+                    onRestoreVersion={(versionId) => restoreVersion(chapter.id, versionId)}
+                    onPublishChapter={() => handlePublishChapter(chapter.id)}
+                    isPublishing={publishing}
+                  />
+                ))}
+              </div>
             ) : (
-              <div className="flex h-full min-h-0 overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
-                <div className="max-w-md space-y-2 px-6">
+              <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+                <div className="max-w-md space-y-3 px-6">
                   <div className="mx-auto w-fit rounded-2xl bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/40"><BookOpenCheck className="size-6" /></div>
                   <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Chapter Workspace</h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">Click any chapter on the left to open its lesson planning modal in this right-side workspace.</p>
+                  {selectedClass && selectedSection && selectedSubject ? (
+                    chapters.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-600 dark:text-slate-300">You have {chapters.length} chapter{chapters.length !== 1 ? 's' : ''} saved.</p>
+                        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Click on a chapter in the sidebar to start editing!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm text-slate-600 dark:text-slate-300">No chapters yet for this class/section/subject.</p>
+                        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Click the + button on the left to create your first chapter!</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-slate-600 dark:text-slate-300">Select a class, section, and subject above to get started.</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Any existing chapters for that selection will load automatically in the sidebar.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
