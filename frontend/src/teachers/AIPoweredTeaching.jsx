@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { BookOpenCheck } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal from './components/lesson-plan-builder/DrawerModal';
 import { assessmentTypes, durationOptions, initialChapters } from './components/lesson-plan-builder/mockData';
+
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const getFileType = (name = '') => {
   const lower = name.toLowerCase();
@@ -39,6 +41,8 @@ const enrichChapter = (chapter) => ({
   history: chapter.history || [],
 });
 
+const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
 const AIPoweredTeaching = () => {
   const seeded = initialChapters.map(enrichChapter);
   const [lessonTitle, setLessonTitle] = useState('Algebra Foundations - Term 1');
@@ -49,9 +53,44 @@ const AIPoweredTeaching = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
   const [autosaveStatus, setAutosaveStatus] = useState('Saved 2m ago');
-  const [selectedClass, setSelectedClass] = useState('Class 9');
-  const [selectedSection, setSelectedSection] = useState('Section A');
-  const [selectedSubject, setSelectedSubject] = useState('Mathematics');
+
+  const [classOptions, setClassOptions] = useState([]);
+  const [sectionOptions, setSectionOptions] = useState([]);
+  const [subjectOptions, setSubjectOptions] = useState([]);
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [publishing, setPublishing] = useState(false);
+
+  const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+  });
+
+  const loadOptions = async ({ classId = '', sectionId = '' } = {}) => {
+    const query = new URLSearchParams();
+    if (classId) query.set('classId', classId);
+    if (sectionId) query.set('sectionId', sectionId);
+
+    const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/options?${query.toString()}`, {
+      headers: authHeaders(),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || 'Failed to load class/section/subject options');
+
+    setClassOptions(Array.isArray(data?.classes) ? data.classes : []);
+    setSectionOptions(Array.isArray(data?.sections) ? data.sections : []);
+    setSubjectOptions(Array.isArray(data?.subjects) ? data.subjects : []);
+  };
+
+  useEffect(() => {
+    const userType = localStorage.getItem('userType');
+    if (userType !== 'Teacher') return;
+
+    loadOptions().catch((err) => {
+      toast.error(err?.message || 'Failed to load teaching options');
+    });
+  }, []);
 
   const filteredChapters = useMemo(() => {
     if (!searchQuery.trim()) return chapters;
@@ -176,35 +215,128 @@ const AIPoweredTeaching = () => {
     toast.success('Lesson version restored');
   };
 
-  const handlePublish = () => {
+  const buildPlannerContent = () => {
+    const validChapters = chapters
+      .map((chapter, chapterIndex) => {
+        const chapterTitle = String(chapter.title || '').trim() || `Chapter ${chapterIndex + 1}`;
+        const subtopicTitle = stripHtml(chapter.introductionText) || 'Overview';
+        return {
+          id: `chapter-${chapterIndex + 1}`,
+          title: chapterTitle,
+          topics: [
+            {
+              id: `topic-${chapterIndex + 1}`,
+              title: chapterTitle,
+              subTopics: [
+                {
+                  id: `subtopic-${chapterIndex + 1}`,
+                  title: subtopicTitle,
+                  learningPaths: chapter.explanation ? [stripHtml(chapter.explanation)] : [],
+                  studyMaterials: chapter.worksheetLink ? [String(chapter.worksheetLink).trim()] : [],
+                  mindMaps: [],
+                  worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
+                  referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
+                  tryoutSections: (chapter.assessments || []).map((a) => String(a.title || '').trim()).filter(Boolean),
+                  selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
+                  questionPapers: {
+                    basic: (chapter.assessments || [])[0]?.title || '',
+                    intermediate: (chapter.assessments || [])[1]?.title || '',
+                    advanced: (chapter.assessments || [])[2]?.title || '',
+                  },
+                },
+              ],
+            },
+          ],
+        };
+      })
+      .filter(Boolean);
+
+    return { chapters: validChapters };
+  };
+
+  const handlePublish = async () => {
     const missing = chapters.filter((chapter) => !chapter.lessonDate || !(chapter.introductionText || '').replace(/<[^>]*>/g, '').trim());
     if (missing.length) {
       toast.error('Add Date and Introduction for all chapters before publishing');
       return;
     }
-    toast.success('Lesson plan published');
+
+    if (!selectedClass || !selectedSection || !selectedSubject) {
+      toast.error('Select class, section and subject before publishing');
+      return;
+    }
+
+    const selectedSubjectOption = subjectOptions.find((item) => item.subjectId === selectedSubject);
+    const date = chapters.find((chapter) => chapter.lessonDate)?.lessonDate || new Date().toISOString().slice(0, 10);
+
+    const payload = {
+      classId: selectedClass,
+      sectionId: selectedSection,
+      subjectId: selectedSubject,
+      title: String(lessonTitle || 'Smart Teaching Plan').trim(),
+      subject: selectedSubjectOption?.subjectName || 'Subject',
+      date,
+      learningObjectives: chapters.map((chapter) => stripHtml(chapter.introductionText)).filter(Boolean),
+      materialsNeeded: chapters
+        .flatMap((chapter) => Object.values(chapter.contentUploads || {}).flatMap((files) => (files || []).map((file) => file?.name).filter(Boolean)))
+        .filter(Boolean),
+      additionalNotes: chapters.map((chapter) => stripHtml(chapter.teacherNotes)).filter(Boolean).join(' | '),
+      plannerContent: buildPlannerContent(),
+    };
+
+    try {
+      setPublishing(true);
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to publish lesson plan');
+
+      toast.success('Published. This now appears in Student Smart Learning.');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to publish lesson plan');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-4 dark:bg-slate-950 md:p-6">
+    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-4 dark:bg-slate-950 md:p-6">
       <Toaster position="top-right" />
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+      <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-4">
         <HeaderActions
           title={lessonTitle}
           onTitleChange={(value) => { setLessonTitle(value); touchAutosave(); }}
           onSave={() => { setAutosaveStatus('Saved just now'); toast.success('Draft saved'); }}
           onPublish={handlePublish}
-          autosaveStatus={autosaveStatus}
+          autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
           progress={progress}
           classValue={selectedClass}
           sectionValue={selectedSection}
           subjectValue={selectedSubject}
-          onClassChange={(value) => { setSelectedClass(value); touchAutosave(); }}
-          onSectionChange={(value) => { setSelectedSection(value); touchAutosave(); }}
+          classOptions={classOptions}
+          sectionOptions={sectionOptions}
+          subjectOptions={subjectOptions}
+          onClassChange={async (value) => {
+            setSelectedClass(value);
+            setSelectedSection('');
+            setSelectedSubject('');
+            setSubjectOptions([]);
+            await loadOptions({ classId: value });
+            touchAutosave();
+          }}
+          onSectionChange={async (value) => {
+            setSelectedSection(value);
+            setSelectedSubject('');
+            await loadOptions({ classId: selectedClass, sectionId: value });
+            touchAutosave();
+          }}
           onSubjectChange={(value) => { setSelectedSubject(value); touchAutosave(); }}
         />
 
-        <div className="flex min-h-[78vh] gap-4">
+        <div className="flex flex-1 min-h-0 gap-4">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={activeChapterId}
@@ -220,7 +352,7 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="flex-1 rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             {drawerOpen && activeChapter ? (
               <DrawerModal
                 open={drawerOpen}
@@ -240,7 +372,7 @@ const AIPoweredTeaching = () => {
                 onRestoreVersion={restoreVersion}
               />
             ) : (
-              <div className="flex h-full min-h-[70vh] items-center justify-center rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex h-full min-h-0 overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
                 <div className="max-w-md space-y-2 px-6">
                   <div className="mx-auto w-fit rounded-2xl bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/40"><BookOpenCheck className="size-6" /></div>
                   <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Chapter Workspace</h2>

@@ -47,8 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Key Frontend Paths
 - **Shared components:** `/frontend/src/components/`
 - **Role portals:** `/frontend/src/{admin,teachers,parents,principal,Super Admin}/`
-- **State management:** `/frontend/src/contexts/` (React Context API)
-- **Hooks:** `/frontend/src/hooks/`
+- **Theme context:** `/frontend/src/contexts/ThemeContext.jsx`
+- **Custom hooks:** `/frontend/src/hooks/` (notifications, feedback)
 - **Tests:** `/frontend/src/__tests__/`
 
 ### Documentation
@@ -65,10 +65,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev              # Development server (auto-reload via nodemon)
 npm start               # Production server
 npm test                # Run all tests
-npm test -- --watch    # Watch mode for tests
+npm run test:watch      # Watch mode for tests
+npm test -- path/to/file.test.js  # Run single test file
 npm run test:coverage   # Coverage report
 npm run swagger:gen     # Generate API docs (http://localhost:5000/api/docs)
 npm run security:suite  # Security testing
+npm run push:keys       # Generate VAPID keys for web push notifications
 ```
 
 ### Frontend (`cd frontend`)
@@ -77,7 +79,9 @@ npm run dev             # Dev server (port 5173, Vite)
 npm run build           # Production build (outputs to dist/)
 npm run preview         # Preview production build
 npm run lint            # ESLint
-npm test                # Run tests
+npm test                # Run all tests
+npm run test:watch      # Watch mode for tests
+npm test -- path/to/Component.test.jsx  # Run single test file
 npm run test:coverage   # Coverage report
 ```
 
@@ -145,7 +149,31 @@ The system uses **role-based JWT authentication** with role-specific middleware:
 
 ## Key Architecture Patterns
 
-### API Routes & Request Flow
+### API Route Base Paths
+```
+/api/admin/auth        - Admin authentication
+/api/admin/users       - Admin user management
+/api/admin/feedback    - Admin feedback handling
+/api/student/auth      - Student authentication
+/api/student           - Student-specific operations
+/api/teacher/auth      - Teacher authentication
+/api/teacher/dashboard - Teacher dashboard
+/api/parent/auth       - Parent authentication
+/api/principal/auth    - Principal authentication
+/api/principal         - Principal dashboard
+/api/auth              - Unified auth (cross-role)
+/api/attendance        - Attendance tracking
+/api/exam              - Exam management
+/api/assignment        - Assignments
+/api/chat              - Real-time chat
+/api/notifications     - Push notifications
+/api/fees              - Fee management
+/api/timetable         - Timetable management
+/api/lesson-plans      - Lesson planning
+/api/docs              - Swagger UI documentation
+```
+
+### Request Flow
 ```
 Request → Auth middleware (validates JWT, sets req.userId/schoolId)
         → Route handler
@@ -156,8 +184,9 @@ Request → Auth middleware (validates JWT, sets req.userId/schoolId)
 Protected routes require corresponding middleware: `router.get('/path', authStudent, handler)`
 
 ### Frontend State Management
-- **Auth context:** Stored in `localStorage` under token, managed via React Context
-- **UI state:** Hooks (useState, useEffect) + Context API for global state
+- **Auth:** JWT stored in `localStorage`, managed via custom hooks per role portal
+- **Theme:** Global theme via `ThemeContext.jsx`
+- **UI state:** Component-level hooks (useState, useEffect)
 - **API calls:** Axios with interceptor that redirects to login on 401
 
 ### Real-time Communication (Socket.IO)
@@ -185,59 +214,24 @@ Protected routes require corresponding middleware: `router.get('/path', authStud
 ```bash
 # Backend
 cd backend && npm test
-npm run test:coverage
+npm run test:watch          # Watch mode
+npm run test:coverage       # Coverage report
 
 # Frontend
 cd frontend && npm test
-npm run test:coverage
+npm run test:watch          # Watch mode
+npm run test:coverage       # Coverage report
 ```
 
-### Test Pattern (Arrange-Act-Assert)
-```javascript
-describe('Feature', () => {
-  it('should do X', async () => {
-    // Arrange: setup test data
-    const data = { ... };
-
-    // Act: execute code
-    const result = await action(data);
-
-    // Assert: verify result
-    expect(result).toBe(expected);
-  });
-});
-```
-
-### Backend Testing (Jest + Supertest)
-Test API endpoints using Supertest. Example:
-```javascript
-const request = require('supertest');
-const app = require('../index');
-
-it('should login student', async () => {
-  const response = await request(app)
-    .post('/api/student/login')
-    .send({ username: 'test', password: 'Test@123' });
-
-  expect(response.status).toBe(200);
-  expect(response.body.success).toBe(true);
-});
-```
-
-### Frontend Testing (Jest + @testing-library/react)
-Test React components. Example:
-```javascript
-import { render, screen } from '@testing-library/react';
-
-it('should render login form', () => {
-  render(<LoginForm />);
-  expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
-});
-```
+### Test File Locations
+- Backend tests: `/backend/__tests__/` (API tests use Supertest)
+- Frontend tests: `/frontend/src/**/__tests__/` (Components use Testing Library)
 
 ### Coverage Targets
 - General code: 70-80%
 - Critical paths (auth, payments, data): 90%+
+
+See `TESTING_GUIDE.md` for detailed patterns and examples.
 
 ---
 
@@ -270,4 +264,4 @@ Content-Type: application/json
 
 ---
 
-**Last Updated:** 2026-05-25
+**Last Updated:** 2026-05-26

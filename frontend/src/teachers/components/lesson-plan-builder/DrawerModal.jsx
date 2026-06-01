@@ -54,7 +54,7 @@ const DrawerModal = ({
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 80, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-          className="h-full rounded-2xl border border-blue-100 bg-slate-50 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+          className="flex h-full min-h-0 flex-col rounded-2xl border border-blue-100 bg-slate-50 p-5 shadow-sm dark:border-slate-700 dark:bg-slate-950"
         >
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
@@ -66,7 +66,7 @@ const DrawerModal = ({
             </div>
           </div>
 
-          <div className="h-[calc(100%-3rem)] space-y-4 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+          <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                 <p className="mb-1 flex items-center gap-2 text-xs text-slate-500"><Calendar className="size-4" /> Date</p>
