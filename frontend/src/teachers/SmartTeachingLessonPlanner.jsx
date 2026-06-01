@@ -23,7 +23,7 @@ const SmartTeachingLessonPlanner = () => {
                 <Brain className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-lg font-semibold">Smart Teaching • Lesson Planner Studio</p>
+                <p className="text-lg font-semibold">• Lesson Planner Studio</p>
                 <p className="text-xs text-blue-100">
                   Full-screen planning workspace for chapters, topics, sub-topics, learning path, study material, question papers, mind maps and worksheets.
                 </p>

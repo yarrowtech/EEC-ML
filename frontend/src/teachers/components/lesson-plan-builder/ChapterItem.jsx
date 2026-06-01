@@ -27,8 +27,10 @@ const ChapterItem = ({ chapter, isActive, onClick, onDelete, onRename, onDragSta
       onDragStart={() => onDragStart(chapter.id)}
       onDragOver={(event) => event.preventDefault()}
       onDrop={() => onDrop(chapter.id)}
-      className={`group rounded-2xl border p-3 transition ${
-        isActive ? 'border-blue-300 bg-gradient-to-r from-blue-50 to-purple-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-200'
+      className={`group rounded-2xl border p-3 transition cursor-pointer ${
+        isActive
+          ? 'border-blue-300 bg-gradient-to-r from-blue-50 to-purple-50 shadow-sm dark:border-blue-600 dark:from-blue-900/30 dark:to-purple-900/30'
+          : 'border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-500'
       }`}
     >
       <div className="flex items-center gap-2">
@@ -45,7 +47,7 @@ const ChapterItem = ({ chapter, isActive, onClick, onDelete, onRename, onDragSta
               className="h-8 rounded-lg"
             />
           ) : (
-            <p className="truncate text-sm font-medium text-slate-800">{chapter.title}</p>
+            <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{chapter.title}</p>
           )}
         </button>
 

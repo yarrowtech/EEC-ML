@@ -168,59 +168,67 @@ const SubjectTopicsView = ({ subject, onBack }) => {
       <section className="rounded-[2rem] border border-[#e8dfbf] bg-[#f7f3e2] p-6 sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
-            <span className="inline-flex rounded-full bg-[#ead79b] px-4 py-1 text-sm font-bold text-slate-700">STAGE 1 QUEST</span>
-            <h1 className="mt-3 text-4xl sm:text-5xl font-black text-[#0f1b3a]">{subject.title} Syllabus</h1>
-            <p className="mt-2 text-xl text-slate-600">Master the concepts through structured quests and interactive challenges!</p>
+            <span className="inline-flex rounded-full bg-[#ead79b] px-4 py-1 text-sm font-bold text-slate-700">
+              {topics.length > 0 ? 'STAGE 1 QUEST' : 'COMING SOON'}
+            </span>
+            <h1 className="mt-3 text-4xl sm:text-5xl font-black text-[#0f1b3a]">{subject.title} {topics.length > 0 ? 'Syllabus' : ''}</h1>
+            <p className="mt-2 text-xl text-slate-600">
+              {topics.length > 0
+                ? 'Master the concepts through structured quests and interactive challenges!'
+                : 'Your teacher will publish lesson content here soon. Stay tuned!'}
+            </p>
           </div>
 
-          <div className="min-w-[280px]">
-            <div className="flex items-end justify-between mb-2">
-              <div>
-                <p className="text-sm font-semibold text-slate-600">Topics</p>
-                <p className="text-3xl font-black text-[#e0b92c]">{completedTopicCount}/{topics.length}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-slate-600">Completion</p>
-                <p className="text-3xl font-black text-[#172447]">{progress}%</p>
-              </div>
-            </div>
-            <div className="mt-4 h-5 w-full overflow-hidden rounded-full bg-white/60 border-2 border-[#ead79b] shadow-inner">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-[#e0b92c] to-[#d4a520] transition-all duration-500 ease-out relative overflow-hidden"
-                style={{ width: `${progress}%` }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
-              </div>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-600">
-                {progress === 0 ? 'Start your journey!' : progress === 100 ? '🎉 Complete!' : 'Keep going!'}
-              </p>
-              {progress > 0 && (
-                <div className="flex items-center gap-1">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className={`w-2 h-2 rounded-full ${
-                        i < Math.floor(progress / 20) ? 'bg-[#e0b92c]' : 'bg-slate-300'
-                      }`}
-                    />
-                  ))}
+          {topics.length > 0 && (
+            <div className="min-w-[280px]">
+              <div className="flex items-end justify-between mb-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-600">Topics</p>
+                  <p className="text-3xl font-black text-[#e0b92c]">{completedTopicCount}/{topics.length}</p>
                 </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-slate-600">Completion</p>
+                  <p className="text-3xl font-black text-[#172447]">{progress}%</p>
+                </div>
+              </div>
+              <div className="mt-4 h-5 w-full overflow-hidden rounded-full bg-white/60 border-2 border-[#ead79b] shadow-inner">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#e0b92c] to-[#d4a520] transition-all duration-500 ease-out relative overflow-hidden"
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-600">
+                  {progress === 0 ? 'Start your journey!' : progress === 100 ? '🎉 Complete!' : 'Keep going!'}
+                </p>
+                {progress > 0 && (
+                  <div className="flex items-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-2 h-2 rounded-full ${
+                          i < Math.floor(progress / 20) ? 'bg-[#e0b92c]' : 'bg-slate-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              {nextIncompleteTopic && progress > 0 && progress < 100 && (
+                <button
+                  onClick={() => {
+                    const topicSlug = encodeURIComponent(String(nextIncompleteTopic.title || '').trim());
+                    navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
+                  }}
+                  className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#e0b92c] to-[#d4a520] px-6 py-3 font-bold text-white hover:from-[#d4a520] hover:to-[#c99a1e] transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                >
+                  Continue Learning: {nextIncompleteTopic.title}
+                </button>
               )}
             </div>
-            {nextIncompleteTopic && progress > 0 && progress < 100 && (
-              <button
-                onClick={() => {
-                  const topicSlug = encodeURIComponent(String(nextIncompleteTopic.title || '').trim());
-                  navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
-                }}
-                className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#e0b92c] to-[#d4a520] px-6 py-3 font-bold text-white hover:from-[#d4a520] hover:to-[#c99a1e] transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-              >
-                Continue Learning: {nextIncompleteTopic.title}
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </section>
 
@@ -235,25 +243,43 @@ const SubjectTopicsView = ({ subject, onBack }) => {
       `}</style>
 
       <section>
-        <h2 className="mb-4 text-4xl font-black text-[#0f1b3a]">Adventure Path</h2>
+        <h2 className="mb-4 text-4xl font-black text-[#0f1b3a]">
+          {topics.length > 0 ? 'Adventure Path' : 'Lesson Content'}
+        </h2>
 
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white">
           <div className="flex items-center justify-between bg-slate-50 px-6 py-5">
             <div>
               <p className="text-3xl font-black text-[#0f1b3a]">{subject.title} Topics</p>
               <p className="text-lg text-slate-500">
-                {topics.length === 0 ? 'No Quests Available' : `${topics.length} Quest${topics.length > 1 ? 's' : ''} Available`}
+                {topics.length === 0 ? 'Waiting for teacher to publish' : `${topics.length} Quest${topics.length > 1 ? 's' : ''} Available`}
               </p>
             </div>
-            <p className="text-right text-2xl font-black text-[#2f7dff]">STATUS<br />{topics.length === 0 ? 'COMING SOON' : 'READY TO START'}</p>
+            <p className="text-right text-2xl font-black text-[#2f7dff]">
+              STATUS<br />
+              <span className={topics.length === 0 ? 'text-amber-500' : 'text-emerald-500'}>
+                {topics.length === 0 ? 'PENDING' : 'ACTIVE'}
+              </span>
+            </p>
           </div>
 
           <div className="space-y-4 bg-slate-50 p-4 sm:p-6">
             {topics.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
-                <BookOpen className="mx-auto mb-3 text-slate-300" size={48} />
-                <p className="text-lg font-bold text-slate-800">No chapters/topics found</p>
-                <p className="mt-1 text-sm text-slate-500">Topics for {subject.title} haven't been added yet.</p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center">
+                <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+                  <BookOpen className="text-amber-600" size={32} />
+                </div>
+                <p className="text-xl font-bold text-slate-800 mb-2">No Lesson Plans Published Yet</p>
+                <p className="text-sm text-slate-600 max-w-md mx-auto">
+                  Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.
+                  Check back soon or ask your teacher about upcoming topics!
+                </p>
+                <div className="mt-6 inline-flex items-center gap-2 text-xs text-amber-700 bg-amber-100 px-4 py-2 rounded-full">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Lesson content will appear here once your teacher publishes it</span>
+                </div>
               </div>
             ) : (
               topics.map((topic, index) => {
@@ -490,6 +516,8 @@ const AILearningCoursesLanding = () => {
 
   const assignedSubjects = useMemo(() => {
     const map = new Map();
+
+    // First, add all allocated subjects from timetable
     contexts.forEach((ctx) => {
       const name = String(ctx?.subjectName || '').trim();
       if (!name) return;
@@ -509,6 +537,7 @@ const AILearningCoursesLanding = () => {
       if (classLabel) item.classNames.add(classLabel);
     });
 
+    // Then merge with smart learning map data (lesson plans)
     return Array.from(map.values()).map((item) => {
       const fromMap = smartLearningMap.find((m) => normalize(m.key || m.title) === item.key);
       return {
@@ -516,8 +545,10 @@ const AILearningCoursesLanding = () => {
         topics: Array.isArray(fromMap?.topics) ? fromMap.topics : [],
         teacherCount: item.teacherNames.size,
         classCount: item.classNames.size,
+        hasLessonPlans: Array.isArray(fromMap?.topics) && fromMap.topics.length > 0,
       };
-    }).filter((item) => Array.isArray(item.topics) && item.topics.length > 0);
+    });
+    // Removed filter - now showing all allocated subjects regardless of lesson plans
   }, [contexts, smartLearningMap]);
 
   const selectedSubject = useMemo(() => {
@@ -526,10 +557,19 @@ const AILearningCoursesLanding = () => {
     return assignedSubjects.find(s => s.key === normalizedKey);
   }, [subjectKey, assignedSubjects]);
 
-  // Redirect unknown subject/topic URLs after data has loaded.
+  // Redirect unknown subject URLs or topic URLs for subjects without topics
   useEffect(() => {
-    if (topicSlug && subjectKey && !selectedSubject && !loading) {
+    if (loading) return;
+
+    // If accessing a topic but subject doesn't exist at all, redirect
+    if (subjectKey && !selectedSubject) {
       navigate('/student/smart-learning-courses', { replace: true });
+      return;
+    }
+
+    // If accessing a topic but subject has no topics, redirect to subject page
+    if (topicSlug && selectedSubject && (!selectedSubject.topics || selectedSubject.topics.length === 0)) {
+      navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subjectKey)}`, { replace: true });
     }
   }, [topicSlug, subjectKey, selectedSubject, loading, navigate]);
 
@@ -596,13 +636,29 @@ const AILearningCoursesLanding = () => {
                         <div className="flex flex-wrap gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>{subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}</span>
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>{subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}</span>
+                          {subject.hasLessonPlans && (
+                            <span className="rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">{subject.topics.length} Topic{subject.topics.length > 1 ? 's' : ''}</span>
+                          )}
                         </div>
-                        <p className="text-sm text-slate-600 line-clamp-2">Assigned in your timetable. Start this subject quest now.</p>
+                        <p className="text-sm text-slate-600 line-clamp-2">
+                          {subject.hasLessonPlans
+                            ? 'Assigned in your timetable. Start this subject quest now.'
+                            : 'Assigned in your timetable. Lesson plans coming soon from your teacher.'}
+                        </p>
                         <button
-                          onClick={() => navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}`)}
-                          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#e7c555] py-3 font-bold text-slate-900 transition-all duration-200 ease-out group-hover:scale-[1.01] hover:-translate-y-0.5 hover:bg-[#e7c555]/90 hover:shadow-md active:translate-y-0 active:scale-[0.99]"
+                          onClick={() => {
+                            if (subject.hasLessonPlans) {
+                              navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}`);
+                            }
+                          }}
+                          className={`flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold transition-all duration-200 ease-out ${
+                            subject.hasLessonPlans
+                              ? 'bg-[#e7c555] text-slate-900 hover:bg-[#e7c555]/90 group-hover:scale-[1.01] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.99] cursor-pointer'
+                              : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                          }`}
+                          disabled={!subject.hasLessonPlans}
                         >
-                          Start
+                          {subject.hasLessonPlans ? 'Start Learning' : 'Coming Soon'}
                         </button>
                       </div>
                     </div>

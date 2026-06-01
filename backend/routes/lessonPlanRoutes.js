@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
@@ -429,6 +430,127 @@ router.get('/teacher/my', authTeacher, async (req, res) => {
   }
 });
 
+router.get('/teacher/drafts', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const filter = { schoolId, teacherId, isDraft: true };
+    if (campusId) filter.campusId = campusId;
+
+    const drafts = await LessonPlan.find(filter).sort({ updatedAt: -1 }).lean();
+    res.json({ success: true, data: drafts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/teacher/draft/:id', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    const id = req.params?.id;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const filter = { _id: id, schoolId, teacherId };
+    if (campusId) filter.campusId = campusId;
+
+    const draft = await LessonPlan.findOne(filter).lean();
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+
+    res.json({ success: true, data: draft });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/teacher/draft', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const { title, rawChapters, classId, sectionId, subjectId } = req.body;
+
+    const draftData = {
+      schoolId,
+      campusId: campusId || null,
+      teacherId,
+      title: normalizeString(title) || 'Untitled Draft',
+      rawChapters: rawChapters || [],
+      isDraft: true,
+      status: 'draft',
+      learningObjectives: [],
+      materialsNeeded: [],
+      additionalNotes: '',
+      plannerContent: { chapters: [] }
+    };
+
+    // Only add IDs if they are valid ObjectIds
+    if (classId && mongoose.Types.ObjectId.isValid(classId)) {
+      draftData.classId = classId;
+    }
+    if (sectionId && mongoose.Types.ObjectId.isValid(sectionId)) {
+      draftData.sectionId = sectionId;
+    }
+    if (subjectId && mongoose.Types.ObjectId.isValid(subjectId)) {
+      draftData.subjectId = subjectId;
+    }
+
+    const plan = await LessonPlan.create(draftData);
+
+    res.status(201).json({ success: true, message: 'Draft created', data: plan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/teacher/draft/:id', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    const id = req.params?.id;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const filter = { _id: id, schoolId, teacherId };
+    if (campusId) filter.campusId = campusId;
+
+    const existing = await LessonPlan.findOne(filter);
+    if (!existing) return res.status(404).json({ error: 'Draft not found' });
+
+    const { title, rawChapters, classId, sectionId, subjectId } = req.body;
+
+    if (title !== undefined) existing.title = normalizeString(title) || 'Untitled Draft';
+    if (rawChapters !== undefined) existing.rawChapters = rawChapters;
+
+    // Only update IDs if they are valid ObjectIds or explicitly null
+    if (classId !== undefined) {
+      existing.classId = (classId && mongoose.Types.ObjectId.isValid(classId)) ? classId : null;
+    }
+    if (sectionId !== undefined) {
+      existing.sectionId = (sectionId && mongoose.Types.ObjectId.isValid(sectionId)) ? sectionId : null;
+    }
+    if (subjectId !== undefined) {
+      existing.subjectId = (subjectId && mongoose.Types.ObjectId.isValid(subjectId)) ? subjectId : null;
+    }
+
+    await existing.save();
+
+    res.json({ success: true, message: 'Draft updated', data: existing });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/teacher/:lessonPlanId/status', authTeacher, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req);
@@ -735,11 +857,42 @@ router.post('/teacher', authTeacher, async (req, res) => {
     const resolved = await resolvePlanPayload({ schoolId, campusId, payload: req.body, forcedTeacherId: teacherId });
     if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
 
-    const plan = await LessonPlan.create({
-      schoolId,
-      campusId: campusId || null,
-      ...resolved.data,
-    });
+    const draftId = req.body?.draftId;
+
+    let plan;
+    if (draftId) {
+      const filter = { _id: draftId, schoolId, teacherId, isDraft: true };
+      if (campusId) filter.campusId = campusId;
+
+      const existingDraft = await LessonPlan.findOne(filter);
+      if (existingDraft) {
+        Object.assign(existingDraft, resolved.data, {
+          isDraft: false,
+          status: 'published',
+          publishedAt: new Date()
+        });
+        await existingDraft.save();
+        plan = existingDraft;
+      } else {
+        plan = await LessonPlan.create({
+          schoolId,
+          campusId: campusId || null,
+          ...resolved.data,
+          isDraft: false,
+          status: 'published',
+          publishedAt: new Date()
+        });
+      }
+    } else {
+      plan = await LessonPlan.create({
+        schoolId,
+        campusId: campusId || null,
+        ...resolved.data,
+        isDraft: false,
+        status: 'published',
+        publishedAt: new Date()
+      });
+    }
 
     res.status(201).json({ message: 'Lesson plan created', plan });
   } catch (err) {
@@ -967,7 +1120,11 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const classId = student.classId || null;
     const sectionId = student.sectionId || null;
 
-    const planFilter = { schoolId };
+    const planFilter = {
+      schoolId,
+      status: 'published',
+      isDraft: false
+    };
     if (campusId) planFilter.campusId = campusId;
 
     if (classId && sectionId) {
