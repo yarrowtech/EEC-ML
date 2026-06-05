@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Routes, Route, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import {
   Users,
   Activity,
@@ -28,6 +28,8 @@ import {
   CalendarDays,
   GraduationCap,
   Award,
+  Library,
+  Settings,
 } from 'lucide-react';
 
 import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
@@ -61,73 +63,249 @@ import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
-const menuSections = [
-  {
-    id: 'overview',
-    label: 'Overview',
-    icon: Home,
-    children: [
-      { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
-      { icon: Briefcase, label: 'My Work Portal', path: `${PORTAL_BASE}/my-work-portal` },
-      { icon: Clock, label: 'Class Routine', path: `${PORTAL_BASE}/class-routine` },
-      { icon: CalendarDays, label: 'Holiday List', path: `${PORTAL_BASE}/holidays` },
-    ],
-  },
-  {
-    id: 'students',
-    label: 'Student Management',
-    icon: Users,
-    children: [
-      { icon: UserCheck, label: 'Attendance', path: `${PORTAL_BASE}/attendance` },
-      { icon: Award, label: 'Achievements', path: `${PORTAL_BASE}/achievements` },
-      // { icon: BarChart3, label: 'Student Analytics', path: `${PORTAL_BASE}/student-analytics` },
-      { icon: Activity, label: 'Student Health Updates', path: `${PORTAL_BASE}/health-updates` },
-      { icon: Eye, label: 'Student Observations', path: `${PORTAL_BASE}/student-observations` },
-    ],
-  },
-  {
-    id: 'teaching',
-    label: 'Teaching Tools',
-    icon: BookOpen,
-    children: [
-      { icon: Brain, label: 'Smart Teaching', path: `${PORTAL_BASE}/smart-teaching` },
-      { icon: BookOpen, label: "Teacher's Wall", path: `${PORTAL_BASE}/academic-alcove` },
-      { icon: FileText, label: 'Assignments', path: `${PORTAL_BASE}/assignments` },
-      { icon: FileText, label: 'Practice Questions', path: `${PORTAL_BASE}/practice-questions` },
-      { icon: BookOpen, label: 'Lesson Plans', path: `${PORTAL_BASE}/lesson-plans` },
-      { icon: FileText, label: 'Class Notes', path: `${PORTAL_BASE}/class-notes` },
-    ],
-  },
-  {
-    id: 'assessment',
-    label: 'Assessment',
-    icon: GraduationCap,
-    children: [
-      { icon: ClipboardCheck, label: 'Result Management', path: `${PORTAL_BASE}/result-management` },
-    ],
-  },
-  {
-    id: 'communication',
-    label: 'Communication',
-    icon: MessageSquare,
-    children: [
-      { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/chat` },
-      { icon: Calendar, label: 'Parent Meetings', path: `${PORTAL_BASE}/parent-meetings` },
-      { icon: FileText, label: 'Excuse Letters', path: `${PORTAL_BASE}/excuse-letters` },
-      { icon: ThumbsUp, label: 'Student Feedback', path: `${PORTAL_BASE}/feedback` },
-    ],
-  },
+const portalNavigation = [
+  { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
+  { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
+  { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
+  { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
+  { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
+  { icon: Library, label: 'Resource Library', path: `${PORTAL_BASE}/resource-library` },
+  { icon: Brain, label: 'AI Center', path: `${PORTAL_BASE}/ai-center` },
+  { icon: Settings, label: 'Settings', path: `${PORTAL_BASE}/settings` },
 ];
+
+const classTabs = [
+  { icon: Home, label: 'Overview', path: '' },
+  { icon: Users, label: 'Students', path: 'students' },
+  { icon: BookOpen, label: 'Teaching Workspace', path: 'teaching' },
+  { icon: FileText, label: 'Assignments', path: 'assignments' },
+  { icon: GraduationCap, label: 'Assessments', path: 'assessments' },
+  { icon: MessageSquare, label: 'Communication', path: 'communication' },
+  { icon: BarChart3, label: 'Reports & Analytics', path: 'reports' },
+];
+
+const studentsLinks = [
+  { label: 'Student List', to: 'students' },
+  { label: 'Attendance', to: 'students/attendance' },
+  { label: 'Health Records', to: 'students/health-records' },
+  { label: 'Observations', to: 'students/observations' },
+  { label: 'Achievements', to: 'students/achievements' },
+  { label: 'Student Analytics', to: 'students/analytics' },
+];
+
+const teachingLinks = [
+  { label: 'Lesson Plans', to: 'teaching/lesson-plans' },
+  { label: 'Lesson Planner Wizard', to: 'teaching/lesson-planner-wizard' },
+  { label: 'Class Notes', to: 'teaching/class-notes' },
+  { label: 'Practice Questions', to: 'teaching/practice-questions' },
+  { label: 'Study Materials', to: 'teaching/study-materials' },
+  { label: 'AI Teaching Assistant', to: 'teaching/ai-assistant' },
+];
+
+const studentSectionLinks = studentsLinks.map((item) => ({
+  ...item,
+  to: item.to.replace(/^students\/?/, '') || '.',
+}));
+
+const teachingSectionLinks = teachingLinks.map((item) => ({
+  ...item,
+  to: item.to.replace(/^teaching\/?/, '') || '.',
+}));
+
+const assessmentLinks = [
+  { label: 'Exams', to: 'assessments/exams' },
+  { label: 'Results', to: 'assessments/results' },
+  { label: 'Evaluations', to: 'assessments/evaluations' },
+  { label: 'Report Cards', to: 'assessments/report-cards' },
+];
+
+const assessmentSectionLinks = assessmentLinks.map((item) => ({
+  ...item,
+  to: item.to.replace(/^assessments\/?/, '') || '.',
+}));
+
+const communicationLinks = [
+  { label: 'Chat', to: 'communication/chat' },
+  { label: 'Parent Meetings', to: 'communication/parent-meetings' },
+  { label: 'Student Feedback', to: 'communication/feedback' },
+  { label: 'Excuse Letters', to: 'communication/excuse-letters' },
+];
+
+const communicationSectionLinks = communicationLinks.map((item) => ({
+  ...item,
+  to: item.to.replace(/^communication\/?/, '') || '.',
+}));
+
+const buildClassPath = (classId, section) =>
+  `${PORTAL_BASE}/classes/${encodeURIComponent(classId || 'current')}${section ? `/${section}` : ''}`;
+
+const classDisplayName = (classId) =>
+  classId === 'current' ? 'Current Class' : decodeURIComponent(classId || 'Current Class').replace(/-/g, ' ');
+
+const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }) => {
+  const ModuleIcon = icon;
+
+  return (
+  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+          <ModuleIcon size={20} />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>
+        </div>
+      </div>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <NavLink
+              key={action.to}
+              to={action.to}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+            >
+              {action.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+  );
+};
+
+const ClassesHub = () => {
+  const [allocations, setAllocations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadClasses = async () => {
+      setLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => []);
+        setAllocations(Array.isArray(data) ? data : []);
+      } catch {
+        setAllocations([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadClasses();
+  }, []);
+
+  const classes = allocations.map((item, index) => {
+    const className = item?.classId?.name || item?.className || 'Class';
+    const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
+    const subjectName = item?.subjectId?.name || item?.subjectName || item?.subject || 'Assigned subject';
+    const classId = item?.classId?._id || item?.classId?.id || `${className}-${sectionName}`.toLowerCase().replace(/\s+/g, '-');
+    return {
+      id: String(classId || `class-${index + 1}`),
+      title: `${className} ${sectionName}`,
+      subject: subjectName,
+      role: item?.isClassTeacher ? 'Class teacher' : 'Subject teacher',
+    };
+  });
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Class-centric workspace</p>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-950">Classes</h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-500">
+          Teaching, attendance, student records, assignments, assessments, communication, and reports now live inside the selected class.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Loading assigned classes...</div>
+      ) : classes.length === 0 ? (
+        <PlaceholderModule
+          icon={Users}
+          title="No assigned classes found"
+          description="Use Current Class to continue working with existing tools while allocations are synced."
+          actions={[{ label: 'Open Current Class', to: buildClassPath('current') }]}
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {classes.map((item) => (
+            <NavLink
+              key={item.id}
+              to={buildClassPath(item.id)}
+              className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-200 hover:shadow-lg hover:shadow-slate-200/70"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-slate-950">{item.title}</p>
+                  <p className="mt-1 text-sm text-slate-500">{item.subject}</p>
+                </div>
+                <ChevronRight size={18} className="text-slate-400" />
+              </div>
+              <span className="mt-4 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                {item.role}
+              </span>
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ClassWorkspace = () => {
+  const { classId = 'current' } = useParams();
+  const basePath = buildClassPath(classId);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal / Classes</p>
+            <h1 className="mt-2 text-2xl font-semibold capitalize text-slate-950">{classDisplayName(classId)}</h1>
+            <p className="mt-1 text-sm text-slate-500">One class context for students, teaching, assignments, assessments, communication, and reporting.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {classTabs.map((tab) => {
+              const Icon = tab.icon;
+              const to = tab.path ? `${basePath}/${tab.path}` : basePath;
+              return (
+                <NavLink
+                  key={tab.label}
+                  to={to}
+                  end={!tab.path}
+                  className={({ isActive }) =>
+                    `inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      isActive ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
+                    }`
+                  }
+                >
+                  <Icon size={14} />
+                  {tab.label}
+                </NavLink>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <Outlet />
+    </div>
+  );
+};
+
 
 const TeacherPortal = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState({});
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const isChatRoute = location.pathname.startsWith('/teacher/chat');
-  const isSmartPlannerRoute = location.pathname.startsWith('/teacher/smart-teaching/lesson-planner');
+  const isChatRoute = location.pathname.includes('/communication/chat');
+  const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner');
 
   useEffect(() => {
     if (!location.pathname.startsWith('/teachers')) return;
@@ -151,28 +329,20 @@ const TeacherPortal = () => {
     };
   }, [sidebarOpen]);
 
-  const isItemActive = (path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`);
-
-  useEffect(() => {
-    const activeSection = menuSections.find((section) =>
-      section.children.some((item) => isItemActive(item.path))
-    );
-    if (!activeSection) return;
-    setOpenGroups((prev) => ({ ...prev, [activeSection.id]: true }));
-  }, [location.pathname]);
-
-  const menuItems = useMemo(
-    () => menuSections.flatMap((section) => section.children),
-    []
-  );
+  const isItemActive = useCallback((path) =>
+    location.pathname === path || location.pathname.startsWith(`${path}/`),
+  [location.pathname]);
 
   const activePageTitle = useMemo(() => {
-    const active = menuItems.find(
-      (item) => isItemActive(item.path)
-    );
-    return active?.label || 'Teacher Portal';
-  }, [location.pathname, menuItems]);
+    const active = portalNavigation.find((item) => isItemActive(item.path));
+    if (active) return active.label;
+    if (location.pathname.includes('/students')) return 'Students';
+    if (location.pathname.includes('/teaching')) return 'Teaching Workspace';
+    if (location.pathname.includes('/assessments')) return 'Assessments';
+    if (location.pathname.includes('/communication')) return 'Communication';
+    if (location.pathname.includes('/reports')) return 'Reports & Analytics';
+    return 'Teacher Portal';
+  }, [isItemActive, location.pathname]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -513,72 +683,38 @@ const TeacherPortal = () => {
 
         {/* ── Navigation ── */}
         <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-4 py-6' : 'px-1 py-2'}`}>
-          <div className={`${!sidebarCollapsed ? 'space-y-2' : 'space-y-1'}`}>
-            {menuSections.map((section) => {
-              const isSectionActive = section.children.some((child) => isItemActive(child.path));
-              const isOpen = openGroups[section.id] ?? isSectionActive;
+          <div className={`${!sidebarCollapsed ? 'space-y-1.5' : 'space-y-1'}`}>
+            {portalNavigation.map((item) => {
+              const active = isItemActive(item.path);
+              const Icon = item.icon;
               return (
-                <div key={section.id} className="mb-1">
-                  <button
-                    type="button"
-                    title={sidebarCollapsed ? section.label : undefined}
-                    onClick={() =>
-                      sidebarCollapsed
-                        ? setSidebarCollapsed(false)
-                        : setOpenGroups((prev) => ({ ...prev, [section.id]: !isOpen }))
-                    }
-                    className={`
-                      w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-3 rounded-lg
-                      group transition-all duration-300 ease-out transform
-                      text-gray-600 hover:bg-linear-to-r hover:from-blue-50 hover:to-yellow-50 hover:text-gray-900 hover:shadow-md hover:scale-105 active:scale-95
-                    `}
-                  >
-                    <section.icon
-                      size={20}
-                      className="shrink-0 transition-all duration-300 text-gray-600 group-hover:text-blue-600 group-hover:scale-110"
-                    />
-                    {!sidebarCollapsed && (
-                      <span className="font-medium flex-1 text-left transition-all duration-300">{section.label}</span>
-                    )}
-                    {!sidebarCollapsed && (
-                      isOpen
-                        ? <ChevronDown size={16} className="text-gray-400 group-hover:text-blue-600 transition-all duration-300 group-hover:rotate-180" />
-                        : <ChevronRight size={16} className="text-gray-400 group-hover:text-blue-600 transition-all duration-300 group-hover:translate-x-1" />
-                    )}
-                  </button>
-
-                  {!sidebarCollapsed && isOpen && (
-                    <div className="ml-6 mt-1 space-y-1">
-                      {section.children.map((item) => {
-                        const active = isItemActive(item.path);
-                        return (
-                          <NavLink
-                            key={item.path}
-                            to={item.path}
-                            className={`
-                              w-full flex items-center space-x-3 px-4 py-2 rounded-lg
-                              group transition-all duration-300 ease-out transform
-                              ${active
-                                ? 'bg-linear-to-r from-yellow-100 to-yellow-50 text-yellow-700 border-l-2 border-yellow-500 shadow-sm'
-                                : 'text-gray-500 hover:bg-linear-to-r hover:from-gray-50 hover:to-blue-50 hover:text-gray-700 hover:shadow-sm hover:scale-105 active:scale-95 hover:border-l-2 hover:border-blue-200'
-                              }
-                            `}
-                          >
-                            <item.icon
-                              size={16}
-                              className={`shrink-0 transition-all duration-300 ${active ? 'text-yellow-600' : 'group-hover:text-blue-600 group-hover:scale-110'
-                                }`}
-                            />
-                            <span className="text-sm font-medium transition-all duration-300">{item.label}</span>
-                          </NavLink>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  className={`group flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} rounded-xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
+                    active
+                      ? 'bg-slate-950 text-white shadow-lg shadow-slate-200'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                  }`}
+                >
+                  <Icon size={19} className="shrink-0" />
+                  {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                </NavLink>
               );
             })}
           </div>
+
+          {!sidebarCollapsed && (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Architecture</p>
+              <div className="mt-3 space-y-2 text-xs text-slate-600">
+                <div className="flex items-center gap-2"><Users size={14} />Class context owns workflows</div>
+                <div className="flex items-center gap-2"><Brain size={14} />AI centralized in Teaching and AI Center</div>
+                <div className="flex items-center gap-2"><Library size={14} />Resources shared by reference</div>
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* ── Bottom: Logout ── */}
@@ -813,35 +949,137 @@ const TeacherPortal = () => {
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
+              <Route path="classes" element={<ClassesHub />} />
+              <Route path="classes/:classId" element={<ClassWorkspace />}>
+                <Route
+                  index
+                  element={
+                    <PlaceholderModule
+                      icon={Home}
+                      title="Class Overview"
+                      description="A concise class command center for roster health, today's schedule, open work, recent notifications, and risk signals."
+                      actions={studentsLinks.slice(0, 3)}
+                    />
+                  }
+                />
+                <Route
+                  path="students"
+                  element={
+                    <PlaceholderModule
+                      icon={Users}
+                      title="Students"
+                      description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
+                      actions={studentSectionLinks}
+                    />
+                  }
+                />
+                <Route path="students/attendance" element={<AttendanceManagement />} />
+                <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
+                <Route path="students/observations" element={<StudentObservationOverview />} />
+                <Route path="students/achievements" element={<TeacherAchievements />} />
+                <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
+                <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />
+                <Route
+                  path="teaching"
+                  element={
+                    <PlaceholderModule
+                      icon={BookOpen}
+                      title="Teaching Workspace"
+                      description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
+                      actions={teachingSectionLinks}
+                    />
+                  }
+                />
+                <Route path="teaching/lesson-plans" element={<LessonPlanDashboard />} />
+                <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
+                <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
+                <Route path="teaching/class-notes" element={<ClassNotes />} />
+                <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
+                <Route path="teaching/study-materials" element={<TeacherAlcove />} />
+                <Route path="teaching/ai-assistant" element={<AIPoweredTeaching />} />
+                <Route path="assignments" element={<AssignmentPortal />} />
+                <Route
+                  path="assessments"
+                  element={
+                    <PlaceholderModule
+                      icon={GraduationCap}
+                      title="Assessments"
+                      description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
+                      actions={assessmentSectionLinks}
+                    />
+                  }
+                />
+                <Route path="assessments/exams" element={<ResultManagement />} />
+                <Route path="assessments/results" element={<ResultManagement />} />
+                <Route path="assessments/evaluations" element={<ResultManagement />} />
+                <Route path="assessments/report-cards" element={<ResultManagement />} />
+                <Route
+                  path="communication"
+                  element={
+                    <PlaceholderModule
+                      icon={MessageSquare}
+                      title="Communication"
+                      description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
+                      actions={communicationSectionLinks}
+                    />
+                  }
+                />
+                <Route path="communication/chat" element={<TeacherChat />} />
+                <Route path="communication/parent-meetings" element={<ParentMeetings />} />
+                <Route path="communication/feedback" element={<TeacherFeedbackPortal />} />
+                <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
+                <Route
+                  path="reports"
+                  element={
+                    <PlaceholderModule
+                      icon={BarChart3}
+                      title="Reports & Analytics"
+                      description="Analytics stays interactive for trends and weak-student detection; reports are exportable summaries for review and sharing."
+                      actions={[{ label: 'Student Analytics', to: '../students/analytics' }, { label: 'Results', to: '../assessments/results' }]}
+                    />
+                  }
+                />
+              </Route>
+
+              <Route path="calendar" element={<HolidayList />} />
+              <Route path="timetable" element={<ClassRoutine />} />
+              <Route
+                path="notifications"
+                element={<PlaceholderModule icon={Bell} title="Notifications" description="Recent alerts, unread items, and action-required updates for your teaching workflow." />}
+              />
+              <Route path="resource-library" element={<TeacherAlcove />} />
+              <Route path="ai-center" element={<AIPoweredTeaching />} />
+              <Route path="settings" element={<MyWorkPortal />} />
               <Route path="test" element={<TestTeacherPortal />} />
-              <Route path="my-work-portal" element={<MyWorkPortal />} />
-              <Route path="class-routine" element={<ClassRoutine />} />
-              <Route path="holidays" element={<HolidayList />} />
-              <Route path="attendance" element={<AttendanceManagement />} />
-              <Route path="achievements" element={<TeacherAchievements />} />
-              <Route path="student-analytics" element={<StudentAnalyticsPortal />} />
-              <Route path="progress" element={<Navigate to="/teacher/student-analytics" replace />} />
-              <Route path="weak-students" element={<Navigate to="/teacher/student-analytics" replace />} />
-              <Route path="smart-teaching" element={<AIPoweredTeaching />} />
-              <Route path="smart-teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
-              <Route path="smart-teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
-              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/smart-teaching" replace />} />
-              <Route path="academic-alcove" element={<TeacherAlcove />} />
-              <Route path="ai-learning/:studentId/:subject" element={<AILearningPath />} />
-              <Route path="health-updates" element={<HealthUpdatesAdvanced />} />
-              <Route path="student-observations" element={<StudentObservationOverview />} />
-              <Route path="parent-meetings" element={<ParentMeetings />} />
-              <Route path="assignments" element={<AssignmentPortal />} />
-              <Route path="evaluation" element={<Navigate to="/teacher/assignments" replace />} />
-              <Route path="practice-questions" element={<PracticeQuestions />} />
-              <Route path="chat" element={<TeacherChat />} />
-              <Route path="lesson-plans" element={<LessonPlanDashboard />} />
-              <Route path="class-notes" element={<ClassNotes />} />
-              <Route path="exams" element={<Navigate to="/teacher/result-management" replace />} />
-              <Route path="result-management" element={<ResultManagement />} />
-              <Route path="results" element={<Navigate to="/teacher/result-management" replace />} />
-              <Route path="excuse-letters" element={<ExcuseLetters />} />
-              <Route path="feedback" element={<TeacherFeedbackPortal />} />
+
+              <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
+              <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />
+              <Route path="holidays" element={<Navigate to="/teacher/calendar" replace />} />
+              <Route path="attendance" element={<Navigate to={buildClassPath('current', 'students/attendance')} replace />} />
+              <Route path="achievements" element={<Navigate to={buildClassPath('current', 'students/achievements')} replace />} />
+              <Route path="student-analytics" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+              <Route path="progress" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+              <Route path="weak-students" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+              <Route path="health-updates" element={<Navigate to={buildClassPath('current', 'students/health-records')} replace />} />
+              <Route path="student-observations" element={<Navigate to={buildClassPath('current', 'students/observations')} replace />} />
+              <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
+              <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
+              <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
+              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/ai-center" replace />} />
+              <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
+              <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
+              <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
+              <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
+              <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
+              <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
+              <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
+              <Route path="lesson-plans" element={<Navigate to={buildClassPath('current', 'teaching/lesson-plans')} replace />} />
+              <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
+              <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exams')} replace />} />
+              <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/results')} replace />} />
+              <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/results')} replace />} />
+              <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
+              <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
             </Routes>
           </div>
         </main>

@@ -1,0 +1,44 @@
+Teacher Dashboard Information List
+
+Header Information:
+- Greeting (Time-based: Good morning/afternoon/evening)
+- Teacher Name & Initials
+- Current Date & Time
+- Class Teacher Allocation Label (e.g., "Class Teacher: 10-A, 10-B")
+
+Quick Statistics (Summary Cards):
+- Total Students (with percentage change and trend)
+- Attendance Rate (with percentage change and trend)
+- Pending Tasks (Evaluations)
+- Upcoming Events
+
+Quick Actions:
+- Open Classes (/teacher/classes)
+- Class Attendance (/teacher/classes/current/students/attendance)
+- Assignments (/teacher/classes/current/assignments)
+- Teaching Workspace (/teacher/classes/current/teaching)
+- Assessments (/teacher/classes/current/assessments)
+- AI Center (/teacher/ai-center)
+
+Main Dashboard Sections:
+1. Today's Schedule (Weekly Schedule):
+   - List of upcoming classes with Subject, Class, Section, Room, Time, and Status.
+   - Link to Full Timetable.
+
+2. Performance Overview (Class Insights Snapshot):
+   - Subject Averages with progress bars and trends.
+   - Top Performers list with score and improvement metrics.
+   - Timeframe filters: Weekly, Monthly, Yearly.
+
+3. Recent Activity:
+   - Timeline of recent updates/messages with relative timestamps.
+   - Quick "Eye" icon to view details.
+
+4. Upcoming Deadlines:
+   - List of pending tasks/assignments with Type, Due Date, Title, Class, and Subject.
+
+Utility Controls:
+- Download Report
+- Filter Data
+- More Options (contextual menus)
+- Timeframe Toggles (Weekly/Monthly/Yearly)

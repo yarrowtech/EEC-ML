@@ -1,0 +1,24 @@
+Teacher Calendar Features
+
+Overview
+- Route: `/teacher/calendar` (currently uses `HolidayList.jsx`)
+- Title: Holiday List
+- Description: Read-only view of the school's holiday calendar.
+
+Key Features:
+- Download PDF functionality:
+  - Generates a PDF of the current year's holidays.
+  - Includes school meta information (name, address, logo).
+  - Calculates and displays duration in days for each holiday.
+- Holiday Display:
+  - Table view showing "Date Range" and "Holiday Name".
+  - Shows dates as single days or ranges (e.g., "Jan 1, 2024 to Jan 3, 2024").
+  - Past holidays are visually distinct (grayed out with strike-through text).
+- Total Holidays count display.
+
+Data Integration:
+- Fetches holiday data from `/api/holidays/teacher`.
+- Attempts to fetch school meta data from `/api/teacher/dashboard/routine`, `/api/teacher/dashboard`, or local storage as fallbacks for the PDF generation.
+
+Note:
+The route `/teacher/calendar` currently only displays the `HolidayList.jsx` component. If a full calendar view with events, assignments, and holidays is intended, it will require a new component to aggregate and display that data in a calendar format.

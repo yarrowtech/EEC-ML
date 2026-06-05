@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
 import { 
   BookOpen, 
   Search as SearchIcon, 
@@ -21,7 +22,18 @@ import {
   Download,
   Users,
   X,
-  Loader2
+  Loader2,
+  Trophy,
+  Flame,
+  GitFork,
+  Sparkles,
+  PenLine,
+  MessageCircle,
+  TrendingUp,
+  CheckCircle2,
+  Layers,
+  UserCheck,
+  ChevronRight
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -425,734 +437,400 @@ const TeacherAlcove = () => {
 
   const filteredProblems = problems;
 
+  const hubStats = useMemo(() => {
+    const source = viewMode === 'my-problems' ? myProblems : problems;
+    return {
+      discussions: source.length,
+      answers: source.reduce((sum, item) => sum + Number(item.comments || 0), 0),
+      saves: source.reduce((sum, item) => sum + Number(item.saves || 0), 0),
+      views: source.reduce((sum, item) => sum + Number(item.views || 0), 0),
+    };
+  }, [myProblems, problems, viewMode]);
+
+  const trendingTopics = useMemo(() => {
+    const counts = new Map();
+    problems.forEach((problem) => {
+      [problem.subject, problem.chapter, ...(problem.tags || [])].filter(Boolean).forEach((topic) => {
+        counts.set(topic, (counts.get(topic) || 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [problems]);
+
+  const topContributors = useMemo(() => {
+    const contributors = new Map();
+    problems.forEach((problem) => {
+      const key = problem.teacherName || 'Contributor';
+      const current = contributors.get(key) || { name: key, avatar: problem.teacherAvatar || 'T', posts: 0, score: 0 };
+      contributors.set(key, {
+        ...current,
+        posts: current.posts + 1,
+        score: current.score + Number(problem.likes || 0) + Number(problem.comments || 0) * 2 + Number(problem.views || 0),
+      });
+    });
+    return Array.from(contributors.values()).sort((a, b) => b.score - a.score).slice(0, 5);
+  }, [problems]);
+
+  const collections = useMemo(() => {
+    const subjects = Array.from(new Set(problems.map((problem) => problem.subject).filter(Boolean))).slice(0, 4);
+    const defaults = ['Algebra Mastery', 'Olympiad Archive', 'Revision Set', 'Physics Numericals'];
+    return (subjects.length ? subjects : defaults).map((subject, index) => ({
+      title: defaults[index] || `${subject} Collection`,
+      subject,
+      count: problems.filter((problem) => problem.subject === subject || (problem.tags || []).includes(subject)).length || Math.max(3, index + 4),
+      accent: ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'][index % 4],
+    }));
+  }, [problems]);
+
+  const activeProblems = viewMode === 'my-problems' ? myProblems : filteredProblems;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-100 p-6">
-      {/* Enhanced Header */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-2xl mb-8">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 left-0 w-64 h-64 bg-white rounded-full transform -translate-x-32 -translate-y-32"></div>
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full transform translate-x-48 translate-y-48"></div>
-          <div className="absolute top-1/2 left-1/2 w-40 h-40 bg-yellow-300 rounded-full transform -translate-x-20 -translate-y-20"></div>
-        </div>
-        
-        <div className="relative z-10 p-8">
-          <div className="text-center mb-6">
-            <div className="flex items-center justify-center space-x-3 mb-4">
-              <div className="p-3 bg-white/20 backdrop-blur-sm rounded-xl">
-                <Brain className="w-8 h-8 text-white" />
-              </div>
-              <h1 className="text-4xl font-bold text-white">Teacher's Problem Alcove</h1>
-              <div className="px-3 py-1 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full">
-                <span className="text-white text-xs font-bold">EDUCATOR SPACE</span>
-              </div>
-            </div>
-            <p className="text-white/90 text-lg max-w-3xl mx-auto">
-              Create, share, and collaborate on challenging problems with fellow educators. Build a repository of quality educational content.
-            </p>
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="flex justify-center">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-2 shadow-lg">
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setViewMode('wall')}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                    viewMode === 'wall'
-                      ? 'bg-white text-indigo-600 shadow-lg transform scale-105'
-                      : 'text-white hover:bg-white/10'
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Problem Wall</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingProblemId(null);
-                    setNewProblem(emptyProblem);
-                    setViewMode('create');
-                  }}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                    viewMode === 'create'
-                      ? 'bg-white text-purple-600 shadow-lg transform scale-105'
-                      : 'text-white hover:bg-white/10'
-                  }`}
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Create Problem</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('my-problems')}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
-                    viewMode === 'my-problems'
-                      ? 'bg-white text-pink-600 shadow-lg transform scale-105'
-                      : 'text-white hover:bg-white/10'
-                  }`}
-                >
-                  <BookOpen className="w-4 h-4" />
-                  <span>My Problems</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-xl border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Problems</p>
-              <p className="text-3xl font-bold text-indigo-600">{problems.length}</p>
-            </div>
-            <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl">
-              <FileText className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-xl border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Likes</p>
-              <p className="text-3xl font-bold text-pink-600">{problems.reduce((sum, p) => sum + p.likes, 0)}</p>
-            </div>
-            <div className="p-3 bg-gradient-to-br from-pink-500 to-red-600 rounded-xl">
-              <Heart className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-xl border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Views</p>
-              <p className="text-3xl font-bold text-purple-600">{problems.reduce((sum, p) => sum + p.views, 0)}</p>
-            </div>
-            <div className="p-3 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl">
-              <Eye className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-xl border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Saved Problems</p>
-              <p className="text-3xl font-bold text-green-600">{problems.filter(p => p.isSaved).length}</p>
-            </div>
-            <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl">
-              <Bookmark className="w-6 h-6 text-white" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Filters for Wall View */}
-      {viewMode === 'wall' && (
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6 mb-8">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 relative">
-              <SearchIcon className="w-5 h-5 text-purple-600 absolute left-4 top-1/2 -translate-y-1/2" />
-              <input
-                value={filters.search}
-                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                placeholder="Search problems, solutions, or tags..."
-                className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all bg-purple-50"
-              />
-            </div>
-            
-            <div className="flex gap-3">
-              <select 
-                value={filters.subject}
-                onChange={(e) => setFilters(prev => ({ ...prev, subject: e.target.value }))}
-                className="px-4 py-3 border-2 border-indigo-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 bg-indigo-50"
-              >
-                <option value="">All Subjects</option>
-                <option value="Mathematics">Mathematics</option>
-                <option value="Physics">Physics</option>
-                <option value="Chemistry">Chemistry</option>
-                <option value="Biology">Biology</option>
-              </select>
-              
-              <select 
-                value={filters.difficulty}
-                onChange={(e) => setFilters(prev => ({ ...prev, difficulty: e.target.value }))}
-                className="px-4 py-3 border-2 border-pink-200 rounded-xl focus:border-pink-500 focus:ring-2 focus:ring-pink-200 bg-pink-50"
-              >
-                <option value="">All Levels</option>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Problem Wall View */}
-      {viewMode === 'wall' && (
-        <div className="max-w-4xl mx-auto space-y-6">
-          {loading && Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="h-56 rounded-2xl bg-white/70 border border-white/30 animate-pulse" />
-          ))}
-
-          {!loading && filteredProblems.map((problem) => (
-            <div key={problem.id} className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300">
-              {/* Problem Header */}
-              <div className="p-6 border-b border-gray-200">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                    {problem.teacherAvatar}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-xl font-bold text-gray-800 mb-1">{problem.title}</h3>
-                        <p className="text-purple-600 font-medium">{problem.teacherName}</p>
-                        {problem.authorType === 'student' && (problem.authorGrade || problem.authorSection) && (
-                          <p className="text-xs text-indigo-700 font-semibold mt-1">
-                            Class {problem.authorGrade || '-'} • Section {problem.authorSection || '-'}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">
-                            {problem.subject}
-                          </span>
-                          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
-                            {problem.chapter}
-                          </span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            problem.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                            problem.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {problem.difficulty}
-                          </span>
-                          <span className="text-xs text-gray-500 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {problem.estimatedTime} min
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">{formatTimeAgo(problem.timestamp)}</span>
-                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                          <MoreVertical className="w-4 h-4 text-gray-500" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Problem Content */}
-              <div className="p-6">
-                <div className="mb-4">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                    <Target className="w-5 h-5 text-indigo-600" />
-                    Problem Statement
-                  </h4>
-                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-200">
-                    <p className="text-gray-800 leading-relaxed">{problem.problemText}</p>
-                  </div>
-                </div>
-
-                {problem.solutionText && (
-                  <div className="mb-4">
-                    <h4 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                      Solution Approach
-                    </h4>
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
-                      <p className="text-gray-800 leading-relaxed whitespace-pre-line">{problem.solutionText}</p>
-                    </div>
-                  </div>
-                )}
-
-                {problem.hints && problem.hints.length > 0 && problem.hints[0] && (
-                  <div className="mb-4">
-                    <h4 className="text-lg font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                      <Lightbulb className="w-5 h-5 text-yellow-600" />
-                      Hints
-                    </h4>
-                    <div className="space-y-2">
-                      {problem.hints.filter(hint => hint.trim()).map((hint, index) => (
-                        <div key={index} className="bg-gradient-to-r from-yellow-50 to-amber-50 p-3 rounded-lg border border-yellow-200">
-                          <p className="text-gray-700 text-sm">💡 {hint}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {problem.tags && problem.tags.length > 0 && (
-                  <div className="mb-4">
-                    <div className="flex flex-wrap gap-2">
-                      {problem.tags.map((tag, index) => (
-                        <span key={index} className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
-                          <Tag className="w-3 h-3" />
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Problem Actions */}
-              <div className="px-6 pb-6 flex items-center justify-between border-t border-gray-200 pt-4">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => handleLikeProblem(problem.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all ${
-                      problem.isLiked 
-                        ? 'bg-pink-100 text-pink-600 border-2 border-pink-300' 
-                        : 'bg-gray-100 text-gray-600 border-2 border-gray-300 hover:bg-pink-50 hover:text-pink-500'
-                    }`}
-                  >
-                    <Heart className={`w-4 h-4 ${problem.isLiked ? 'fill-current' : ''}`} />
-                    {problem.likes}
-                  </button>
-                  
-                  <button
-                    onClick={() => openProblemDetails(problem)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 text-blue-600 border-2 border-blue-300 hover:bg-blue-50 transition-all"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                    {problem.comments}
-                  </button>
-                  
-                  <button
-                    onClick={() => handleSaveProblem(problem.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all ${
-                      problem.isSaved 
-                        ? 'bg-green-100 text-green-600 border-2 border-green-300' 
-                        : 'bg-gray-100 text-gray-600 border-2 border-gray-300 hover:bg-green-50 hover:text-green-500'
-                    }`}
-                  >
-                    <Bookmark className={`w-4 h-4 ${problem.isSaved ? 'fill-current' : ''}`} />
-                    {problem.saves}
-                  </button>
-                  
-                  <button
-                    onClick={() => openProblemDetails(problem)}
-                    className="flex items-center gap-1 text-gray-500 text-sm hover:text-indigo-600 transition-colors"
-                  >
-                    <Eye className="w-4 h-4" />
-                    {problem.views}
-                  </button>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <button className="p-2 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200 transition-colors">
-                    <Share2 className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 transition-colors">
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {!loading && filteredProblems.length === 0 && (
-            <div className="text-center py-12">
-              <Brain className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No problems found</h3>
-              <p className="text-gray-600">Try adjusting your filters or create a new problem!</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Create Problem View */}
-      {viewMode === 'create' && (
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-3">
-                <Edit3 className="w-6 h-6 text-purple-600" />
-                {editingProblemId ? 'Edit Problem' : 'Create New Problem'}
-              </h2>
-              <p className="text-gray-600">Share your expertise by creating challenging problems for fellow educators.</p>
-            </div>
-
-            <div className="space-y-6">
-              {/* Basic Information */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Problem Title *</label>
-                  <input
-                    value={newProblem.title}
-                    onChange={(e) => setNewProblem(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Enter a descriptive title..."
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Estimated Time (minutes)</label>
-                  <input
-                    type="number"
-                    value={newProblem.estimatedTime}
-                    onChange={(e) => setNewProblem(prev => ({ ...prev, estimatedTime: parseInt(e.target.value) || 30 }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Subject *</label>
-                  <input
-                    value={newProblem.subject}
-                    onChange={(e) => setNewProblem(prev => ({ ...prev, subject: e.target.value }))}
-                    placeholder="e.g., Mathematics, Physics..."
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Chapter/Topic</label>
-                  <input
-                    value={newProblem.chapter}
-                    onChange={(e) => setNewProblem(prev => ({ ...prev, chapter: e.target.value }))}
-                    placeholder="e.g., Algebra, Mechanics..."
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Difficulty Level</label>
-                  <select
-                    value={newProblem.difficulty}
-                    onChange={(e) => setNewProblem(prev => ({ ...prev, difficulty: e.target.value }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                  >
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Problem Statement */}
+    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-[1500px] space-y-5">
+        <Motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-300/50">
+          <div className="relative p-5 sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.45),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(99,102,241,0.55),transparent_38%),linear-gradient(135deg,#0f172a,#111827)]" />
+            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Problem Statement *</label>
-                <textarea
-                  value={newProblem.problemText}
-                  onChange={(e) => setNewProblem(prev => ({ ...prev, problemText: e.target.value }))}
-                  placeholder="Describe the problem clearly and provide all necessary information..."
-                  rows={6}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all resize-none"
-                />
-              </div>
-
-              {/* Solution */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Solution Approach (Optional)</label>
-                <textarea
-                  value={newProblem.solutionText}
-                  onChange={(e) => setNewProblem(prev => ({ ...prev, solutionText: e.target.value }))}
-                  placeholder="Provide step-by-step solution or approach..."
-                  rows={5}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all resize-none"
-                />
-              </div>
-
-              {/* Hints */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Hints (Optional)</label>
-                <div className="space-y-3">
-                  {newProblem.hints.map((hint, index) => (
-                    <div key={index} className="flex gap-3">
-                      <input
-                        value={hint}
-                        onChange={(e) => updateHint(index, e.target.value)}
-                        placeholder={`Hint ${index + 1}...`}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition-all"
-                      />
-                      {newProblem.hints.length > 1 && (
-                        <button
-                          onClick={() => removeHint(index)}
-                          className="px-4 py-3 bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    onClick={addHint}
-                    className="flex items-center gap-2 px-4 py-2 bg-yellow-100 text-yellow-700 rounded-xl hover:bg-yellow-200 transition-colors"
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    Add Hint
-                  </button>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 backdrop-blur">
+                  <GitFork size={14} /> Collaborative Academic Network
                 </div>
-              </div>
-
-              {/* Tags */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Tags (Optional)</label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {newProblem.tags.map((tag, index) => (
-                    <span key={index} className="flex items-center gap-2 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm">
-                      {tag}
-                      <button
-                        onClick={() => removeTag(tag)}
-                        className="text-indigo-500 hover:text-indigo-700"
-                      >
-                        ×
-                      </button>
-                    </span>
+                <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-5xl">Knowledge Hub</h1>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+                  Discover problem discussions, share solutions, mentor students, and build reusable academic knowledge with your school community.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {['Teacher picks', 'Accepted solutions', 'Markdown-ready', 'AI assisted'].map((item) => (
+                    <span key={item} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90">{item}</span>
                   ))}
                 </div>
-                <input
-                  placeholder="Type a tag and press Enter..."
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addTag(e.target.value.trim());
-                      e.target.value = '';
-                    }
-                  }}
-                />
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-4 pt-6 border-t border-gray-200">
-                <button
-                  onClick={() => {
-                    setEditingProblemId(null);
-                    setNewProblem(emptyProblem);
-                    setViewMode('wall');
-                  }}
-                  className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateProblem}
-                  disabled={submitting || !newProblem.title || !newProblem.subject || !newProblem.problemText}
-                  className={`px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2 ${
-                    submitting || !newProblem.title || !newProblem.subject || !newProblem.problemText
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-lg hover:scale-105'
-                  }`}
-                >
-                  <Save className="w-4 h-4" />
-                  {submitting ? 'Saving...' : editingProblemId ? 'Update Problem' : 'Create Problem'}
-                </button>
+              <div className="grid min-w-[280px] gap-3 sm:grid-cols-2">
+                <HubHeroMetric label="Discussions" value={hubStats.discussions} />
+                <HubHeroMetric label="Community answers" value={hubStats.answers} />
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </Motion.section>
 
-      {/* My Problems View */}
-      {viewMode === 'my-problems' && (
-        <div className="max-w-6xl mx-auto">
-          {loading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="h-48 rounded-2xl bg-white/70 border border-white/30 animate-pulse" />
-              ))}
+        <div className="grid gap-4 md:grid-cols-4">
+          <CommunityStat icon={MessageCircle} label="Problem discussions" value={hubStats.discussions} sub="Discover feed" tone="from-blue-500 to-indigo-500" />
+          <CommunityStat icon={CheckCircle2} label="Shared answers" value={hubStats.answers} sub="Thread activity" tone="from-emerald-500 to-teal-500" />
+          <CommunityStat icon={Bookmark} label="Saved posts" value={hubStats.saves} sub="Personal library" tone="from-amber-500 to-orange-500" />
+          <CommunityStat icon={Eye} label="Knowledge views" value={hubStats.views} sub="Community reach" tone="from-violet-500 to-fuchsia-500" />
+        </div>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[
+                { id: 'wall', label: 'Discover Feed', icon: TrendingUp },
+                { id: 'create', label: editingProblemId ? 'Edit Workspace' : 'Solution Workspace', icon: PenLine },
+                { id: 'my-problems', label: 'My Contributions', icon: UserCheck },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button key={tab.id} type="button" onClick={() => { if (tab.id === 'create' && viewMode !== 'create') { setEditingProblemId(null); setNewProblem(emptyProblem); } setViewMode(tab.id); }} className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${viewMode === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    <Icon size={15} />{tab.label}
+                  </button>
+                );
+              })}
             </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {!loading && myProblems.map((problem) => (
-              <div key={problem.id} className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 hover:shadow-2xl transition-all duration-300">
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="text-lg font-bold text-gray-800 line-clamp-2">{problem.title}</h3>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => startEditProblem(problem)}
-                        className="p-2 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200 transition-colors"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProblem(problem.id)}
-                        className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">
-                      {problem.subject}
-                    </span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      problem.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                      problem.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {problem.difficulty}
-                    </span>
-                  </div>
-                  
-                  <p className="text-gray-600 text-sm line-clamp-3 mb-4">{problem.problemText}</p>
-                  
-                  <div className="flex justify-between items-center text-sm text-gray-500">
-                    <div className="flex items-center gap-4">
-                      <span className="flex items-center gap-1">
-                        <Heart className="w-4 h-4" />
-                        {problem.likes}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Eye className="w-4 h-4" />
-                        {problem.views}
-                      </span>
-                    </div>
-                    <span>{formatTimeAgo(problem.timestamp)}</span>
-                  </div>
+
+            {viewMode !== 'create' && (
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                <div className="relative lg:w-80">
+                  <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input value={filters.search} onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} placeholder="Search discussions, tags, solutions" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
                 </div>
-              </div>
-            ))}
-            
-            {!loading && myProblems.length === 0 && (
-              <div className="col-span-full text-center py-12">
-                <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No problems created yet</h3>
-                <p className="text-gray-600 mb-4">Start creating problems to build your educational content library!</p>
-                <button
-                  onClick={() => setViewMode('create')}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all font-medium"
-                >
-                  Create Your First Problem
-                </button>
+                <select value={filters.subject} onChange={(event) => setFilters((prev) => ({ ...prev, subject: event.target.value }))} className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100">
+                  <option value="">All subjects</option>
+                  <option value="Mathematics">Mathematics</option>
+                  <option value="Physics">Physics</option>
+                  <option value="Chemistry">Chemistry</option>
+                  <option value="Biology">Biology</option>
+                </select>
+                <select value={filters.difficulty} onChange={(event) => setFilters((prev) => ({ ...prev, difficulty: event.target.value }))} className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100">
+                  <option value="">All levels</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
               </div>
             )}
           </div>
-        </div>
-      )}
+        </section>
 
-      {detailProblem && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-4 flex items-center justify-center"
-          onClick={() => setDetailProblem(null)}
-        >
-          <div
-            className="w-full max-w-3xl max-h-[85vh] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-gray-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 z-10 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-5 py-4 rounded-t-2xl flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-lg">{detailProblem.title}</h3>
-                <p className="text-xs text-white/85 mt-1">
-                  {detailProblem.subject} • {detailProblem.chapter} • {detailProblem.teacherName}
-                </p>
-              </div>
-              <button
-                onClick={() => setDetailProblem(null)}
-                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-5">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
-                  <p className="text-xs text-blue-700 font-semibold">Comments</p>
-                  <p className="text-xl font-black text-blue-900">{detailComments.length}</p>
-                </div>
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-center">
-                  <p className="text-xs text-indigo-700 font-semibold">Viewers</p>
-                  <p className="text-xl font-black text-indigo-900">{detailViewers.length}</p>
-                </div>
-                <div className="rounded-xl border border-pink-200 bg-pink-50 p-3 text-center">
-                  <p className="text-xs text-pink-700 font-semibold">Likes</p>
-                  <p className="text-xl font-black text-pink-900">{detailProblem.likes}</p>
-                </div>
-              </div>
-
-              {detailLoading ? (
-                <div className="py-12 flex items-center justify-center text-gray-500">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  Loading details...
-                </div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="min-w-0 space-y-5">
+            <AnimatePresence mode="wait">
+              {viewMode === 'create' ? (
+                <Motion.div key="editor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                  <KnowledgeEditor
+                    newProblem={newProblem}
+                    setNewProblem={setNewProblem}
+                    editingProblemId={editingProblemId}
+                    submitting={submitting}
+                    onCancel={() => { setEditingProblemId(null); setNewProblem(emptyProblem); setViewMode('wall'); }}
+                    onSubmit={handleCreateProblem}
+                    addHint={addHint}
+                    updateHint={updateHint}
+                    removeHint={removeHint}
+                    addTag={addTag}
+                    removeTag={removeTag}
+                  />
+                </Motion.div>
               ) : (
-                <>
-                  <div>
-                    <h4 className="font-bold text-gray-800 mb-2">Comments</h4>
-                    <div className="space-y-2 max-h-56 overflow-y-auto border border-gray-200 rounded-xl p-3">
-                      {detailComments.length === 0 ? (
-                        <p className="text-sm text-gray-500">No comments yet.</p>
-                      ) : detailComments.map((comment) => {
-                        const byId = comment?.authorId && detailProblem?.authorUserId && String(comment.authorId) === String(detailProblem.authorUserId);
-                        const byType = String(comment?.authorType || '').toLowerCase() === String(detailProblem?.authorType || '').toLowerCase();
-                        const byName = String(comment?.authorName || '').trim().toLowerCase() === String(detailProblem?.authorName || detailProblem?.teacherName || '').trim().toLowerCase();
-                        const isPostAuthor = (byId && byType) || byName;
-                        return (
-                        <div key={comment._id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-gray-800">
-                                {comment.authorName || 'User'}
-                                {isPostAuthor && <span className="ml-1 text-[11px] text-amber-700 font-bold">(Author)</span>}
-                              </p>
-                              {String(comment.authorType || '').toLowerCase() === 'student' && (comment.authorGrade || comment.authorSection) && (
-                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">
-                                  Class {comment.authorGrade || '-'} • Sec {comment.authorSection || '-'}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-gray-500">{new Date(comment.createdAt).toLocaleString()}</p>
-                          </div>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{comment.text}</p>
-                        </div>
-                      )})}
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <input
-                        value={detailCommentText}
-                        onChange={(e) => setDetailCommentText(e.target.value)}
-                        placeholder="Write a comment as teacher..."
-                        className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                      />
-                      <button
-                        onClick={submitDetailComment}
-                        disabled={postingDetailComment || !detailCommentText.trim()}
-                        className={`rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${postingDetailComment || !detailCommentText.trim()
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                        }`}
-                      >
-                        {postingDetailComment ? 'Posting...' : 'Post'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* <div>
-                    <h4 className="font-bold text-gray-800 mb-2">Viewers</h4>
-                    <div className="space-y-2 max-h-56 overflow-y-auto border border-gray-200 rounded-xl p-3">
-                      {detailViewers.length === 0 ? (
-                        <p className="text-sm text-gray-500">No viewers yet.</p>
-                      ) : detailViewers.map((viewer) => (
-                        <div key={`${viewer.userType}-${viewer.id}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3">
-                          <p className="text-sm font-semibold text-gray-800">{viewer.name}</p>
-                          <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 capitalize">{viewer.userType}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div> */}
-                </>
+                <Motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
+                  <FeedHeader viewMode={viewMode} loading={loading} count={activeProblems.length} onCreate={() => { setEditingProblemId(null); setNewProblem(emptyProblem); setViewMode('create'); }} />
+                  {loading && Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-56 animate-pulse rounded-3xl border border-slate-200 bg-white" />)}
+                  {!loading && activeProblems.map((problem, index) => (
+                    <DiscussionCard
+                      key={problem.id}
+                      problem={problem}
+                      index={index}
+                      onOpen={openProblemDetails}
+                      onLike={handleLikeProblem}
+                      onSave={handleSaveProblem}
+                      onEdit={startEditProblem}
+                      onDelete={handleDeleteProblem}
+                      canManage={viewMode === 'my-problems'}
+                      formatTimeAgo={formatTimeAgo}
+                    />
+                  ))}
+                  {!loading && activeProblems.length === 0 && <EmptyKnowledgeState onCreate={() => setViewMode('create')} />}
+                </Motion.div>
               )}
-            </div>
-          </div>
+            </AnimatePresence>
+          </main>
+
+          <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
+            <CommunityPanel contributors={topContributors} topics={trendingTopics} />
+            <CollectionsPanel collections={collections} />
+            <AiAssistPanel />
+          </aside>
         </div>
-      )}
+      </div>
+
+      <AnimatePresence>
+        {detailProblem && (
+          <DiscussionModal
+            problem={detailProblem}
+            comments={detailComments}
+            viewers={detailViewers}
+            loading={detailLoading}
+            commentText={detailCommentText}
+            setCommentText={setDetailCommentText}
+            posting={postingDetailComment}
+            onPost={submitDetailComment}
+            onClose={() => setDetailProblem(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+
+const HubHeroMetric = ({ label, value }) => (
+  <Motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-100">{label}</p>
+    <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
+  </Motion.div>
+);
+
+const CommunityStat = ({ icon, label, value, sub, tone }) => (
+  <Motion.div whileHover={{ y: -3, scale: 1.01 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-lg hover:shadow-slate-200/70">
+    <div className="flex items-start justify-between">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br ${tone} text-white shadow-lg`}>{React.createElement(icon, { size: 18 })}</div>
+      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">Live</span>
+    </div>
+    <p className="mt-4 text-2xl font-semibold text-slate-950">{value}</p>
+    <p className="mt-1 text-xs font-semibold text-slate-500">{label}</p>
+    <p className="mt-1 text-[11px] text-slate-400">{sub}</p>
+  </Motion.div>
+);
+
+const FeedHeader = ({ viewMode, loading, count, onCreate }) => (
+  <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">{viewMode === 'my-problems' ? 'My Contributions' : 'Discover Feed'}</p>
+      <h2 className="mt-1 text-xl font-semibold text-slate-950">{viewMode === 'my-problems' ? 'Your academic contributions' : 'Active academic discussions'}</h2>
+      <p className="mt-1 text-sm text-slate-500">{loading ? 'Loading community knowledge...' : `${count} thread${count === 1 ? '' : 's'} available`}</p>
+    </div>
+    <button onClick={onCreate} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
+      <PlusCircle size={16} /> Start Discussion
+    </button>
+  </div>
+);
+
+const DiscussionCard = ({ problem, index, onOpen, onLike, onSave, onEdit, onDelete, canManage, formatTimeAgo }) => {
+  const solved = Number(problem.comments || 0) > 0 && problem.solutionText;
+  return (
+    <Motion.article initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.035 }} whileHover={{ y: -2 }} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-xl hover:shadow-slate-200/70">
+      <div className="flex gap-4">
+        <div className="hidden w-16 shrink-0 space-y-2 text-center sm:block">
+          <VoteStat value={problem.likes} label="likes" active={problem.isLiked} />
+          <VoteStat value={problem.comments} label="answers" active={solved} />
+          <VoteStat value={problem.views} label="views" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {solved && <Badge tone="emerald" icon={CheckCircle2} label="Accepted solution" />}
+                {problem.authorType === 'teacher' ? <Badge tone="indigo" icon={UserCheck} label="Teacher response" /> : <Badge tone="cyan" icon={Users} label="Student thread" />}
+                <Badge tone="slate" icon={Clock} label={formatTimeAgo(problem.timestamp)} />
+              </div>
+              <button onClick={() => onOpen(problem)} className="text-left text-xl font-semibold leading-snug text-slate-950 hover:text-indigo-700">{problem.title}</button>
+              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">{problem.problemText}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Avatar initials={problem.teacherAvatar} />
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-slate-800">{problem.teacherName}</p>
+                <p className="text-[11px] text-slate-400">Top Contributor</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <TagPill label={problem.subject || 'General'} />
+            <TagPill label={problem.chapter || 'Discussion'} />
+            <DifficultyPill difficulty={problem.difficulty} />
+            {(problem.tags || []).slice(0, 4).map((tag) => <TagPill key={tag} label={tag} muted />)}
+          </div>
+
+          {problem.solutionText && (
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-emerald-700"><CheckCircle size={14} />Highlighted explanation</div>
+              <p className="line-clamp-3 whitespace-pre-line text-sm leading-6 text-emerald-950">{problem.solutionText}</p>
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <ActionButton active={problem.isLiked} icon={Heart} label={`${problem.likes} Like`} onClick={() => onLike(problem.id)} />
+              <ActionButton icon={MessageSquare} label={`${problem.comments} Discuss`} onClick={() => onOpen(problem)} />
+              <ActionButton active={problem.isSaved} icon={Bookmark} label={problem.isSaved ? 'Saved' : 'Save'} onClick={() => onSave(problem.id)} />
+              <ActionButton icon={Sparkles} label="AI summarize" onClick={() => onOpen(problem)} />
+            </div>
+            <div className="flex items-center gap-2">
+              {canManage && <button onClick={() => onEdit(problem)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"><Edit3 size={14} className="mr-1 inline" />Edit</button>}
+              {canManage && <button onClick={() => onDelete(problem.id)} className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">Delete</button>}
+              <button onClick={() => onOpen(problem)} className="inline-flex items-center gap-1 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">Open thread <ChevronRight size={14} /></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Motion.article>
+  );
+};
+
+const VoteStat = ({ value, label, active }) => (
+  <div className={`rounded-2xl border px-2 py-2 ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+    <p className="text-sm font-bold">{value}</p>
+    <p className="text-[10px] font-semibold uppercase">{label}</p>
+  </div>
+);
+
+const Badge = ({ tone, icon, label }) => {
+  const tones = {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    indigo: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    cyan: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-500',
+  };
+  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-bold ${tones[tone]}`}>{React.createElement(icon, { size: 12 })}{label}</span>;
+};
+
+const TagPill = ({ label, muted }) => <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${muted ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-700'}`}>#{label}</span>;
+
+const DifficultyPill = ({ difficulty }) => {
+  const classes = difficulty === 'easy' ? 'bg-emerald-50 text-emerald-700' : difficulty === 'hard' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}>{difficulty}</span>;
+};
+
+const ActionButton = ({ icon, label, onClick, active }) => (
+  <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+    {React.createElement(icon, { size: 14, className: active ? 'fill-current' : '' })}{label}
+  </button>
+);
+
+const Avatar = ({ initials }) => <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white shadow-sm">{initials}</div>;
+
+const KnowledgeEditor = ({ newProblem, setNewProblem, editingProblemId, submitting, onCancel, onSubmit, addHint, updateHint, removeHint, addTag, removeTag }) => (
+  <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="mb-5 flex flex-col gap-3 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">Solution Workspace</p>
+        <h2 className="mt-1 text-2xl font-semibold text-slate-950">{editingProblemId ? 'Edit knowledge thread' : 'Start a knowledge thread'}</h2>
+        <p className="mt-1 text-sm text-slate-500">Markdown-style writing, hints, tags, and lightweight AI assistance for clear explanations.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {['Suggest Tags', 'Improve Formatting', 'Simplify Explanation', 'Generate Hints'].map((item) => <button key={item} className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"><Sparkles size={13} className="mr-1 inline" />{item}</button>)}
+      </div>
+    </div>
+
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="space-y-4">
+        <InputField label="Thread title" value={newProblem.title} onChange={(value) => setNewProblem((prev) => ({ ...prev, title: value }))} placeholder="Write a searchable academic question..." />
+        <div className="grid gap-4 md:grid-cols-3">
+          <InputField label="Subject" value={newProblem.subject} onChange={(value) => setNewProblem((prev) => ({ ...prev, subject: value }))} placeholder="Mathematics" />
+          <InputField label="Topic" value={newProblem.chapter} onChange={(value) => setNewProblem((prev) => ({ ...prev, chapter: value }))} placeholder="Algebra" />
+          <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-500">Difficulty</span><select value={newProblem.difficulty} onChange={(event) => setNewProblem((prev) => ({ ...prev, difficulty: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+        </div>
+        <TextAreaField label="Problem discussion" value={newProblem.problemText} onChange={(value) => setNewProblem((prev) => ({ ...prev, problemText: value }))} rows={7} placeholder="Use markdown-like structure, equations, and context..." />
+        <TextAreaField label="Solution / explanation" value={newProblem.solutionText} onChange={(value) => setNewProblem((prev) => ({ ...prev, solutionText: value }))} rows={6} placeholder="Step-by-step solution, accepted approach, or teacher explanation..." />
+        <div className="rounded-2xl border border-slate-200 p-4">
+          <div className="mb-3 flex items-center justify-between"><p className="text-sm font-semibold text-slate-800">Hint suggestions</p><button onClick={addHint} className="text-xs font-semibold text-indigo-600">Add hint</button></div>
+          <div className="space-y-2">{newProblem.hints.map((hint, index) => <div key={index} className="flex gap-2"><input value={hint} onChange={(event) => updateHint(index, event.target.value)} placeholder={`Hint ${index + 1}`} className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300" />{newProblem.hints.length > 1 && <button onClick={() => removeHint(index)} className="rounded-xl border border-red-200 px-3 text-xs font-semibold text-red-600">Remove</button>}</div>)}</div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 p-4">
+          <p className="mb-3 text-sm font-semibold text-slate-800">Tags</p>
+          <div className="mb-3 flex flex-wrap gap-2">{newProblem.tags.map((tag) => <button key={tag} onClick={() => removeTag(tag)} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">#{tag} x</button>)}</div>
+          <input onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag(event.currentTarget.value.trim()); event.currentTarget.value = ''; } }} placeholder="Type a tag and press Enter" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300" />
+        </div>
+      </div>
+
+      <aside className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-900">Live preview</p><h3 className="mt-3 text-lg font-semibold text-slate-950">{newProblem.title || 'Untitled thread'}</h3><p className="mt-2 line-clamp-6 whitespace-pre-line text-sm text-slate-600">{newProblem.problemText || 'Your problem discussion preview appears here.'}</p></div>
+        <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4"><p className="text-sm font-semibold text-cyan-900">AI assist layer</p><p className="mt-2 text-xs leading-5 text-cyan-800">Use lightweight assistance for formatting, tags, summaries, and hint ideas. Full AI workflows remain in AI Center.</p></div>
+      </aside>
+    </div>
+
+    <div className="mt-5 flex justify-end gap-3 border-t border-slate-100 pt-5"><button onClick={onCancel} className="rounded-2xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button><button onClick={onSubmit} disabled={submitting || !newProblem.title || !newProblem.subject || !newProblem.problemText} className="rounded-2xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{submitting ? 'Saving...' : editingProblemId ? 'Update Thread' : 'Publish Thread'}</button></div>
+  </section>
+);
+
+const InputField = ({ label, value, onChange, placeholder }) => <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-500">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100" /></label>;
+const TextAreaField = ({ label, value, onChange, rows, placeholder }) => <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-500">{label}</span><textarea value={value} onChange={(event) => onChange(event.target.value)} rows={rows} placeholder={placeholder} className="w-full resize-none rounded-2xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100" /></label>;
+
+const EmptyKnowledgeState = ({ onCreate }) => <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm"><Brain className="mx-auto h-12 w-12 text-slate-300" /><h3 className="mt-4 text-lg font-semibold text-slate-900">No discussions found</h3><p className="mt-2 text-sm text-slate-500">Try another filter or start a new academic thread.</p><button onClick={onCreate} className="mt-5 rounded-2xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white">Start Discussion</button></div>;
+
+const CommunityPanel = ({ contributors, topics }) => <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2"><Flame size={17} className="text-orange-500" /><h2 className="text-sm font-semibold text-slate-950">Community Insights</h2></div><div className="space-y-3"><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Top contributors</p>{contributors.length === 0 ? <p className="text-sm text-slate-500">No contributors yet.</p> : contributors.map((item) => <div key={item.name} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3"><Avatar initials={item.avatar} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800">{item.name}</p><p className="text-[11px] text-slate-400">{item.posts} posts · {item.score} reputation</p></div><Trophy size={15} className="text-amber-500" /></div>)}<div className="border-t border-slate-100 pt-3"><p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Trending topics</p><div className="flex flex-wrap gap-2">{topics.length === 0 ? <span className="text-sm text-slate-500">Topics appear after posts are added.</span> : topics.map((topic) => <span key={topic.label} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">#{topic.label} · {topic.count}</span>)}</div></div></div></section>;
+
+const CollectionsPanel = ({ collections }) => <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2"><Layers size={17} className="text-indigo-600" /><h2 className="text-sm font-semibold text-slate-950">Collaborative Collections</h2></div><div className="space-y-2">{collections.map((collection) => <div key={collection.title} className="rounded-2xl border border-slate-100 p-3"><div className="flex items-center gap-3"><span className={`h-9 w-1.5 rounded-full ${collection.accent}`} /><div><p className="text-sm font-semibold text-slate-900">{collection.title}</p><p className="text-xs text-slate-400">{collection.count} reusable resources · {collection.subject}</p></div></div></div>)}</div></section>;
+
+const AiAssistPanel = () => <section className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-cyan-700" /><h2 className="text-sm font-semibold text-cyan-950">AI Assist Layer</h2></div><div className="space-y-2">{['Summarize Discussion', 'Suggest Tags', 'Improve Formatting', 'Simplify Explanation', 'Generate Hint Suggestions'].map((item) => <button key={item} className="w-full rounded-2xl bg-white px-3 py-2 text-left text-xs font-semibold text-cyan-800 shadow-sm hover:bg-cyan-100">{item}</button>)}</div></section>;
+
+const DiscussionModal = ({ problem, comments, viewers, loading, commentText, setCommentText, posting, onPost, onClose }) => (
+  <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
+    <Motion.div initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 14, scale: 0.98 }} transition={{ type: 'spring', stiffness: 260, damping: 24 }} className="max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5"><div><div className="mb-2 flex flex-wrap gap-2"><Badge tone="indigo" icon={MessageSquare} label="Discussion thread" /><Badge tone="emerald" icon={CheckCircle2} label="Teacher-reviewed" /></div><h3 className="text-xl font-semibold text-slate-950">{problem.title}</h3><p className="mt-1 text-sm text-slate-500">{problem.subject} · {problem.chapter} · {problem.teacherName}</p></div><button onClick={onClose} className="rounded-2xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><X size={18} /></button></div>
+      <div className="grid max-h-[calc(88vh-92px)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_280px]"><main className="space-y-5 p-5"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="whitespace-pre-line text-sm leading-6 text-slate-700">{problem.problemText}</p></div>{problem.solutionText && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Accepted solution candidate</p><p className="whitespace-pre-line text-sm leading-6 text-emerald-950">{problem.solutionText}</p></div>}<div><h4 className="mb-3 text-sm font-semibold text-slate-950">Collaborative discussion</h4>{loading ? <div className="py-8 text-center text-sm text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading thread...</div> : <div className="space-y-3">{comments.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No replies yet. Start the discussion.</p> : comments.map((comment, index) => <ThreadReply key={comment._id || index} comment={comment} problem={problem} depth={index > 0 ? 1 : 0} />)}</div>}<div className="mt-4 flex gap-2"><input value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="Add a teacher response, hint, or clarification..." className="flex-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100" /><button onClick={onPost} disabled={posting || !commentText.trim()} className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{posting ? 'Posting...' : 'Reply'}</button></div></div></main><aside className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0"><div className="grid grid-cols-3 gap-2 lg:grid-cols-1"><InfoMetric label="Replies" value={comments.length} /><InfoMetric label="Viewers" value={viewers.length} /><InfoMetric label="Likes" value={problem.likes} /></div><div className="mt-5 rounded-2xl bg-white p-4"><p className="text-sm font-semibold text-slate-900">AI context actions</p><div className="mt-3 space-y-2">{['Summarize thread', 'Extract hints', 'Simplify answer'].map((item) => <button key={item} className="w-full rounded-xl bg-cyan-50 px-3 py-2 text-left text-xs font-semibold text-cyan-800">{item}</button>)}</div></div></aside></div>
+    </Motion.div>
+  </Motion.div>
+);
+
+const ThreadReply = ({ comment, problem, depth }) => {
+  const isAuthor = String(comment?.authorName || '').trim().toLowerCase() === String(problem?.authorName || problem?.teacherName || '').trim().toLowerCase();
+  const isTeacher = String(comment?.authorType || '').toLowerCase() === 'teacher';
+  return <Motion.div initial={{ opacity: 0, x: depth ? 10 : 0 }} animate={{ opacity: 1, x: 0 }} className={`rounded-2xl border p-3 ${depth ? 'ml-5 border-slate-200 bg-white' : 'border-slate-200 bg-white'} ${isTeacher ? 'ring-1 ring-indigo-100' : ''}`}><div className="mb-1 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Avatar initials={(comment.authorName || 'U').slice(0, 2).toUpperCase()} /><p className="text-sm font-semibold text-slate-800">{comment.authorName || 'User'}</p>{isAuthor && <Badge tone="emerald" icon={CheckCircle2} label="Author" />}{isTeacher && <Badge tone="indigo" icon={UserCheck} label="Teacher" />}</div><p className="text-[11px] text-slate-400">{comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}</p></div><p className="whitespace-pre-wrap pl-12 text-sm leading-6 text-slate-600">{comment.text}</p></Motion.div>;
+};
+
+const InfoMetric = ({ label, value }) => <div className="rounded-2xl bg-white p-3 text-center"><p className="text-lg font-semibold text-slate-950">{value}</p><p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p></div>;
 
 export default TeacherAlcove;

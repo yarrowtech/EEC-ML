@@ -1,0 +1,37 @@
+Teacher Lesson Plan Builder Sidebar Features
+
+Overview
+- Component: `Sidebar.jsx` (used within the Lesson Plan Builder)
+- Description: A collapsible, animated sidebar for managing, searching, and navigating chapters within a lesson plan.
+
+Key UI Elements & Features:
+1. Header Section:
+   - Title ("Chapters").
+   - Dynamic badge displaying the total number of chapters.
+   - Collapse/Expand toggle button (toggles sidebar width between 320px and 88px).
+
+2. Search Functionality:
+   - Search input field to filter chapters by name.
+   - Hidden when the sidebar is in a collapsed state.
+
+3. Chapter List:
+   - Scrollable list rendering individual `ChapterItem` components.
+   - Indicates the currently active/selected chapter.
+   - Supports dragging and dropping for reordering chapters.
+   - Delegates renaming and deletion actions to the `ChapterItem`.
+
+4. Empty State:
+   - Displays an illustration and instructional text ("No chapters yet", "Click the + button below to add your first chapter") when the chapter list is empty (and the sidebar is expanded).
+
+5. Add Chapter Button:
+   - A floating action button (FAB) fixed at the bottom center of the sidebar.
+   - Used to append a new chapter to the lesson plan.
+
+Animations & Styling:
+- Powered by `framer-motion` for smooth layout transitions (specifically animating the `width` property during collapse/expand).
+- Includes comprehensive dark mode support (e.g., `dark:bg-slate-900/90`).
+- Features hover states, custom scrollbar styling, and backdrop blur effects.
+
+Props Interface:
+- Data: `chapters` (array), `activeChapterId` (string/number), `query` (string), `collapsed` (boolean).
+- Event Handlers: `onQueryChange`, `onSelect`, `onAdd`, `onDelete`, `onRename`, `onToggleCollapse`, `onDragStart`, `onDrop`.

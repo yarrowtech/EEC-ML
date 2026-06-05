@@ -1,6 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { Calendar, Clock, MapPin, BookOpen, AlertCircle, Users, School, RefreshCw, Download } from 'lucide-react';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
+import {
+  AlertCircle,
+  ArrowUpRight,
+  BarChart3,
+  BookOpen,
+  Calendar,
+  ChevronDown,
+  Clock,
+  Coffee,
+  Download,
+  Filter,
+  Layers,
+  MapPin,
+  MoreHorizontal,
+  RefreshCw,
+  School,
+  Search,
+  Timer,
+  TrendingUp,
+  Users,
+  Zap,
+} from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_LOOKUP = DAYS.reduce((acc, day) => {
@@ -117,7 +139,12 @@ const ClassRoutine = () => {
   const [teacherProfile, setTeacherProfile] = useState(null);
   const [routineMeta, setRoutineMeta] = useState({ campusScoped: true, timetableCount: 0, filterSource: 'campus' });
   const [selectedDay, setSelectedDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
-  const [viewMode] = useState('weekly');
+  const [viewMode, setViewMode] = useState('weekly');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [roomFilter, setRoomFilter] = useState('all');
+  const [classFilter, setClassFilter] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -289,7 +316,6 @@ const ClassRoutine = () => {
     () => DAYS.reduce((sum, day) => sum + ((effectiveSchedule[day] || []).length), 0),
     [effectiveSchedule]
   );
-  const todayClasses = effectiveSchedule[selectedDay] || [];
   const weeklySlots = useMemo(() => {
     const slotMap = new Map();
     DAYS.forEach((day) => {
@@ -318,6 +344,150 @@ const ClassRoutine = () => {
     });
     return matrix;
   }, [effectiveSchedule]);
+  const scheduleEntries = useMemo(() => DAYS.flatMap((day) =>
+    (effectiveSchedule[day] || []).map((entry, index) => ({
+      ...entry,
+      day,
+      index,
+      slot: formatSlot(entry) || `Period ${entry.period || index + 1}`,
+      subjectLabel: entry.subject || 'Subject',
+      classDisplay: entry.classLabel || entry.className || entry.class || 'Class',
+      roomDisplay: entry.room || 'TBA',
+    }))
+  ), [effectiveSchedule]);
+
+  const uniqueSubjects = useMemo(() => Array.from(new Set(scheduleEntries.map((entry) => entry.subjectLabel).filter(Boolean))).sort(), [scheduleEntries]);
+  const uniqueRooms = useMemo(() => Array.from(new Set(scheduleEntries.map((entry) => entry.roomDisplay).filter(Boolean))).sort(), [scheduleEntries]);
+  const uniqueClasses = useMemo(() => Array.from(new Set(scheduleEntries.map((entry) => entry.classDisplay).filter(Boolean))).sort(), [scheduleEntries]);
+
+  const matchesActiveFilters = useCallback((entry) => {
+    const haystack = `${entry.subjectLabel || entry.subject || ''} ${entry.classDisplay || entry.className || ''} ${entry.roomDisplay || entry.room || ''}`.toLowerCase();
+    const needle = searchTerm.trim().toLowerCase();
+    return (!needle || haystack.includes(needle)) &&
+      (subjectFilter === 'all' || (entry.subjectLabel || entry.subject) === subjectFilter) &&
+      (roomFilter === 'all' || (entry.roomDisplay || entry.room || 'TBA') === roomFilter) &&
+      (classFilter === 'all' || (entry.classDisplay || entry.classLabel || entry.className || 'Class') === classFilter);
+  }, [classFilter, roomFilter, searchTerm, subjectFilter]);
+
+  const visibleSchedule = useMemo(() => DAYS.reduce((acc, day) => {
+    acc[day] = (effectiveSchedule[day] || []).map((entry, index) => ({
+      ...entry,
+      day,
+      index,
+      slot: formatSlot(entry) || `Period ${entry.period || index + 1}`,
+      subjectLabel: entry.subject || 'Subject',
+      classDisplay: entry.classLabel || entry.className || entry.class || 'Class',
+      roomDisplay: entry.room || 'TBA',
+    })).filter(matchesActiveFilters);
+    return acc;
+  }, {}), [effectiveSchedule, matchesActiveFilters]);
+
+  const visibleWeeklyMatrix = useMemo(() => {
+    const matrix = {};
+    DAYS.forEach((day) => {
+      matrix[day] = {};
+      (visibleSchedule[day] || []).forEach((entry, index) => {
+        const slot = formatSlot(entry) || `Period ${entry.period || index + 1}`;
+        matrix[day][slot] = entry;
+      });
+    });
+    return matrix;
+  }, [visibleSchedule]);
+
+  const visibleTodayClasses = visibleSchedule[selectedDay] || [];
+
+  const timeToMinutes = useCallback((value) => {
+    if (!value) return null;
+    const raw = String(value).trim();
+    const simple = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (simple) return Number(simple[1]) * 60 + Number(simple[2]);
+    const twelve = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!twelve) return null;
+    let hours = Number(twelve[1]);
+    const minutes = Number(twelve[2]);
+    const suffix = twelve[3].toUpperCase();
+    if (suffix === 'PM' && hours !== 12) hours += 12;
+    if (suffix === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }, []);
+
+  const currentMinutes = useMemo(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  }, []);
+
+  const todayName = DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+  const realTodayClasses = useMemo(() => effectiveSchedule[todayName] || [], [effectiveSchedule, todayName]);
+
+  const nextClass = useMemo(() => {
+    const todayCandidates = realTodayClasses
+      .map((entry, index) => ({ ...entry, day: todayName, index, startMins: timeToMinutes(entry.startTime), endMins: timeToMinutes(entry.endTime) }))
+      .filter((entry) => entry.startMins !== null && entry.endMins !== null && entry.endMins >= currentMinutes)
+      .sort((a, b) => a.startMins - b.startMins);
+    if (todayCandidates.length) return todayCandidates[0];
+    const tomorrowIndex = (DAYS.indexOf(todayName) + 1) % DAYS.length;
+    for (let offset = 0; offset < DAYS.length; offset += 1) {
+      const day = DAYS[(tomorrowIndex + offset) % DAYS.length];
+      const entries = (effectiveSchedule[day] || []).map((entry, index) => ({ ...entry, day, index, startMins: timeToMinutes(entry.startTime) })).sort((a, b) => (a.startMins || 9999) - (b.startMins || 9999));
+      if (entries.length) return entries[0];
+    }
+    return null;
+  }, [currentMinutes, effectiveSchedule, realTodayClasses, timeToMinutes, todayName]);
+
+  const countdownLabel = useMemo(() => {
+    if (!nextClass) return 'No upcoming class';
+    if (nextClass.day !== todayName || nextClass.startMins === null) return `${nextClass.day} · ${formatSlot(nextClass)}`;
+    if (nextClass.startMins <= currentMinutes && nextClass.endMins >= currentMinutes) return 'In progress now';
+    const diff = nextClass.startMins - currentMinutes;
+    if (diff <= 0) return 'Starting soon';
+    if (diff < 60) return `Starts in ${diff} min`;
+    return `Starts in ${Math.floor(diff / 60)}h ${diff % 60}m`;
+  }, [currentMinutes, nextClass, todayName]);
+
+  const totalTeachingMinutes = useMemo(() => scheduleEntries.reduce((sum, entry) => {
+    const start = timeToMinutes(entry.startTime);
+    const end = timeToMinutes(entry.endTime);
+    return start !== null && end !== null && end > start ? sum + (end - start) : sum + 40;
+  }, 0), [scheduleEntries, timeToMinutes]);
+
+  const busiestDay = useMemo(() => DAYS.reduce((best, day) => {
+    const count = (effectiveSchedule[day] || []).length;
+    return count > best.count ? { day, count } : best;
+  }, { day: 'None', count: 0 }), [effectiveSchedule]);
+
+  const subjectDistribution = useMemo(() => uniqueSubjects.map((subject) => ({
+    subject,
+    count: scheduleEntries.filter((entry) => entry.subjectLabel === subject).length,
+  })).sort((a, b) => b.count - a.count), [scheduleEntries, uniqueSubjects]);
+
+  const freePeriodCount = Math.max(0, weeklySlots.length * DAYS.length - totalClasses);
+  const todayFreeSlots = Math.max(0, weeklySlots.length - realTodayClasses.length);
+  const roomSwitches = useMemo(() => DAYS.reduce((sum, day) => {
+    const rooms = (effectiveSchedule[day] || []).map((entry) => entry.room || 'TBA');
+    return sum + rooms.slice(1).filter((room, index) => room !== rooms[index]).length;
+  }, 0), [effectiveSchedule]);
+
+  const longestStreak = useMemo(() => DAYS.reduce((max, day) => {
+    let streak = 0;
+    let best = 0;
+    weeklySlots.forEach((slot) => {
+      if (weeklyMatrix[day]?.[slot.slot]) {
+        streak += 1;
+        best = Math.max(best, streak);
+      } else {
+        streak = 0;
+      }
+    });
+    return Math.max(max, best);
+  }, 0), [weeklyMatrix, weeklySlots]);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSubjectFilter('all');
+    setRoomFilter('all');
+    setClassFilter('all');
+  };
+
 
   const downloadPDF = useCallback(() => {
     const generate = async () => {
@@ -628,253 +798,437 @@ const ClassRoutine = () => {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />
-          ))}
+      <div className="min-h-screen bg-slate-100 p-4 sm:p-6">
+        <div className="mx-auto max-w-[1500px] space-y-5">
+          <div className="h-44 rounded-3xl bg-white/80 animate-pulse" />
+          <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-28 rounded-2xl bg-white animate-pulse" />)}
+          </div>
+          <div className="h-96 rounded-3xl bg-white animate-pulse" />
         </div>
-        <div className="h-14 bg-white rounded-2xl animate-pulse" />
-        <div className="h-64 bg-white rounded-2xl animate-pulse" />
       </div>
     );
   }
 
-  return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Teacher context pills */}
-      {(teacherClassLabels.length > 0 || teacherSectionLabels.length > 0 || teacherProfile?.subject) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {teacherProfile?.subject && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-medium">
-              <BookOpen size={12} />
-              {teacherProfile.subject}
-            </span>
-          )}
-          {teacherClassLabels.length > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs font-medium">
-              <Users size={12} />
-              Class {teacherClassLabels.join(', ')}
-            </span>
-          )}
-          {teacherSectionLabels.length > 0 && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-medium">
-              Section {teacherSectionLabels.join(', ')}
-            </span>
-          )}
-          {teacherProfile?.campusName && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium">
-              <School size={12} />
-              {teacherProfile.campusName}
-            </span>
-          )}
-        </div>
-      )}
+  const teacherName = teacherProfile?.name || teacherProfile?.fullName || 'Teacher';
+  const firstName = teacherName.split(' ')[0] || 'Teacher';
+  const teachingHours = `${Math.floor(totalTeachingMinutes / 60)}h ${totalTeachingMinutes % 60}m`;
+  const activeFilterCount = [subjectFilter, roomFilter, classFilter].filter((item) => item !== 'all').length + (searchTerm.trim() ? 1 : 0);
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {[
-          { label: 'Weekly Classes', value: totalClasses, icon: Calendar, gradient: 'from-blue-500 to-indigo-500' },
-          { label: `${selectedDay} Classes`, value: todayClasses.length, icon: Clock, gradient: 'from-violet-500 to-purple-500' },
-          { label: 'Timetable', value: routineMeta.campusScoped ? 'Campus' : 'School', icon: School, gradient: 'from-emerald-500 to-teal-500', sub: `${toScopeLabel(routineMeta.filterSource)} · ${routineMeta.timetableCount} matched` },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-white rounded-2xl p-4 border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl bg-linear-to-br ${stat.gradient} flex items-center justify-center shadow-lg`}>
-                <stat.icon size={18} className="text-white" />
+  const smartStats = [
+    { label: 'Weekly Classes', value: totalClasses, insight: `${DAYS.filter((day) => (effectiveSchedule[day] || []).length > 0).length} active teaching days`, icon: Calendar, tone: 'from-blue-500 to-indigo-500' },
+    { label: 'Today\'s Classes', value: realTodayClasses.length, insight: todayName, icon: Clock, tone: 'from-violet-500 to-fuchsia-500' },
+    { label: 'Teaching Hours', value: teachingHours, insight: 'Estimated weekly contact time', icon: Timer, tone: 'from-emerald-500 to-teal-500' },
+    { label: 'Free Periods', value: freePeriodCount, insight: `${todayFreeSlots} available today`, icon: Coffee, tone: 'from-amber-500 to-orange-500' },
+    { label: 'Busiest Day', value: busiestDay.day.slice(0, 3), insight: `${busiestDay.count} scheduled classes`, icon: TrendingUp, tone: 'from-rose-500 to-pink-500' },
+    { label: 'Subjects', value: uniqueSubjects.length, insight: `${subjectDistribution[0]?.subject || 'No subject'} leads workload`, icon: Layers, tone: 'from-cyan-500 to-sky-500' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-[1500px] space-y-5">
+        <Motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-300/40">
+          <div className="relative p-5 sm:p-7">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.55),transparent_36%),linear-gradient(135deg,rgba(15,23,42,1),rgba(30,41,59,1))]" />
+            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-indigo-200">Teacher Timetable</p>
+                <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-4xl">Good day, {firstName}</h1>
+                <p className="mt-3 max-w-3xl text-sm text-slate-300">
+                  You have <span className="font-semibold text-white">{realTodayClasses.length} classes today</span>. {nextClass ? `Next class: ${nextClass.subject || 'Subject'} · ${countdownLabel}.` : 'No upcoming class is scheduled.'}
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {teacherProfile?.subject && <HeroChip icon={BookOpen} label={teacherProfile.subject} />}
+                  {teacherProfile?.campusName && <HeroChip icon={School} label={teacherProfile.campusName} />}
+                  <HeroChip icon={Zap} label={`${teachingHours} weekly workload`} />
+                  <HeroChip icon={Users} label={`${toScopeLabel(routineMeta.filterSource)} · ${routineMeta.timetableCount} matched`} />
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                <p className="text-xs text-gray-500 truncate">{stat.label}</p>
-                {stat.sub && <p className="text-[10px] text-gray-400 truncate">{stat.sub}</p>}
+              <div className="grid min-w-[280px] gap-3 sm:grid-cols-2">
+                <HeroMetric label="Next Class" value={nextClass?.subject || 'None'} sub={countdownLabel} />
+                <HeroMetric label="Room" value={nextClass?.room || 'TBA'} sub={nextClass ? `${nextClass.classLabel || nextClass.className || 'Class'} · ${nextClass.day}` : 'No upcoming room'} />
               </div>
             </div>
           </div>
-        ))}
-      </div>
+        </Motion.section>
 
-      {/* View Controls */}
-      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-gray-100 space-y-3">
-        <div className="flex items-center justify-end gap-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={downloadPDF}
-              disabled={totalClasses === 0}
-              className="flex items-center gap-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Download size={13} />
-              Download PDF
-            </button>
-            <button
-              onClick={loadRoutine}
-              className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
-            >
-              <RefreshCw size={13} />
-              Reload
-            </button>
+        {(teacherClassLabels.length > 0 || teacherSectionLabels.length > 0 || teacherProfile?.subject) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {teacherProfile?.subject && <ContextPill icon={BookOpen} label={teacherProfile.subject} tone="indigo" />}
+            {teacherClassLabels.length > 0 && <ContextPill icon={Users} label={`Class ${teacherClassLabels.join(', ')}`} tone="blue" />}
+            {teacherSectionLabels.length > 0 && <ContextPill icon={Layers} label={`Section ${teacherSectionLabels.join(', ')}`} tone="emerald" />}
+            {teacherProfile?.campusName && <ContextPill icon={School} label={teacherProfile.campusName} tone="slate" />}
           </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {smartStats.map((stat, index) => <InsightCard key={stat.label} stat={stat} index={index} />)}
         </div>
 
-        {/* Day selector pills */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-          {DAYS.map((day) => {
-            const count = (effectiveSchedule[day] || []).length;
-            const active = selectedDay === day;
-            return (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(day)}
-                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                  active
-                    ? 'bg-linear-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/20'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <span className="sm:hidden">{day.slice(0, 3)}</span>
-                <span className="hidden sm:inline">{day}</span>
-                {count > 0 && (
-                  <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${
-                    active ? 'bg-white/20' : 'bg-gray-200/80 text-gray-500'
-                  }`}>
-                    {count}
-                  </span>
-                )}
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="inline-flex w-fit rounded-2xl border border-slate-200 bg-slate-50 p-1">
+              {[{ id: 'weekly', label: 'Week' }, { id: 'daily', label: 'Day' }].map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setViewMode(tab.id)} className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${viewMode === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <div className="relative md:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search subject, class, room" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
+              </div>
+              <button type="button" onClick={() => setShowFilters((prev) => !prev)} className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-semibold transition ${activeFilterCount ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                <Filter size={15} /> Filters {activeFilterCount > 0 && <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
+                <ChevronDown size={14} className={showFilters ? 'rotate-180 transition' : 'transition'} />
               </button>
-            );
-          })}
-        </div>
-      </div>
+              <div className="relative">
+                <button type="button" onClick={downloadPDF} disabled={totalClasses === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-3 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Download size={15} /> Export PDF
+                </button>
+              </div>
+              <button type="button" onClick={loadRoutine} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                <RefreshCw size={15} /> Reload
+              </button>
+            </div>
+          </div>
 
-      {/* Schedule Content */}
-      {error ? (
-        <div className="bg-red-50 rounded-2xl p-4 flex items-center gap-3 border border-red-100">
-          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-            <AlertCircle size={16} className="text-red-500" />
-          </div>
-          <p className="text-sm text-red-600 font-medium">{error}</p>
-        </div>
-      ) : totalClasses === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center py-16 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-            <Calendar size={24} className="text-gray-400" />
-          </div>
-          <p className="text-sm font-medium text-gray-500">No classes assigned yet</p>
-          <p className="text-xs text-gray-400 mt-1">Check back later or contact administration</p>
-        </div>
-      ) : viewMode === 'weekly' ? (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="px-4 sm:px-5 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-bold text-gray-900">Weekly Timetable</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] border-collapse">
-              <thead>
-                <tr>
-                  <th className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50/80">
-                    Time
-                  </th>
-                  {DAYS.map((day) => (
-                    <th
-                      key={`head-${day}`}
-                      className={`text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider bg-gray-50/80 ${
-                        selectedDay === day ? 'text-indigo-600' : 'text-gray-400'
-                      }`}
-                    >
-                      {day.slice(0, 3)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {weeklySlots.map((slot, si) => (
-                  <tr key={`slot-${slot.slot}`} className="border-t border-gray-50">
-                    <td className="px-3 py-2.5 text-xs font-semibold text-gray-600 bg-gray-50/40 whitespace-nowrap">
-                      {slot.slot}
-                    </td>
-                    {DAYS.map((day) => {
-                      const entry = weeklyMatrix[day]?.[slot.slot];
-                      const color = CLASS_COLORS[si % CLASS_COLORS.length];
-                      return (
-                        <td key={`cell-${day}-${slot.slot}`} className={`px-2 py-2 ${selectedDay === day ? 'bg-indigo-50/30' : ''}`}>
-                          {entry ? (
-                            <div className={`rounded-lg ${color.bg} border border-gray-100 px-2.5 py-2`}>
-                              <p className="text-xs font-bold text-gray-900 truncate">{entry.subject || 'Subject'}</p>
-                              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{entry.classLabel || entry.className || 'Class'}</p>
-                              <p className="text-[10px] text-gray-400 mt-0.5 truncate">{entry.room || 'TBA'}</p>
-                            </div>
-                          ) : (
-                            <div className="rounded-lg border border-dashed border-gray-100 px-2.5 py-2.5 text-center">
-                              <span className="text-[10px] text-gray-300">&mdash;</span>
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-gray-900">{selectedDay} Schedule</h2>
-            <span className="text-xs text-gray-400">{todayClasses.length} class{todayClasses.length !== 1 ? 'es' : ''}</span>
-          </div>
-          {todayClasses.length > 0 ? (
-            todayClasses.map((entry, index) => {
-              const color = CLASS_COLORS[index % CLASS_COLORS.length];
-              return (
-                <div
-                  key={`${selectedDay}-${index}`}
-                  className="bg-white rounded-2xl border border-gray-100 hover:shadow-md transition-all duration-200 overflow-hidden"
-                >
-                  <div className={`border-l-[3px] ${color.border} p-4`}>
-                    <div className="flex items-center justify-between gap-3 mb-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-lg ${color.bg} flex items-center justify-center`}>
-                          <BookOpen size={14} className={color.text} />
-                        </div>
-                        <h3 className="text-sm font-bold text-gray-900">{entry.subject || 'Subject'}</h3>
-                      </div>
-                      {entry.period && (
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                          P{entry.period}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-500">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Clock size={12} className={color.text} />
-                        {formatSlot(entry)}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin size={12} className={color.text} />
-                        {entry.room || 'TBA'}
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Users size={12} className={color.text} />
-                        {entry.className}{entry.sectionName ? ` - ${entry.sectionName}` : ''}
-                      </span>
-                    </div>
+          <AnimatePresence>
+            {showFilters && (
+              <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-4">
+                  <FilterSelect label="Subject" value={subjectFilter} onChange={setSubjectFilter} options={uniqueSubjects} />
+                  <FilterSelect label="Room" value={roomFilter} onChange={setRoomFilter} options={uniqueRooms} />
+                  <FilterSelect label="Class" value={classFilter} onChange={setClassFilter} options={uniqueClasses} />
+                  <div className="flex items-end">
+                    <button type="button" onClick={clearFilters} className="h-10 w-full rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear filters</button>
                   </div>
                 </div>
-              );
-            })
-          ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center py-14 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
-                <Calendar size={20} className="text-gray-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-500">No classes on {selectedDay}</p>
-              <p className="text-xs text-gray-400 mt-1">Select a different day to view schedule</p>
+              </Motion.div>
+            )}
+          </AnimatePresence>
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="space-y-5">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {DAYS.map((day) => {
+                const count = (visibleSchedule[day] || []).length;
+                const active = selectedDay === day;
+                return (
+                  <button key={day} onClick={() => setSelectedDay(day)} className={`shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold transition ${active ? 'bg-slate-950 text-white shadow-lg shadow-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    <span className="sm:hidden">{day.slice(0, 3)}</span><span className="hidden sm:inline">{day}</span>
+                    <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/15' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
+                  </button>
+                );
+              })}
             </div>
-          )}
+
+            {error ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>
+            ) : totalClasses === 0 ? (
+              <EmptyTimetable loadRoutine={loadRoutine} />
+            ) : (
+              <AnimatePresence mode="wait">
+                {viewMode === 'weekly' ? (
+                  <Motion.div key="weekly" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                    <WeeklyWorkspace weeklySlots={weeklySlots} matrix={visibleWeeklyMatrix} selectedDay={selectedDay} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
+                  </Motion.div>
+                ) : (
+                  <Motion.div key="daily" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                    <DailyAgenda day={selectedDay} classes={visibleTodayClasses} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
+                  </Motion.div>
+                )}
+              </AnimatePresence>
+            )}
+          </main>
+
+          <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
+            <UpcomingClasses nextClass={nextClass} countdownLabel={countdownLabel} entries={scheduleEntries.slice(0, 6)} />
+            <FreePeriodInsights todayFreeSlots={todayFreeSlots} freePeriodCount={freePeriodCount} busiestDay={busiestDay} />
+            <ScheduleInsights busiestDay={busiestDay} longestStreak={longestStreak} roomSwitches={roomSwitches} subjectDistribution={subjectDistribution} />
+          </aside>
         </div>
-      )}
+      </div>
     </div>
   );
+};
+
+const HeroChip = ({ icon, label }) => (
+  <Motion.span initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur">
+    {React.createElement(icon, { size: 13 })}
+    {label}
+  </Motion.span>
+);
+
+const HeroMetric = ({ label, value, sub }) => (
+  <Motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-indigo-200">{label}</p>
+    <p className="mt-2 truncate text-lg font-semibold text-white">{value}</p>
+    <p className="mt-1 truncate text-xs text-slate-300">{sub}</p>
+  </Motion.div>
+);
+
+const ContextPill = ({ icon, label, tone }) => {
+  const tones = {
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    slate: 'bg-slate-100 text-slate-700 border-slate-200',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-semibold ${tones[tone] || tones.slate}`}>
+      {React.createElement(icon, { size: 12 })}
+      {label}
+    </span>
+  );
+};
+
+const InsightCard = ({ stat, index }) => {
+  const Icon = stat.icon;
+  return (
+    <Motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.035 }} whileHover={{ y: -3, scale: 1.01 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-lg hover:shadow-slate-200/70">
+      <div className="flex items-start justify-between gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br ${stat.tone} text-white shadow-lg`}><Icon size={18} /></div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><TrendingUp size={11} />Live</span>
+      </div>
+      <p className="mt-4 text-2xl font-semibold text-slate-950">{stat.value}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-500">{stat.label}</p>
+      <p className="mt-2 text-[11px] text-slate-400">{stat.insight}</p>
+    </Motion.div>
+  );
+};
+
+const FilterSelect = ({ label, value, onChange, options }) => (
+  <label className="block">
+    <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100">
+      <option value="all">All {label.toLowerCase()}s</option>
+      {options.map((option) => <option key={option} value={option}>{option}</option>)}
+    </select>
+  </label>
+);
+
+const EmptyTimetable = ({ loadRoutine }) => (
+  <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Calendar size={24} /></div>
+    <p className="mt-4 text-sm font-semibold text-slate-700">No classes assigned yet</p>
+    <p className="mt-1 text-xs text-slate-400">Check back later or contact administration.</p>
+    <button onClick={loadRoutine} className="mt-5 rounded-xl bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">Reload schedule</button>
+  </div>
+);
+
+const WeeklyWorkspace = ({ weeklySlots, matrix, selectedDay, currentMinutes, timeToMinutes }) => (
+  <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <h2 className="text-base font-semibold text-slate-950">Weekly Workspace</h2>
+        <p className="text-xs text-slate-500">Recurring teaching structure, free periods, and break opportunities.</p>
+      </div>
+      <MoreHorizontal size={18} className="text-slate-400" />
+    </div>
+    <div className="overflow-x-auto">
+      <div className="min-w-[1040px]">
+        <div className="grid grid-cols-[150px_repeat(7,minmax(128px,1fr))] border-b border-slate-100 bg-slate-50">
+          <div className="px-4 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Time</div>
+          {DAYS.map((day) => <div key={day} className={`px-3 py-3 text-[11px] font-bold uppercase tracking-[0.14em] ${selectedDay === day ? 'text-indigo-600' : 'text-slate-400'}`}>{day.slice(0, 3)}</div>)}
+        </div>
+        {weeklySlots.map((slot, si) => {
+          const breakInfo = getBreakAfter(weeklySlots, si);
+          return (
+            <React.Fragment key={slot.slot}>
+              <div className="grid grid-cols-[150px_repeat(7,minmax(128px,1fr))] border-b border-slate-100">
+                <div className="bg-slate-50/70 px-4 py-3 text-xs font-semibold text-slate-600">{slot.slot}</div>
+                {DAYS.map((day) => {
+                  const entry = matrix[day]?.[slot.slot];
+                  const color = CLASS_COLORS[si % CLASS_COLORS.length];
+                  const isCurrent = isEntryCurrent(entry, currentMinutes, timeToMinutes);
+                  const isUpcoming = isEntryUpcoming(entry, currentMinutes, timeToMinutes);
+                  return (
+                    <div key={`${day}-${slot.slot}`} className={`p-2 ${selectedDay === day ? 'bg-indigo-50/30' : ''}`}>
+                      {entry ? <ScheduleCard entry={entry} color={color} isCurrent={isCurrent} isUpcoming={isUpcoming} /> : <FreeSlotCard />}
+                    </div>
+                  );
+                })}
+              </div>
+              {breakInfo && <BreakBanner breakInfo={breakInfo} />}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+);
+
+const ScheduleCard = ({ entry, color, isCurrent, isUpcoming }) => (
+  <Motion.div whileHover={{ y: -2, scale: 1.01 }} className={`min-h-[92px] rounded-2xl border bg-white p-3 shadow-sm ${isCurrent ? 'border-emerald-300 ring-4 ring-emerald-100' : isUpcoming ? 'border-indigo-300 ring-4 ring-indigo-100' : 'border-slate-100'}`}>
+    <div className="flex items-start justify-between gap-2">
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${color.bg}`}><BookOpen size={14} className={color.text} /></div>
+      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isCurrent ? 'bg-emerald-100 text-emerald-700' : isUpcoming ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{isCurrent ? 'Now' : isUpcoming ? 'Next' : 'Class'}</span>
+    </div>
+    <p className="mt-2 truncate text-xs font-bold text-slate-950">{entry.subject || 'Subject'}</p>
+    <p className="mt-1 truncate text-[11px] text-slate-500">{entry.classLabel || entry.className || 'Class'}</p>
+    <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+      <span className="inline-flex items-center gap-1"><MapPin size={11} />{entry.room || 'TBA'}</span>
+      <ArrowUpRight size={12} />
+    </div>
+  </Motion.div>
+);
+
+const FreeSlotCard = () => (
+  <div className="flex min-h-[92px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-3 text-center">
+    <Coffee size={15} className="text-slate-300" />
+    <p className="mt-2 text-[11px] font-semibold text-slate-400">Free Period</p>
+    <p className="mt-0.5 text-[10px] text-slate-300">Available for planning</p>
+  </div>
+);
+
+const BreakBanner = ({ breakInfo }) => (
+  <div className="grid grid-cols-[150px_1fr] border-b border-amber-100 bg-amber-50/80">
+    <div className="px-4 py-2 text-[11px] font-semibold text-amber-700">{breakInfo.range}</div>
+    <div className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-amber-800"><Coffee size={14} />{breakInfo.duration} Minute Break</div>
+  </div>
+);
+
+const DailyAgenda = ({ day, classes, currentMinutes, timeToMinutes }) => (
+  <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="mb-5 flex items-center justify-between">
+      <div>
+        <h2 className="text-base font-semibold text-slate-950">{day} Agenda</h2>
+        <p className="text-xs text-slate-500">Timeline view with current and upcoming class indicators.</p>
+      </div>
+      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{classes.length} classes</span>
+    </div>
+    {classes.length === 0 ? <FreeDay day={day} /> : (
+      <div className="space-y-0">
+        {classes.map((entry, index) => {
+          const color = CLASS_COLORS[index % CLASS_COLORS.length];
+          const isCurrent = isEntryCurrent(entry, currentMinutes, timeToMinutes);
+          const isUpcoming = isEntryUpcoming(entry, currentMinutes, timeToMinutes);
+          return (
+            <Motion.div key={`${day}-${index}`} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.04 }} className="grid grid-cols-[84px_24px_1fr] gap-3">
+              <div className="pt-3 text-right text-xs font-semibold text-slate-400">{formatSlot(entry).split(' - ')[0]}</div>
+              <div className="relative flex justify-center">
+                <span className={`mt-3 h-3 w-3 rounded-full ${isCurrent ? 'bg-emerald-500 ring-4 ring-emerald-100' : isUpcoming ? 'bg-indigo-500 ring-4 ring-indigo-100' : 'bg-slate-300'}`} />
+                {index < classes.length - 1 && <span className="absolute top-6 h-full w-px bg-slate-200" />}
+              </div>
+              <div className="pb-4"><ScheduleCard entry={entry} color={color} isCurrent={isCurrent} isUpcoming={isUpcoming} /></div>
+            </Motion.div>
+          );
+        })}
+      </div>
+    )}
+  </section>
+);
+
+const FreeDay = ({ day }) => (
+  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+    <Coffee className="mx-auto h-7 w-7 text-slate-300" />
+    <p className="mt-3 text-sm font-semibold text-slate-600">No classes on {day}</p>
+    <p className="mt-1 text-xs text-slate-400">Use this day for planning, grading, or meetings.</p>
+  </div>
+);
+
+const UpcomingClasses = ({ nextClass, countdownLabel, entries }) => (
+  <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold text-slate-950">Upcoming Classes</h2><Timer size={17} className="text-indigo-600" /></div>
+    {nextClass && (
+      <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-500">Next up</p>
+        <p className="mt-2 text-sm font-semibold text-slate-950">{nextClass.subject || 'Subject'}</p>
+        <p className="mt-1 text-xs text-slate-500">{nextClass.day} · {formatSlot(nextClass)} · {nextClass.room || 'TBA'}</p>
+        <span className="mt-3 inline-flex rounded-full bg-white px-2.5 py-1 text-xs font-bold text-indigo-700">{countdownLabel}</span>
+      </div>
+    )}
+    <div className="mt-3 space-y-2">
+      {entries.slice(0, 4).map((entry, index) => <MiniClassRow key={`${entry.day}-${entry.index}-${index}`} entry={entry} />)}
+    </div>
+  </section>
+);
+
+const MiniClassRow = ({ entry }) => (
+  <div className="flex items-center gap-3 rounded-2xl border border-slate-100 p-3">
+    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><BookOpen size={15} /></div>
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-xs font-semibold text-slate-800">{entry.subject || 'Subject'}</p>
+      <p className="truncate text-[11px] text-slate-400">{entry.day} · {entry.slot}</p>
+    </div>
+    <span className="text-[11px] font-semibold text-slate-400">{entry.room || 'TBA'}</span>
+  </div>
+);
+
+const FreePeriodInsights = ({ todayFreeSlots, freePeriodCount, busiestDay }) => (
+  <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-4 flex items-center gap-2"><Coffee size={17} className="text-amber-600" /><h2 className="text-sm font-semibold text-slate-950">Free Period Insights</h2></div>
+    <div className="grid grid-cols-2 gap-3">
+      <InfoTile label="Today" value={todayFreeSlots} sub="free slots" />
+      <InfoTile label="Weekly" value={freePeriodCount} sub="planning windows" />
+    </div>
+    <p className={`mt-3 rounded-2xl p-3 text-xs font-medium ${busiestDay.count >= 6 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{busiestDay.count >= 6 ? `${busiestDay.day} looks overloaded. Consider moving low-priority work.` : 'Schedule load looks manageable this week.'}</p>
+  </section>
+);
+
+const ScheduleInsights = ({ busiestDay, longestStreak, roomSwitches, subjectDistribution }) => (
+  <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="mb-4 flex items-center gap-2"><BarChart3 size={17} className="text-cyan-600" /><h2 className="text-sm font-semibold text-slate-950">Schedule Insights</h2></div>
+    <div className="space-y-3">
+      <InfoTile label="Busiest day" value={busiestDay.day} sub={`${busiestDay.count} classes`} wide />
+      <InfoTile label="Longest streak" value={longestStreak} sub="back-to-back classes" wide />
+      <InfoTile label="Room switches" value={roomSwitches} sub="weekly movement count" wide />
+    </div>
+    <div className="mt-4 space-y-2">
+      {subjectDistribution.slice(0, 4).map((item) => (
+        <div key={item.subject} className="flex items-center gap-2">
+          <span className="w-24 truncate text-[11px] font-semibold text-slate-500">{item.subject}</span>
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.min(100, item.count * 18)}%` }} /></div>
+          <span className="text-[11px] font-bold text-slate-400">{item.count}</span>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
+const InfoTile = ({ label, value, sub, wide }) => (
+  <div className={`rounded-2xl bg-slate-50 p-3 ${wide ? '' : ''}`}>
+    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+    <p className="mt-1 truncate text-lg font-semibold text-slate-950">{value}</p>
+    <p className="text-[11px] text-slate-400">{sub}</p>
+  </div>
+);
+
+const getBreakAfter = (weeklySlots, index) => {
+  if (index >= weeklySlots.length - 1) return null;
+  const current = weeklySlots[index].slot.split(' - ');
+  const next = weeklySlots[index + 1].slot.split(' - ');
+  const end = parseDisplayTime(current[1]);
+  const start = parseDisplayTime(next[0]);
+  if (end === null || start === null || start - end < 10) return null;
+  return { duration: start - end, range: `${current[1]?.trim()} - ${next[0]?.trim()}` };
+};
+
+const parseDisplayTime = (value) => {
+  if (!value) return null;
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const suffix = match[3].toUpperCase();
+  if (suffix === 'PM' && hours !== 12) hours += 12;
+  if (suffix === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+};
+
+const isEntryCurrent = (entry, currentMinutes, timeToMinutes) => {
+  if (!entry) return false;
+  const start = timeToMinutes(entry.startTime);
+  const end = timeToMinutes(entry.endTime);
+  return start !== null && end !== null && currentMinutes >= start && currentMinutes <= end;
+};
+
+const isEntryUpcoming = (entry, currentMinutes, timeToMinutes) => {
+  if (!entry) return false;
+  const start = timeToMinutes(entry.startTime);
+  return start !== null && start > currentMinutes && start - currentMinutes <= 45;
 };
 
 export default ClassRoutine;

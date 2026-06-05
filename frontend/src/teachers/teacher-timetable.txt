@@ -1,0 +1,42 @@
+Teacher Timetable Features
+
+Overview
+- Route: `/teacher/timetable` (renders `ClassRoutine.jsx`)
+- Title: Weekly Timetable / Class Routine
+- Description: Interactive weekly and daily schedule for teachers, providing a clear overview of their assigned classes, subjects, and rooms.
+
+Key UI Elements:
+- Stats Grid:
+  - Weekly Classes: Total count of classes assigned for the full week.
+  - Day Classes: Count of classes for the currently selected day.
+  - Timetable Scope: Indicates if the timetable is Campus-scoped or School-wide, including match metadata.
+- View Controls:
+  - Download PDF: Generates a high-quality, formatted landscape PDF of the timetable.
+  - Reload: Manual refresh button to sync with the latest backend data.
+  - Day Selector: Scrollable pill-based navigation to switch between days (Monday-Sunday) with class counts per day.
+- Weekly Timetable (Desktop):
+  - Matrix view with Time slots in the left column and Days across the top.
+  - Color-coded class cards showing Subject, Class/Section, and Room.
+  - Visual indicators (dashes) for empty slots.
+- Daily Schedule (Mobile/Fallback):
+  - Vertical list of class cards for the selected day.
+  - Detailed info including Period number (e.g., P1, P2), Time range, Room, and Class/Section.
+- Context Pills:
+  - Dynamic badges showing Primary Subject, Assigned Classes, Assigned Sections, and Campus Name.
+
+Functionality:
+- Automated PDF Generation:
+  - Includes school branding (Logo, Name, Address).
+  - Automatically detects breaks between consecutive time slots (e.g., "Break (10 min)").
+  - Intelligent text truncation for subject and class labels to fit column widths.
+  - Table segmentation to avoid drawing vertical lines through break rows.
+- Dynamic Filtering:
+  - Attempts to strictly match timetable entries against teacher's profile (Class/Section).
+  - Includes a fallback mechanism to show the full teacher-scoped schedule if strict filters yield no results.
+- Time Format: Automatically converts 24-hour time to 12-hour format (e.g., 09:00 -> 9:00 AM).
+
+Data Integration:
+- Primary Source: `/api/teacher/dashboard/routine`
+- Secondary Fallback: `/api/teacher/dashboard` (uses 'upcomingClasses' data if the primary routine endpoint fails).
+- Teacher Context: Fetches specific metadata from `/api/teacher/auth/profile`.
+- Smart Loading: Uses `localStorage` to check user type and token before initialization.

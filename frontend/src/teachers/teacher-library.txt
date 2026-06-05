@@ -1,0 +1,51 @@
+Teacher Resource Library Features (Teacher Alcove)
+
+Overview
+- Route: `/teacher/resource-library` (renders `TeacherAlcove.jsx`)
+- Title: Teacher's Problem Alcove / Resource Library
+- Description: A collaborative space for educators to create, share, and solve challenging academic problems. Acts as a shared repository of high-quality educational content.
+
+Key UI Elements & Views:
+1. Hero & Stats Section:
+   - Visual banner with animated SVG backgrounds (themes/patterns).
+   - View Mode Toggle: Switch between "Problem Wall", "Create Problem", and "My Problems".
+   - Stats Cards: Total Problems, Total Likes, Total Views, Saved Problems.
+
+2. Problem Wall (Discover View):
+   - Search & Filter Bar:
+     - Text search (title, tags, content).
+     - Subject filter (Mathematics, Physics, Chemistry, Biology).
+     - Difficulty filter (Easy, Medium, Hard).
+   - Problem Cards:
+     - Header: Author avatar, Name, Role (Teacher/Student), Subject, Chapter, Difficulty, Estimated Time, Relative timestamp.
+     - Content: Problem Statement, Solution Approach (optional), Hints (optional), Tags.
+     - Actions: Like, Comment (opens detail modal), Save/Bookmark, View count, Share, Download.
+
+3. Create / Edit Problem Workspace:
+   - Basic Info: Title, Estimated Time, Subject, Chapter/Topic, Difficulty Level.
+   - Rich Text Areas: Problem Statement, Solution Approach.
+   - Dynamic Fields:
+     - Hints: Add/remove multiple hint fields.
+     - Tags: Press 'Enter' to add tags, click 'x' to remove.
+
+4. My Problems View:
+   - Grid layout of problems authored by the current teacher.
+   - Quick actions to Edit or Delete specific problems.
+   - Summarized view of likes, views, and post time.
+
+5. Interactive Detail Modal:
+   - Triggered by clicking the Comment/View icons on a problem card.
+   - Header: Title, Subject, Chapter, Author.
+   - Metrics: Large stat blocks for Comments, Viewers, and Likes.
+   - Discussion Board: List of comments with timestamps. Highlights the original author's comments with a special badge.
+   - Comment Input: Text input to post new comments to the discussion.
+
+Data Integration & API Endpoints:
+- `GET /api/alcove/posts`: Fetches paginated list of problems (supports filters like `subject`, `difficulty`, `q`, and `mine=true`).
+- `POST / PATCH /api/alcove/posts`: Creates or updates a problem.
+- `DELETE /api/alcove/posts/:id`: Deletes a specific problem.
+- `POST /api/alcove/posts/:id/like`: Toggles like status.
+- `GET /api/alcove/posts/:id/comments`: Retrieves comment thread.
+- `POST /api/alcove/posts/:id/comments`: Submits a new comment.
+- `GET /api/alcove/posts/:id/viewers`: Retrieves list of users who viewed the problem.
+- `GET /api/alcove/posts/:id`: Retrieves specific problem metadata (view/like counts).
