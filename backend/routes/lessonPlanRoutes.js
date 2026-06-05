@@ -434,7 +434,7 @@ const sanitizePlannerContent = (value) => {
               mindMaps: normalizeStringList(subTopic?.mindMaps),
               worksheets: normalizeStringList(subTopic?.worksheets),
               referenceMaterials: normalizeStringList(subTopic?.referenceMaterials),
-              tryoutSections: normalizeStringList(subTopic?.tryoutSections),
+              tryoutSections: normalizeTryoutList(subTopic?.tryoutSections),
               selfAssessments: normalizeStringList(subTopic?.selfAssessments),
               questionPapers: {
                 basic: normalizeString(subTopic?.questionPapers?.basic),
@@ -1693,69 +1693,30 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
             subjectEntry.topics.set(topicId, {
               title: normalizeString(topic.title) || 'Topic',
               subtopics: new Set(),
+              tryoutSections: [],
             });
           }
-          const topicEntry = chapterEntry.topics.get(topicId);
-          (topic.subTopics || []).forEach((subTopic) => {
-            const subTopicId = normalizeIdValue(subTopic.id) || normalizeString(subTopic.title).toLowerCase();
-            if (!topicEntry.subtopics.has(subTopicId)) {
-              topicEntry.subtopics.set(subTopicId, {
-                id: subTopicId,
-                title: normalizeString(subTopic.title) || 'Sub Topic',
-                materials: [],
-                assignments: [],
-                assessments: [],
-              });
+          const topicEntry = subjectEntry.topics.get(topicKey);
+          (topic.subTopics || []).forEach((sub) => {
+            const subTitle = normalizeString(sub.title);
+            if (subTitle) topicEntry.subtopics.add(subTitle);
+            if (Array.isArray(sub.tryoutSections)) {
+              topicEntry.tryoutSections.push(...sub.tryoutSections);
             }
           });
         });
       });
     });
 
-    const subjects = Array.from(subjectMap.values()).map((subject) => {
-      const topics = new Map();
-      const chapters = Array.from(subject.chapters.values()).map((chapter) => {
-        const chapterTopics = Array.from(chapter.topics.values()).map((topic) => {
-          const subtopics = Array.from(topic.subtopics.values()).map((subTopic) => ({
-            ...subTopic,
-            completedContents: (subTopic.materials.length + subTopic.assignments.length + subTopic.assessments.length),
-          }));
-          subtopics.forEach((subTopic) => {
-            const topicKey = topic.title.toLowerCase();
-            if (!topics.has(topicKey)) {
-              topics.set(topicKey, {
-                title: topic.title,
-                subtopics: new Set(),
-              });
-            }
-            const topicSummary = topics.get(topicKey);
-            topicSummary.subtopics.add(subTopic.title);
-          });
-          return {
-            id: topic.id,
-            title: topic.title,
-            subtopics,
-          };
-        });
-
-        return {
-          id: chapter.id,
-          title: chapter.title,
-          topics: chapterTopics,
-        };
-      });
-
-      return {
-        key: subject.key,
-        title: subject.title,
-        chapters,
-        topics: Array.from(subject.topics.values()).map((topic) => ({
-          title: topic.title,
-          subtopics: Array.from(topic.subtopics.values()).map((subTopic) => subTopic.title),
-        })),
-        contentMetrics: subject.contentMetrics,
-      };
-    });
+    const subjects = Array.from(subjectMap.values()).map((subject) => ({
+      key: subject.key,
+      title: subject.title,
+      topics: Array.from(subject.topics.values()).map((topic) => ({
+        title: topic.title,
+        subtopics: Array.from(topic.subtopics),
+        tryoutSections: topic.tryoutSections,
+      })),
+    }));
 
     return res.json({ subjects });
   } catch (err) {

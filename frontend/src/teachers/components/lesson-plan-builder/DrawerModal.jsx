@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X } from 'lucide-react';
+import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X, Play, Edit3 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import RichTextEditor from './RichTextEditor';
 import UploadDropzone from './UploadDropzone';
 import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
+import TryoutBuilder from './TryoutBuilder';
 
 const evaluationTags = ['Excellent', 'Good', 'Needs Improvement'];
 
@@ -31,7 +32,13 @@ const DrawerModal = ({
   onPublishChapter,
   isPublishing = false,
 }) => {
+  const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
+
   if (!chapter) return null;
+
+  const handleSaveTryouts = (tryouts) => {
+    onUpdate({ ...chapter, tryouts });
+  };
 
   const dayLabel = chapter.lessonDate
     ? new Date(chapter.lessonDate).toLocaleDateString('en-US', { weekday: 'long' })
@@ -81,7 +88,7 @@ const DrawerModal = ({
               <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
                 <p className="mb-1 text-xs text-slate-500">Duration</p>
                 <select value={chapter.duration} onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })} className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm">
-                  {durations.map((duration) => <option key={duration} value={duration}>{duration}</option>)}
+                  {(durations || []).map((duration) => <option key={duration} value={duration}>{duration}</option>)}
                 </select>
               </div>
             </div>
@@ -90,12 +97,45 @@ const DrawerModal = ({
               <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-100">Content</summary>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <UploadDropzone title="Upload Worksheet" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-                <UploadDropzone title="Upload Tryout" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Tryout'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+
+                {/* Tryout Builder Section */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Upload Tryout</p>
+                  <div className="rounded-xl border-2 border-dashed border-purple-300 bg-gradient-to-br from-purple-50 to-indigo-50 p-4 text-center dark:from-purple-900/20 dark:to-indigo-900/20">
+                    <Play className="mx-auto mb-2 size-8 text-purple-500" />
+                    <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
+                      Create interactive tryout questions
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowTryoutBuilder(true)}
+                      className="border-purple-300 text-purple-600 hover:bg-purple-100 dark:border-purple-600 dark:text-purple-400"
+                    >
+                      <Edit3 className="size-4 mr-2" />
+                      {chapter.tryouts?.length > 0 ? 'Edit Tryout' : 'Create Tryout'}
+                    </Button>
+                    {chapter.tryouts?.length > 0 && (
+                      <p className="mt-2 text-xs text-purple-600 dark:text-purple-400">
+                        {chapter.tryouts.length} question(s) added
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <UploadDropzone title="Assessments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
                 <UploadDropzone title="Experiments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []} onAddFile={onAddContentFile} onRemoveContentFile={onRemoveContentFile} onRemoveFile={onRemoveContentFile} />
                 <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
               </div>
             </details>
+
+            {/* Tryout Builder Modal */}
+            <TryoutBuilder
+              open={showTryoutBuilder}
+              onClose={() => setShowTryoutBuilder(false)}
+              tryouts={chapter.tryouts || []}
+              onSaveTryouts={handleSaveTryouts}
+            />
 
             <section className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
               <div className="mb-2 flex items-center justify-between">
@@ -153,7 +193,7 @@ const DrawerModal = ({
                 <Button variant="outline" onClick={onAddAssessment}>+ Add Assessment</Button>
               </div>
               <div className="space-y-2">
-                {chapter.assessments.map((assessment) => (
+                {(chapter.assessments || []).map((assessment) => (
                   <AssessmentCard key={assessment.id} assessment={assessment} types={assessmentTypes} onChange={(next) => onUpdateAssessment(assessment.id, next)} />
                 ))}
               </div>

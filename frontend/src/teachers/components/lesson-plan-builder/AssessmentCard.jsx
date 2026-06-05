@@ -15,7 +15,7 @@ const AssessmentCard = ({ assessment, types, onChange }) => {
         onChange={(event) => onChange({ ...assessment, type: event.target.value })}
         className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
       >
-        {types.map((type) => (
+        {(types || []).map((type) => (
           <option key={type} value={type}>
             {type}
           </option>

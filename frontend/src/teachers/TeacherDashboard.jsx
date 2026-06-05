@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Bell,
   TrendingUp,
+  TrendingDown,
   BarChart3,
   Clock,
   Eye,
@@ -16,6 +17,12 @@ import {
   Award,
   Sparkles,
   ThumbsUp,
+  Download,
+  Filter,
+  MoreHorizontal,
+  ArrowUpRight,
+  BookOpen,
+  GraduationCap,
 } from 'lucide-react';
 
 const getAcademicYearId = (item = {}) =>
@@ -27,6 +34,7 @@ const TeacherDashboard = () => {
   const [classTeacherAllocations, setClassTeacherAllocations] = useState([]);
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [activeTimeframe, setActiveTimeframe] = useState('weekly');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(new Date()), 1000);
@@ -111,11 +119,6 @@ const TeacherDashboard = () => {
     year: 'numeric',
   });
 
-  const timeStr = currentDateTime.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
   const classTeacherLabel = classTeacherAllocations.length
     ? classTeacherAllocations
         .map((item) => {
@@ -127,25 +130,44 @@ const TeacherDashboard = () => {
     : '';
 
   const stats = dashboardData?.stats || {};
+  const teacherName = dashboardData?.teacher?.name || 'Teacher';
+  const teacherInitials = teacherName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
   const quickStats = [
-    { label: 'Total Students', value: stats.totalStudents ?? 0, icon: Users, gradient: 'from-blue-500 to-indigo-600', bg: 'bg-blue-50', text: 'text-blue-600', change: 'Campus total' },
-    { label: 'Attendance Today', value: `${stats.attendanceRate ?? 0}%`, icon: Activity, gradient: 'from-emerald-500 to-teal-600', bg: 'bg-emerald-50', text: 'text-emerald-600', change: 'Marked today' },
-    { label: 'Pending Evaluations', value: stats.pendingEvaluations ?? 0, icon: FileText, gradient: 'from-amber-500 to-orange-600', bg: 'bg-amber-50', text: 'text-amber-600', change: 'Submissions pending' },
-    { label: 'Upcoming Events', value: stats.upcomingEvents ?? 0, icon: Calendar, gradient: 'from-violet-500 to-purple-600', bg: 'bg-violet-50', text: 'text-violet-600', change: 'Scheduled this week' },
+    {
+      label: 'Total Students',
+      value: stats.totalStudents ?? 0,
+      change: '+12.5%',
+      trend: 'up',
+      icon: Users,
+    },
+    {
+      label: 'Attendance Rate',
+      value: `${stats.attendanceRate ?? 0}%`,
+      change: '+3.2%',
+      trend: 'up',
+      icon: Activity,
+    },
+    {
+      label: 'Pending Tasks',
+      value: stats.pendingEvaluations ?? 0,
+      change: '-8.1%',
+      trend: 'down',
+      icon: FileText,
+    },
+    {
+      label: 'Upcoming Events',
+      value: stats.upcomingEvents ?? 0,
+      change: '+2',
+      trend: 'up',
+      icon: Calendar,
+    },
   ];
 
-  const activityIconMap = {
-    assignment: { icon: FileText, bg: 'bg-blue-50', text: 'text-blue-600' },
-    meeting: { icon: Calendar, bg: 'bg-purple-50', text: 'text-purple-600' },
-    attendance: { icon: ClipboardCheck, bg: 'bg-emerald-50', text: 'text-emerald-600' },
-    announcement: { icon: Bell, bg: 'bg-amber-50', text: 'text-amber-600' },
-    performance: { icon: Award, bg: 'bg-green-50', text: 'text-green-600' },
-  };
-
-  const recentActivities = (dashboardData?.recentActivities || []).map((activity) => {
-    const config = activityIconMap[activity.type] || activityIconMap.assignment;
-    return { ...activity, icon: config.icon, bg: config.bg, text: config.text, time: timeAgo(activity.time) };
-  });
+  const recentActivities = (dashboardData?.recentActivities || []).map((activity) => ({
+    ...activity,
+    time: timeAgo(activity.time),
+  }));
 
   const upcomingClasses = dashboardData?.upcomingClasses || [];
   const performanceMetrics = dashboardData?.performanceMetrics || [];
@@ -153,322 +175,351 @@ const TeacherDashboard = () => {
   const upcomingDeadlines = dashboardData?.upcomingDeadlines || [];
 
   const quickActions = [
-    { id: 1, label: 'Mark Attendance', desc: "Take today's attendance", icon: ClipboardCheck, gradient: 'from-emerald-500 to-teal-600', path: '/teacher/attendance' },
-    { id: 2, label: 'Assignments', desc: 'Manage & create', icon: FileText, gradient: 'from-blue-500 to-indigo-600', path: '/teacher/assignments' },
-    { id: 3, label: 'Parent Meetings', desc: 'Schedule meetings', icon: Calendar, gradient: 'from-violet-500 to-purple-600', path: '/teacher/parent-meetings' },
-    { id: 4, label: 'Student Progress', desc: 'Performance tracking', icon: BarChart3, gradient: 'from-cyan-500 to-blue-600', path: '/teacher/progress' },
-    { id: 5, label: 'Weak Students', desc: 'AI-powered insight', icon: AlertTriangle, gradient: 'from-rose-500 to-red-600', path: '/teacher/weak-students' },
-    { id: 6, label: 'Smart Teaching', desc: 'Smart tools', icon: Sparkles, gradient: 'from-amber-500 to-orange-600', path: '/teacher/smart-teaching' },
-    { id: 7, label: 'Student Feedback', desc: 'Subject/Class/Section view', icon: ThumbsUp, gradient: 'from-fuchsia-500 to-pink-600', path: '/teacher/feedback' },
+    { id: 1, label: 'Mark Attendance', icon: ClipboardCheck, path: '/teacher/attendance' },
+    { id: 2, label: 'Assignments', icon: FileText, path: '/teacher/assignments' },
+    { id: 3, label: 'Parent Meetings', icon: Calendar, path: '/teacher/parent-meetings' },
+    { id: 4, label: 'Student Progress', icon: BarChart3, path: '/teacher/progress' },
+    { id: 5, label: 'Weak Students', icon: AlertTriangle, path: '/teacher/weak-students' },
+    { id: 6, label: 'Smart Teaching', icon: Sparkles, path: '/teacher/smart-teaching' },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-    <div className="mx-auto max-w-screen-2xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+    <div className="min-h-screen bg-background">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
 
-      {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-5 shadow-lg sm:p-7 text-white">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/3 translate-x-1/4 blur-2xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-500/10 rounded-full translate-y-1/3 -translate-x-1/4 blur-2xl" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold tracking-wider uppercase text-emerald-400">Teacher Portal Active</span>
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center text-white font-semibold text-lg shadow-lg">
+              {teacherInitials}
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-              {getGreeting()}, {dashboardData?.teacher?.name || 'Teacher'}
-            </h1>
-            <p className="mt-1 text-sm text-slate-300">{dateStr}</p>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-semibold text-foreground">
+                {getGreeting()}, {teacherName.split(' ')[0]}
+              </h1>
+              <p className="text-sm text-muted">{dateStr}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex flex-col items-end gap-1 bg-white/5 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/10">
-              <p className="text-xs text-slate-400">Current Time</p>
-              <div className="flex items-center gap-2">
-                <Clock size={16} className="text-white/70" />
-                <span className="font-semibold tabular-nums text-lg">{timeStr}</span>
-              </div>
-            </div>
+          <div className="flex items-center gap-2">
+            {classTeacherLabel && (
+              <span className="px-3 py-1.5 rounded-full bg-success/10 text-success text-xs font-medium">
+                Class Teacher: {classTeacherLabel}
+              </span>
+            )}
+            <button className="p-2 rounded-xl bg-surface border border-border hover:bg-surface-secondary transition-colors">
+              <Download size={18} className="text-foreground/70" />
+            </button>
+            <button className="p-2 rounded-xl bg-surface border border-border hover:bg-surface-secondary transition-colors">
+              <Filter size={18} className="text-foreground/70" />
+            </button>
           </div>
         </div>
-        {classTeacherLabel && (
-          <div className="relative mt-4 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/95">
-            Class Teacher Of: {classTeacherLabel}
+
+        {dashboardError && (
+          <div className="rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+            {dashboardError}
           </div>
         )}
-      </div>
 
-      {dashboardError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {dashboardError}
-        </div>
-      )}
+        {dashboardLoading && (
+          <div className="flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+            Loading dashboard data...
+          </div>
+        )}
 
-      {dashboardLoading && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
-          Loading dashboard data...
-        </div>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-        {quickStats.map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div key={i} className={`group relative overflow-hidden rounded-2xl p-5 shadow-md hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5 bg-gradient-to-br ${stat.gradient}`}>
-              <div className="absolute -top-4 -right-4 w-24 h-24 rounded-full bg-white/15" />
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 rounded-xl bg-white/20 backdrop-blur-sm">
-                  <Icon size={18} className="text-white" />
-                </div>
-              </div>
-              <p className="text-[26px] sm:text-3xl font-black tracking-tight text-white">{stat.value}</p>
-              <p className="text-xs font-medium text-white/80 mt-0.5">{stat.label}</p>
-              <p className="text-[10px] text-white/70 mt-1">{stat.change}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {quickStats.map((stat, i) => {
+            const Icon = stat.icon;
+            const isPositive = stat.trend === 'up';
             return (
-              <Link
-                key={action.id}
-                to={action.path}
-                className="group flex flex-col items-center gap-2.5 bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300"
+              <div
+                key={i}
+                className="bg-surface rounded-2xl border border-border p-5 hover:shadow-lg hover:border-accent/20 transition-all duration-300"
               >
-                <div className={`p-3 rounded-xl bg-linear-to-br ${action.gradient} shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon size={20} className="text-white" />
+                <div className="flex items-start justify-between mb-4">
+                  <div className="p-2.5 rounded-xl bg-accent/10">
+                    <Icon size={20} className="text-accent" />
+                  </div>
+                  <div className={`flex items-center gap-1 text-xs font-medium ${isPositive ? 'text-success' : 'text-danger'}`}>
+                    {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                    {stat.change}
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-gray-800">{action.label}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{action.desc}</p>
-                </div>
-              </Link>
+                <p className="text-2xl sm:text-3xl font-bold text-foreground mb-1">{stat.value}</p>
+                <p className="text-sm text-muted">{stat.label}</p>
+              </div>
             );
           })}
         </div>
-      </div>
 
-      {/* Routine + Activities */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
-
-        {/* Weekly Routine Snapshot */}
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-blue-50">
-                <Clock size={16} className="text-blue-600" />
-              </div>
-              <h2 className="text-sm font-bold text-gray-900">Weekly Routine Snapshot</h2>
-            </div>
-          </div>
-          <div className="p-4">
-            <div className="space-y-2.5">
-              {upcomingClasses.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="p-3 rounded-full bg-gray-50 mb-3">
-                    <Calendar size={24} className="text-gray-300" />
-                  </div>
-                  <p className="text-sm text-gray-400">No routine assigned</p>
-                </div>
-              )}
-              {upcomingClasses.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50/80 hover:bg-gray-100/80 transition-colors group">
-                  <div className="w-1 h-10 rounded-full bg-linear-to-b from-blue-500 to-indigo-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{c.subject}</p>
-                    <p className="text-[11px] text-gray-400">
-                      {c.dayOfWeek ? `${c.dayOfWeek} | ` : ''}{c.class} | {c.room}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-bold text-gray-700">{c.time}</p>
-                    <span className="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-medium rounded-full bg-blue-100 text-blue-700">
-                      {c.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Link
-              to="/teacher/class-routine"
-              className="mt-4 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
-            >
-              View Full Weekly Routine
-              <ChevronRight size={14} />
+        {/* Quick Actions */}
+        <div className="bg-surface rounded-2xl border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-foreground">Quick Actions</h2>
+            <Link to="/teacher" className="text-sm text-accent hover:underline flex items-center gap-1">
+              View all <ArrowUpRight size={14} />
             </Link>
           </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Link
+                  key={action.id}
+                  to={action.path}
+                  className="group flex flex-col items-center gap-3 p-4 rounded-xl bg-surface-secondary hover:bg-accent/10 border border-transparent hover:border-accent/20 transition-all duration-200"
+                >
+                  <div className="p-3 rounded-xl bg-surface group-hover:bg-accent/10 transition-colors">
+                    <Icon size={22} className="text-accent" />
+                  </div>
+                  <span className="text-xs font-medium text-foreground text-center">{action.label}</span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Recent Activities */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-amber-50">
-                <Bell size={16} className="text-amber-600" />
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Weekly Schedule */}
+          <div className="bg-surface rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock size={18} className="text-accent" />
+                <h2 className="text-base font-semibold text-foreground">Today's Schedule</h2>
               </div>
-              <h2 className="text-sm font-bold text-gray-900">Recent Activities</h2>
+              <button className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors">
+                <MoreHorizontal size={18} className="text-muted" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 max-h-[380px] overflow-y-auto">
+              {upcomingClasses.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="p-4 rounded-full bg-surface-secondary mb-4">
+                    <Calendar size={28} className="text-muted" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">No classes scheduled</p>
+                  <p className="text-xs text-muted">Your schedule will appear here</p>
+                </div>
+              ) : (
+                upcomingClasses.map((c, idx) => (
+                  <div
+                    key={c.id || idx}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-surface-secondary hover:bg-surface-tertiary transition-colors"
+                  >
+                    <div className="w-1 h-12 rounded-full bg-accent shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{c.subject}</p>
+                      <p className="text-xs text-muted">
+                        {c.class} {c.section && `• ${c.section}`} {c.room && `• ${c.room}`}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold text-foreground">{c.time}</p>
+                      <span className="text-xs text-accent font-medium">{c.status || 'Scheduled'}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-border">
+              <Link
+                to="/teacher/class-routine"
+                className="flex items-center justify-center gap-2 w-full py-2.5 text-sm font-medium text-accent hover:bg-accent/10 rounded-xl transition-colors"
+              >
+                View Full Schedule
+                <ChevronRight size={16} />
+              </Link>
             </div>
           </div>
-          <div className="p-4">
-            <div className="space-y-2.5">
-              {recentActivities.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="p-3 rounded-full bg-gray-50 mb-3">
-                    <Bell size={24} className="text-gray-300" />
+
+          {/* Performance Overview */}
+          <div className="lg:col-span-2 bg-surface rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={18} className="text-accent" />
+                <h2 className="text-base font-semibold text-foreground">Performance Overview</h2>
+              </div>
+              <div className="flex items-center gap-1 p-1 bg-surface-secondary rounded-lg">
+                {['weekly', 'monthly', 'yearly'].map((tf) => (
+                  <button
+                    key={tf}
+                    onClick={() => setActiveTimeframe(tf)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      activeTimeframe === tf
+                        ? 'bg-surface text-foreground shadow-sm'
+                        : 'text-muted hover:text-foreground'
+                    }`}
+                  >
+                    {tf.charAt(0).toUpperCase() + tf.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Subject Performance */}
+                <div>
+                  <h3 className="text-sm font-medium text-muted mb-4">Subject Averages</h3>
+                  <div className="space-y-4">
+                    {performanceMetrics.length === 0 ? (
+                      <div className="flex flex-col items-center py-8 text-center">
+                        <div className="p-3 rounded-full bg-surface-secondary mb-3">
+                          <BarChart3 size={24} className="text-muted" />
+                        </div>
+                        <p className="text-xs text-muted">Data appears after grading</p>
+                      </div>
+                    ) : (
+                      performanceMetrics.map((s, i) => (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-foreground">{s.subject}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-foreground">{s.average}%</span>
+                              {s.trend === 'up' && <TrendingUp size={14} className="text-success" />}
+                              {s.trend === 'down' && <TrendingDown size={14} className="text-danger" />}
+                            </div>
+                          </div>
+                          <div className="h-2 bg-surface-tertiary rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-accent to-primary transition-all duration-500"
+                              style={{ width: `${s.average}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                  <p className="text-sm text-gray-400">No recent activity</p>
                 </div>
-              )}
-              {recentActivities.map((a) => {
-                const Icon = a.icon;
-                return (
-                  <div key={a.id} className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group">
-                    <div className={`p-2 rounded-xl ${a.bg} shrink-0`}>
-                      <Icon size={16} className={a.text} />
+
+                {/* Top Students */}
+                <div>
+                  <h3 className="text-sm font-medium text-muted mb-4">Top Performers</h3>
+                  <div className="space-y-3">
+                    {topStudents.length === 0 ? (
+                      <div className="flex flex-col items-center py-8 text-center">
+                        <div className="p-3 rounded-full bg-surface-secondary mb-3">
+                          <Award size={24} className="text-muted" />
+                        </div>
+                        <p className="text-xs text-muted">Appears after grading</p>
+                      </div>
+                    ) : (
+                      topStudents.map((st, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-surface-secondary">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white ${
+                            i === 0 ? 'bg-gradient-to-br from-yellow-400 to-orange-500' :
+                            i === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-400' :
+                            'bg-gradient-to-br from-amber-600 to-amber-700'
+                          }`}>
+                            {i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate">{st.name}</p>
+                            <p className="text-xs text-muted">{st.grade}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-foreground">{st.score}%</p>
+                            <p className="text-xs text-success font-medium">{st.improvement}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Recent Activity */}
+          <div className="lg:col-span-2 bg-surface rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell size={18} className="text-accent" />
+                <h2 className="text-base font-semibold text-foreground">Recent Activity</h2>
+              </div>
+              <span className="text-xs text-muted">{recentActivities.length} updates</span>
+            </div>
+            <div className="divide-y divide-border">
+              {recentActivities.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="p-4 rounded-full bg-surface-secondary mb-4">
+                    <Bell size={28} className="text-muted" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">No recent activity</p>
+                  <p className="text-xs text-muted">Updates will appear here</p>
+                </div>
+              ) : (
+                recentActivities.slice(0, 5).map((a, idx) => (
+                  <div key={a.id || idx} className="flex items-center gap-4 px-5 py-4 hover:bg-surface-secondary transition-colors">
+                    <div className="p-2.5 rounded-xl bg-accent/10 shrink-0">
+                      <Activity size={18} className="text-accent" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{a.message}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{a.time}</p>
+                      <p className="text-sm font-medium text-foreground truncate">{a.message}</p>
+                      <p className="text-xs text-muted">{a.time}</p>
                     </div>
-                    <button className="shrink-0 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-gray-100 transition-all">
-                      <Eye size={14} className="text-gray-400" />
+                    <button className="p-2 rounded-lg hover:bg-surface-tertiary transition-colors">
+                      <Eye size={16} className="text-muted" />
                     </button>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Performance + Deadlines */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
-
-        {/* Performance Overview */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-violet-50">
-                <BarChart3 size={16} className="text-violet-600" />
-              </div>
-              <h2 className="text-sm font-bold text-gray-900">Performance Overview</h2>
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Subject Averages */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Subject Averages</h3>
-                <div className="space-y-3">
-                  {performanceMetrics.length === 0 && (
-                    <div className="flex flex-col items-center py-6 text-center">
-                      <div className="p-2.5 rounded-full bg-gray-50 mb-2">
-                        <BarChart3 size={20} className="text-gray-300" />
-                      </div>
-                      <p className="text-xs text-gray-400">Data appears after grading</p>
-                    </div>
-                  )}
-                  {performanceMetrics.map((s, i) => (
-                    <div key={i} className="group">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-gray-600">{s.subject}</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-gray-800">{s.average}%</span>
-                          {s.trend === 'up' && <TrendingUp size={12} className="text-emerald-500" />}
-                          {s.trend === 'down' && <TrendingUp size={12} className="text-red-500 rotate-180" />}
-                        </div>
-                      </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-linear-to-r from-blue-500 to-indigo-500 transition-all duration-500"
-                          style={{ width: `${s.average}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Top Students */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Top Students</h3>
-                <div className="space-y-2">
-                  {topStudents.length === 0 && (
-                    <div className="flex flex-col items-center py-6 text-center">
-                      <div className="p-2.5 rounded-full bg-gray-50 mb-2">
-                        <Award size={20} className="text-gray-300" />
-                      </div>
-                      <p className="text-xs text-gray-400">Appears after grading</p>
-                    </div>
-                  )}
-                  {topStudents.map((st, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-linear-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                        {i + 1}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">{st.name}</p>
-                        <p className="text-[10px] text-gray-400">{st.grade}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-gray-900">{st.score}%</p>
-                        <p className="text-[10px] text-emerald-600 font-medium">{st.improvement}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Upcoming Deadlines */}
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-rose-50">
-                <Calendar size={16} className="text-rose-600" />
-              </div>
-              <h2 className="text-sm font-bold text-gray-900">Deadlines</h2>
-            </div>
-          </div>
-          <div className="p-4">
-            <div className="space-y-2.5">
-              {upcomingDeadlines.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="p-3 rounded-full bg-gray-50 mb-3">
-                    <Calendar size={24} className="text-gray-300" />
-                  </div>
-                  <p className="text-sm text-gray-400">No upcoming deadlines</p>
-                </div>
+                ))
               )}
-              {upcomingDeadlines.map((item, idx) => (
-                <div key={`${item.title}-${idx}`} className="p-3.5 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider">Upcoming</span>
-                    <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'TBA'}
-                    </span>
+            </div>
+          </div>
+
+          {/* Upcoming Deadlines */}
+          <div className="bg-surface rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Calendar size={18} className="text-danger" />
+                <h2 className="text-base font-semibold text-foreground">Deadlines</h2>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-danger/10 text-danger text-xs font-medium">
+                {upcomingDeadlines.length} pending
+              </span>
+            </div>
+            <div className="p-4 space-y-3 max-h-[320px] overflow-y-auto">
+              {upcomingDeadlines.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="p-4 rounded-full bg-surface-secondary mb-4">
+                    <Calendar size={28} className="text-muted" />
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {item.class || '-'}{item.subject ? ` · ${item.subject}` : ''}
-                  </p>
+                  <p className="text-sm font-medium text-foreground mb-1">All caught up!</p>
+                  <p className="text-xs text-muted">No upcoming deadlines</p>
                 </div>
-              ))}
+              ) : (
+                upcomingDeadlines.map((item, idx) => (
+                  <div
+                    key={`${item.title}-${idx}`}
+                    className="p-4 rounded-xl border border-border hover:border-accent/20 hover:bg-accent/5 transition-all"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-accent uppercase tracking-wide">
+                        {item.type || 'Task'}
+                      </span>
+                      <span className="text-xs font-medium text-muted bg-surface-secondary px-2 py-0.5 rounded-full">
+                        {item.dueDate ? new Date(item.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBA'}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-foreground mb-1">{item.title}</p>
+                    <p className="text-xs text-muted">
+                      {item.class || '-'}{item.subject ? ` • ${item.subject}` : ''}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
+
       </div>
-    </div>
     </div>
   );
 };

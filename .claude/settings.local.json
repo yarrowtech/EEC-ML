@@ -32,7 +32,10 @@
       "Bash(xargs:*)",
       "Bash(npx eslint:*)",
       "Bash(node -c:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "WebFetch(domain:heroui.com)",
+      "WebSearch",
+      "WebFetch(domain:template-dashboard.heroui.pro)"
     ]
   }
 }

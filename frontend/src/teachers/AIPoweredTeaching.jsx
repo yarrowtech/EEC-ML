@@ -38,7 +38,9 @@ const enrichChapter = (chapter) => ({
   contentUploads: { ...defaultContentUploads, ...(chapter.contentUploads || {}) },
   worksheetFiles: chapter.worksheetFiles || [],
   worksheetLink: chapter.worksheetLink || '',
+  assessments: Array.isArray(chapter.assessments) ? chapter.assessments : [],
   history: chapter.history || [],
+  tryouts: chapter.tryouts || [],
 });
 
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -389,12 +391,12 @@ const AIPoweredTeaching = () => {
   const addAssessmentToActiveChapter = (chapterId) => {
     if (!chapterId) return;
     const next = { id: `a-${Date.now()}`, title: '', type: assessmentTypes[0], dueDate: '', marks: 0 };
-    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: [...chapter.assessments, next] }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: [...(chapter.assessments || []), next] }));
   };
 
   const updateAssessmentInActiveChapter = (chapterId, assessmentId, nextAssessment) => {
     if (!chapterId) return;
-    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: chapter.assessments.map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
+    updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: (chapter.assessments || []).map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
   };
 
   const addContentFile = (chapterId, file, bucket) => {
@@ -466,7 +468,7 @@ const AIPoweredTeaching = () => {
                   mindMaps: [],
                   worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
                   referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
-                  tryoutSections: (chapter.assessments || []).map((a) => String(a.title || '').trim()).filter(Boolean),
+                  tryoutSections: chapter.tryouts || [],
                   selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
                   questionPapers: {
                     basic: (chapter.assessments || [])[0]?.title || '',
@@ -526,7 +528,7 @@ const AIPoweredTeaching = () => {
             mindMaps: [],
             worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
             referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
-            tryoutSections: (chapter.assessments || []).map((a) => String(a.title || '').trim()).filter(Boolean),
+            tryoutSections: chapter.tryouts || [],
             selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
             questionPapers: {
               basic: (chapter.assessments || [])[0]?.title || '',

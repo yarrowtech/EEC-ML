@@ -102,11 +102,14 @@ const AILearningCoursesReference = () => {
           'Content-Type': 'application/json',
         };
 
-        const [dashRes, contextRes, materialsRes, papersRes] = await Promise.all([
+        const [dashRes, contextRes] = await Promise.all([
           fetchCachedJson(DASHBOARD_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
-          fetchCachedJson(STUDENT_learningMaterials_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
-          fetchCachedJson(STUDENT_PAPERS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }),
+        ]);
+
+        const [materialsRes, papersRes] = await Promise.all([
+          fetchCachedJson(STUDENT_learningMaterials_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { materials: [] } })),
+          fetchCachedJson(STUDENT_PAPERS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { papers: [] } })),
         ]);
 
         setStats(dashRes?.data?.stats || null);
