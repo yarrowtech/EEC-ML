@@ -1,0 +1,61 @@
+# Teacher Settings Page (My Work Portal) - Feature Overview
+
+This page, accessible at `/teacher/settings`, serves as a comprehensive "My Work Portal" for teachers to manage their professional administrative tasks.
+
+## 1. Attendance Tracker
+- **Daily Check-in/Check-out:** Real-time marking of attendance with timestamp recording.
+- **Attendance Statistics:** Monthly summary showing:
+    - Days Present
+    - Days Late
+    - Days Absent
+    - Overall Attendance Rate (%)
+- **Daily Details:** View daily entry time, exit time, and total working hours.
+- **Attendance History:** A chronological log of daily records for the selected month, including check-in/out times and status.
+- **Month Filtering:** Ability to view attendance records for different months.
+
+## 2. Leave Management
+- **Leave Requests:** Submit requests for various leave types:
+    - Sick Leave
+    - Casual Leave
+    - Annual Leave
+    - Maternity Leave
+- **Leave Quota Tracking:** Real-time view of used vs. available casual leave days.
+- **Request Lifecycle:** Track status of requests (Pending, Approved, Rejected).
+- **Modification:** Edit or delete requests that are still in 'Pending' status.
+- **Admin Feedback:** View notes/reasons provided by administration regarding leave decisions.
+- **View Modes:** Toggle between List View and Grid View for managing requests.
+
+## 3. Profile Management
+- **Personal Information:** View and update:
+    - Full Name
+    - Email Address
+    - Phone Number
+    - Department
+    - Join Date
+    - Residential Address
+    - Emergency Contact Information
+- **Profile Picture:** Upload and update personal profile photo.
+- **Professional Identity:** View read-only Employee ID/Code and Department.
+- **Validation:** Visual indicators for saving states and success/error messages.
+
+## 4. Expense Claims (Reimbursements)
+- **Claim Submission:** Submit reimbursement requests with:
+    - Category (e.g., Travel)
+    - Amount
+    - Date
+    - Description
+    - Receipt Attachment (Cloudinary upload support)
+- **Financial Statistics:** View totals for Approved, Pending, and Rejected claims in local currency (INR).
+- **History Tracking:** Log of all submitted claims with status tracking.
+- **Modification:** Edit or delete pending claims.
+- **View Modes:** Toggle between List View and Grid View for expense history.
+
+## 5. Notifications & Alerts
+- **Workflow Notifications:** Alerts for leave approvals, expense claim updates, and profile requirements.
+- **Read/Unread Tracking:** Mark notifications as read to manage alerts.
+- **Categorization:** Icons and colors for Success, Warning, and Info alerts.
+
+## 6. Document Access
+- **Policy Documents:** Access to Employee Handbook and other institutional policies.
+- **Personal Records:** Download Salary Certificates, Tax Declaration forms, and Performance Reviews.
+- **Document Management:** Support for both downloading institutional documents and uploading personal administrative files.
