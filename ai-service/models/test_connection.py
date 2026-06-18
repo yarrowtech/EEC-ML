@@ -15,3 +15,4 @@ for model in models:
     )
     print(f"Response: {response['message']['content']}")
     print("---")
+    print("Hello");
