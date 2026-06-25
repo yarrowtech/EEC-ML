@@ -1004,51 +1004,49 @@ function AiTutorPanel() {
   return (
     <Section>
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-950 p-5 shadow-2xl sm:p-8">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(217,70,239,.24),transparent_35%)]" />
+      <div className="relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,.22),transparent_35%)]" />
         <div className="relative z-10 grid gap-7 lg:grid-cols-[0.72fr_1.28fr]">
           <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4">
             <Motion.div
-              animate={{ boxShadow: ['0 0 0px rgba(168,85,247,0.4)', '0 0 32px rgba(168,85,247,0.6)', '0 0 0px rgba(168,85,247,0.4)'] }}
+              animate={{ boxShadow: ['0 0 0px rgba(59,130,246,0.25)', '0 0 32px rgba(59,130,246,0.4)', '0 0 0px rgba(59,130,246,0.25)'] }}
               transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 to-violet-500"
+              className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-blue-500"
             >
               <Bot className="size-9 text-white" />
             </Motion.div>
             <div>
-              <h3 className="text-2xl font-bold text-white">What are we learning?</h3>
-              <p className="mt-1 max-w-sm text-sm text-slate-300">
+              <h3 className="text-2xl font-bold text-slate-900">What are we learning?</h3>
+              <p className="mt-1 max-w-sm text-sm text-slate-600">
                 Pick a subject and topic your teacher has published, or just ask a question.
               </p>
             </div>
 
-            <div className="flex w-full flex-col gap-2 text-white">
+            <div className="flex w-full flex-col gap-2 text-slate-900">
               <select
                 value={subjectKey}
                 onChange={(e) => { setSubjectKey(e.target.value); setTopicTitle(''); }}
-                className="w-full rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white"
-                style={{ colorScheme: 'dark' }}
+                className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
               >
                 <option value="">
                   {curriculumStatus === 'loading' ? 'Loading subjects…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No published subjects yet' : 'Choose a subject (optional)'}
                 </option>
-                {subjects.map((s) => <option key={s.key} value={s.key} className="bg-slate-950 text-white">{s.title}</option>)}
+                {subjects.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
               </select>
               {subjectKey && (
                 <select
                   value={topicTitle}
                   onChange={(e) => setTopicTitle(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white"
-                  style={{ colorScheme: 'dark' }}
+                  className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
                 >
-                  <option value="" className="bg-slate-950 text-white">Choose a topic (optional)</option>
-                  {topics.map((t) => <option key={t.title} value={t.title} className="bg-slate-950 text-white">{t.title}</option>)}
+                  <option value="">Choose a topic (optional)</option>
+                  {topics.map((t) => <option key={t.title} value={t.title}>{t.title}</option>)}
                 </select>
               )}
             </div>
 
-            <div className="mt-auto flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
-              <span className="size-2 rounded-full bg-emerald-400" />
+            <div className="mt-auto flex items-center gap-2 rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-xs text-sky-700 shadow-sm backdrop-blur">
+              <span className="size-2 rounded-full bg-sky-500" />
               AI Tutor is online
             </div>
           </Motion.div>
@@ -1064,11 +1062,13 @@ function AiTutorPanel() {
                     whileTap={{ scale: 0.96 }}
                     onClick={() => setActiveChip(chip.label)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm',
-                      activeChip === chip.label ? 'border-fuchsia-300/60 bg-fuchsia-500/30' : 'border-white/15 bg-white/10 hover:bg-white/20'
+                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm',
+                      activeChip === chip.label
+                        ? 'border-sky-300 bg-sky-500 text-white shadow-sm'
+                        : 'border-sky-200 bg-white/70 text-slate-700 hover:bg-white'
                     )}
                   >
-                    <Icon className="size-3.5 text-fuchsia-300" />
+                    <Icon className={cn('size-3.5', activeChip === chip.label ? 'text-white' : 'text-sky-500')} />
                     {chip.label}
                   </Motion.button>
                 );
@@ -1076,7 +1076,7 @@ function AiTutorPanel() {
             </div>
 
             {messages.length > 0 && (
-              <div className="max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
                 {messages.map((msg, i) => (
                   <div key={i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
@@ -1084,10 +1084,10 @@ function AiTutorPanel() {
                         className={cn(
                           'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
                           msg.role === 'user'
-                            ? 'border-fuchsia-300/40 bg-fuchsia-500/20 text-fuchsia-100'
+                            ? 'border-blue-300 bg-blue-500 text-white'
                             : msg.error
-                              ? 'border-rose-300/40 bg-rose-500/20 text-rose-100'
-                              : 'border-white/15 bg-white/10 text-white'
+                              ? 'border-rose-200 bg-rose-100 text-rose-600'
+                              : 'border-sky-200 bg-sky-50 text-sky-700'
                         )}
                       >
                         {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
@@ -1096,15 +1096,15 @@ function AiTutorPanel() {
                         className={cn(
                           'rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
                           msg.role === 'user'
-                            ? 'rounded-br-sm bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white'
+                            ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
                             : msg.error
-                              ? 'rounded-bl-sm border border-rose-400/30 bg-rose-500/15 text-rose-100'
-                              : 'rounded-bl-sm border border-white/10 bg-white/10 text-slate-100'
+                              ? 'rounded-bl-sm border border-rose-200 bg-rose-50 text-rose-700'
+                              : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
                         )}
                       >
                         {msg.text}
                         {msg.role === 'assistant' && !msg.error && (
-                          <div className="mt-2 text-[11px] font-medium text-emerald-300">
+                          <div className="mt-2 text-[11px] font-medium text-sky-600">
                             {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
                           </div>
                         )}
@@ -1115,19 +1115,20 @@ function AiTutorPanel() {
               </div>
             )}
 
-            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 shadow-inner backdrop-blur-xl">
+            <div className="rounded-2xl border border-sky-200 bg-white/85 p-3 shadow-inner backdrop-blur-xl">
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="Ask anything about your studies..."
                 rows={4}
-                className="w-full resize-none bg-transparent px-1 text-sm leading-relaxed text-white placeholder:text-slate-400 focus:outline-none"
+                className="w-full resize-none bg-transparent px-1 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
+                style={{ color: '#000000', WebkitTextFillColor: '#000000', caretColor: '#000000' }}
               />
-              <div className="mt-2 flex items-center justify-between gap-2 border-t border-white/10 pt-3">
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-sky-100 pt-3">
                 <div className="flex gap-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" className="rounded-xl text-white hover:bg-white/10 hover:text-white">
+                      <Button size="icon" variant="ghost" className="rounded-xl text-slate-700 hover:bg-sky-50 hover:text-slate-900">
                         <Paperclip className="size-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1135,7 +1136,7 @@ function AiTutorPanel() {
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" className="rounded-xl text-white hover:bg-white/10 hover:text-white">
+                      <Button size="icon" variant="ghost" className="rounded-xl text-slate-700 hover:bg-sky-50 hover:text-slate-900">
                         <Mic className="size-4" />
                       </Button>
                     </TooltipTrigger>
@@ -1146,7 +1147,7 @@ function AiTutorPanel() {
                   <Button
                     onClick={handleSend}
                     disabled={sending}
-                    className="h-10 gap-2 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-4 font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                    className="h-10 gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 font-semibold text-white hover:opacity-90 disabled:opacity-60"
                   >
                     <Send className="size-4" />
                     {sending ? 'Thinking…' : 'Send'}
