@@ -468,7 +468,7 @@ const AITextbookChat = ({ isOpen, onToggle, isMinimized, onMinimize }) => {
                     }
                   }}
                   placeholder="Ask me anything about your textbooks..."
-                  className="w-full px-3 py-2 bg-transparent text-sm resize-none focus:outline-none min-h-[44px] max-h-24"
+                  className="w-full px-3 py-2 bg-transparent text-sm text-white placeholder:text-slate-400 caret-white resize-none focus:outline-none min-h-[44px] max-h-24"
                   rows={1}
                 />
               </div>

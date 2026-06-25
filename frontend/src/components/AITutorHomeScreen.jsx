@@ -1022,25 +1022,27 @@ function AiTutorPanel() {
               </p>
             </div>
 
-            <div className="flex w-full flex-col gap-2">
+            <div className="flex w-full flex-col gap-2 text-white">
               <select
                 value={subjectKey}
                 onChange={(e) => { setSubjectKey(e.target.value); setTopicTitle(''); }}
-                className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white [&>option]:text-slate-900"
+                className="w-full rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white"
+                style={{ colorScheme: 'dark' }}
               >
                 <option value="">
                   {curriculumStatus === 'loading' ? 'Loading subjects…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No published subjects yet' : 'Choose a subject (optional)'}
                 </option>
-                {subjects.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
+                {subjects.map((s) => <option key={s.key} value={s.key} className="bg-slate-950 text-white">{s.title}</option>)}
               </select>
               {subjectKey && (
                 <select
                   value={topicTitle}
                   onChange={(e) => setTopicTitle(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white [&>option]:text-slate-900"
+                  className="w-full rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-sm text-white"
+                  style={{ colorScheme: 'dark' }}
                 >
-                  <option value="">Choose a topic (optional)</option>
-                  {topics.map((t) => <option key={t.title} value={t.title}>{t.title}</option>)}
+                  <option value="" className="bg-slate-950 text-white">Choose a topic (optional)</option>
+                  {topics.map((t) => <option key={t.title} value={t.title} className="bg-slate-950 text-white">{t.title}</option>)}
                 </select>
               )}
             </div>
@@ -1076,19 +1078,38 @@ function AiTutorPanel() {
             {messages.length > 0 && (
               <div className="max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-3">
                 {messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap',
-                      msg.role === 'user' ? 'bg-fuchsia-500/20 text-fuchsia-100' : msg.error ? 'bg-rose-500/20 text-rose-100' : 'bg-white/10 text-slate-100'
-                    )}
-                  >
-                    {msg.text}
-                    {msg.role === 'assistant' && !msg.error && (
-                      <div className="mt-2 text-[11px] font-medium text-emerald-300">
-                        {msg.groundedInMaterial ? '✓ Grounded in your teacher\'s material' : '⚠ No matching published material — general answer'}
+                  <div key={i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                    <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
+                      <div
+                        className={cn(
+                          'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
+                          msg.role === 'user'
+                            ? 'border-fuchsia-300/40 bg-fuchsia-500/20 text-fuchsia-100'
+                            : msg.error
+                              ? 'border-rose-300/40 bg-rose-500/20 text-rose-100'
+                              : 'border-white/15 bg-white/10 text-white'
+                        )}
+                      >
+                        {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
                       </div>
-                    )}
+                      <div
+                        className={cn(
+                          'rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
+                          msg.role === 'user'
+                            ? 'rounded-br-sm bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white'
+                            : msg.error
+                              ? 'rounded-bl-sm border border-rose-400/30 bg-rose-500/15 text-rose-100'
+                              : 'rounded-bl-sm border border-white/10 bg-white/10 text-slate-100'
+                        )}
+                      >
+                        {msg.text}
+                        {msg.role === 'assistant' && !msg.error && (
+                          <div className="mt-2 text-[11px] font-medium text-emerald-300">
+                            {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
