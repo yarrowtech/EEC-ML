@@ -8,3 +8,9 @@ frontend/dist/
 backend/logs/
 frontend/coverage/
 coverage/
+# Ignore Python bytecode
+**/__pycache__/
+*.pyc
+
+# Ignore the virtual environment
+ai-service/venv/

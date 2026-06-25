@@ -994,6 +994,7 @@ function AiTutorPanel() {
         role: 'assistant',
         text: payload.data.content,
         groundedInMaterial: payload.data.groundedInMaterial,
+        noMaterialFound: payload.data.noMaterialFound,
       }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'assistant', error: true, text: err.message || 'Something went wrong. Try again.' }]);
@@ -1106,8 +1107,12 @@ function AiTutorPanel() {
                       >
                         {msg.text}
                         {msg.role === 'assistant' && !msg.error && (
-                          <div className="mt-2 text-[11px] font-medium text-sky-600">
-                            {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
+                          <div className={cn('mt-2 text-[11px] font-medium', msg.groundedInMaterial ? 'text-emerald-300' : 'text-amber-300')}>
+                            {msg.groundedInMaterial
+                              ? 'Grounded in your teacher\'s material'
+                              : msg.noMaterialFound
+                                ? 'Not found in your uploaded materials'
+                                : 'Unsupported request'}
                           </div>
                         )}
                       </div>

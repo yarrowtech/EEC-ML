@@ -8,9 +8,27 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards'];
 
+const MAX_MATERIALS = 50;
+const MAX_CANDIDATES = 150;
+
 const normalizeString = (value) => String(value || '').trim();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Splits a material's HTML content into small, independently-rankable chunks for retrieval.
+// Most content is authored as <li> bullet points (see buildMaterialContent in lessonPlanRoutes.js),
+// so each bullet becomes its own candidate; anything else falls back to one chunk per material.
+const extractChunks = (material) => {
+  const html = String(material.content || '');
+  const liItems = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map((match) => stripHtml(match[1]))
+    .filter(Boolean);
+  if (liItems.length) {
+    return liItems.map((text, index) => ({ id: `${material._id}-li-${index}`, text }));
+  }
+  const whole = stripHtml(html);
+  return whole ? [{ id: `${material._id}-full`, text: whole }] : [];
+};
 
 router.post('/generate', authStudent, async (req, res) => {
   try {
@@ -36,26 +54,24 @@ router.post('/generate', authStudent, async (req, res) => {
     const student = await StudentUser.findOne(studentFilter).lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    let materials = [];
-    if (normalizedTopic) {
-      const materialFilter = {
-        schoolId,
-        status: 'published',
-        publishedForStudentPortal: true,
-        topicTitle: { $regex: `^${escapeRegex(normalizedTopic)}$`, $options: 'i' },
-      };
-      if (campusId) materialFilter.campusId = campusId;
-      if (student.classId) materialFilter.classId = student.classId;
-      if (student.sectionId) materialFilter.sectionId = student.sectionId;
-      if (normalizeString(subject)) {
-        materialFilter.subjectName = { $regex: `^${escapeRegex(normalizeString(subject))}$`, $options: 'i' };
-      }
-      if (normalizeString(subTopic)) {
-        materialFilter.subTopicTitle = { $regex: `^${escapeRegex(normalizeString(subTopic))}$`, $options: 'i' };
-      }
-      materials = await TeachingMaterial.find(materialFilter).limit(5).lean();
+    // Scope is a hard multi-tenancy/privacy boundary: school, campus, and the student's own
+    // class/section. Subject is an optional narrowing filter if the student picked one in the UI;
+    // topic is deliberately NOT filtered here — relevance to the actual question is decided by
+    // embedding similarity in the ai-service, not by an exact topicTitle string match.
+    const materialFilter = {
+      schoolId,
+      status: 'published',
+      publishedForStudentPortal: true,
+    };
+    if (campusId) materialFilter.campusId = campusId;
+    if (student.classId) materialFilter.classId = student.classId;
+    if (student.sectionId) materialFilter.sectionId = student.sectionId;
+    if (normalizeString(subject)) {
+      materialFilter.subjectName = { $regex: `^${escapeRegex(normalizeString(subject))}$`, $options: 'i' };
     }
-    const context = materials.map((item) => stripHtml(item.content)).filter(Boolean).join('\n\n');
+
+    const materials = await TeachingMaterial.find(materialFilter).limit(MAX_MATERIALS).lean();
+    const candidates = materials.flatMap(extractChunks).slice(0, MAX_CANDIDATES);
 
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
       mode: normalizedMode,
@@ -63,8 +79,8 @@ router.post('/generate', authStudent, async (req, res) => {
       topic: normalizedTopic || normalizedQuestion,
       subTopic: normalizeString(subTopic) || null,
       gradeLevel: student.grade ? `Grade ${student.grade}` : null,
-      context,
       question: normalizeString(question) || null,
+      candidates,
     }, { timeout: 60000 });
 
     return res.json({
@@ -73,7 +89,9 @@ router.post('/generate', authStudent, async (req, res) => {
         content: aiResponse.data?.content || '',
         model: aiResponse.data?.model,
         groundedInMaterial: aiResponse.data?.groundedInMaterial || false,
+        noMaterialFound: aiResponse.data?.noMaterialFound || false,
         sourceMaterialCount: materials.length,
+        candidateChunkCount: candidates.length,
       },
     });
   } catch (err) {
