@@ -961,9 +961,14 @@ function AiTutorPanel() {
   const [activeChip, setActiveChip] = useState(COMPANION_CHIPS[0].label);
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
 
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
   const topics = selectedSubject?.topics || [];
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, sending]);
 
   const handleSend = async () => {
     const mode = CHIP_MODES[activeChip];
@@ -974,7 +979,13 @@ function AiTutorPanel() {
     if (!question.trim() && !topicTitle) return;
 
     const userLabel = [activeChip, topicTitle, question.trim()].filter(Boolean).join(' — ');
-    setMessages((prev) => [...prev, { role: 'user', text: userLabel }]);
+    const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const assistantId = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: userId, role: 'user', text: userLabel },
+      { id: assistantId, role: 'assistant', thinking: true, text: '' },
+    ]);
     setSending(true);
     try {
       const token = localStorage.getItem('token');
@@ -990,14 +1001,27 @@ function AiTutorPanel() {
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload?.error || 'AI Tutor request failed');
-      setMessages((prev) => [...prev, {
-        role: 'assistant',
-        text: payload.data.content,
-        groundedInMaterial: payload.data.groundedInMaterial,
-        noMaterialFound: payload.data.noMaterialFound,
-      }]);
+      setMessages((prev) => prev.map((msg) => (
+        msg.id === assistantId
+          ? {
+              ...msg,
+              thinking: false,
+              text: payload.data.content,
+              groundedInMaterial: payload.data.groundedInMaterial,
+            }
+          : msg
+      )));
     } catch (err) {
-      setMessages((prev) => [...prev, { role: 'assistant', error: true, text: err.message || 'Something went wrong. Try again.' }]);
+      setMessages((prev) => prev.map((msg) => (
+        msg.id === assistantId
+          ? {
+              ...msg,
+              thinking: false,
+              error: true,
+              text: err.message || 'Something went wrong. Try again.',
+            }
+          : msg
+      )));
     } finally {
       setSending(false);
       setQuestion('');
@@ -1081,7 +1105,7 @@ function AiTutorPanel() {
             {messages.length > 0 && (
               <div className="max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
                 {messages.map((msg, i) => (
-                  <div key={i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                  <div key={msg.id || i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                     <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
                       <div
                         className={cn(
@@ -1100,25 +1124,24 @@ function AiTutorPanel() {
                           'rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
                           msg.role === 'user'
                             ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
-                            : msg.error
+                            : msg.thinking
+                              ? 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
+                              : msg.error
                               ? 'rounded-bl-sm border border-rose-200 bg-rose-50 text-rose-700'
                               : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
                         )}
                       >
                         {msg.text}
                         {msg.role === 'assistant' && !msg.error && (
-                          <div className={cn('mt-2 text-[11px] font-medium', msg.groundedInMaterial ? 'text-emerald-300' : 'text-amber-300')}>
-                            {msg.groundedInMaterial
-                              ? 'Grounded in your teacher\'s material'
-                              : msg.noMaterialFound
-                                ? 'Not found in your uploaded materials'
-                                : 'Unsupported request'}
+                          <div className="mt-2 text-[11px] font-medium text-sky-600">
+                            {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
                           </div>
                         )}
                       </div>
                     </div>
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
             )}
 
@@ -1126,6 +1149,12 @@ function AiTutorPanel() {
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
                 placeholder="Ask anything about your studies..."
                 rows={4}
                 className="w-full resize-none bg-transparent px-1 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
