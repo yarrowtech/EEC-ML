@@ -51,7 +51,10 @@
       "Bash(git stash *)",
       "Bash(ollama list *)",
       "Bash(python3.11 -m ensurepip --upgrade)",
-      "Bash(python3.11 -m pip --version)"
+      "Bash(python3.11 -m pip --version)",
+      "Bash(cp /tmp/find_student2.js ./tmp_find_student2.js)",
+      "Bash(node tmp_find_student2.js)",
+      "Bash(rm -f tmp_find_student2.js /tmp/find_student2.js)"
     ]
   }
 }

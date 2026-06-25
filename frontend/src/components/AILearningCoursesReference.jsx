@@ -10,6 +10,10 @@ import {
   Maximize2,
   Minimize2,
   Download,
+  FileText,
+  ClipboardList,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 
@@ -18,6 +22,7 @@ const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
 const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback/context`;
 const STUDENT_learningMaterials_ENDPOINT = `${API_BASE}/api/student/materials?limit=100`;
 const STUDENT_PAPERS_ENDPOINT = `${API_BASE}/api/practice-papers/student/papers?limit=100`;
+const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 
 
 const LEARNING_STEPS = [
@@ -33,22 +38,186 @@ const LEARNING_OBJECTIVES = [
   'Synthesize knowledge to create meaningful connections between related topics',
 ];
 
+const normalizeKey = (value) => String(value || '').trim().toLowerCase();
+
+const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+const getAttachmentUrl = (item) => {
+  if (!item || typeof item !== 'object') return '';
+  const directUrl = item.url || item.href || item.link || item.attachmentUrl;
+  if (directUrl) return directUrl;
+  const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+  return attachments.find((attachment) => attachment?.url)?.url || '';
+};
+
+const buildResourceTitle = (item, fallback) => String(item?.title || item?.name || fallback || 'Resource').trim();
+
+const MaterialQuickActions = ({ material, onRead }) => {
+  if (!material?.url && !material?.content) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {material.content && (
+        <button
+          type="button"
+          onClick={() => onRead(material)}
+          title="Read"
+          className="rounded-md p-1 text-[#004b71] hover:bg-slate-100"
+        >
+          <FileText size={14} />
+        </button>
+      )}
+      {material.url && (
+        <>
+          <a href={material.url} target="_blank" rel="noreferrer" title="Open" className="rounded-md p-1 text-[#004b71] hover:bg-slate-100">
+            <ExternalLink size={14} />
+          </a>
+          <a href={material.url} download title="Download" className="rounded-md p-1 text-[#004b71] hover:bg-slate-100">
+            <Download size={14} />
+          </a>
+        </>
+      )}
+    </div>
+  );
+};
+
+const UploadedResourcesPanel = ({ resources }) => {
+  const [readerResource, setReaderResource] = useState(null);
+  const groups = [
+    { key: 'Material', title: 'Materials', icon: FileText },
+    { key: 'Uploaded Material', title: 'Uploaded Files', icon: Layers },
+    { key: 'Worksheet Upload', title: 'Worksheet Uploads', icon: ClipboardList },
+    { key: 'Worksheet', title: 'Worksheets', icon: ClipboardList },
+    { key: 'Assessment', title: 'Assessments', icon: CheckCircle2 },
+  ];
+
+  const resourcesByGroup = groups.map((group) => ({
+    ...group,
+    items: resources.filter((resource) => resource.group === group.key),
+  })).filter((group) => group.items.length > 0);
+
+  return (
+    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-xl font-black text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Uploaded Resources</h2>
+          <p className="text-sm text-slate-500">Teacher-published materials, worksheets, assessments, and chapter uploads for this selection.</p>
+        </div>
+        <span className="text-sm font-bold text-[#004b71]">{resources.length} item{resources.length === 1 ? '' : 's'}</span>
+      </div>
+
+      {resourcesByGroup.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+          <p className="text-sm font-bold text-slate-700">No uploaded resources found for this chapter yet.</p>
+          <p className="mt-1 text-xs text-slate-500">Published teacher uploads will appear here automatically.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {resourcesByGroup.map((group) => {
+            const Icon = group.icon;
+            return (
+              <div key={group.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-white text-[#004b71]">
+                    <Icon size={16} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-black text-slate-900">{group.title}</p>
+                    <p className="text-xs text-slate-500">{group.items.length} available</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {group.items.map((resource) => (
+                    <div key={resource.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-900">{resource.title}</p>
+                        <p className="truncate text-xs text-slate-500">{resource.description || group.title}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {resource.content && (
+                          <button
+                            type="button"
+                            onClick={() => setReaderResource(resource)}
+                            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
+                          >
+                            Read
+                          </button>
+                        )}
+                        {resource.url ? (
+                          <>
+                            <a
+                              href={resource.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
+                            >
+                              Open <ExternalLink size={12} />
+                            </a>
+                            <a
+                              href={resource.url}
+                              download
+                              className="inline-flex items-center gap-1 rounded-lg bg-[#004b71] px-2.5 py-1.5 text-xs font-bold text-white hover:brightness-110"
+                            >
+                              <Download size={12} /> Download
+                            </a>
+                          </>
+                        ) : !resource.content ? (
+                          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">Listed</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {readerResource && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#004b71]">{readerResource.group}</p>
+                <h3 className="truncate text-lg font-black text-slate-900">{readerResource.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReaderResource(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="Close reader"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="max-h-[65vh] overflow-y-auto p-5">
+              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                {stripHtml(readerResource.content)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
 const AILearningCoursesReference = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isDetailsView = searchParams.get('view') === 'details';
   const [error, setError] = useState('');
-  const [stats, setStats] = useState(null);
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
   const [teacherMaterials, setTeacherMaterials] = useState([]);
   const [practicePapers, setPracticePapers] = useState([]);
-  const [activeStep, setActiveStep] = useState('step1');
+  const [smartLearningSubjects, setSmartLearningSubjects] = useState([]);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [activeMaterial, setActiveMaterial] = useState(null);
   const moduleRef = useRef(null);
   const detailsViewRef = useRef(null);
 
@@ -107,16 +276,17 @@ const AILearningCoursesReference = () => {
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
         ]);
 
-        const [materialsRes, papersRes] = await Promise.all([
+        const [materialsRes, papersRes, mapRes] = await Promise.all([
           fetchCachedJson(STUDENT_learningMaterials_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { materials: [] } })),
           fetchCachedJson(STUDENT_PAPERS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { papers: [] } })),
+          fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { subjects: [] } })),
         ]);
 
-        setStats(dashRes?.data?.stats || null);
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
         setTeacherMaterials(Array.isArray(materialsRes?.data?.materials) ? materialsRes.data.materials : []);
         setPracticePapers(Array.isArray(papersRes?.data?.papers) ? papersRes.data.papers : []);
+        setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       }
@@ -134,52 +304,170 @@ const AILearningCoursesReference = () => {
     return Array.from(teacherSet);
   }, [contexts]);
 
+  const selectedSmartSubject = useMemo(() => {
+    const subjectKey = normalizeKey(subjectSlug);
+    return smartLearningSubjects.find((subject) => normalizeKey(subject?.key || subject?.title) === subjectKey);
+  }, [smartLearningSubjects, subjectSlug]);
+
+  const selectedChapter = useMemo(() => {
+    const lookup = normalizeKey(topicSlug);
+    const chapters = Array.isArray(selectedSmartSubject?.chapters) ? selectedSmartSubject.chapters : [];
+    return chapters.find((chapter) => normalizeKey(chapter?.title || chapter?.id) === lookup) || null;
+  }, [selectedSmartSubject, topicSlug]);
+
+  const selectedTopicFromMap = useMemo(() => {
+    const lookup = normalizeKey(topicSlug);
+    if (selectedChapter) return null;
+
+    const chapters = Array.isArray(selectedSmartSubject?.chapters) ? selectedSmartSubject.chapters : [];
+    for (const chapter of chapters) {
+      const topics = Array.isArray(chapter?.topics) ? chapter.topics : [];
+      const topic = topics.find((item) => normalizeKey(item?.title || item?.id) === lookup);
+      if (topic) return { chapter, topic };
+    }
+    return null;
+  }, [selectedChapter, selectedSmartSubject, topicSlug]);
+
+  const mapScope = useMemo(() => {
+    if (selectedChapter) {
+      const topics = Array.isArray(selectedChapter.topics) ? selectedChapter.topics : [];
+      return {
+        label: selectedChapter.title,
+        chapterTitle: selectedChapter.title,
+        topics,
+        chapterUploads: Array.isArray(selectedChapter.uploads) ? selectedChapter.uploads : [],
+      };
+    }
+
+    if (selectedTopicFromMap?.topic) {
+      return {
+        label: selectedTopicFromMap.topic.title,
+        chapterTitle: selectedTopicFromMap.chapter?.title || '',
+        topics: [selectedTopicFromMap.topic],
+        chapterUploads: [],
+      };
+    }
+
+    return {
+      label: topicSlug,
+      chapterTitle: '',
+      topics: [],
+      chapterUploads: [],
+    };
+  }, [selectedChapter, selectedTopicFromMap, topicSlug]);
+
+  const uploadedResources = useMemo(() => {
+    const resources = [];
+    const seen = new Set();
+    const addResource = (item, group, fallbackTitle) => {
+      const title = buildResourceTitle(item, fallbackTitle);
+      if (!title) return;
+      const url = getAttachmentUrl(item);
+      const key = [group, title, url].map(normalizeKey).join('::');
+      if (seen.has(key)) return;
+      seen.add(key);
+      resources.push({
+        id: item?.id || item?._id || key,
+        title,
+        group,
+        description: item?.description || item?.typeLabel || item?.learningType || item?.paperType || item?.bucket || '',
+        content: item?.content || item?.description || '',
+        url,
+        publishedAt: item?.publishedAt || item?.createdAt || item?.dueDate || null,
+      });
+    };
+
+    mapScope.chapterUploads.forEach((upload) => addResource(upload, 'Uploaded Material', upload?.title));
+    mapScope.topics.forEach((topic) => {
+      (topic.subtopics || []).forEach((subtopic) => {
+        (subtopic.worksheetUploads || []).forEach((upload) => addResource(upload, 'Worksheet Upload', upload?.title));
+        (subtopic.materials || []).forEach((material) => addResource(material, 'Material', material?.title));
+        (subtopic.assignments || []).forEach((assignment) => addResource(assignment, 'Worksheet', assignment?.title));
+        (subtopic.assessments || []).forEach((assessment) => addResource(assessment, 'Assessment', assessment?.title));
+      });
+    });
+
+    return resources;
+  }, [mapScope]);
+
   const filteredTeacherMaterials = useMemo(() => {
-    const subjectKey = String(subjectSlug || '').trim().toLowerCase();
-    const topicKey = String(topicSlug || '').trim().toLowerCase();
+    const subjectKey = normalizeKey(subjectSlug);
+    const topicKey = normalizeKey(topicSlug);
+    const chapterTitle = normalizeKey(mapScope.chapterTitle || topicSlug);
+    const topicTitles = new Set(mapScope.topics.map((topic) => normalizeKey(topic.title)).filter(Boolean));
 
     return teacherMaterials.filter((material) => {
-      const materialSubject = String(material?.subjectName || '').trim().toLowerCase();
-      const title = String(material?.title || '').trim().toLowerCase();
-      const content = String(material?.content || '').trim().toLowerCase();
+      const materialSubject = normalizeKey(material?.subjectName);
+      const materialChapter = normalizeKey(material?.chapterTitle || material?.chapterId);
+      const materialTopic = normalizeKey(material?.topicTitle);
+      const title = normalizeKey(material?.title);
+      const content = normalizeKey(material?.content);
       const subjectMatch = !subjectKey || materialSubject === subjectKey || materialSubject.includes(subjectKey);
-      const topicMatch = !topicKey || title.includes(topicKey) || content.includes(topicKey);
+      const exactChapterMatch = chapterTitle && materialChapter === chapterTitle;
+      const exactTopicMatch = materialTopic && topicTitles.has(materialTopic);
+      const topicMatch = !topicKey || exactChapterMatch || exactTopicMatch || title.includes(topicKey) || content.includes(topicKey);
       return subjectMatch && topicMatch;
     });
-  }, [teacherMaterials, subjectSlug, topicSlug]);
+  }, [teacherMaterials, subjectSlug, topicSlug, mapScope]);
 
   const learningMaterials = useMemo(() => {
-    return filteredTeacherMaterials.slice(0, 6).map((material) => ({
+    const mapMaterials = uploadedResources
+      .filter((resource) => ['Material', 'Uploaded Material', 'Worksheet Upload'].includes(resource.group))
+      .map((resource) => ({
+        title: resource.title,
+        description: resource.description || resource.group,
+        url: resource.url,
+        content: resource.content,
+      }));
+
+    const endpointMaterials = filteredTeacherMaterials.map((material) => ({
       title: material.title,
       description: material.typeLabel || material.category || 'Study Material',
+      url: getAttachmentUrl(material),
+      content: material.content || '',
     }));
-  }, [filteredTeacherMaterials]);
+
+    const seen = new Set();
+    return [...mapMaterials, ...endpointMaterials].filter((material) => {
+      const key = [material.title, material.url].map(normalizeKey).join('::');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 12);
+  }, [filteredTeacherMaterials, uploadedResources]);
 
   const assessmentItems = useMemo(() => {
-    const papersCount = practicePapers.filter((paper) => String(paper?.title || '').toLowerCase().includes(String(topicSlug || '').toLowerCase()) || !topicSlug).length;
-    const tryoutCount = filteredTeacherMaterials.filter((m) => String(m?.typeLabel || '').toLowerCase().includes('tryout')).length;
+    const topicKey = normalizeKey(topicSlug);
+    const chapterTitle = normalizeKey(mapScope.chapterTitle || topicSlug);
+    const topicTitles = new Set(mapScope.topics.map((topic) => normalizeKey(topic.title)).filter(Boolean));
+    const mapAssessmentCount = uploadedResources.filter((resource) => resource.group === 'Assessment').length;
+    const worksheetCount = uploadedResources.filter((resource) => ['Worksheet', 'Worksheet Upload'].includes(resource.group)).length;
+    const papersCount = practicePapers.filter((paper) => {
+      const title = normalizeKey(paper?.title);
+      const chapter = normalizeKey(paper?.chapterTitle || paper?.chapter);
+      const topic = normalizeKey(paper?.topicTitle);
+      return chapter === chapterTitle || topicTitles.has(topic) || title.includes(topicKey) || !topicKey;
+    }).length + mapAssessmentCount;
+    const tryoutCount = filteredTeacherMaterials.filter((m) => normalizeKey(m?.typeLabel).includes('tryout')).length;
     return [
       { title: 'Practice Papers', description: papersCount > 0 ? `${papersCount} real papers available` : 'No real paper found' },
+      { title: 'Worksheets', description: worksheetCount > 0 ? `${worksheetCount} worksheet resource${worksheetCount > 1 ? 's' : ''} available` : 'No worksheet found' },
       { title: 'Tryout Section', description: tryoutCount > 0 ? `${tryoutCount} real tryout resources available` : 'No real tryout found' },
       { title: 'Self-Assessment', description: 'Based on published class materials only' },
     ];
-  }, [practicePapers, filteredTeacherMaterials, topicSlug]);
-
-  // Helper functions
-  const toggleStepComplete = (stepId) => {
-    if (completedSteps.includes(stepId)) {
-      setCompletedSteps(completedSteps.filter(s => s !== stepId));
-    } else {
-      setCompletedSteps([...completedSteps, stepId]);
-    }
-  };
+  }, [practicePapers, filteredTeacherMaterials, topicSlug, mapScope, uploadedResources]);
 
   const isPracticeUnlocked = overallProgress >= 75;
   const isAssessmentItemClickable = (itemTitle) => {
     const normalizedTitle = String(itemTitle || '').toLowerCase();
     return isPracticeUnlocked && (normalizedTitle === 'practice papers' || normalizedTitle === 'tryout section');
   };
-  const getAssessmentStatusText = (itemTitle) => (isAssessmentItemClickable(itemTitle) ? 'Ready to start' : 'Unlocks at 75% progress');
+  const getAssessmentStatusText = (itemTitle) => {
+    const normalizedTitle = String(itemTitle || '').toLowerCase();
+    if (normalizedTitle === 'worksheets') return 'Available in Uploaded Resources';
+    if (normalizedTitle === 'self-assessment') return 'Use after reviewing the resources';
+    return isAssessmentItemClickable(itemTitle) ? 'Ready to start' : 'Unlocks at 75% progress';
+  };
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
   const readingContent = useMemo(() => {
@@ -218,7 +506,7 @@ const AILearningCoursesReference = () => {
       } else if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
-    } catch (err) {
+    } catch {
       setError('Fullscreen mode is not available on this device/browser.');
     }
   };
@@ -399,7 +687,7 @@ const AILearningCoursesReference = () => {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
       doc.save(`smart-learning-${safeTopic || 'topic'}-resources.pdf`);
-    } catch (err) {
+    } catch {
       setError('Unable to generate PDF right now. Please try again.');
     } finally {
       setDownloadingPdf(false);
@@ -413,7 +701,7 @@ const AILearningCoursesReference = () => {
       } else if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
-    } catch (err) {
+    } catch {
       setError('Fullscreen mode is not available on this device/browser.');
     }
   };
@@ -670,7 +958,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="flex-1 overflow-y-auto space-y-6" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {LEARNING_STEPS.map((step, idx) => (
+              {LEARNING_STEPS.map((step) => (
                 <div key={step.id} className="relative pl-6" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-1">
@@ -760,10 +1048,11 @@ const AILearningCoursesReference = () => {
                   <span className="text-2xl flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
                     <p className="text-[10px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
+                  <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
               ))}
             </div>
@@ -832,7 +1121,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="overflow-y-auto space-y-4 text-xs" style={{ scrollbarWidth: 'thin' }}>
-              {LEARNING_STEPS.map((step, idx) => (
+              {LEARNING_STEPS.map((step) => (
                 <div key={step.id} className="relative pl-5" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[3px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-0.5">
@@ -905,10 +1194,11 @@ const AILearningCoursesReference = () => {
                   <span className="text-lg flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
                     <p className="text-[9px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
+                  <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
               ))}
             </div>
@@ -1008,7 +1298,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="space-y-4 text-xs">
-              {LEARNING_STEPS.map((step, idx) => (
+              {LEARNING_STEPS.map((step) => (
                 <div key={step.id} className="relative pl-5" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[3px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-0.5">
@@ -1038,10 +1328,11 @@ const AILearningCoursesReference = () => {
                   <span className="text-lg flex-shrink-0">
                     {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
                     <p className="text-[9px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
+                  <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
               ))}
             </div>
@@ -1080,7 +1371,31 @@ const AILearningCoursesReference = () => {
           </section>
         </div>
 
+        <UploadedResourcesPanel resources={uploadedResources} />
       </main>
+
+      {activeMaterial && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
+              <h3 className="truncate text-lg font-black text-slate-900">{activeMaterial.title}</h3>
+              <button
+                type="button"
+                onClick={() => setActiveMaterial(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="Close reader"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="max-h-[65vh] overflow-y-auto p-5">
+              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                {stripHtml(activeMaterial.content)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error Notification */}
       {error && (

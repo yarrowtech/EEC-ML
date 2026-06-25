@@ -1574,6 +1574,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         subjectEntry.chapters.set(chapterId, {
           id: chapterId,
           title: chapterTitle,
+          uploads: [],
           topics: new Map(),
         });
       }
@@ -1599,6 +1600,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         topicEntry.subtopics.set(subTopicId, {
           id: subTopicId,
           title: subTopicTitle,
+          worksheetUploads: [],
           ...makeContentBucket(),
         });
       }
@@ -1639,6 +1641,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       if (bucketKey === 'materials') {
         subTopicEntry.materials.push({
           ...baseItem,
+          content: doc.content || doc.plainTextContent || '',
           attachments: Array.isArray(doc.attachments) ? doc.attachments : [],
           views: doc.views || 0,
           downloads: doc.downloads || 0,
@@ -1648,14 +1651,17 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       } else if (bucketKey === 'assignments') {
         subTopicEntry.assignments.push({
           ...baseItem,
+          description: doc.description || '',
           dueDate: doc.dueDate || null,
           marks: doc.marks || 0,
+          attachments: Array.isArray(doc.attachments) ? doc.attachments : [],
           submissions: Array.isArray(doc.submissions) ? doc.submissions.length : 0,
         });
         subjectEntry.contentMetrics.assignments += 1;
       } else if (bucketKey === 'assessments') {
         subTopicEntry.assessments.push({
           ...baseItem,
+          description: doc.description || '',
           duration: doc.duration || 0,
           totalQuestions: doc.totalQuestions || 0,
           attempts: doc.totalAttempts || 0,
@@ -1679,10 +1685,27 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
           subjectEntry.chapters.set(chapterId, {
             id: chapterId,
             title: normalizeString(chapter.title) || 'Chapter',
+            uploads: [],
             topics: new Map(),
           });
         }
         const chapterEntry = subjectEntry.chapters.get(chapterId);
+        const planUploads = normalizeStringList(plan.materialsNeeded).map((name, index) => ({
+          id: `plan-upload-${chapterId}-${index + 1}`,
+          title: name,
+          type: inferAttachmentType(name),
+          bucket: 'Uploaded Material',
+          url: /^https?:\/\//i.test(name) ? name : '',
+        }));
+        if (planUploads.length > 0) {
+          const existingUploadTitles = new Set((chapterEntry.uploads || []).map((item) => normalizeLower(item.title)));
+          planUploads.forEach((upload) => {
+            if (!existingUploadTitles.has(normalizeLower(upload.title))) {
+              chapterEntry.uploads.push(upload);
+              existingUploadTitles.add(normalizeLower(upload.title));
+            }
+          });
+        }
         (chapter.topics || []).forEach((topic) => {
           const topicId = normalizeIdValue(topic.id) || normalizeString(topic.title).toLowerCase();
           if (!chapterEntry.topics.has(topicId)) {
@@ -1700,9 +1723,29 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
             });
           }
           const topicEntry = subjectEntry.topics.get(topicId);
+          if (!Array.isArray(topicEntry.tryoutSections)) topicEntry.tryoutSections = [];
+          const chapterTopicEntry = chapterEntry.topics.get(topicId);
           (topic.subTopics || []).forEach((sub) => {
             const subTitle = normalizeString(sub.title);
             if (subTitle) topicEntry.subtopics.add(subTitle);
+            const subTopicId = normalizeIdValue(sub.id) || subTitle.toLowerCase();
+            const worksheetUploads = normalizeStringList(sub.worksheets).map((name, uploadIndex) => ({
+              id: `worksheet-${subTopicId}-${uploadIndex + 1}`,
+              title: name,
+              type: inferAttachmentType(name),
+              url: /^https?:\/\//i.test(name) ? name : '',
+            }));
+            if (subTitle && chapterTopicEntry && !chapterTopicEntry.subtopics.has(subTopicId)) {
+              chapterTopicEntry.subtopics.set(subTopicId, {
+                id: subTopicId,
+                title: subTitle,
+                worksheetUploads,
+                ...makeContentBucket(),
+              });
+            } else if (subTitle && chapterTopicEntry) {
+              const subTopicEntry = chapterTopicEntry.subtopics.get(subTopicId);
+              subTopicEntry.worksheetUploads = worksheetUploads;
+            }
             if (Array.isArray(sub.tryoutSections)) {
               topicEntry.tryoutSections.push(...sub.tryoutSections);
             }
@@ -1714,6 +1757,23 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const subjects = Array.from(subjectMap.values()).map((subject) => ({
       key: subject.key,
       title: subject.title,
+      chapters: Array.from(subject.chapters.values()).map((chapter) => ({
+        id: chapter.id,
+        title: chapter.title,
+        uploads: chapter.uploads || [],
+        topics: Array.from(chapter.topics.values()).map((topic) => ({
+          id: topic.id,
+          title: topic.title,
+          subtopics: Array.from(topic.subtopics.values()).map((subtopic) => ({
+            id: subtopic.id,
+            title: subtopic.title,
+            worksheetUploads: subtopic.worksheetUploads || [],
+            materials: subtopic.materials || [],
+            assignments: subtopic.assignments || [],
+            assessments: subtopic.assessments || [],
+          })),
+        })),
+      })),
       topics: Array.from(subject.topics.values()).map((topic) => ({
         title: topic.title,
         subtopics: Array.from(topic.subtopics),

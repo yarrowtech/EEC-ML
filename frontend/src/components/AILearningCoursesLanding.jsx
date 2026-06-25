@@ -39,10 +39,30 @@ const normalize = (value) => String(value || '').trim().toLowerCase();
 
 const SubjectTopicsView = ({ subject, onBack }) => {
   const navigate = useNavigate();
-  const [openTopicIndex, setOpenTopicIndex] = useState(-1);
+  const [openChapterIndex, setOpenChapterIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const topics = useMemo(() => Array.isArray(subject?.topics) ? subject.topics : [], [subject]);
+  const chapters = useMemo(() => {
+    const sourceChapters = Array.isArray(subject?.chapters) ? subject.chapters : [];
+    if (sourceChapters.length > 0) {
+      return sourceChapters.map((chapter) => ({
+        ...chapter,
+        topics: (Array.isArray(chapter?.topics) ? chapter.topics : []).map((topic) => ({
+          ...topic,
+          subtopics: (Array.isArray(topic?.subtopics) ? topic.subtopics : [])
+            .map((subtopic) => typeof subtopic === 'string' ? subtopic : subtopic?.title)
+            .filter(Boolean),
+        })),
+      }));
+    }
+
+    return topics.map((topic, index) => ({
+      id: `topic-${index}`,
+      title: topic.title || `Chapter ${index + 1}`,
+      topics: [topic],
+    }));
+  }, [subject, topics]);
 
   const normalizedCompletedSubtopics = useMemo(() => {
     if (!completedSubtopics || typeof completedSubtopics !== 'object' || Array.isArray(completedSubtopics)) {
@@ -89,7 +109,10 @@ const SubjectTopicsView = ({ subject, onBack }) => {
   const totalSubtopics = topics.reduce((sum, topic) => sum + (topic.subtopics?.length || 0), 0);
   const totalCompletedSubtopics = Object.values(normalizedCompletedSubtopics).reduce((sum, arr) => sum + arr.length, 0);
   const progress = totalSubtopics > 0 ? Math.round((totalCompletedSubtopics / totalSubtopics) * 100) : 0;
-  const completedTopicCount = topics.filter(topic => topicProgress[topic.title]?.percentage === 100).length;
+  const completedChapterCount = chapters.filter((chapter) => {
+    const chapterTopics = chapter.topics || [];
+    return chapterTopics.length > 0 && chapterTopics.every((topic) => topicProgress[topic.title]?.percentage === 100);
+  }).length;
 
   // Find the next incomplete topic to continue from
   const nextIncompleteTopic = useMemo(() => {
@@ -169,22 +192,22 @@ const SubjectTopicsView = ({ subject, onBack }) => {
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
             <span className="inline-flex rounded-full bg-[#ead79b] px-4 py-1 text-sm font-bold text-slate-700">
-              {topics.length > 0 ? 'STAGE 1 QUEST' : 'COMING SOON'}
+              {chapters.length > 0 ? 'PUBLISHED CHAPTERS' : 'COMING SOON'}
             </span>
-            <h1 className="mt-3 text-4xl sm:text-5xl font-black text-[#0f1b3a]">{subject.title} {topics.length > 0 ? 'Syllabus' : ''}</h1>
+            <h1 className="mt-3 text-4xl sm:text-5xl font-black text-[#0f1b3a]">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
             <p className="mt-2 text-xl text-slate-600">
-              {topics.length > 0
-                ? 'Master the concepts through structured quests and interactive challenges!'
+              {chapters.length > 0
+                ? 'All chapters published by your teacher are listed here with their topics and subtopics.'
                 : 'Your teacher will publish lesson content here soon. Stay tuned!'}
             </p>
           </div>
 
-          {topics.length > 0 && (
+          {chapters.length > 0 && (
             <div className="min-w-[280px]">
               <div className="flex items-end justify-between mb-2">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600">Topics</p>
-                  <p className="text-3xl font-black text-[#e0b92c]">{completedTopicCount}/{topics.length}</p>
+                  <p className="text-sm font-semibold text-slate-600">Chapters</p>
+                  <p className="text-3xl font-black text-[#e0b92c]">{completedChapterCount}/{chapters.length}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-slate-600">Completion</p>
@@ -201,7 +224,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <p className="text-sm font-medium text-slate-600">
-                  {progress === 0 ? 'Start your journey!' : progress === 100 ? '🎉 Complete!' : 'Keep going!'}
+                  {progress === 0 ? 'Start your journey!' : progress === 100 ? 'Complete!' : 'Keep going!'}
                 </p>
                 {progress > 0 && (
                   <div className="flex items-center gap-1">
@@ -244,27 +267,27 @@ const SubjectTopicsView = ({ subject, onBack }) => {
 
       <section>
         <h2 className="mb-4 text-4xl font-black text-[#0f1b3a]">
-          {topics.length > 0 ? 'Adventure Path' : 'Lesson Content'}
+          {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
         </h2>
 
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white">
           <div className="flex items-center justify-between bg-slate-50 px-6 py-5">
             <div>
-              <p className="text-3xl font-black text-[#0f1b3a]">{subject.title} Topics</p>
+              <p className="text-3xl font-black text-[#0f1b3a]">{subject.title} Chapters</p>
               <p className="text-lg text-slate-500">
-                {topics.length === 0 ? 'Waiting for teacher to publish' : `${topics.length} Quest${topics.length > 1 ? 's' : ''} Available`}
+                {chapters.length === 0 ? 'Waiting for teacher to publish' : `${chapters.length} Chapter${chapters.length > 1 ? 's' : ''} Available`}
               </p>
             </div>
             <p className="text-right text-2xl font-black text-[#2f7dff]">
               STATUS<br />
-              <span className={topics.length === 0 ? 'text-amber-500' : 'text-emerald-500'}>
-                {topics.length === 0 ? 'PENDING' : 'ACTIVE'}
+              <span className={chapters.length === 0 ? 'text-amber-500' : 'text-emerald-500'}>
+                {chapters.length === 0 ? 'PENDING' : 'ACTIVE'}
               </span>
             </p>
           </div>
 
           <div className="space-y-4 bg-slate-50 p-4 sm:p-6">
-            {topics.length === 0 ? (
+            {chapters.length === 0 ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center">
                 <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
                   <BookOpen className="text-amber-600" size={32} />
@@ -282,16 +305,21 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                 </div>
               </div>
             ) : (
-              topics.map((topic, index) => {
-                const isOpen = openTopicIndex === index;
-                const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
-                const isFullyCompleted = topicProg.percentage === 100;
-                const isInProgress = topicProg.percentage > 0 && topicProg.percentage < 100;
-
-                // Calculate green intensity based on completion percentage
-                // At 0% = no green (white background)
-                // At 100% = full green (rgb(220, 252, 231) which is green-100)
-                const greenIntensity = topicProg.percentage / 100;
+              chapters.map((chapter, index) => {
+                const isOpen = openChapterIndex === index;
+                const chapterTopics = chapter.topics || [];
+                const chapterTotals = chapterTopics.reduce((acc, topic) => {
+                  const item = topicProgress[topic.title] || { total: 0, completed: 0 };
+                  return {
+                    total: acc.total + item.total,
+                    completed: acc.completed + item.completed,
+                  };
+                }, { total: 0, completed: 0 });
+                const chapterPercentage = chapterTotals.total > 0 ? Math.round((chapterTotals.completed / chapterTotals.total) * 100) : 0;
+                const isFullyCompleted = chapterPercentage === 100 && chapterTotals.total > 0;
+                const isInProgress = chapterPercentage > 0 && chapterPercentage < 100;
+                const firstTopic = chapterTopics[0];
+                const greenIntensity = chapterPercentage / 100;
                 const bgColorStyle = {
                   backgroundColor: `rgba(220, 252, 231, ${greenIntensity * 0.8})` // green-100 with varying opacity
                 };
@@ -304,7 +332,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                 let progressBarBg = 'bg-slate-200';
                 let progressBarFill = 'bg-slate-400';
 
-                if (topicProg.percentage >= 80) {
+                if (chapterPercentage >= 80) {
                   borderColor = 'border-green-300';
                   iconBg = 'bg-green-100';
                   iconColor = 'text-green-600';
@@ -315,7 +343,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                   } else {
                     statusBadge = <span className="text-xs font-bold text-green-700 bg-green-200/80 px-3 py-1 rounded-full whitespace-nowrap">Almost Done</span>;
                   }
-                } else if (topicProg.percentage >= 50) {
+                } else if (chapterPercentage >= 50) {
                   borderColor = 'border-emerald-200';
                   iconBg = 'bg-emerald-100';
                   iconColor = 'text-emerald-600';
@@ -333,7 +361,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
 
                 return (
                   <div
-                    key={`${topic.title}-${index}`}
+                    key={`${chapter.id || chapter.title}-${index}`}
                     className={`rounded-3xl border-2 ${borderColor} shadow-sm transition-all hover:shadow-md`}
                     style={bgColorStyle}
                   >
@@ -350,20 +378,22 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <h3 className="text-xl sm:text-2xl font-black text-[#111d3f]">{topic.title}</h3>
+                            <h3 className="text-xl sm:text-2xl font-black text-[#111d3f]">{chapter.title}</h3>
                             {statusBadge}
                           </div>
                           <div className="flex items-center gap-3 flex-wrap">
-                            <p className="text-sm font-medium text-slate-600">{topicProg.completed}/{topicProg.total} subtopics</p>
-                            {topicProg.total > 0 && (
+                            <p className="text-sm font-medium text-slate-600">
+                              {chapterTopics.length} topic{chapterTopics.length === 1 ? '' : 's'} · {chapterTotals.completed}/{chapterTotals.total} subtopics
+                            </p>
+                            {chapterTotals.total > 0 && (
                               <>
                                 <div className={`h-2 w-24 sm:w-32 overflow-hidden rounded-full ${progressBarBg}`}>
                                   <div
                                     className={`h-full transition-all duration-500 ${progressBarFill}`}
-                                    style={{ width: `${topicProg.percentage}%` }}
+                                    style={{ width: `${chapterPercentage}%` }}
                                   />
                                 </div>
-                                <span className="text-sm font-bold text-slate-700">{topicProg.percentage}%</span>
+                                <span className="text-sm font-bold text-slate-700">{chapterPercentage}%</span>
                               </>
                             )}
                           </div>
@@ -372,7 +402,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
 
                       <div className="flex items-center gap-2 sm:gap-3">
                         <button
-                          onClick={() => setOpenTopicIndex(isOpen ? -1 : index)}
+                          onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
                           className="rounded-full p-2 text-slate-400 hover:bg-white/80 hover:text-slate-600 transition-colors"
                           aria-label="Toggle info"
                         >
@@ -380,26 +410,30 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                         </button>
                         <button
                           onClick={() => {
-                            const topicSlug = encodeURIComponent(String(topic.title || '').trim());
+                            if (!firstTopic) return;
+                            const topicSlug = encodeURIComponent(String(firstTopic.title || '').trim());
                             navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
                           }}
-                          className={`group/btn relative rounded-full px-8 py-3 text-base font-black transition-all duration-300 overflow-hidden shadow-md hover:shadow-lg hover:scale-105 ${
-                            isFullyCompleted
+                          disabled={!firstTopic}
+                          className={`group/btn relative rounded-full px-8 py-3 text-base font-black transition-all duration-300 overflow-hidden shadow-md ${
+                            !firstTopic
+                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                              : isFullyCompleted
                               ? 'bg-green-500 text-white hover:bg-green-600'
                               : isInProgress
                               ? 'bg-amber-500 text-white hover:bg-amber-600'
                               : 'bg-[#e2bf3e] text-[#101a35] hover:bg-[#d9b734]'
-                          }`}
+                          } ${firstTopic ? 'hover:shadow-lg hover:scale-105' : ''}`}
                         >
                           <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
-                            {isInProgress ? 'Continue' : isFullyCompleted ? 'Learn' : 'Start Learning'}
+                            {!firstTopic ? 'No Topics' : isInProgress ? 'Continue' : isFullyCompleted ? 'Learn' : 'Start Learning'}
                           </span>
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 ease-in-out"></div>
                         </button>
                         <button
-                          onClick={() => setOpenTopicIndex(isOpen ? -1 : index)}
+                          onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
                           className="rounded-full p-2 text-slate-400 hover:bg-white/80 hover:text-slate-600 transition-colors"
-                          aria-label="Toggle subtopics"
+                          aria-label="Toggle chapter topics"
                         >
                           {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                         </button>
@@ -408,34 +442,62 @@ const SubjectTopicsView = ({ subject, onBack }) => {
 
                     {isOpen && (
                       <div className="border-t border-slate-200/50 bg-white/80 backdrop-blur-sm px-6 sm:px-8 pb-5 pt-4">
-                        {topic.subtopics && topic.subtopics.length > 0 ? (
-                          <div className="space-y-2">
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Click to mark as complete</p>
-                            {topic.subtopics.map((subtopic, idx) => {
-                              const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
+                        {chapterTopics.length > 0 ? (
+                          <div className="space-y-4">
+                            {chapterTopics.map((topic) => {
+                              const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
                               return (
-                                <button
-                                  key={`${subtopic}-${idx}`}
-                                  onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
-                                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:shadow-md ${
-                                    isSubtopicCompleted
-                                      ? 'bg-green-100 border-2 border-green-300'
-                                      : 'bg-slate-50 border-2 border-slate-200 hover:border-slate-300'
-                                  }`}
-                                >
-                                  <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
-                                    isSubtopicCompleted ? 'bg-green-500' : 'bg-white border-2 border-slate-300'
-                                  }`}>
-                                    {isSubtopicCompleted && (
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                        <polyline points="20 6 9 17 4 12"></polyline>
-                                      </svg>
-                                    )}
+                                <div key={topic.title} className="rounded-2xl border border-slate-200 bg-white p-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                      <p className="text-lg font-black text-[#111d3f]">{topic.title}</p>
+                                      <p className="text-sm font-medium text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        const topicSlug = encodeURIComponent(String(topic.title || '').trim());
+                                        navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
+                                      }}
+                                      className="rounded-full bg-[#e2bf3e] px-5 py-2 text-sm font-black text-[#101a35] transition hover:bg-[#d9b734]"
+                                    >
+                                      Open Topic
+                                    </button>
                                   </div>
-                                  <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-green-700 line-through' : 'text-slate-700'}`}>
-                                    {subtopic}
-                                  </span>
-                                </button>
+                                  {topic.subtopics && topic.subtopics.length > 0 ? (
+                                    <div className="mt-4 space-y-2">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Click to mark as complete</p>
+                                      {topic.subtopics.map((subtopic, idx) => {
+                                        const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
+                                        return (
+                                          <button
+                                            key={`${subtopic}-${idx}`}
+                                            onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
+                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:shadow-md ${
+                                              isSubtopicCompleted
+                                                ? 'bg-green-100 border-2 border-green-300'
+                                                : 'bg-slate-50 border-2 border-slate-200 hover:border-slate-300'
+                                            }`}
+                                          >
+                                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
+                                              isSubtopicCompleted ? 'bg-green-500' : 'bg-white border-2 border-slate-300'
+                                            }`}>
+                                              {isSubtopicCompleted && (
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                              )}
+                                            </div>
+                                            <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-green-700 line-through' : 'text-slate-700'}`}>
+                                              {subtopic}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-3 text-sm text-slate-500 italic">No subtopics available</p>
+                                  )}
+                                </div>
                               );
                             })}
                           </div>
@@ -540,12 +602,15 @@ const AILearningCoursesLanding = () => {
     // Then merge with smart learning map data (lesson plans)
     return Array.from(map.values()).map((item) => {
       const fromMap = smartLearningMap.find((m) => normalize(m.key || m.title) === item.key);
+      const mappedTopics = Array.isArray(fromMap?.topics) ? fromMap.topics : [];
+      const mappedChapters = Array.isArray(fromMap?.chapters) ? fromMap.chapters : [];
       return {
         ...item,
-        topics: Array.isArray(fromMap?.topics) ? fromMap.topics : [],
+        topics: mappedTopics,
+        chapters: mappedChapters,
         teacherCount: item.teacherNames.size,
         classCount: item.classNames.size,
-        hasLessonPlans: Array.isArray(fromMap?.topics) && fromMap.topics.length > 0,
+        hasLessonPlans: mappedChapters.length > 0 || mappedTopics.length > 0,
       };
     });
     // Removed filter - now showing all allocated subjects regardless of lesson plans
@@ -637,7 +702,9 @@ const AILearningCoursesLanding = () => {
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>{subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}</span>
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>{subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}</span>
                           {subject.hasLessonPlans && (
-                            <span className="rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">{subject.topics.length} Topic{subject.topics.length > 1 ? 's' : ''}</span>
+                            <span className="rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">
+                              {(subject.chapters?.length || subject.topics.length)} {(subject.chapters?.length || 0) > 0 ? 'Chapter' : 'Topic'}{(subject.chapters?.length || subject.topics.length) > 1 ? 's' : ''}
+                            </span>
                           )}
                         </div>
                         <p className="text-sm text-slate-600 line-clamp-2">
