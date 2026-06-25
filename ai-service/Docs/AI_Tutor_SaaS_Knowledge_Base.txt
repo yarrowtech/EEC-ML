@@ -1,0 +1,479 @@
+
+AI Tutor SaaS - Knowledge Base & Architecture Guide
+==================================================
+
+VISION
+------
+Build a multi-tenant SaaS platform for schools where:
+- Teachers upload PDFs, notes, PPTs, worksheets, assignments, question papers.
+- Students access learning materials.
+- Students take quizzes, tests, assignments, tryouts.
+- System tracks mastery at topic level.
+- AI detects knowledge gaps.
+- AI generates bridge learning paths.
+- AI generates personalized lessons, worksheets, quizzes, and study plans.
+
+CORE PRINCIPLE
+--------------
+The LLM is NOT the intelligence layer.
+
+The intelligence layer consists of:
+1. Curriculum Graph
+2. Assessment Engine
+3. Mastery Engine
+4. Error Classification Engine
+5. Gap Detection Engine
+6. Learning Path Engine
+7. Recommendation Engine
+
+The LLM generates content based on these outputs.
+
+TECH STACK
+----------
+Frontend:
+- React
+- Tailwind
+
+Backend:
+- Node.js / NestJS
+- MongoDB
+
+AI Layer:
+- Ollama
+- Qwen
+- Gemma
+- Llama
+
+Vector DB:
+Phase 1:
+- MongoDB Atlas Vector Search
+
+Phase 2:
+- Qdrant
+
+OCR:
+- PaddleOCR
+- Tesseract
+
+Embeddings:
+- BGE
+- Nomic Embed
+
+DATABASE COLLECTIONS
+--------------------
+tenants
+schools
+teachers
+students
+
+subjects
+chapters
+topics
+concepts
+
+content_library
+content_chunks
+
+question_bank
+
+assessments
+student_answers
+
+student_mastery
+student_insights
+
+learning_paths
+
+analytics
+
+CURRICULUM GRAPH EXAMPLE
+------------------------
+Factors
+  ↓
+Multiples
+  ↓
+LCM
+  ↓
+Fractions
+  ↓
+Ratio
+  ↓
+Percentage
+
+Example Topic Structure:
+
+{
+  "topic": "Ratio",
+  "prerequisites": ["Fractions"],
+  "nextTopics": ["Percentage"]
+}
+
+TEACHER CONTENT WORKFLOW
+------------------------
+
+Teacher Uploads Content
+        │
+        ▼
+PDF / Notes / PPT / Worksheet
+        │
+        ▼
+Content Processing Service
+        │
+        ├── OCR
+        ├── Text Extraction
+        ├── Topic Detection
+        ├── Chapter Mapping
+        └── Embedding Generation
+        │
+        ▼
+Knowledge Repository
+(MongoDB + Vector DB)
+        │
+        ▼
+Student Accesses Content
+        │
+        ▼
+Learning Session
+        │
+        ▼
+Assignment / Worksheet / Quiz
+        │
+        ▼
+Assessment Engine
+        │
+        ▼
+Mastery Engine
+        │
+        ▼
+Gap Detection Engine
+        │
+        ▼
+Learning Path Generator
+        │
+        ▼
+AI Content Generator
+        │
+        ▼
+Personalized Study Plan
+
+MERMAID VERSION
+---------------
+
+flowchart TD
+    A[Teacher Uploads Content]
+    B[PDF / Notes / PPT / Worksheet]
+    C[Content Processing Service]
+    D[OCR]
+    E[Text Extraction]
+    F[Topic Detection]
+    G[Chapter Mapping]
+    H[Embedding Generation]
+    I[Knowledge Repository<br/>MongoDB + Vector DB]
+    J[Student Accesses Content]
+    K[Learning Session]
+    L[Assignment / Worksheet / Quiz]
+    M[Assessment Engine]
+    N[Mastery Engine]
+    O[Gap Detection Engine]
+    P[Learning Path Generator]
+    Q[AI Content Generator]
+    R[Personalized Study Plan]
+
+    A --> B
+    B --> C
+
+    C --> D
+    C --> E
+    C --> F
+    C --> G
+    C --> H
+
+    D --> I
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+
+    I --> J
+    J --> K
+    K --> L
+    L --> M
+    M --> N
+    N --> O
+    O --> P
+    P --> Q
+    Q --> R
+
+ASSESSMENT INTELLIGENCE WORKFLOW
+--------------------------------
+
+Student Answers Question
+         │
+         ▼
+
+Question Metadata
+         │
+
+Subject
+Chapter
+Topic
+Bloom Level
+Difficulty
+
+         │
+         ▼
+
+Answer Evaluation
+         │
+         ▼
+
+Correct?
+Wrong?
+Partially Correct?
+
+         │
+         ▼
+
+Error Classification
+         │
+
+Concept Error
+Calculation Error
+Reading Error
+Logic Error
+
+         │
+         ▼
+
+Student Mastery Update
+         │
+         ▼
+
+Knowledge Graph Check
+         │
+         ▼
+
+Find Root Cause
+         │
+         ▼
+
+Generate Learning Path
+
+MERMAID VERSION
+---------------
+
+flowchart TD
+    A[Student Answers Question]
+    B[Question Metadata]
+    C[Subject]
+    D[Chapter]
+    E[Topic]
+    F[Bloom Level]
+    G[Difficulty]
+    H[Answer Evaluation]
+    I{Result}
+    J[Correct]
+    K[Wrong]
+    L[Partially Correct]
+    M[Error Classification]
+    N[Concept Error]
+    O[Calculation Error]
+    P[Reading Error]
+    Q[Logic Error]
+    R[Student Mastery Update]
+    S[Knowledge Graph Check]
+    T[Find Root Cause]
+    U[Generate Learning Path]
+
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    B --> G
+
+    C --> H
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+
+    H --> I
+
+    I --> J
+    I --> K
+    I --> L
+
+    J --> R
+    K --> M
+    L --> M
+
+    M --> N
+    M --> O
+    M --> P
+    M --> Q
+
+    N --> R
+    O --> R
+    P --> R
+    Q --> R
+
+    R --> S
+    S --> T
+    T --> U
+
+MASTERY ENGINE
+--------------
+
+For each student:
+
+{
+  "studentId": "123",
+  "topic": "LCM",
+  "mastery": 42
+}
+
+Mastery Formula:
+
+Accuracy
++ Attempts
++ Time Taken
++ Recency
+
+Initially:
+
+mastery = correct_answers / total_answers
+
+ERROR CLASSIFICATION
+--------------------
+
+Concept Error:
+- Misunderstood concept
+
+Calculation Error:
+- Arithmetic mistake
+
+Reading Error:
+- Misread question
+
+Logic Error:
+- Incorrect reasoning
+
+GAP DETECTION
+-------------
+
+Target Topic:
+Percentage
+
+Knowledge Graph:
+
+Percentage
+ ↑
+Ratio
+ ↑
+Fractions
+ ↑
+LCM
+
+Mastery:
+
+Percentage = 20
+Ratio = 25
+Fractions = 40
+LCM = 15
+
+Root Cause:
+
+LCM
+
+BRIDGE GENERATION
+-----------------
+
+Current:
+LCM
+
+Target:
+Percentage
+
+Bridge Path:
+
+LCM
+ ↓
+Equivalent Fractions
+ ↓
+Comparing Fractions
+ ↓
+Ratio
+ ↓
+Percentage
+
+LEARNING PATH OUTPUT
+--------------------
+
+Week 1:
+Factors
+Multiples
+
+Week 2:
+LCM
+
+Week 3:
+Equivalent Fractions
+
+Week 4:
+Comparing Fractions
+
+Week 5:
+Ratio
+
+Week 6:
+Percentage
+
+AI CONTENT GENERATION
+---------------------
+
+Inputs:
+
+Student Class
+Weak Topic
+Target Topic
+Learning Style
+Teacher Materials
+Mastery Scores
+
+Outputs:
+
+Lesson
+Examples
+Practice Questions
+Worksheet
+Quiz
+Homework
+Study Plan
+
+MVP BUILD ORDER
+---------------
+
+1. Curriculum Graph
+2. Question Bank
+3. Assessment Engine
+4. Mastery Engine
+5. Error Classification
+6. Gap Detection
+7. Learning Path Engine
+8. AI Content Generation
+9. Student AI Tutor
+10. Analytics Dashboard
+11. Vector Memory
+12. ML Prediction
+
+FUTURE ML FEATURES
+------------------
+
+Risk Prediction
+Performance Forecasting
+Learning Style Detection
+Topic Failure Prediction
+Knowledge Decay Prediction
+
+END

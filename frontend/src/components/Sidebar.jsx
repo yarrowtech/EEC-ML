@@ -21,8 +21,8 @@ const MENU_ITEMS = [
     id: 'smart-learning', name: 'Learning', icon: Brain,
     iconColor: 'text-violet-600', iconBg: 'bg-violet-100',
     children: [
-      { id: 'smart-learning-courses', name: 'Smart Learning',  icon: GraduationCap },
-      { id: 'smart-learning-tutor',   name: 'AI Tutor',    icon: Brain },
+      { id: 'smart-learning-courses', name: 'Smart Subjects',  icon: GraduationCap },
+      { id: 'smart-learning-tutor',   name: 'AI Smart Learning',    icon: Brain },
     ],
   },
   {

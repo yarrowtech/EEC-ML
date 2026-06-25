@@ -23,6 +23,9 @@ const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g
 const normalizeStringList = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
 
+const normalizeTryoutList = (value) =>
+  Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) : [];
+
 const SMART_TEACHING_SOURCE_FIELDS = [
   { key: 'learningPaths', label: 'Learning Path', learningType: 'note', materialType: 'note', category: 'theory' },
   { key: 'studyMaterials', label: 'Notes', learningType: 'note', materialType: 'note', category: 'theory' },
@@ -1696,7 +1699,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
               tryoutSections: [],
             });
           }
-          const topicEntry = subjectEntry.topics.get(topicKey);
+          const topicEntry = subjectEntry.topics.get(topicId);
           (topic.subTopics || []).forEach((sub) => {
             const subTitle = normalizeString(sub.title);
             if (subTitle) topicEntry.subtopics.add(subTitle);

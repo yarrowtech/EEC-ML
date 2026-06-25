@@ -35,7 +35,23 @@
       "Bash(npm run dev:*)",
       "WebFetch(domain:heroui.com)",
       "WebSearch",
-      "WebFetch(domain:template-dashboard.heroui.pro)"
+      "WebFetch(domain:template-dashboard.heroui.pro)",
+      "Bash(timeout 15 node index.js)",
+      "Bash(echo \"EXIT:$?\")",
+      "Read(//tmp/**)",
+      "Bash(cp /tmp/check_lp.js \"/run/media/meow/New Volume/experimental/EEC ML/backend/check_lp_tmp.js\")",
+      "Bash(node check_lp_tmp.js)",
+      "Bash(rm -f check_lp_tmp.js)",
+      "Bash(ls components/ui/)",
+      "Bash(find . -type d -iname \"*student*\")",
+      "Bash(grep -rn \"smart-learning-tutor\\\\|SmartLearningTutor\\\\|AiTutor\\\\|AITutor\" --include=\"*.jsx\" --include=\"*.js\" -l .)",
+      "Bash(cat vite.config.js)",
+      "Bash(cat jsconfig.json)",
+      "Bash(cat src/lib/utils.js)",
+      "Bash(git stash *)",
+      "Bash(ollama list *)",
+      "Bash(python3.11 -m ensurepip --upgrade)",
+      "Bash(python3.11 -m pip --version)"
     ]
   }
 }

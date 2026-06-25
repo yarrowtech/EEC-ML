@@ -1,0 +1,47 @@
+AI Tutor Dashboard Home Screen
+==============================
+
+File: AITutorHomeScreen.jsx
+Route: /student/smart-learning-tutor (rendered inside <main> by AILearningDashboard.jsx, which is wired into the student Dashboard's view map)
+
+What it is
+----------
+A single-page React component (no sidebar/navbar/routing/auth — that's owned by Sidebar.jsx and Dashboard.jsx) that serves as the home screen for the AI Tutor learning module. Built for the 7-16 student audience with shadcn/ui, Tailwind, Framer Motion, and Lucide icons. Uses local mock data only; no backend calls.
+
+Sections (top to bottom)
+-------------------------
+1. Hero Banner       - Greeting, streak/XP/level badges, Start Learning / Practice Questions / Ask AI Tutor CTAs, floating illustration icons.
+2. Quick Actions      - 8-card grid: Learn, Practice Papers, Quizzes, AI Tutor, Homework Helper, Coding Lab, Flashcards, Mock Tests.
+3. Continue Learning   - Horizontal scroll cards per subject with animated progress bars and a Resume button.
+4. Daily Goals        - 4 stat cards (lessons completed, study time, XP earned, questions solved) with animated counters.
+5. AI Tutor Panel     - Avatar + quick-action pills (Explain a Topic, Solve Math Problem, Generate Quiz, Summarize Chapter, Homework Help, Create Notes) + chat input with voice/ask buttons.
+6. Subject Explorer    - Grid of subject cards (chapters, progress, Explore button).
+7. Learning Streak     - 15-day streak banner with animated flame and weekly tracker.
+8. Achievements       - Badge grid (Quiz Master, Bookworm, Fast Learner, Perfect Score, Consistency Champion, Genius Thinker) with tooltips and rarity colors.
+9. Recommended For You - Horizontal carousel of video lessons / quizzes / practice sets / AI challenges.
+10. Motivational Footer - Closing banner with floating stars/rocket/trophy icons.
+
+Reusable pieces defined in the file
+------------------------------------
+- Section            - wraps each section in a fade-in-up scroll reveal.
+- AnimatedCounter    - counts up to a target number once scrolled into view.
+- AnimatedProgress   - animates a shadcn Progress bar from 0 to its target value once in view.
+- QuickActionCard, ContinueLearningCard, SubjectCard, AchievementBadge, RecommendedCard - per-section card components driven by the mock data arrays at the top of the file.
+
+Props (all optional, default to no-ops)
+----------------------------------------
+- onStartLearning()
+- onPracticeQuestions()
+- onAskAiTutor()
+- onExploreSubject(subject)
+
+Integration
+---------------
+AILearningDashboard.jsx renders <AITutorHomeScreen /> in place of the old "AI Tutor coming soon" placeholder, wiring:
+- onStartLearning / onPracticeQuestions / onAskAiTutor -> toast notifications (react-hot-toast)
+- onExploreSubject -> matches the clicked subject to an entry in the existing mockCourses list and opens the existing SubjectLearningView (AI Summary / Mind Map / Flashcards / Quiz tabs); falls back to a toast if no match.
+
+Notes / fixes made along the way
+---------------------------------
+- components/ui/tooltip.jsx, progress.jsx, and scroll-area.jsx had a pre-existing broken import (`radix-ui/Tooltip` etc. subpaths that don't exist in the installed radix-ui v1.4.3 package). Fixed to import the named export from the package root (e.g. `import { Tooltip as TooltipPrimitive } from "radix-ui"`), since AITutorHomeScreen.jsx was the first component to actually exercise these primitives in the build.
+- All Tooltip usages share a single TooltipProvider wrapped around the page root.

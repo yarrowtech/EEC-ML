@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
 import {
   Brain,
   BookOpen,
@@ -25,6 +26,7 @@ import AISummaryGenerator from './AISummaryGenerator';
 import MindMapGenerator from './MindMapGenerator';
 import FlashcardGenerator from './FlashcardGenerator';
 import AIQuizGenerator from './AIQuizGenerator';
+import AITutorHomeScreen from './AITutorHomeScreen';
 
 const AILearningDashboard = () => {
   const [selectedSubject, setSelectedSubject] = useState(null);
@@ -245,13 +247,19 @@ const AILearningDashboard = () => {
     //     </div>
     //   </div>
     // </div>
-    <>
-      <div className="bg-white shadow-sm p-6 h-[90vh]">
-        <div className="text-center flex justify-center items-center h-full">
-          <p className="text-gray-600">AI Tutor comming soon!</p>
-        </div>
-      </div>
-    </>
+    <AITutorHomeScreen
+      onStartLearning={() => toast.success('Opening your lessons...')}
+      onPracticeQuestions={() => toast.success('Loading practice questions...')}
+      onAskAiTutor={() => toast.success('AI Tutor chat opening soon!')}
+      onExploreSubject={(subject) => {
+        const course = courses.find((c) => c.name.toLowerCase().includes(subject.name.toLowerCase()));
+        if (course) {
+          setSelectedSubject(course);
+        } else {
+          toast.success(`${subject.name} lessons coming soon!`);
+        }
+      }}
+    />
   );
 };
 
