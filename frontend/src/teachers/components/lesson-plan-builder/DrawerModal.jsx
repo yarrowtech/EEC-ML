@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X, Play, Edit3 } from 'lucide-react';
+import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X, Play, Edit3, UploadCloud } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,6 +11,7 @@ import UploadDropzone from './UploadDropzone';
 import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
 import TryoutBuilder from './TryoutBuilder';
+import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
 const evaluationTags = ['Excellent', 'Good', 'Needs Improvement'];
 
@@ -18,6 +20,9 @@ const DrawerModal = ({
   chapter,
   durations,
   assessmentTypes,
+  classId,
+  sectionId,
+  subjectId,
   onClose,
   onUpdate,
   onAddContentFile,
@@ -33,11 +38,20 @@ const DrawerModal = ({
   isPublishing = false,
 }) => {
   const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
+  const [showMaterialUpload, setShowMaterialUpload] = useState(false);
 
   if (!chapter) return null;
 
   const handleSaveTryouts = (tryouts) => {
     onUpdate({ ...chapter, tryouts });
+  };
+
+  const handleOpenMaterialUpload = () => {
+    if (!classId || !sectionId) {
+      toast.error('Select class and section first');
+      return;
+    }
+    setShowMaterialUpload(true);
   };
 
   const dayLabel = chapter.lessonDate
@@ -126,6 +140,26 @@ const DrawerModal = ({
                 <UploadDropzone title="Assessments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
                 <UploadDropzone title="Experiments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []} onAddFile={onAddContentFile} onRemoveContentFile={onRemoveContentFile} onRemoveFile={onRemoveContentFile} />
                 <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+
+                {/* Upload Material Section */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Upload Material</p>
+                  <div className="rounded-xl border-2 border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 p-4 text-center dark:from-blue-900/20 dark:to-cyan-900/20">
+                    <UploadCloud className="mx-auto mb-2 size-8 text-blue-500" />
+                    <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
+                      Share study material with students for this chapter
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenMaterialUpload}
+                      className="border-blue-300 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-400"
+                    >
+                      <UploadCloud className="size-4 mr-2" />
+                      Upload Material
+                    </Button>
+                  </div>
+                </div>
               </div>
             </details>
 
@@ -236,6 +270,37 @@ const DrawerModal = ({
               </div>
             </section>
           </div>
+
+          {showMaterialUpload && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+              <div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setShowMaterialUpload(false)}
+                  className="absolute right-4 top-4 z-10 rounded-full bg-white p-1.5 text-slate-500 shadow hover:bg-slate-100"
+                  aria-label="Close upload material"
+                >
+                  <X className="size-4" />
+                </button>
+                <RichTextMaterialEditor
+                  classId={classId}
+                  sectionId={sectionId}
+                  subjectId={subjectId}
+                  chapterId={chapter.id}
+                  chapterTitle={chapter.title}
+                  onCancel={() => setShowMaterialUpload(false)}
+                  onSave={(savedMaterial) => {
+                    setShowMaterialUpload(false);
+                    toast.success(
+                      savedMaterial?.status === 'published'
+                        ? 'Material is now visible to students'
+                        : 'Material saved as draft. Choose "Publish now" to make it visible to students.'
+                    );
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </motion.section>
       )}
     </AnimatePresence>

@@ -3,8 +3,8 @@ import { Upload, X, FileText, AlertCircle, CheckCircle, Loader } from 'lucide-re
 import QuillEditor from '../../utils/quill';
 import toast from 'react-hot-toast';
 
-const RichTextMaterialEditor = ({ material, classId, sectionId, onSave, onCancel }) => {
-  const [title, setTitle] = useState(material?.title || '');
+const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapterId, chapterTitle, onSave, onCancel }) => {
+  const [title, setTitle] = useState(material?.title || (chapterTitle ? `${chapterTitle} - Material` : ''));
   const [content, setContent] = useState(material?.content || '');
   const [typeLabel, setTypeLabel] = useState(material?.typeLabel || 'Study Material');
   const [category, setCategory] = useState(material?.category || 'theory');
@@ -173,7 +173,10 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, onSave, onCancel
         attachments: attachments.filter(a => a.url), // Only include uploaded attachments
         status: saveStatus,
         classId,
-        sectionId
+        sectionId,
+        subjectId: subjectId || undefined,
+        chapterId: chapterId || undefined,
+        chapterTitle: chapterTitle || undefined
       };
 
       // Add scheduling info if needed

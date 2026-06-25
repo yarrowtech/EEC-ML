@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, UploadCloud } from 'lucide-react';
 
 const HeaderActions = ({
   autosaveStatus,
@@ -9,6 +9,7 @@ const HeaderActions = ({
   onClassChange,
   onSectionChange,
   onSubjectChange,
+  onUploadMaterial,
   classOptions = [],
   sectionOptions = [],
   subjectOptions = [],
@@ -68,9 +69,23 @@ const HeaderActions = ({
         </select>
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <Clock className="size-3.5 text-slate-400" />
-        <span className="text-xs text-slate-500 dark:text-slate-400">{autosaveStatus}</span>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {onUploadMaterial ? (
+          <button
+            type="button"
+            onClick={onUploadMaterial}
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700"
+          >
+            <UploadCloud className="size-3.5" />
+            Upload Material
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-2">
+          <Clock className="size-3.5 text-slate-400" />
+          <span className="text-xs text-slate-500 dark:text-slate-400">{autosaveStatus}</span>
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
-import { BookOpenCheck } from 'lucide-react';
+import { BookOpenCheck, X } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal from './components/lesson-plan-builder/DrawerModal';
+import RichTextMaterialEditor from './components/RichTextMaterialEditor';
 import { assessmentTypes, durationOptions, initialChapters } from './components/lesson-plan-builder/mockData';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -64,6 +65,7 @@ const AIPoweredTeaching = () => {
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [publishing, setPublishing] = useState(false);
+  const [showUploadMaterial, setShowUploadMaterial] = useState(false);
 
   const authHeaders = () => ({
     'Content-Type': 'application/json',
@@ -572,6 +574,14 @@ const AIPoweredTeaching = () => {
     }
   };
 
+  const handleOpenUploadMaterial = () => {
+    if (!selectedClass || !selectedSection) {
+      toast.error('Select class and section first');
+      return;
+    }
+    setShowUploadMaterial(true);
+  };
+
   const handleNewPlan = () => {
     setCurrentDraftId(null);
     setChapters([]);
@@ -600,6 +610,7 @@ const AIPoweredTeaching = () => {
           classOptions={classOptions}
           sectionOptions={sectionOptions}
           subjectOptions={subjectOptions}
+          onUploadMaterial={handleOpenUploadMaterial}
           onClassChange={async (value) => {
             setSelectedClass(value);
             setSelectedSection('');
@@ -659,6 +670,9 @@ const AIPoweredTeaching = () => {
                     chapter={chapter}
                     durations={durationOptions}
                     assessmentTypes={assessmentTypes}
+                    classId={selectedClass}
+                    sectionId={selectedSection}
+                    subjectId={selectedSubject}
                     onClose={() => handleCloseChapter(chapter.id)}
                     onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
                     onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}
@@ -704,6 +718,35 @@ const AIPoweredTeaching = () => {
           </div>
         </div>
       </div>
+
+      {showUploadMaterial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setShowUploadMaterial(false)}
+              className="absolute right-4 top-4 z-10 rounded-full bg-white p-1.5 text-slate-500 shadow hover:bg-slate-100"
+              aria-label="Close upload material"
+            >
+              <X className="size-4" />
+            </button>
+            <RichTextMaterialEditor
+              classId={selectedClass}
+              sectionId={selectedSection}
+              subjectId={selectedSubject}
+              onCancel={() => setShowUploadMaterial(false)}
+              onSave={(savedMaterial) => {
+                setShowUploadMaterial(false);
+                toast.success(
+                  savedMaterial?.status === 'published'
+                    ? 'Material is now visible to students'
+                    : 'Material saved as draft. Choose "Publish now" to make it visible to students.'
+                );
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
