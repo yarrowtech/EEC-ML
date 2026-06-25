@@ -1072,8 +1072,8 @@ function AiTutorPanel() {
               )}
             </div>
 
-            <div className="mt-auto flex items-center gap-2 rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-xs text-sky-700 shadow-sm backdrop-blur">
-              <span className="size-2 rounded-full bg-sky-500" />
+            <div className="mt-auto flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/80 px-3 py-2 text-xs text-sky-700 shadow-sm backdrop-blur">
+              <span className="size-2 rounded-full bg-green-500" />
               AI Tutor is online
             </div>
           </Motion.div>
