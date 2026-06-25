@@ -10,6 +10,10 @@ const authTeacher = require('../middleware/authTeacher');
 
 // Middleware to ensure teacher is authenticated
 router.use(authTeacher);
+router.use((req, res, next) => {
+  req.userId = req.user?.id || req.teacher?.id || null;
+  next();
+});
 
 // Helper function to get denormalized names
 const resolveDenormalizedNames = async (classId, sectionId, subjectId) => {

@@ -31,7 +31,6 @@ import AITutorHomeScreen from './AITutorHomeScreen';
 const AILearningDashboard = () => {
   const [selectedSubject, setSelectedSubject] = useState(null);
   const learningProgress = mockProgress;
-  const courses = mockCourses;
   const recommendations = mockRecommendations;
 
   if (selectedSubject) {
@@ -252,11 +251,16 @@ const AILearningDashboard = () => {
       onPracticeQuestions={() => toast.success('Loading practice questions...')}
       onAskAiTutor={() => toast.success('AI Tutor chat opening soon!')}
       onExploreSubject={(subject) => {
-        const course = courses.find((c) => c.name.toLowerCase().includes(subject.name.toLowerCase()));
-        if (course) {
-          setSelectedSubject(course);
+        if (subject?.topics?.length) {
+          setSelectedSubject({
+            id: subject.id,
+            name: subject.name,
+            description: `${subject.topicsCount} topic${subject.topicsCount === 1 ? '' : 's'} published by your teacher`,
+            topics: subject.topics,
+            color: subject.colorKey || 'blue',
+          });
         } else {
-          toast.success(`${subject.name} lessons coming soon!`);
+          toast.success(`${subject.name} has no published topics yet.`);
         }
       }}
     />
@@ -408,79 +412,6 @@ const getSubjectColor = (color) => {
 };
 
 // Mock data
-const mockCourses = [
-  {
-    id: 'math',
-    name: 'Mathematics',
-    description: 'Advanced mathematical concepts including algebra, geometry, and calculus',
-    topics: ['Algebra', 'Geometry', 'Trigonometry', 'Statistics', 'Probability', 'Calculus Basics'],
-    color: 'blue'
-  },
-  {
-    id: 'physics',
-    name: 'Physics',
-    description: 'Fundamental principles of physics including mechanics, electricity, and optics',
-    topics: ['Mechanics', 'Heat and Thermodynamics', 'Light', 'Sound', 'Electricity', 'Magnetism'],
-    color: 'purple'
-  },
-  {
-    id: 'chemistry',
-    name: 'Chemistry',
-    description: 'Explore the composition, structure, and properties of matter and chemical reactions',
-    topics: ['Atomic Structure', 'Chemical Bonding', 'Periodic Table', 'Stoichiometry', 'Organic Chemistry', 'Acids and Bases'],
-    color: 'green'
-  },
-  {
-    id: 'biology',
-    name: 'Biology',
-    description: 'Study of living organisms, their structure, function, and interactions',
-    topics: ['Cell Biology', 'Genetics', 'Photosynthesis', 'Evolution', 'Ecology', 'Human Anatomy'],
-    color: 'orange'
-  },
-  {
-    id: 'english',
-    name: 'English Literature',
-    description: 'Analyze literary works, improve writing skills, and master language arts',
-    topics: ['Poetry Analysis', 'Novel Studies', 'Grammar & Syntax', 'Creative Writing', 'Literary Devices', 'Essay Writing'],
-    color: 'red'
-  },
-  {
-    id: 'history',
-    name: 'History',
-    description: 'Explore historical events, civilizations, and their impact on the modern world',
-    topics: ['World War I', 'World War II', 'Ancient Civilizations', 'Industrial Revolution', 'Cold War', 'Renaissance'],
-    color: 'blue'
-  },
-  {
-    id: 'geography',
-    name: 'Geography',
-    description: 'Study the Earth\'s landscapes, environments, and spatial relationships',
-    topics: ['Physical Geography', 'Climate Change', 'Population Studies', 'Natural Resources', 'Cartography', 'Urban Planning'],
-    color: 'green'
-  },
-  {
-    id: 'economics',
-    name: 'Economics',
-    description: 'Understand economic principles, markets, and financial systems',
-    topics: ['Supply and Demand', 'Market Structures', 'Macroeconomics', 'International Trade', 'Banking Systems', 'Economic Policy'],
-    color: 'purple'
-  },
-  {
-    id: 'computer-science',
-    name: 'Computer Science',
-    description: 'Learn programming, algorithms, and computational thinking',
-    topics: ['Programming Basics', 'Data Structures', 'Algorithms', 'Web Development', 'Database Systems', 'Artificial Intelligence'],
-    color: 'orange'
-  },
-  {
-    id: 'psychology',
-    name: 'Psychology',
-    description: 'Explore human behavior, mental processes, and psychological theories',
-    topics: ['Cognitive Psychology', 'Behavioral Psychology', 'Developmental Psychology', 'Social Psychology', 'Research Methods', 'Mental Health'],
-    color: 'red'
-  }
-];
-
 const mockProgress = {
   totalTopicsStudied: 45,
   completedCourses: 6,

@@ -7,6 +7,10 @@ const authStudent = require('../middleware/authStudent');
 
 // Middleware to ensure student is authenticated
 router.use(authStudent);
+router.use((req, res, next) => {
+  req.userId = req.user?.id || null;
+  next();
+});
 
 // Helper: Get student's class and section
 const getStudentClassSection = async (studentId) => {

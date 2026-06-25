@@ -196,14 +196,16 @@ const DAILY_GOALS = [
   { id: 'questions', label: 'Questions Solved', value: 24, suffix: '', icon: CheckCircle2, trend: '+9 today', color: 'text-fuchsia-600 bg-fuchsia-100' },
 ];
 
-const SUBJECT_EXPLORER = [
-  { id: 'mathematics', name: 'Mathematics', icon: Calculator, chapters: 18, progress: 68, color: 'from-blue-500 to-cyan-400' },
-  { id: 'science', name: 'Science', icon: Atom, chapters: 22, progress: 42, color: 'from-emerald-500 to-teal-400' },
-  { id: 'english', name: 'English', icon: BookText, chapters: 14, progress: 81, color: 'from-fuchsia-500 to-pink-400' },
-  { id: 'computer-science', name: 'Computer Science', icon: Cpu, chapters: 16, progress: 35, color: 'from-indigo-500 to-blue-400' },
-  { id: 'geography', name: 'Geography', icon: Globe2, chapters: 12, progress: 25, color: 'from-amber-500 to-orange-400' },
-  { id: 'history', name: 'History', icon: ScrollText, chapters: 15, progress: 54, color: 'from-rose-500 to-red-400' },
+const SUBJECT_VISUALS = [
+  { match: /math/i, icon: Calculator, gradient: 'from-blue-500 to-cyan-400', colorKey: 'blue' },
+  { match: /(science|physic|chemistry|biology)/i, icon: Atom, gradient: 'from-emerald-500 to-teal-400', colorKey: 'green' },
+  { match: /(english|language|literature)/i, icon: BookText, gradient: 'from-fuchsia-500 to-pink-400', colorKey: 'purple' },
+  { match: /(computer|coding|programming)/i, icon: Cpu, gradient: 'from-indigo-500 to-blue-400', colorKey: 'blue' },
+  { match: /(geography|environment)/i, icon: Globe2, gradient: 'from-amber-500 to-orange-400', colorKey: 'orange' },
+  { match: /history/i, icon: ScrollText, gradient: 'from-rose-500 to-red-400', colorKey: 'red' },
 ];
+const DEFAULT_SUBJECT_VISUAL = { icon: BookOpen, gradient: 'from-slate-500 to-slate-400', colorKey: 'blue' };
+const getSubjectVisual = (name) => SUBJECT_VISUALS.find((entry) => entry.match.test(name)) || DEFAULT_SUBJECT_VISUAL;
 
 const ACHIEVEMENTS = [
   { id: 'quiz-master', name: 'Quiz Master', icon: Trophy, rarity: 'gold', earned: true, description: 'Scored 90%+ on 10 quizzes' },
@@ -1553,7 +1555,7 @@ function SubjectCard({ subject, onExplore }) {
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-800">{subject.name}</h3>
-            <p className="text-xs text-slate-500">{subject.chapters} chapters</p>
+            <p className="text-xs text-slate-500">{subject.topicsCount} topic{subject.topicsCount === 1 ? '' : 's'} published</p>
           </div>
           <div>
             <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
@@ -1577,21 +1579,77 @@ function SubjectCard({ subject, onExplore }) {
   );
 }
 
+function useSubjectExplorerData() {
+  const { subjects: curriculum, status: curriculumStatus } = useStudentCurriculum();
+  const [progressBySubject, setProgressBySubject] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const { data } = await fetchCachedJson(`${API_BASE}/api/lesson-plans/student/smart-learning-overview`, {
+          ttlMs: 5 * 60 * 1000,
+          fetchOptions: { headers: { Authorization: `Bearer ${token}` } },
+        });
+        if (cancelled) return;
+        const map = {};
+        (data?.subjects || []).forEach((s) => { map[s.key] = s.progress; });
+        setProgressBySubject(map);
+      } catch {
+        // Progress is a nice-to-have; subjects/topics still render without it.
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const subjects = curriculum.map((subject) => ({
+    id: subject.key,
+    name: subject.title,
+    topicsCount: subject.topics.length,
+    progress: progressBySubject[subject.key] ?? 0,
+    topics: subject.topics.map((t) => t.title),
+  }));
+
+  return { subjects, status: curriculumStatus };
+}
+
 function SubjectExplorer({ onExploreSubject }) {
+  const { subjects, status } = useSubjectExplorerData();
+
   return (
     <Section>
       <h2 className="mb-4 text-xl font-bold text-slate-800 sm:text-2xl">Subject Explorer</h2>
-      <Motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.1 }}
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-      >
-        {SUBJECT_EXPLORER.map((subject) => (
-          <SubjectCard key={subject.id} subject={subject} onExplore={onExploreSubject} />
-        ))}
-      </Motion.div>
+      {status === 'loading' && (
+        <p className="text-sm text-slate-500">Loading your subjects…</p>
+      )}
+      {status !== 'loading' && subjects.length === 0 && (
+        <Card className="rounded-2xl border border-dashed border-slate-200 p-8 text-center shadow-none">
+          <p className="text-sm text-slate-500">Your teachers haven&apos;t published any subjects yet. Check back soon!</p>
+        </Card>
+      )}
+      {subjects.length > 0 && (
+        <Motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.1 }}
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {subjects.map((subject) => {
+            const visual = getSubjectVisual(subject.name);
+            return (
+              <SubjectCard
+                key={subject.id}
+                subject={{ ...subject, icon: visual.icon, color: visual.gradient }}
+                onExplore={() => onExploreSubject({ ...subject, colorKey: visual.colorKey })}
+              />
+            );
+          })}
+        </Motion.div>
+      )}
     </Section>
   );
 }
