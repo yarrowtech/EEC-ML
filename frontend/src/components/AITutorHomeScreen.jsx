@@ -961,7 +961,7 @@ function AiTutorPanel() {
   const [activeChip, setActiveChip] = useState(COMPANION_CHIPS[0].label);
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
 
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
   const topics = useMemo(() => {
@@ -985,7 +985,9 @@ function AiTutorPanel() {
   }, [selectedSubject]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const node = messagesScrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
   }, [messages, sending]);
 
   const handleSend = async () => {
@@ -1049,10 +1051,10 @@ function AiTutorPanel() {
   return (
     <Section>
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <div className="relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8">
+      <div className="relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,.22),transparent_35%)]" />
-        <div className="relative z-10 grid gap-7 lg:grid-cols-[0.72fr_1.28fr]">
-          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4">
+        <div className="relative z-10 grid gap-7 lg:h-full lg:grid-cols-[0.72fr_1.28fr]">
+          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4 lg:h-full lg:overflow-y-auto lg:pr-1">
             <Motion.div
               animate={{ boxShadow: ['0 0 0px rgba(59,130,246,0.25)', '0 0 32px rgba(59,130,246,0.4)', '0 0 0px rgba(59,130,246,0.25)'] }}
               transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
@@ -1096,7 +1098,7 @@ function AiTutorPanel() {
             </div>
           </Motion.div>
 
-          <Motion.div variants={slideInRight} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col gap-4">
+          <Motion.div variants={slideInRight} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col gap-4 lg:h-full lg:min-h-0">
             <div className="flex flex-wrap gap-2">
               {COMPANION_CHIPS.map((chip) => {
                 const Icon = chip.icon;
@@ -1120,64 +1122,79 @@ function AiTutorPanel() {
               })}
             </div>
 
-            {messages.length > 0 && (
-              <div className="max-h-72 space-y-3 overflow-y-auto rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
-                {messages.map((msg, i) => (
-                  <div key={msg.id || i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                    <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
-                      <div
-                        className={cn(
-                          'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
-                          msg.role === 'user'
-                            ? 'border-blue-300 bg-blue-500 text-white'
-                            : msg.error
-                              ? 'border-rose-200 bg-rose-100 text-rose-600'
-                              : 'border-sky-200 bg-sky-50 text-sky-700'
-                        )}
-                      >
-                        {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
-                      </div>
-                      <div
-                        className={cn(
-                          'rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
-                          msg.role === 'user'
-                            ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
-                            : msg.thinking
-                              ? 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
+            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
+              {messages.length > 0 ? (
+                <div className="space-y-3">
+                  {messages.map((msg, i) => (
+                    <div key={msg.id || i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                      <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
+                        <div
+                          className={cn(
+                            'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
+                            msg.role === 'user'
+                              ? 'border-blue-300 bg-blue-500 text-white'
                               : msg.error
-                              ? 'rounded-bl-sm border border-rose-200 bg-rose-50 text-rose-700'
-                              : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
-                        )}
-                      >
-                        {msg.text}
-                        {msg.role === 'assistant' && !msg.error && (
-                          <div className="mt-2 text-[11px] font-medium text-sky-600">
-                            {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
-                          </div>
-                        )}
+                                ? 'border-rose-200 bg-rose-100 text-rose-600'
+                                : 'border-sky-200 bg-sky-50 text-sky-700'
+                          )}
+                        >
+                          {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
+                        </div>
+                        <div
+                          className={cn(
+                            'rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
+                            msg.role === 'user'
+                              ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
+                              : msg.thinking
+                                ? 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
+                                : msg.error
+                                ? 'rounded-bl-sm border border-rose-200 bg-rose-50 text-rose-700'
+                                : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
+                          )}
+                        >
+                          {msg.text}
+                          {msg.role === 'assistant' && !msg.error && (
+                            <div className="mt-2 text-[11px] font-medium text-sky-600">
+                              {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-full min-h-[240px] items-center justify-center text-center">
+                  <div className="max-w-sm">
+                    <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+                      <MessageCircleQuestion className="size-6" />
+                    </div>
+                    <p className="text-sm font-semibold text-slate-700">Your latest messages will stay here</p>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Send a question and the conversation will keep scrolling inside this panel, without moving the page.
+                    </p>
                   </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
+                </div>
+              )}
+            </div>
 
-            <div className="rounded-2xl border border-sky-200 bg-white/85 p-3 shadow-inner backdrop-blur-xl">
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Ask anything about your studies..."
-                rows={4}
-                className="w-full resize-none bg-transparent px-1 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
-                style={{ color: '#000000', WebkitTextFillColor: '#000000', caretColor: '#000000' }}
-              />
+            <div className="rounded-2xl border border-sky-200 bg-white/85 p-3 shadow-inner backdrop-blur-xl lg:shrink-0">
+              <div className="rounded-xl border border-transparent bg-sky-50/70 px-3 py-2.5 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100">
+                <textarea
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Ask anything about your studies..."
+                  rows={4}
+                  className="w-full resize-none bg-transparent px-0 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
+                  style={{ color: '#000000', WebkitTextFillColor: '#000000', caretColor: '#000000' }}
+                />
+              </div>
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-sky-100 pt-3">
                 <div className="flex gap-1">
                   <Tooltip>
