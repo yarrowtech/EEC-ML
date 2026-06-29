@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion as Motion, useInView } from 'framer-motion';
 import {
   BookOpen,
@@ -49,6 +49,7 @@ import {
   CalendarCheck2,
   Circle,
   Plus,
+  ChevronLeft,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -965,6 +966,9 @@ function AiTutorPanel() {
   const [attachmentName, setAttachmentName] = useState('');
   const messagesScrollRef = useRef(null);
   const attachmentInputRef = useRef(null);
+  const chipsScrollRef = useRef(null);
+  const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
+  const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
 
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
   const topics = useMemo(() => {
@@ -995,6 +999,31 @@ function AiTutorPanel() {
     const file = event.target.files?.[0];
     setAttachmentName(file ? file.name : '');
   };
+
+  const scrollChips = (direction) => {
+    const node = chipsScrollRef.current;
+    if (!node) return;
+    node.scrollBy({ left: direction * 220, behavior: 'smooth' });
+  };
+
+  const updateChipsScrollState = useCallback(() => {
+    const node = chipsScrollRef.current;
+    if (!node) return;
+    setCanScrollChipsLeft(node.scrollLeft > 1);
+    setCanScrollChipsRight(node.scrollLeft + node.clientWidth < node.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    const node = chipsScrollRef.current;
+    if (!node) return;
+    updateChipsScrollState();
+    node.addEventListener('scroll', updateChipsScrollState);
+    window.addEventListener('resize', updateChipsScrollState);
+    return () => {
+      node.removeEventListener('scroll', updateChipsScrollState);
+      window.removeEventListener('resize', updateChipsScrollState);
+    };
+  }, [updateChipsScrollState]);
 
   useEffect(() => {
     const node = messagesScrollRef.current;
@@ -1065,8 +1094,8 @@ function AiTutorPanel() {
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,.22),transparent_35%)]" />
-        <div className="relative z-10 grid gap-7 lg:h-full lg:grid-cols-[0.72fr_1.28fr]">
-          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+        <div className="relative z-10 grid gap-7 lg:h-full lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex min-w-0 flex-col items-start gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             <Motion.div
               animate={{ boxShadow: ['0 0 0px rgba(59,130,246,0.25)', '0 0 32px rgba(59,130,246,0.4)', '0 0 0px rgba(59,130,246,0.25)'] }}
               transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
@@ -1110,28 +1139,53 @@ function AiTutorPanel() {
             </div>
           </Motion.div>
 
-          <Motion.div variants={slideInRight} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col gap-4 lg:h-full lg:min-h-0">
-            <div className="flex flex-wrap gap-2">
-              {COMPANION_CHIPS.map((chip) => {
-                const Icon = chip.icon;
-                return (
-                  <Motion.button
-                    key={chip.label}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setActiveChip(chip.label)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm',
-                      activeChip === chip.label
-                        ? 'border-sky-300 bg-sky-500 text-white shadow-sm'
-                        : 'border-sky-200 bg-white/70 text-slate-700 hover:bg-white'
-                    )}
-                  >
-                    <Icon className={cn('size-3.5', activeChip === chip.label ? 'text-white' : 'text-sky-500')} />
-                    {chip.label}
-                  </Motion.button>
-                );
-              })}
+          <Motion.div variants={slideInRight} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex min-w-0 flex-col gap-4 lg:h-full lg:min-h-0">
+            <div className="flex min-w-0 items-center gap-2">
+              {canScrollChipsLeft && (
+                <button
+                  type="button"
+                  onClick={() => scrollChips(-1)}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white hover:text-slate-900"
+                  aria-label="Scroll actions left"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+              )}
+              <div
+                ref={chipsScrollRef}
+                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scroll-smooth whitespace-nowrap py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {COMPANION_CHIPS.map((chip) => {
+                  const Icon = chip.icon;
+                  return (
+                    <Motion.button
+                      key={chip.label}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => setActiveChip(chip.label)}
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm',
+                        activeChip === chip.label
+                          ? 'border-sky-300 bg-sky-500 text-white shadow-sm'
+                          : 'border-sky-200 bg-white/70 text-slate-700 hover:bg-white'
+                      )}
+                    >
+                      <Icon className={cn('size-3.5', activeChip === chip.label ? 'text-white' : 'text-sky-500')} />
+                      {chip.label}
+                    </Motion.button>
+                  );
+                })}
+              </div>
+              {canScrollChipsRight && (
+                <button
+                  type="button"
+                  onClick={() => scrollChips(1)}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white hover:text-slate-900"
+                  aria-label="Scroll actions right"
+                >
+                  <ChevronRight className="size-4" />
+                </button>
+              )}
             </div>
 
             <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
@@ -1188,7 +1242,7 @@ function AiTutorPanel() {
                   ))}
                 </div>
               ) : (
-                <div className="flex h-full min-h-[240px] items-center justify-center text-center">
+                <div className="flex h-full min-h-[90px] items-center justify-center text-center">
                   <div className="max-w-sm">
                     <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
                       <MessageCircleQuestion className="size-6" />
