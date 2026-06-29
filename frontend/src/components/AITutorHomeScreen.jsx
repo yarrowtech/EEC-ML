@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion as Motion, useInView } from 'framer-motion';
 import {
   BookOpen,
@@ -964,7 +964,25 @@ function AiTutorPanel() {
   const messagesEndRef = useRef(null);
 
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
-  const topics = selectedSubject?.topics || [];
+  const topics = useMemo(() => {
+    if (!selectedSubject) return [];
+    const seen = new Set();
+    const options = [];
+    const addOption = (title, type = 'Topic') => {
+      const normalized = String(title || '').trim();
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) return;
+      seen.add(key);
+      options.push({ title: normalized, type });
+    };
+
+    (selectedSubject.chapters || []).forEach((chapter) => {
+      addOption(chapter?.title, 'Chapter');
+      (chapter?.topics || []).forEach((topic) => addOption(topic?.title, 'Topic'));
+    });
+    (selectedSubject.topics || []).forEach((topic) => addOption(topic?.title, 'Topic'));
+    return options;
+  }, [selectedSubject]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1067,7 +1085,7 @@ function AiTutorPanel() {
                   className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
                 >
                   <option value="">Choose a topic (optional)</option>
-                  {topics.map((t) => <option key={t.title} value={t.title}>{t.title}</option>)}
+                  {topics.map((t) => <option key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</option>)}
                 </select>
               )}
             </div>

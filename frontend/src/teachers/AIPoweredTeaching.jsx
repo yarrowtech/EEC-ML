@@ -5,7 +5,7 @@ import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal from './components/lesson-plan-builder/DrawerModal';
 import RichTextMaterialEditor from './components/RichTextMaterialEditor';
-import { assessmentTypes, durationOptions, initialChapters } from './components/lesson-plan-builder/mockData';
+import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -47,6 +47,25 @@ const enrichChapter = (chapter) => ({
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const asIdString = (value) => (value ? String(value) : '');
 const chapterKey = (value) => String(value || '').trim().toLowerCase();
+const uniqueChapterId = (preferredId, fallbackId, usedIds) => {
+  const baseId = String(preferredId || fallbackId || `chapter-${Date.now()}`).trim();
+  let nextId = baseId;
+  let suffix = 2;
+
+  while (usedIds.has(nextId)) {
+    nextId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  usedIds.add(nextId);
+  return nextId;
+};
+const serializeResourceRef = (file) => {
+  const name = String(file?.name || '').trim();
+  const url = String(file?.url || '').trim();
+  if (name && url) return `${name}::${url}`;
+  return name || url;
+};
 
 const AIPoweredTeaching = () => {
   const [chapters, setChapters] = useState([]);
@@ -56,8 +75,6 @@ const AIPoweredTeaching = () => {
   const [draggedChapterId, setDraggedChapterId] = useState(null);
   const [autosaveStatus, setAutosaveStatus] = useState('Not saved');
   const [currentDraftId, setCurrentDraftId] = useState(null);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
@@ -71,6 +88,31 @@ const AIPoweredTeaching = () => {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
   });
+
+  const uploadTeachingFile = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'smart_learning_materials');
+    formData.append('tags', 'smart_learning,lesson_plan,teaching_material');
+
+    const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || 'Failed to upload file');
+
+    const uploaded = data?.files?.[0];
+    if (!uploaded?.secure_url) throw new Error('Upload completed without a file URL');
+    return {
+      name: uploaded.originalName || file.name || 'Uploaded file',
+      url: uploaded.secure_url,
+      size: uploaded.bytes || file.size || 0,
+      type: getFileType(uploaded.originalName || file.name || ''),
+      cloudinaryPublicId: uploaded.public_id || '',
+    };
+  };
 
   const loadOptions = async ({ classId = '', sectionId = '' } = {}) => {
     const query = new URLSearchParams();
@@ -114,6 +156,7 @@ const AIPoweredTeaching = () => {
       if (matchingPlans.length > 0) {
         const merged = [];
         const seen = new Set();
+        const usedChapterIds = new Set();
 
         matchingPlans.forEach((plan) => {
           const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
@@ -122,10 +165,11 @@ const AIPoweredTeaching = () => {
             const key = chapterKey(title || chapter?.id || `${plan?._id}-draft-${idx}`);
             if (seen.has(key)) return;
             seen.add(key);
+            const id = uniqueChapterId(chapter?.id, `draft-${plan?._id || 'plan'}-${idx}`, usedChapterIds);
             merged.push(
               enrichChapter({
-                id: chapter?.id || `draft-${plan?._id}-${idx}`,
                 ...chapter,
+                id,
                 title: title || `Chapter ${merged.length + 1}`,
               })
             );
@@ -141,9 +185,10 @@ const AIPoweredTeaching = () => {
             seen.add(key);
 
             const firstSubTopic = chapter?.topics?.[0]?.subTopics?.[0];
+            const id = uniqueChapterId(chapter?.id, `published-${plan?._id || 'plan'}-${idx}`, usedChapterIds);
             merged.push(
               enrichChapter({
-                id: chapter?.id || `published-${plan?._id}-${idx}`,
+                id,
                 title: title || `Chapter ${merged.length + 1}`,
                 introductionText: firstSubTopic?.title || '',
                 explanation: Array.isArray(firstSubTopic?.learningPaths)
@@ -178,60 +223,6 @@ const AIPoweredTeaching = () => {
     } catch (err) {
       console.error('Error loading chapters for selection:', err);
       toast.error('Failed to load existing chapters');
-    }
-  };
-
-
-  const loadDraft = async (draftId, options = { showToast: true, openChapters: false, updateSelection: true }) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
-        headers: authHeaders(),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to load draft');
-
-      const draft = data?.data;
-      if (!draft) throw new Error('Draft not found');
-
-      setCurrentDraftId(draft._id);
-
-      const loadedChapters = Array.isArray(draft.rawChapters) ? draft.rawChapters.map(enrichChapter) : [];
-      setChapters(loadedChapters);
-
-      console.log('Loaded draft:', { id: draft._id, chapterCount: loadedChapters.length, chapters: loadedChapters.map(c => c.title) });
-
-      // Only open chapters if explicitly requested
-      if (options.openChapters) {
-        setOpenChapterIds(loadedChapters.map(ch => ch.id));
-      } else {
-        setOpenChapterIds([]);
-      }
-
-      // Only update selection if requested (not when loading from class/section/subject selection)
-      if (options.updateSelection !== false) {
-        setSelectedClass(draft.classId || '');
-        setSelectedSection(draft.sectionId || '');
-        setSelectedSubject(draft.subjectId || '');
-
-        if (draft.classId) {
-          await loadOptions({ classId: draft.classId });
-          if (draft.sectionId) {
-            await loadOptions({ classId: draft.classId, sectionId: draft.sectionId });
-          }
-        }
-      }
-
-      // Save to localStorage so we can reload on refresh
-      localStorage.setItem('currentLessonPlanDraft', draft._id);
-
-      setAutosaveStatus('Loaded');
-      if (options.showToast) {
-        toast.success('Draft loaded successfully');
-      }
-      setInitialLoadComplete(true);
-    } catch (err) {
-      console.error('Failed to load draft:', err);
-      toast.error(err?.message || 'Failed to load draft');
     }
   };
 
@@ -320,10 +311,8 @@ const AIPoweredTeaching = () => {
           toast.error(err?.message || 'Failed to load teaching options');
         });
 
-        setInitialLoadComplete(true);
       } catch (err) {
         console.error('Initialization error:', err);
-        setInitialLoadComplete(true);
       }
     };
 
@@ -365,7 +354,36 @@ const AIPoweredTeaching = () => {
     touchAutosave();
   };
 
-  const handleDeleteChapter = (id) => {
+  const handleDeleteChapter = async (id) => {
+    const chapter = chapters.find((item) => item.id === id);
+    const chapterTitle = String(chapter?.title || '').trim();
+
+    if (selectedClass && selectedSection && selectedSubject && chapterTitle && chapterTitle !== 'Untitled Chapter') {
+      try {
+        const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/smart-learning/chapter`, {
+          method: 'DELETE',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            classId: selectedClass,
+            sectionId: selectedSection,
+            subjectId: selectedSubject,
+            chapterTitle,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to unpublish chapter');
+        const removedPublishedItems = (data.archivedPlans || 0) + (data.updatedPlans || 0) + (data.archivedMaterials || 0) + (data.archivedPapers || 0) + (data.hiddenAssignments || 0);
+        if (removedPublishedItems > 0) {
+          toast.success('Chapter removed from student Smart Learning');
+        } else {
+          toast('No published student chapter matched; removing it from this workspace only');
+        }
+      } catch (err) {
+        toast.error(err?.message || 'Failed to remove chapter from students');
+        return;
+      }
+    }
+
     setChapters((prev) => prev.filter((chapter) => chapter.id !== id));
     setOpenChapterIds((prev) => prev.filter((chapterId) => chapterId !== id));
     touchAutosave();
@@ -401,10 +419,16 @@ const AIPoweredTeaching = () => {
     updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: (chapter.assessments || []).map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
   };
 
-  const addContentFile = (chapterId, file, bucket) => {
+  const addContentFile = async (chapterId, file, bucket) => {
     if (!chapterId || !file || !bucket) return;
-    const nextFile = { id: `f-${Date.now()}`, name: file.name || 'Uploaded file', type: getFileType(file.name || ''), progress: 100 };
-    updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
+    try {
+      const uploaded = await uploadTeachingFile(file);
+      const nextFile = { id: `f-${Date.now()}`, ...uploaded, progress: 100 };
+      updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
+      toast.success('File uploaded');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to upload file');
+    }
   };
 
   const removeContentFile = (chapterId, fileId, bucket) => {
@@ -412,10 +436,16 @@ const AIPoweredTeaching = () => {
     updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: (chapter.contentUploads[bucket] || []).filter((file) => file.id !== fileId) } }));
   };
 
-  const addWorksheetFile = (chapterId, file) => {
+  const addWorksheetFile = async (chapterId, file) => {
     if (!chapterId || !file) return;
-    const nextFile = { id: `wf-${Date.now()}`, name: file.name, type: getFileType(file.name), progress: 100 };
-    updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
+    try {
+      const uploaded = await uploadTeachingFile(file);
+      const nextFile = { id: `wf-${Date.now()}`, ...uploaded, progress: 100 };
+      updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
+      toast.success('Worksheet uploaded');
+    } catch (err) {
+      toast.error(err?.message || 'Failed to upload worksheet');
+    }
   };
 
   const removeWorksheetFile = (chapterId, fileId) => {
@@ -447,45 +477,6 @@ const AIPoweredTeaching = () => {
       return target ? { ...enrichChapter(target.snapshot), history: chapter.history } : chapter;
     });
     toast.success('Lesson version restored');
-  };
-
-  const buildPlannerContent = () => {
-    const validChapters = chapters
-      .map((chapter, chapterIndex) => {
-        const chapterTitle = String(chapter.title || '').trim() || `Chapter ${chapterIndex + 1}`;
-        const subtopicTitle = stripHtml(chapter.introductionText) || 'Overview';
-        return {
-          id: `chapter-${chapterIndex + 1}`,
-          title: chapterTitle,
-          topics: [
-            {
-              id: `topic-${chapterIndex + 1}`,
-              title: chapterTitle,
-              subTopics: [
-                {
-                  id: `subtopic-${chapterIndex + 1}`,
-                  title: subtopicTitle,
-                  learningPaths: chapter.explanation ? [stripHtml(chapter.explanation)] : [],
-                  studyMaterials: chapter.worksheetLink ? [String(chapter.worksheetLink).trim()] : [],
-                  mindMaps: [],
-                  worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
-                  referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
-                  tryoutSections: chapter.tryouts || [],
-                  selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
-                  questionPapers: {
-                    basic: (chapter.assessments || [])[0]?.title || '',
-                    intermediate: (chapter.assessments || [])[1]?.title || '',
-                    advanced: (chapter.assessments || [])[2]?.title || '',
-                  },
-                },
-              ],
-            },
-          ],
-        };
-      })
-      .filter(Boolean);
-
-    return { chapters: validChapters };
   };
 
   const handlePublishChapter = async (chapterId) => {
@@ -528,7 +519,7 @@ const AIPoweredTeaching = () => {
             learningPaths: chapter.explanation ? [stripHtml(chapter.explanation)] : [],
             studyMaterials: chapter.worksheetLink ? [String(chapter.worksheetLink).trim()] : [],
             mindMaps: [],
-            worksheets: (chapter.worksheetFiles || []).map((file) => file.name).filter(Boolean),
+            worksheets: (chapter.worksheetFiles || []).map(serializeResourceRef).filter(Boolean),
             referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
             tryoutSections: chapter.tryouts || [],
             selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
@@ -551,7 +542,7 @@ const AIPoweredTeaching = () => {
       date,
       learningObjectives: stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle],
       materialsNeeded: Object.values(chapter.contentUploads || {})
-        .flatMap((files) => (files || []).map((file) => file?.name).filter(Boolean)),
+        .flatMap((files) => (files || []).map(serializeResourceRef).filter(Boolean)),
       additionalNotes: stripHtml(chapter.teacherNotes) || '',
       plannerContent: singleChapterContent,
     };
@@ -580,22 +571,6 @@ const AIPoweredTeaching = () => {
       return;
     }
     setShowUploadMaterial(true);
-  };
-
-  const handleNewPlan = () => {
-    setCurrentDraftId(null);
-    setChapters([]);
-    setOpenChapterIds([]);
-    setSelectedClass('');
-    setSelectedSection('');
-    setSelectedSubject('');
-    setAutosaveStatus('Not saved');
-    setInitialLoadComplete(true);
-
-    // Clear saved draft from localStorage
-    localStorage.removeItem('currentLessonPlanDraft');
-
-    toast.success('Started new plan');
   };
 
   return (

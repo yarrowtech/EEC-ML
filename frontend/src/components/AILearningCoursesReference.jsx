@@ -55,24 +55,27 @@ const buildResourceTitle = (item, fallback) => String(item?.title || item?.name 
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
       {material.content && (
         <button
           type="button"
           onClick={() => onRead(material)}
           title="Read"
-          className="rounded-md p-1 text-[#004b71] hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-[#004b71] hover:bg-slate-100"
         >
-          <FileText size={14} />
+          <FileText size={12} />
+          Read
         </button>
       )}
       {material.url && (
         <>
-          <a href={material.url} target="_blank" rel="noreferrer" title="Open" className="rounded-md p-1 text-[#004b71] hover:bg-slate-100">
-            <ExternalLink size={14} />
+          <a href={material.url} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-[#004b71] hover:bg-slate-100">
+            <ExternalLink size={12} />
+            Open
           </a>
-          <a href={material.url} download title="Download" className="rounded-md p-1 text-[#004b71] hover:bg-slate-100">
-            <Download size={14} />
+          <a href={material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-[#004b71] px-2 py-1 text-[10px] font-bold text-white hover:brightness-110">
+            <Download size={12} />
+            Download
           </a>
         </>
       )}
@@ -306,8 +309,12 @@ const AILearningCoursesReference = () => {
 
   const selectedSmartSubject = useMemo(() => {
     const subjectKey = normalizeKey(subjectSlug);
-    return smartLearningSubjects.find((subject) => normalizeKey(subject?.key || subject?.title) === subjectKey);
-  }, [smartLearningSubjects, subjectSlug]);
+    const contextSubject = contexts.find((ctx) => normalizeKey(ctx?.subjectName) === subjectKey);
+    return smartLearningSubjects.find((subject) => (
+      (contextSubject?.subjectId && subject?.subjectId && String(subject.subjectId) === String(contextSubject.subjectId)) ||
+      normalizeKey(subject?.key || subject?.title) === subjectKey
+    ));
+  }, [contexts, smartLearningSubjects, subjectSlug]);
 
   const selectedChapter = useMemo(() => {
     const lookup = normalizeKey(topicSlug);

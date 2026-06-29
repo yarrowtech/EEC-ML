@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelete, onRename, onDragStart, onDrop }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(chapter.title);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     setDraft(chapter.title);
@@ -17,6 +18,22 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
     const value = draft.trim() || 'Untitled Chapter';
     onRename(chapter.id, value);
     setIsEditing(false);
+  };
+
+  const stopActionEvent = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleDelete = async (event) => {
+    stopActionEvent(event);
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(chapter.id);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const progress = total ? Math.round(((index + 1) / total) * 100) : 0;
@@ -50,6 +67,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           className="mt-0.5 cursor-grab rounded-lg p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
           aria-label={`Drag chapter ${chapter.title}`}
           title="Drag to reorder"
+          onClick={stopActionEvent}
         >
           <GripVertical className="size-4" />
         </button>
@@ -102,30 +120,34 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => setIsEditing((prev) => !prev)}
+            onClick={(event) => {
+              stopActionEvent(event);
+              setIsEditing((prev) => !prev);
+            }}
             className="rounded-lg hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/40"
             title="Rename chapter"
             aria-label="Rename chapter"
           >
             <Pencil className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
             <Copy className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Add section" aria-label="Add section">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Add section" aria-label="Add section">
             <Plus className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => onDelete(chapter.id)}
+            onClick={handleDelete}
+            disabled={isDeleting}
             className="rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
-            title="Delete chapter"
-            aria-label="Delete chapter"
+            title={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
+            aria-label={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
           >
             <Trash2 className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="More actions" aria-label="More chapter actions">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="More actions" aria-label="More chapter actions">
             <MoreHorizontal className="size-3.5" />
           </Button>
         </div>

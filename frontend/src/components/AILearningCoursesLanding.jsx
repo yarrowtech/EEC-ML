@@ -588,11 +588,13 @@ const AILearningCoursesLanding = () => {
         map.set(key, {
           key,
           title: name,
+          subjectId: ctx?.subjectId || null,
           teacherNames: new Set(),
           classNames: new Set(),
         });
       }
       const item = map.get(key);
+      if (!item.subjectId && ctx?.subjectId) item.subjectId = ctx.subjectId;
       const teacher = String(ctx?.teacherName || '').trim();
       const classLabel = [ctx?.className, ctx?.sectionName].filter(Boolean).join('-');
       if (teacher) item.teacherNames.add(teacher);
@@ -601,7 +603,10 @@ const AILearningCoursesLanding = () => {
 
     // Then merge with smart learning map data (lesson plans)
     return Array.from(map.values()).map((item) => {
-      const fromMap = smartLearningMap.find((m) => normalize(m.key || m.title) === item.key);
+      const fromMap = smartLearningMap.find((m) => (
+        (item.subjectId && m?.subjectId && String(m.subjectId) === String(item.subjectId)) ||
+        normalize(m.key || m.title) === item.key
+      ));
       const mappedTopics = Array.isArray(fromMap?.topics) ? fromMap.topics : [];
       const mappedChapters = Array.isArray(fromMap?.chapters) ? fromMap.chapters : [];
       return {
