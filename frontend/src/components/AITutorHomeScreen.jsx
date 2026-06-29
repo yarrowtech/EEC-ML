@@ -1049,12 +1049,12 @@ function AiTutorPanel() {
   };
 
   return (
-    <Section>
+    <Section className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden">
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <div className="relative overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,.22),transparent_35%)]" />
         <div className="relative z-10 grid gap-7 lg:h-full lg:grid-cols-[0.72fr_1.28fr]">
-          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4 lg:h-full lg:overflow-y-auto lg:pr-1">
+          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex flex-col items-start gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             <Motion.div
               animate={{ boxShadow: ['0 0 0px rgba(59,130,246,0.25)', '0 0 32px rgba(59,130,246,0.4)', '0 0 0px rgba(59,130,246,0.25)'] }}
               transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
@@ -1122,7 +1122,7 @@ function AiTutorPanel() {
               })}
             </div>
 
-            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
+            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
               {messages.length > 0 ? (
                 <div className="space-y-3">
                   {messages.map((msg, i) => (
@@ -1178,8 +1178,8 @@ function AiTutorPanel() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-sky-200 bg-white/85 p-3 shadow-inner backdrop-blur-xl lg:shrink-0">
-              <div className="rounded-xl border border-transparent bg-sky-50/70 px-3 py-2.5 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100">
+            <div className="rounded-2xl border border-sky-200 bg-white/85 p-2 shadow-inner backdrop-blur-xl lg:shrink-0">
+              <div className="rounded-xl border border-transparent bg-sky-50/70 px-3 py-2 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100">
                 <textarea
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
@@ -1190,7 +1190,6 @@ function AiTutorPanel() {
                     }
                   }}
                   placeholder="Ask anything about your studies..."
-                  rows={4}
                   className="w-full resize-none bg-transparent px-0 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
                   style={{ color: '#000000', WebkitTextFillColor: '#000000', caretColor: '#000000' }}
                 />
