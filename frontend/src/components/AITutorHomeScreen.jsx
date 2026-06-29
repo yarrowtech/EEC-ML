@@ -48,6 +48,7 @@ import {
   Play,
   CalendarCheck2,
   Circle,
+  Plus,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -961,7 +962,9 @@ function AiTutorPanel() {
   const [activeChip, setActiveChip] = useState(COMPANION_CHIPS[0].label);
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const [attachmentName, setAttachmentName] = useState('');
   const messagesScrollRef = useRef(null);
+  const attachmentInputRef = useRef(null);
 
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
   const topics = useMemo(() => {
@@ -983,6 +986,15 @@ function AiTutorPanel() {
     (selectedSubject.topics || []).forEach((topic) => addOption(topic?.title, 'Topic'));
     return options;
   }, [selectedSubject]);
+
+  const openAttachmentPicker = () => {
+    attachmentInputRef.current?.click();
+  };
+
+  const handleAttachmentChange = (event) => {
+    const file = event.target.files?.[0];
+    setAttachmentName(file ? file.name : '');
+  };
 
   useEffect(() => {
     const node = messagesScrollRef.current;
@@ -1152,8 +1164,20 @@ function AiTutorPanel() {
                                 : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
                           )}
                         >
-                          {msg.text}
-                          {msg.role === 'assistant' && !msg.error && (
+                          {msg.thinking ? (
+                            <div className="flex min-w-[120px] items-center gap-2 text-slate-500">
+                              {/* <Bot className="size-4 text-sky-500" /> */}
+                              <span className="text-sm font-medium">Thinking</span>
+                              <span className="flex items-center gap-1">
+                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:0ms]" />
+                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:150ms]" />
+                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:300ms]" />
+                              </span>
+                            </div>
+                          ) : (
+                            msg.text
+                          )}
+                          {msg.role === 'assistant' && !msg.error && !msg.thinking && (
                             <div className="mt-2 text-[11px] font-medium text-sky-600">
                               {msg.groundedInMaterial ? 'Grounded in your teacher\'s material' : 'General answer from the tutor'}
                             </div>
@@ -1178,8 +1202,35 @@ function AiTutorPanel() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-sky-200 bg-white/85 p-2 shadow-inner backdrop-blur-xl lg:shrink-0">
-              <div className="rounded-xl border border-transparent bg-sky-50/70 px-3 py-2 transition-all focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100">
+            <div className="rounded-full border border-sky-200 bg-white/90 p-1 shadow-lg backdrop-blur-xl lg:shrink-0">
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleAttachmentChange}
+                aria-label="Attach a file"
+              />
+              {attachmentName && (
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+                  <Paperclip className="size-3.5" />
+                  <span className="max-w-[220px] truncate">{attachmentName}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={openAttachmentPicker}
+                      className="size-9 shrink-0 rounded-full text-slate-700 hover:bg-sky-50 hover:text-slate-900"
+                    >
+                      <Plus className="size-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Attach notes or homework</TooltipContent>
+                </Tooltip>
+
                 <textarea
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
@@ -1189,38 +1240,33 @@ function AiTutorPanel() {
                       handleSend();
                     }
                   }}
-                  placeholder="Ask anything about your studies..."
-                  className="w-full resize-none bg-transparent px-0 text-sm leading-relaxed !text-black placeholder:text-slate-400 focus:outline-none"
-                  style={{ color: '#000000', WebkitTextFillColor: '#000000', caretColor: '#000000' }}
+                  placeholder="Ask anything"
+                  rows={1}
+                  className="min-h-9 flex-1 resize-none bg-transparent px-0 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
                 />
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2 border-t border-sky-100 pt-3">
-                <div className="flex gap-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" className="rounded-xl text-slate-700 hover:bg-sky-50 hover:text-slate-900">
-                        <Paperclip className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Attach notes or homework</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" className="rounded-xl text-slate-700 hover:bg-sky-50 hover:text-slate-900">
-                        <Mic className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Voice input</TooltipContent>
-                  </Tooltip>
-                </div>
+
+                {/* <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-9 shrink-0 rounded-full text-slate-700 hover:bg-sky-50 hover:text-slate-900"
+                    >
+                      <Mic className="size-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Voice input</TooltipContent>
+                </Tooltip> */}
+
                 <Motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
                   <Button
                     onClick={handleSend}
                     disabled={sending}
-                    className="h-10 gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                    className="size-10 shrink-0 rounded-full bg-sky-500 p-0 text-white hover:bg-sky-600 disabled:opacity-50"
+                    aria-label={sending ? 'Sending' : 'Send message'}
                   >
                     <Send className="size-4" />
-                    {sending ? 'Thinking…' : 'Send'}
                   </Button>
                 </Motion.div>
               </div>

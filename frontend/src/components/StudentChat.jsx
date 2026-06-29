@@ -1914,7 +1914,8 @@ const StudentChat = () => {
                           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                         }}
                         placeholder="Type a message..."
-                        className="w-full resize-none bg-transparent text-sm focus:outline-none placeholder-gray-400 min-h-[20px] max-h-28"
+                        className="w-full resize-none bg-transparent text-sm text-gray-900 caret-gray-900 focus:outline-none placeholder:text-gray-400 min-h-[20px] max-h-28"
+                        style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
                       />
                     </div>
                     <button
