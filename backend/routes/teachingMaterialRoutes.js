@@ -1,12 +1,38 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const axios = require('axios');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const TeacherUser = require('../models/TeacherUser');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const authTeacher = require('../middleware/authTeacher');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+const isPdf = (attachment) => {
+  const type = String(attachment?.type || '').toLowerCase();
+  const name = String(attachment?.name || '').toLowerCase();
+  return type.includes('pdf') || name.endsWith('.pdf');
+};
+
+const triggerOcrIngest = (material, attachment) =>
+  axios.post(
+    `${AI_SERVICE_URL}/ingest/material`,
+    {
+      url: attachment.url,
+      material_id: String(material._id),
+      school_id: String(material.schoolId),
+      class_id: String(material.classId || ''),
+      section_id: String(material.sectionId || ''),
+      subject_name: material.subjectName || '',
+      chapter_id: material.chapterId || '',
+      chapter_title: material.chapterTitle || '',
+      topic_title: material.topicTitle || '',
+    },
+    { timeout: 300_000 }
+  );
 
 // Middleware to ensure teacher is authenticated
 router.use(authTeacher);
@@ -142,6 +168,13 @@ router.post('/', async (req, res, next) => {
 
     const material = new TeachingMaterial(materialData);
     await material.save();
+
+    // Fire-and-forget: OCR-index any PDF attachments into Qdrant
+    (attachments || []).filter(isPdf).forEach((attachment) => {
+      triggerOcrIngest(material, attachment).catch((err) =>
+        console.error('[OCR ingest] failed for material', String(material._id), err.message)
+      );
+    });
 
     res.status(201).json({
       success: true,
@@ -286,6 +319,7 @@ router.patch('/:id', async (req, res, next) => {
     // Update fields
     if (title) material.title = title.trim();
     if (content) material.content = content;
+    const attachmentsChanged = !!attachments;
     if (attachments) material.attachments = attachments;
     if (tags) material.tags = tags;
     if (priority) material.priority = priority;
@@ -300,6 +334,15 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     await material.save();
+
+    // Re-index PDFs if attachments were replaced
+    if (attachmentsChanged) {
+      (material.attachments || []).filter(isPdf).forEach((attachment) => {
+        triggerOcrIngest(material, attachment).catch((err) =>
+          console.error('[OCR ingest] failed on update for material', String(material._id), err.message)
+        );
+      });
+    }
 
     res.json({
       success: true,

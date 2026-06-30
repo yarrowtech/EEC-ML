@@ -8,7 +8,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.routers.ingest import router as ingest_router
 from app.routers.ocr import router as ocr_router
+from app.services.qdrant_service import search_chunks
 
 
 load_dotenv()
@@ -26,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(ocr_router)
+app.include_router(ingest_router)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
@@ -64,6 +67,9 @@ class TutorGenerateRequest(BaseModel):
     gradeLevel: str | None = None
     question: str | None = None
     candidates: list[Candidate] = []
+    # Qdrant-based retrieval fields (set by Node backend when material is indexed)
+    schoolId: str | None = None
+    chapterTitle: str | None = None
 
 
 MODE_INSTRUCTIONS = {
@@ -120,7 +126,8 @@ def lexical_fallback_chunks(req: TutorGenerateRequest) -> list[str]:
     return matches
 
 
-def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
+def retrieve_from_in_memory(req: TutorGenerateRequest) -> list[str]:
+    """Embed-based retrieval over in-memory candidates (legacy path)."""
     if not req.candidates:
         return []
 
@@ -144,6 +151,40 @@ def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
     return relevant or lexical_fallback_chunks(req)
 
 
+def retrieve_from_qdrant(req: TutorGenerateRequest) -> list[str]:
+    """Semantic search over Qdrant-indexed chapter content."""
+    query_text = " ".join(
+        filter(None, [req.subject, req.topic, req.subTopic, (req.question or "").strip()])
+    )
+    try:
+        embed_resp = ollama_client.embed(model=EMBED_MODEL, input=[query_text])
+        query_vector = embed_resp["embeddings"][0]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {exc}") from exc
+
+    hits = search_chunks(
+        query_vector=query_vector,
+        school_id=req.schoolId,
+        chapter_title=req.chapterTitle or None,
+        subject_name=req.subject or None,
+        limit=MAX_CONTEXT_CHUNKS + 2,
+    )
+    return [hit["text"] for hit in hits if hit["text"]][:MAX_CONTEXT_CHUNKS]
+
+
+def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
+    # Prefer Qdrant when the school context is available
+    if req.schoolId:
+        try:
+            qdrant_chunks = retrieve_from_qdrant(req)
+            if qdrant_chunks:
+                return qdrant_chunks
+        except Exception as exc:
+            logger.warning("Qdrant retrieval failed, falling back to in-memory: %s", exc)
+
+    return retrieve_from_in_memory(req)
+
+
 def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     instruction = MODE_INSTRUCTIONS.get(req.mode)
     if not instruction:
@@ -160,7 +201,7 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         "from the course material."
     )
 
-    location = " > ".join(filter(None, [req.subject, req.topic, req.subTopic]))
+    location = " > ".join(filter(None, [req.subject, req.chapterTitle or req.topic, req.subTopic]))
     parts = [f"Topic: {location}", f"Task: {instruction}", f"Course material:\n{context}"]
     if req.mode == "homework_help" and req.question:
         parts.append(f"Student's question:\n{req.question.strip()}")

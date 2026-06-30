@@ -970,24 +970,26 @@ function AiTutorPanel() {
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
   const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
 
+  const [chapterTitle, setChapterTitle] = useState('');
+
   const selectedSubject = subjects.find((s) => s.key === subjectKey);
   const topics = useMemo(() => {
     if (!selectedSubject) return [];
     const seen = new Set();
     const options = [];
-    const addOption = (title, type = 'Topic') => {
+    const addOption = (title, type = 'Topic', parentChapterTitle = '') => {
       const normalized = String(title || '').trim();
       const key = normalized.toLowerCase();
       if (!normalized || seen.has(key)) return;
       seen.add(key);
-      options.push({ title: normalized, type });
+      options.push({ title: normalized, type, chapterTitle: parentChapterTitle });
     };
 
     (selectedSubject.chapters || []).forEach((chapter) => {
-      addOption(chapter?.title, 'Chapter');
-      (chapter?.topics || []).forEach((topic) => addOption(topic?.title, 'Topic'));
+      addOption(chapter?.title, 'Chapter', chapter?.title);
+      (chapter?.topics || []).forEach((topic) => addOption(topic?.title, 'Topic', chapter?.title));
     });
-    (selectedSubject.topics || []).forEach((topic) => addOption(topic?.title, 'Topic'));
+    (selectedSubject.topics || []).forEach((topic) => addOption(topic?.title, 'Topic', ''));
     return options;
   }, [selectedSubject]);
 
@@ -1058,6 +1060,7 @@ function AiTutorPanel() {
           subject: selectedSubject?.title || '',
           topic: topicTitle,
           question: question.trim(),
+          chapterTitle: chapterTitle || topicTitle || '',
         }),
       });
       const payload = await res.json();
@@ -1113,7 +1116,7 @@ function AiTutorPanel() {
             <div className="flex w-full flex-col gap-2 text-slate-900">
               <select
                 value={subjectKey}
-                onChange={(e) => { setSubjectKey(e.target.value); setTopicTitle(''); }}
+                onChange={(e) => { setSubjectKey(e.target.value); setTopicTitle(''); setChapterTitle(''); }}
                 className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
               >
                 <option value="">
@@ -1124,10 +1127,14 @@ function AiTutorPanel() {
               {subjectKey && (
                 <select
                   value={topicTitle}
-                  onChange={(e) => setTopicTitle(e.target.value)}
+                  onChange={(e) => {
+                    const selected = topics.find((t) => t.title === e.target.value);
+                    setTopicTitle(e.target.value);
+                    setChapterTitle(selected?.chapterTitle || '');
+                  }}
                   className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
                 >
-                  <option value="">Choose a topic (optional)</option>
+                  <option value="">Choose a chapter / topic (optional)</option>
                   {topics.map((t) => <option key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</option>)}
                 </select>
               )}

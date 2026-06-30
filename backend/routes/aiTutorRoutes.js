@@ -131,7 +131,7 @@ router.post('/generate', authStudent, async (req, res) => {
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
-    const { subject, topic, subTopic, mode, question } = req.body || {};
+    const { subject, topic, subTopic, mode, question, chapterId, chapterTitle } = req.body || {};
     const normalizedMode = normalizeString(mode);
     if (!ALLOWED_MODES.includes(normalizedMode)) {
       return res.status(400).json({ error: `mode must be one of: ${ALLOWED_MODES.join(', ')}` });
@@ -195,6 +195,8 @@ router.post('/generate', authStudent, async (req, res) => {
       gradeLevel: student.grade ? `Grade ${student.grade}` : null,
       question: normalizeString(question) || null,
       candidates,
+      schoolId: String(schoolId),
+      chapterTitle: normalizeString(chapterTitle) || normalizedTopic || null,
     }, { timeout: 60000 });
 
     return res.json({
