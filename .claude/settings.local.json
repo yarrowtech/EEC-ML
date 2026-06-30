@@ -54,7 +54,16 @@
       "Bash(python3.11 -m pip --version)",
       "Bash(cp /tmp/find_student2.js ./tmp_find_student2.js)",
       "Bash(node tmp_find_student2.js)",
-      "Bash(rm -f tmp_find_student2.js /tmp/find_student2.js)"
+      "Bash(rm -f tmp_find_student2.js /tmp/find_student2.js)",
+      "Bash(ls /home/raktim/.cache/ms-playwright/ 2>/dev/null || echo \"no playwright cache\")",
+      "Read(//home/raktim/.cache/ms-playwright/**)",
+      "Bash(mkdir -p /tmp/claude-1000/-mnt-F6960AAB960A6C85-Projects-EEC-B2B-ML-EEC-ML/aa0c0d56-7781-4059-a9fa-5fc6cdec2d49/scratchpad)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(npm init *)",
+      "Bash(npm install *)",
+      "Bash(node /tmp/claude-1000/-mnt-F6960AAB960A6C85-Projects-EEC-B2B-ML-EEC-ML/aa0c0d56-7781-4059-a9fa-5fc6cdec2d49/scratchpad/screenshot.js)",
+      "Bash(ls /home/raktim/.cache/ms-playwright/chromium-1223/chrome-linux/ 2>/dev/null | head -5 *)",
+      "Read(//home/raktim/.cache/ms-playwright/chromium-1223/**)"
     ]
   }
 }

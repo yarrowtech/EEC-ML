@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Plus,
@@ -95,11 +95,12 @@ const MCQCreator = ({ question, onChange }) => {
             setTheme(e.target.value);
             handleUpdate({ theme: e.target.value });
           }}
-          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+          style={{ colorScheme: 'light' }}
+          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
         >
-          <option value="standard">Standard (Radio buttons)</option>
-          <option value="block">Block (Buttons)</option>
-          <option value="radio">Radio Button Style</option>
+          <option value="standard" className="text-slate-900">Standard (Radio buttons)</option>
+          <option value="block" className="text-slate-900">Block (Buttons)</option>
+          <option value="radio" className="text-slate-900">Radio Button Style</option>
         </select>
       </div>
 
@@ -313,12 +314,13 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
             setOptionPosition(e.target.value);
             handleUpdate({ optionPosition: e.target.value });
           }}
-          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
+          style={{ colorScheme: 'light' }}
+          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
         >
-          <option value="up">Up</option>
-          <option value="down">Down</option>
-          <option value="left">Left</option>
-          <option value="right">Right</option>
+          <option value="up" className="text-slate-900">Up</option>
+          <option value="down" className="text-slate-900">Down</option>
+          <option value="left" className="text-slate-900">Left</option>
+          <option value="right" className="text-slate-900">Right</option>
         </select>
       </div>
 
@@ -707,7 +709,7 @@ const SortListCreator = ({ question, onChange }) => {
 };
 
 // Simple Text Response Creator
-const TextResponseCreator = ({ question, onChange, type }) => {
+const TextResponseCreator = ({ question, onChange }) => {
   const [questionText, setQuestionText] = useState(question.question || '');
   const [maxWords, setMaxWords] = useState(question.maxWords || 10000);
 
@@ -918,14 +920,14 @@ const TryoutBuilder = ({
 
   return (
     <AnimatePresence>
-      <motion.div
+      <Motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
-        <motion.div
+        <Motion.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
@@ -1064,8 +1066,8 @@ const TryoutBuilder = ({
               </Button>
             </div>
           </div>
-        </motion.div>
-      </motion.div>
+        </Motion.div>
+      </Motion.div>
     </AnimatePresence>
   );
 };

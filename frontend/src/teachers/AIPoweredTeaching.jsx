@@ -574,9 +574,9 @@ const AIPoweredTeaching = () => {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-4 dark:bg-slate-950 md:p-6">
+    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-3 dark:bg-slate-950">
       <Toaster position="top-right" />
-      <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-4">
+      <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-2.5">
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
           classValue={selectedClass}
@@ -615,7 +615,7 @@ const AIPoweredTeaching = () => {
           }}
         />
 
-        <div className="flex flex-1 min-h-0 gap-4">
+        <div className="flex flex-1 min-h-0 gap-2.5">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
@@ -635,7 +635,7 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/70 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
             {openChapters.length > 0 ? (
               <div className="h-full min-h-0 space-y-6 overflow-y-auto pb-8 pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
                 {openChapters.map((chapter) => (
@@ -665,26 +665,41 @@ const AIPoweredTeaching = () => {
                 ))}
               </div>
             ) : (
-              <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 text-center dark:border-slate-700 dark:bg-slate-900/60 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
-                <div className="max-w-md space-y-3 px-6">
-                  <div className="mx-auto w-fit rounded-2xl bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/40"><BookOpenCheck className="size-6" /></div>
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">Chapter Workspace</h2>
-                  {selectedClass && selectedSection && selectedSubject ? (
-                    chapters.length > 0 ? (
+              <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="w-full max-w-sm px-5 py-6">
+                  <div className="mx-auto mb-4 w-fit rounded-xl bg-blue-100 p-2.5 text-blue-600 dark:bg-blue-900/40">
+                    <BookOpenCheck className="size-5" />
+                  </div>
+
+                  {!selectedClass || !selectedSection || !selectedSubject ? (
+                    <>
+                      <h2 className="mb-4 text-center text-base font-bold text-slate-800 dark:text-slate-100">How to get started</h2>
                       <div className="space-y-2">
-                        <p className="text-sm text-slate-600 dark:text-slate-300">You have {chapters.length} chapter{chapters.length !== 1 ? 's' : ''} saved.</p>
-                        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Click on a chapter in the sidebar to start editing!</p>
+                        {[
+                          { step: 1, text: 'Select class, section & subject above' },
+                          { step: 2, text: 'Click + in the sidebar to add a chapter' },
+                          { step: 3, text: 'Fill in the chapter details step by step' },
+                          { step: 4, text: 'Hit "Publish" to share with students' },
+                        ].map(({ step, text }) => (
+                          <div key={step} className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">{step}</span>
+                            <p className="text-xs text-slate-600 dark:text-slate-300">{text}</p>
+                          </div>
+                        ))}
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-slate-600 dark:text-slate-300">No chapters yet for this class/section/subject.</p>
-                        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Click the + button on the left to create your first chapter!</p>
-                      </div>
-                    )
+                      <p className="mt-3 text-center text-[11px] text-slate-400">Start by selecting your class above ↑</p>
+                    </>
+                  ) : chapters.length > 0 ? (
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        {chapters.length} chapter{chapters.length !== 1 ? 's' : ''} ready
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">Click a chapter in the sidebar to open it, or press + to add one.</p>
+                    </div>
                   ) : (
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-600 dark:text-slate-300">Select a class, section, and subject above to get started.</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Any existing chapters for that selection will load automatically in the sidebar.</p>
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No chapters yet</p>
+                      <p className="mt-1 text-xs text-slate-400">Press the + button in the sidebar to create your first chapter.</p>
                     </div>
                   )}
                 </div>

@@ -607,7 +607,7 @@ const TeacherPortal = () => {
       )}
 
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 h-screen flex flex-col bg-white shadow-2xl border-r border-gray-200 overflow-x-hidden ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-80'
+        className={`fixed lg:sticky top-0 left-0 z-40 h-screen flex flex-col bg-white shadow-2xl border-r border-gray-200 overflow-x-hidden ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'
           } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         style={{
@@ -624,32 +624,32 @@ const TeacherPortal = () => {
               : 'opacity-0 transform -translate-x-4 pointer-events-none absolute inset-0'
             }`}>
             <div className="absolute inset-0 bg-linear-to-br from-yellow-600 via-yellow-600 to-yellow-500 opacity-90" />
-            <div className="relative p-3">
+            <div className="relative p-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2.5">
                   <div className="relative">
-                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
-                      <Users size={20} className="text-white" />
+                    <div className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
+                      <Users size={17} className="text-white" />
                     </div>
                     <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white animate-pulse" />
                   </div>
                   <div className="text-white">
-                    <div className="font-bold text-lg leading-tight">Teacher Portal</div>
-                    <div className="text-white/80 text-xs">Academic Workspace</div>
+                    <div className="font-bold text-base leading-tight">Teacher Portal</div>
+                    <div className="text-white/80 text-[11px]">Academic Workspace</div>
                   </div>
                 </div>
                 <button
-                  className="hidden lg:inline-flex rounded-lg p-2 text-white/90 hover:bg-white/20 transition-colors"
+                  className="hidden lg:inline-flex rounded-lg p-1.5 text-white/90 hover:bg-white/20 transition-colors"
                   onClick={() => setSidebarCollapsed(true)}
                   aria-label="Collapse sidebar"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={16} />
                 </button>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="lg:hidden p-2 rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
+                  className="lg:hidden p-1.5 rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
                 >
-                  <X size={20} />
+                  <X size={17} />
                 </button>
               </div>
             </div>
@@ -661,20 +661,20 @@ const TeacherPortal = () => {
               : 'opacity-0 transform translate-x-4 pointer-events-none absolute inset-0'
             }`}>
             <div className="p-2 border-b border-gray-200">
-              <div className="flex flex-col items-center space-y-3">
+              <div className="flex flex-col items-center space-y-2.5">
                 <div className="relative">
-                  <div className="w-10 h-10 bg-linear-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-md">
-                    <Users size={18} className="text-white" />
+                  <div className="w-9 h-9 bg-linear-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-md">
+                    <Users size={16} className="text-white" />
                   </div>
                   <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white" />
                 </div>
                 <div className="w-8 h-px bg-gray-300" />
                 <button
-                  className="hidden lg:inline-flex rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                  className="hidden lg:inline-flex rounded-lg p-1.5 text-gray-600 hover:bg-gray-100"
                   onClick={() => setSidebarCollapsed(false)}
                   aria-label="Expand sidebar"
                 >
-                  <ChevronRight size={18} className="rotate-180" />
+                  <ChevronRight size={16} className="rotate-180" />
                 </button>
               </div>
             </div>
@@ -682,8 +682,8 @@ const TeacherPortal = () => {
         </div>
 
         {/* ── Navigation ── */}
-        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-4 py-6' : 'px-1 py-2'}`}>
-          <div className={`${!sidebarCollapsed ? 'space-y-1.5' : 'space-y-1'}`}>
+        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-3 py-4' : 'px-1 py-2'}`}>
+          <div className={`${!sidebarCollapsed ? 'space-y-1' : 'space-y-1'}`}>
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
               const Icon = item.icon;
@@ -692,13 +692,13 @@ const TeacherPortal = () => {
                   key={item.path}
                   to={item.path}
                   title={sidebarCollapsed ? item.label : undefined}
-                  className={`group flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} rounded-xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
+                  className={`group flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-2.5'} rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
                     active
                       ? 'bg-slate-950 text-white shadow-lg shadow-slate-200'
                       : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
                   }`}
                 >
-                  <Icon size={19} className="shrink-0" />
+                  <Icon size={17} className="shrink-0" />
                   {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
                 </NavLink>
               );
@@ -706,27 +706,27 @@ const TeacherPortal = () => {
           </div>
 
           {!sidebarCollapsed && (
-            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Architecture</p>
-              <div className="mt-3 space-y-2 text-xs text-slate-600">
-                <div className="flex items-center gap-2"><Users size={14} />Class context owns workflows</div>
-                <div className="flex items-center gap-2"><Brain size={14} />AI centralized in Teaching and AI Center</div>
-                <div className="flex items-center gap-2"><Library size={14} />Resources shared by reference</div>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Architecture</p>
+              <div className="mt-2 space-y-1.5 text-[11px] text-slate-600">
+                <div className="flex items-center gap-1.5"><Users size={12} />Class context owns workflows</div>
+                <div className="flex items-center gap-1.5"><Brain size={12} />AI centralized in Teaching and AI Center</div>
+                <div className="flex items-center gap-1.5"><Library size={12} />Resources shared by reference</div>
               </div>
             </div>
           )}
         </nav>
 
         {/* ── Bottom: Logout ── */}
-        <div className={`shrink-0 border-t border-gray-200 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
+        <div className={`shrink-0 border-t border-gray-200 ${sidebarCollapsed ? 'p-2' : 'p-3'}`}>
           <div className={`${!sidebarCollapsed ? 'space-y-2' : 'space-y-1'}`}>
             {sidebarCollapsed ? (
               <button
                 onClick={handleLogout}
-                className="group relative w-full h-12 flex items-center justify-center rounded-xl text-red-500 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:scale-105 hover:shadow-md hover:text-red-600 transition-all duration-300 ease-out transform active:scale-95"
+                className="group relative w-full h-11 flex items-center justify-center rounded-xl text-red-500 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:scale-105 hover:shadow-md hover:text-red-600 transition-all duration-300 ease-out transform active:scale-95"
               >
-                <div className="relative flex items-center justify-center w-6 h-6 transition-all duration-300 text-red-500 group-hover:text-red-600 group-hover:scale-110">
-                  <LogOut size={18} strokeWidth={1.8} className="shrink-0 transition-all duration-300" />
+                <div className="relative flex items-center justify-center w-5.5 h-5.5 transition-all duration-300 text-red-500 group-hover:text-red-600 group-hover:scale-110">
+                  <LogOut size={16} strokeWidth={1.8} className="shrink-0 transition-all duration-300" />
                 </div>
                 <div className="absolute left-full ml-3 opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out transform translate-x-2 group-hover:translate-x-0 pointer-events-none z-50">
                   <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 min-w-max">
@@ -742,14 +742,14 @@ const TeacherPortal = () => {
             ) : (
               <button
                 onClick={handleLogout}
-                className="group relative w-full flex items-center px-4 py-3 rounded-xl text-red-600 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 transition-all duration-300 ease-out transform active:scale-95"
+                className="group relative w-full flex items-center px-3 py-2.5 rounded-xl text-red-600 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 transition-all duration-300 ease-out transform active:scale-95"
               >
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-red-100 text-red-600 group-hover:bg-red-200 group-hover:scale-110 transition-all duration-300">
-                  <LogOut size={20} className="shrink-0 transition-all duration-300" />
+                <div className="flex items-center justify-center w-[34px] h-[34px] rounded-lg bg-red-100 text-red-600 group-hover:bg-red-200 group-hover:scale-110 transition-all duration-300">
+                  <LogOut size={17} className="shrink-0 transition-all duration-300" />
                 </div>
                 <div className="ml-3">
-                  <div className="font-medium text-sm transition-all duration-300">Logout</div>
-                  <div className="text-xs text-red-500 group-hover:text-red-600 transition-all duration-300">Sign out securely</div>
+                  <div className="font-medium text-xs transition-all duration-300">Logout</div>
+                  <div className="text-[11px] text-red-500 group-hover:text-red-600 transition-all duration-300">Sign out securely</div>
                 </div>
               </button>
             )}

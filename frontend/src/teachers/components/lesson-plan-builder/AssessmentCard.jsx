@@ -13,10 +13,11 @@ const AssessmentCard = ({ assessment, types, onChange }) => {
       <select
         value={assessment.type}
         onChange={(event) => onChange({ ...assessment, type: event.target.value })}
-        className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm"
+        style={{ colorScheme: 'light' }}
+        className="h-8 rounded-lg border border-input bg-white px-2.5 text-sm text-slate-900 dark:bg-slate-900 dark:text-slate-100"
       >
         {(types || []).map((type) => (
-          <option key={type} value={type}>
+          <option key={type} value={type} className="text-slate-900">
             {type}
           </option>
         ))}

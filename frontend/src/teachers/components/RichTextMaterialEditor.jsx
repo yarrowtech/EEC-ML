@@ -327,14 +327,15 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full px-3 py-2 border rounded text-sm"
+            style={{ colorScheme: 'light' }}
+            className="w-full rounded border px-3 py-2 text-sm text-slate-900 bg-white dark:bg-slate-900 dark:text-slate-100"
           >
-            <option value="theory">Theory</option>
-            <option value="practice">Practice</option>
-            <option value="revision">Revision</option>
-            <option value="assessment">Assessment</option>
-            <option value="reference">Reference</option>
-            <option value="general">General</option>
+            <option value="theory" className="text-slate-900">Theory</option>
+            <option value="practice" className="text-slate-900">Practice</option>
+            <option value="revision" className="text-slate-900">Revision</option>
+            <option value="assessment" className="text-slate-900">Assessment</option>
+            <option value="reference" className="text-slate-900">Reference</option>
+            <option value="general" className="text-slate-900">General</option>
           </select>
         </div>
         <div>
@@ -342,12 +343,13 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
-            className="w-full px-3 py-2 border rounded text-sm"
+            style={{ colorScheme: 'light' }}
+            className="w-full rounded border px-3 py-2 text-sm text-slate-900 bg-white dark:bg-slate-900 dark:text-slate-100"
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
+            <option value="low" className="text-slate-900">Low</option>
+            <option value="medium" className="text-slate-900">Medium</option>
+            <option value="high" className="text-slate-900">High</option>
+            <option value="urgent" className="text-slate-900">Urgent</option>
           </select>
         </div>
         <div>
@@ -355,11 +357,12 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
           <select
             value={difficulty}
             onChange={(e) => setDifficulty(e.target.value)}
-            className="w-full px-3 py-2 border rounded text-sm"
+            style={{ colorScheme: 'light' }}
+            className="w-full rounded border px-3 py-2 text-sm text-slate-900 bg-white dark:bg-slate-900 dark:text-slate-100"
           >
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
+            <option value="beginner" className="text-slate-900">Beginner</option>
+            <option value="intermediate" className="text-slate-900">Intermediate</option>
+            <option value="advanced" className="text-slate-900">Advanced</option>
           </select>
         </div>
       </div>

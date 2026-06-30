@@ -50,6 +50,13 @@ const getAttachmentUrl = (item) => {
   return attachments.find((attachment) => attachment?.url)?.url || '';
 };
 
+const getInlineDocumentUrl = (rawUrl = '') => {
+  const url = String(rawUrl || '').trim();
+  if (!url) return '';
+  if (url.includes('docs.google.com/gview')) return url;
+  return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+};
+
 const buildResourceTitle = (item, fallback) => String(item?.title || item?.name || fallback || 'Resource').trim();
 
 const MaterialQuickActions = ({ material, onRead }) => {
@@ -69,7 +76,7 @@ const MaterialQuickActions = ({ material, onRead }) => {
       )}
       {material.url && (
         <>
-          <a href={material.url} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-[#004b71] hover:bg-slate-100">
+          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-[#004b71] hover:bg-slate-100">
             <ExternalLink size={12} />
             Open
           </a>
@@ -148,7 +155,7 @@ const UploadedResourcesPanel = ({ resources }) => {
                         {resource.url ? (
                           <>
                             <a
-                              href={resource.url}
+                              href={getInlineDocumentUrl(resource.url)}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"

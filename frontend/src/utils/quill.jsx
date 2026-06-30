@@ -165,18 +165,18 @@ export default function QuillEditor({
             aria-label="indent: -1"
           ></button>
         </span>
-        <select className="ql-header">
-          <option value="1"></option>
-          <option value="2"></option>
-          <option value="3"></option>
-          <option value="4"></option>
-          <option value="5"></option>
-          <option value="6"></option>
+        <select className="ql-header" style={{ colorScheme: 'light' }}>
+          <option value="1" />
+          <option value="2" />
+          <option value="3" />
+          <option value="4" />
+          <option value="5" />
+          <option value="6" />
         </select>
         <span className="ql-formats">
-          <select className="ql-align"></select>
-          <select className="ql-color"></select>
-          <select className="ql-background"></select>
+          <select className="ql-align" style={{ colorScheme: 'light' }} />
+          <select className="ql-color" style={{ colorScheme: 'light' }} />
+          <select className="ql-background" style={{ colorScheme: 'light' }} />
         </span>
         {type == "question-editor" && <span className="ql-formats">
           <button className="ql-insert">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   BookOpen,
   Download,
@@ -40,9 +40,9 @@ const StudyMaterials = () => {
       fetchMaterials();
     }, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchQuery, selectedSubject]);
+  }, [fetchMaterials]);
 
-  const fetchMaterials = async ({ forceRefresh = false } = {}) => {
+  const fetchMaterials = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -75,7 +75,7 @@ const StudyMaterials = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, selectedSubject, token, STUDY_MATERIALS_ENDPOINT]);
 
   const getFileIcon = (type) => {
     if (type?.startsWith('image/')) return ImageIcon;
@@ -100,6 +100,13 @@ const StudyMaterials = () => {
     });
   };
 
+  const getInlineDocumentUrl = (rawUrl = '') => {
+    const url = String(rawUrl || '').trim();
+    if (!url) return '';
+    if (url.includes('docs.google.com/gview')) return url;
+    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+  };
+
   // Track when a student views a material
   const trackMaterialView = async (materialId) => {
     try {
@@ -113,22 +120,6 @@ const StudyMaterials = () => {
       });
     } catch (err) {
       console.error('Error tracking view:', err);
-    }
-  };
-
-  // Track when a student downloads a file
-  const trackDownload = async (materialId, attachmentName) => {
-    try {
-      await fetch(`${API_BASE}/api/student/materials/${materialId}/download`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ attachmentName })
-      });
-    } catch (err) {
-      console.error('Error tracking download:', err);
     }
   };
 
@@ -385,10 +376,10 @@ const StudyMaterials = () => {
                                 return (
                                   <a
                                     key={idx}
-                                    href={attachment?.url || '#'}
+                                    href={getInlineDocumentUrl(attachment?.url)}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    onClick={() => trackDownload(material._id, attachment.name)}
+                                    onClick={() => trackMaterialView(material._id)}
                                     className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50"
                                   >
                                     <div className="rounded-xl bg-white p-2 shadow-sm">
