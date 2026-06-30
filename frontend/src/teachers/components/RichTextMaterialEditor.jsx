@@ -219,7 +219,7 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6 max-w-6xl">
+    <div className="bg-white rounded-lg shadow-lg p-6 max-w-6xl text-black">
       <h2 className="text-2xl font-bold mb-6">
         {material ? 'Edit Material' : 'Create New Study Material'}
       </h2>

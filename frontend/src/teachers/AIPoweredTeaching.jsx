@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Toaster, toast } from 'react-hot-toast';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 import { BookOpenCheck, X } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
@@ -45,21 +45,6 @@ const enrichChapter = (chapter) => ({
 });
 
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-const asIdString = (value) => (value ? String(value) : '');
-const chapterKey = (value) => String(value || '').trim().toLowerCase();
-const uniqueChapterId = (preferredId, fallbackId, usedIds) => {
-  const baseId = String(preferredId || fallbackId || `chapter-${Date.now()}`).trim();
-  let nextId = baseId;
-  let suffix = 2;
-
-  while (usedIds.has(nextId)) {
-    nextId = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
-
-  usedIds.add(nextId);
-  return nextId;
-};
 const serializeResourceRef = (file) => {
   const name = String(file?.name || '').trim();
   const url = String(file?.url || '').trim();
@@ -130,142 +115,44 @@ const AIPoweredTeaching = () => {
     setSubjectOptions(Array.isArray(data?.subjects) ? data.subjects : []);
   };
 
-  const loadChaptersForSelection = async (classId, sectionId, subjectId) => {
-    if (!classId || !sectionId || !subjectId) return;
+  // Always-current snapshot so the timer callback reads fresh state, not a stale closure
+  const autosaveStateRef = useRef({});
+  autosaveStateRef.current = { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject };
 
-    try {
-      // Fetch all lesson plans so we can include both saved drafts and published plans.
-      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/my`, {
-        headers: authHeaders(),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to fetch lesson plans');
-
-      const allPlans = Array.isArray(data) ? data : [];
-      const matchingPlans = allPlans.filter((plan) => {
-        const planClassId = asIdString(plan?.classId?._id || plan?.classId);
-        const planSectionId = asIdString(plan?.sectionId?._id || plan?.sectionId);
-        const planSubjectId = asIdString(plan?.subjectId?._id || plan?.subjectId);
-        return (
-          planClassId === asIdString(classId) &&
-          planSectionId === asIdString(sectionId) &&
-          planSubjectId === asIdString(subjectId)
-        );
-      });
-
-      if (matchingPlans.length > 0) {
-        const merged = [];
-        const seen = new Set();
-        const usedChapterIds = new Set();
-
-        matchingPlans.forEach((plan) => {
-          const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
-          raw.forEach((chapter, idx) => {
-            const title = String(chapter?.title || '').trim();
-            const key = chapterKey(title || chapter?.id || `${plan?._id}-draft-${idx}`);
-            if (seen.has(key)) return;
-            seen.add(key);
-            const id = uniqueChapterId(chapter?.id, `draft-${plan?._id || 'plan'}-${idx}`, usedChapterIds);
-            merged.push(
-              enrichChapter({
-                ...chapter,
-                id,
-                title: title || `Chapter ${merged.length + 1}`,
-              })
-            );
-          });
-
-          const plannerChapters = Array.isArray(plan?.plannerContent?.chapters)
-            ? plan.plannerContent.chapters
-            : [];
-          plannerChapters.forEach((chapter, idx) => {
-            const title = String(chapter?.title || '').trim();
-            const key = chapterKey(title || chapter?.id || `${plan?._id}-published-${idx}`);
-            if (seen.has(key)) return;
-            seen.add(key);
-
-            const firstSubTopic = chapter?.topics?.[0]?.subTopics?.[0];
-            const id = uniqueChapterId(chapter?.id, `published-${plan?._id || 'plan'}-${idx}`, usedChapterIds);
-            merged.push(
-              enrichChapter({
-                id,
-                title: title || `Chapter ${merged.length + 1}`,
-                introductionText: firstSubTopic?.title || '',
-                explanation: Array.isArray(firstSubTopic?.learningPaths)
-                  ? firstSubTopic.learningPaths.join('\n')
-                  : '',
-                teacherNotes: Array.isArray(firstSubTopic?.referenceMaterials)
-                  ? firstSubTopic.referenceMaterials.join('\n')
-                  : '',
-              })
-            );
-          });
-        });
-
-        setChapters(merged);
-        setOpenChapterIds([]);
-
-        // Keep autosave linked to the most recent matching draft, if present.
-        const latestMatchingDraft = matchingPlans.find((plan) => plan?.isDraft === true);
-        setCurrentDraftId(latestMatchingDraft?._id || null);
-        setAutosaveStatus('Loaded');
-
-        if (merged.length > 0) {
-          toast.success(`Loaded ${merged.length} existing ${merged.length === 1 ? 'chapter' : 'chapters'}`);
-        }
-      } else {
-        // No existing draft/published chapter for this selection, start fresh.
-        setChapters([]);
-        setOpenChapterIds([]);
-        setCurrentDraftId(null);
-        setAutosaveStatus('Not saved');
-      }
-    } catch (err) {
-      console.error('Error loading chapters for selection:', err);
-      toast.error('Failed to load existing chapters');
-    }
-  };
-
-  const createNewDraft = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          title: 'Lesson Plan Draft',
-          rawChapters: chapters,
-          classId: selectedClass,
-          sectionId: selectedSection,
-          subjectId: selectedSubject,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to create draft');
-
-      const draftId = data?.data?._id;
-      setCurrentDraftId(draftId);
-
-      // Save to localStorage
-      if (draftId) {
-        localStorage.setItem('currentLessonPlanDraft', draftId);
-      }
-
-      setAutosaveStatus('Draft created');
-      toast.success('New draft created');
-      return draftId;
-    } catch (err) {
-      toast.error(err?.message || 'Failed to create draft');
-      return null;
-    }
-  };
+  // Stable timer ref — one timer at a time, never lost across re-renders
+  const autosaveTimerRef = useRef(null);
 
   const saveDraft = async () => {
+    const { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject } = autosaveStateRef.current;
+
+    if (!selectedClass || !selectedSection || !selectedSubject) return;
+
     try {
       let draftId = currentDraftId;
 
       if (!draftId) {
-        draftId = await createNewDraft();
-        if (!draftId) return;
+        // POST already persists rawChapters — return immediately, no PUT needed
+        const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            title: 'Lesson Plan Draft',
+            rawChapters: chapters,
+            classId: selectedClass,
+            sectionId: selectedSection,
+            subjectId: selectedSubject,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to create draft');
+
+        draftId = data?.data?._id;
+        if (draftId) {
+          setCurrentDraftId(draftId);
+          localStorage.setItem('currentLessonPlanDraft', draftId);
+        }
+        setAutosaveStatus('Draft saved');
+        return;
       }
 
       const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
@@ -285,20 +172,9 @@ const AIPoweredTeaching = () => {
       setAutosaveStatus('Saved just now');
     } catch (err) {
       setAutosaveStatus('Save failed');
-      toast.error(err?.message || 'Failed to save draft');
+      console.error('Autosave failed:', err?.message);
     }
   };
-
-  const debouncedSaveDraft = useMemo(() => {
-    let timeoutId = null;
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      setAutosaveStatus('Saving...');
-      timeoutId = setTimeout(() => {
-        saveDraft();
-      }, 2000);
-    };
-  }, [currentDraftId, chapters, selectedClass, selectedSection, selectedSubject]);
 
   useEffect(() => {
     const userType = localStorage.getItem('userType');
@@ -332,7 +208,9 @@ const AIPoweredTeaching = () => {
   }, [chapters, openChapterIds]);
 
   const touchAutosave = () => {
-    debouncedSaveDraft();
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    setAutosaveStatus('Saving...');
+    autosaveTimerRef.current = setTimeout(saveDraft, 2000);
   };
 
   const updateChapter = (id, updater) => {
@@ -575,7 +453,6 @@ const AIPoweredTeaching = () => {
 
   return (
     <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-3 dark:bg-slate-950">
-      <Toaster position="top-right" />
       <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-2.5">
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
@@ -608,10 +485,12 @@ const AIPoweredTeaching = () => {
             localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: selectedClass, sectionId: value });
           }}
-          onSubjectChange={async (value) => {
+          onSubjectChange={(value) => {
             setSelectedSubject(value);
-            // Load existing chapters for this class/section/subject combination
-            await loadChaptersForSelection(selectedClass, selectedSection, value);
+            setChapters([]);
+            setOpenChapterIds([]);
+            setCurrentDraftId(null);
+            setAutosaveStatus('Not saved');
           }}
         />
 
@@ -635,9 +514,9 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-blue-100 bg-white/70 p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl ">
             {openChapters.length > 0 ? (
-              <div className="h-full min-h-0 space-y-6 overflow-y-auto pb-8 pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+              <div className="space-y-4 overflow-y-auto pb-4 pr-1">
                 {openChapters.map((chapter) => (
                   <DrawerModal
                     key={chapter.id}
@@ -665,7 +544,7 @@ const AIPoweredTeaching = () => {
                 ))}
               </div>
             ) : (
-              <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="flex items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="w-full max-w-sm px-5 py-6">
                   <div className="mx-auto mb-4 w-fit rounded-xl bg-blue-100 p-2.5 text-blue-600 dark:bg-blue-900/40">
                     <BookOpenCheck className="size-5" />

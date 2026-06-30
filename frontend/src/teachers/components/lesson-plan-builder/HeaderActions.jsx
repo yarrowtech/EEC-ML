@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, UploadCloud } from 'lucide-react';
+import { ArrowRight, Clock, UploadCloud } from 'lucide-react';
 
 const HeaderActions = ({
   autosaveStatus,
@@ -38,6 +38,8 @@ const HeaderActions = ({
           )}
         </select>
 
+        <ArrowRight className="size-5 text-slate-400 dark:text-slate-500" />
+
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Section</span>
         <select
           value={sectionValue}
@@ -54,6 +56,8 @@ const HeaderActions = ({
             <><option>Section A</option><option>Section B</option><option>Section C</option></>
           )}
         </select>
+
+        <ArrowRight className="size-5 text-slate-400 dark:text-slate-500" />
 
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Subject</span>
         <select
@@ -75,7 +79,7 @@ const HeaderActions = ({
         {/* Spacer */}
         <div className="flex-1" />
 
-        {onUploadMaterial && (
+        {/* {onUploadMaterial && (
           <button
             type="button"
             onClick={onUploadMaterial}
@@ -84,7 +88,7 @@ const HeaderActions = ({
             <UploadCloud className="size-3" />
             Upload Material
           </button>
-        )}
+        )} */}
 
         <div className="flex items-center gap-1.5">
           <Clock className="size-3 text-slate-400" />

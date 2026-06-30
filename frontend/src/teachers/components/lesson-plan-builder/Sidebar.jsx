@@ -51,7 +51,7 @@ const Sidebar = ({
       animate={collapsed ? 'collapsed' : 'expanded'}
       variants={sidebarVariants}
       transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-      className="relative shrink-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20"
+      className="relative shrink-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20 self-start"
       aria-label="Lesson chapters sidebar"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-linear-to-b from-blue-50/90 to-transparent dark:from-blue-950/20" />
@@ -109,6 +109,7 @@ const Sidebar = ({
                     onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search chapters..."
                     className="h-8 rounded-xl border-slate-200 bg-slate-50/80 pl-8 text-xs focus-visible:ring-2 focus-visible:ring-blue-200 dark:bg-slate-900"
+                    style={{ color: '#0f172a', caretColor: '#0f172a' }}
                     aria-label="Search chapters"
                   />
                 </div>

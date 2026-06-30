@@ -32,14 +32,35 @@ import TryoutBuilder from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
 const STEPS = [
-  { key: 'info',       label: 'Lesson Info',    icon: Calendar },
-  { key: 'intro',      label: 'Introduction',   icon: Lightbulb },
-  { key: 'content',    label: 'Content',        icon: ListChecks },
-  { key: 'materials',  label: 'Materials',      icon: FlaskConical },
-  { key: 'publish',    label: 'Evaluate & Publish', icon: Send },
+  { key: 'info',      label: 'Lesson Info',       icon: Calendar,      color: 'blue'    },
+  { key: 'intro',     label: 'Introduction',       icon: Lightbulb,     color: 'amber'   },
+  { key: 'content',   label: 'Content',            icon: ListChecks,    color: 'green'   },
+  { key: 'materials', label: 'Materials',          icon: FlaskConical,  color: 'purple'  },
+  { key: 'publish',   label: 'Evaluate & Publish', icon: Send,          color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
+
+const stepAccent = {
+  blue:    { ring: 'ring-blue-500',    bg: 'bg-blue-600',    text: 'text-blue-700 dark:text-blue-300',    banner: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'    },
+  amber:   { ring: 'ring-amber-400',   bg: 'bg-amber-500',   text: 'text-amber-700 dark:text-amber-300',   banner: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'   },
+  green:   { ring: 'ring-green-500',   bg: 'bg-green-600',   text: 'text-green-700 dark:text-green-300',   banner: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'   },
+  purple:  { ring: 'ring-purple-500',  bg: 'bg-purple-600',  text: 'text-purple-700 dark:text-purple-300',  banner: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300'  },
+  emerald: { ring: 'ring-emerald-500', bg: 'bg-emerald-600', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
+};
+
+const Field = ({ label, children }) => (
+  <div className="space-y-1.5">
+    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</label>
+    {children}
+  </div>
+);
+
+const Card = ({ children, className = '' }) => (
+  <div className={`rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 ${className}`}>
+    {children}
+  </div>
+);
 
 const DrawerModal = ({
   open,
@@ -73,6 +94,8 @@ const DrawerModal = ({
     ? new Date(chapter.lessonDate).toLocaleDateString('en-US', { weekday: 'long' })
     : '';
 
+  const accent = stepAccent[STEPS[currentStep].color];
+
   const handleSaveTryouts = (tryouts) => onUpdate({ ...chapter, tryouts });
 
   const handleOpenMaterialUpload = () => {
@@ -99,39 +122,56 @@ const DrawerModal = ({
       case 'info':
         return (
           <div className="space-y-4">
-            <p className="rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-              Set the date and duration for this lesson.
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Name this lesson, pick a date and set how long it will run.
             </p>
+            <Card>
+              <Field label="Chapter Title">
+                <Input
+                  value={chapter.title || ''}
+                  onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
+                  placeholder="e.g. Photosynthesis — Light Reactions"
+                  className="h-10 rounded-lg border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+                  style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                />
+              </Field>
+            </Card>
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                  <Calendar className="size-3.5" /> Lesson Date
-                </label>
-                <Input
-                  type="date"
-                  value={chapter.lessonDate || ''}
-                  onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
-                />
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                <label className="mb-1.5 block text-xs font-medium text-slate-500">Day of Week</label>
-                <Input
-                  value={dayLabel || 'Auto-filled from date'}
-                  readOnly
-                  className="bg-slate-50 text-slate-500 dark:bg-slate-800"
-                />
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                <label className="mb-1.5 block text-xs font-medium text-slate-500">Duration</label>
-                <select
-                  value={chapter.duration}
-                  onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
-                  style={{ colorScheme: 'light' }}
-                  className="h-10 w-full rounded-lg border border-input bg-white px-2.5 text-sm text-slate-900 dark:bg-slate-900 dark:text-slate-100"
-                >
-                  {(durations || []).map((d) => <option key={d} value={d} className="text-slate-900">{d}</option>)}
-                </select>
-              </div>
+              <Card>
+                <Field label="Lesson Date">
+                  <input
+                    type="date"
+                    value={chapter.lessonDate || ''}
+                    onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </Field>
+              </Card>
+              <Card>
+                <Field label="Day">
+                  <input
+                    value={dayLabel || ''}
+                    readOnly
+                    placeholder="Auto-filled"
+                    style={{ color: '#64748b', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-3 text-sm"
+                  />
+                </Field>
+              </Card>
+              <Card>
+                <Field label="Duration">
+                  <select
+                    value={chapter.duration || ''}
+                    onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
+                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    <option value="" disabled>Select duration</option>
+                    {(durations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </Field>
+              </Card>
             </div>
           </div>
         );
@@ -139,19 +179,19 @@ const DrawerModal = ({
       case 'intro':
         return (
           <div className="space-y-4">
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-              Write a short introduction. Use AI to get a quick suggestion.
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Write a short hook that gets students interested. Use AI for a quick suggestion.
             </p>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            <Card>
               <div className="mb-3 flex items-center justify-between">
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                   <Lightbulb className="size-4 text-amber-500" /> Introduction
                 </p>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={onApplyAiSuggestion}
-                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400"
+                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/40"
                 >
                   <Sparkles className="size-3.5" /> AI Suggestion
                 </Button>
@@ -159,164 +199,148 @@ const DrawerModal = ({
               <RichTextEditor
                 value={chapter.introductionText || ''}
                 onChange={(value) => onUpdate({ ...chapter, introductionText: value })}
-                placeholder="How will you introduce this lesson to your students?"
+                placeholder="How will you hook students into this lesson?"
               />
-            </div>
+            </Card>
           </div>
         );
 
       case 'content':
         return (
           <div className="space-y-4">
-            <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950/40 dark:text-green-300">
-              Add your step-by-step explanation and a quick recap for students.
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Add a step-by-step explanation and a short recap students can refer to later.
             </p>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
+            <Card>
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                 <ListChecks className="size-4 text-green-500" /> Step-by-Step Explanation
               </p>
               <Textarea
                 rows={6}
                 value={chapter.explanation || ''}
                 onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })}
-                placeholder="Write what you will teach — step by step..."
-                className="mb-3"
+                placeholder="Walk through what you will teach — one step at a time…"
+                className="mb-3 resize-none"
               />
-              <label className="mb-1 block text-xs font-medium text-slate-500">Attach a file (image, video, PDF…)</label>
-              <Input
-                type="file"
-                accept="image/*,video/*,.pdf,.doc,.docx"
-                onChange={(e) => onAddContentFile(e.target.files?.[0] || null, 'Explanation Attachments')}
-              />
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                <ClipboardCheck className="size-4 text-slate-500" /> Quick Recap
+              <Field label="Attach a file (image, video, PDF…)">
+                <Input
+                  type="file"
+                  accept="image/*,video/*,.pdf,.doc,.docx"
+                  onChange={(e) => onAddContentFile(e.target.files?.[0] || null, 'Explanation Attachments')}
+                  className="cursor-pointer"
+                />
+              </Field>
+            </Card>
+            <Card>
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <ClipboardCheck className="size-4 text-green-400" /> Quick Recap
               </p>
               <Textarea
                 rows={3}
                 value={chapter.recap || ''}
                 onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
-                placeholder="Key points students should remember from this lesson..."
+                placeholder="Key points students must take away from this lesson…"
+                className="resize-none"
               />
-            </div>
+            </Card>
           </div>
         );
 
       case 'materials':
         return (
           <div className="space-y-4">
-            <p className="rounded-xl bg-purple-50 px-3 py-2 text-sm text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
-              Upload worksheets, experiments, and create practice questions for students.
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Upload worksheets, experiments, practice questions, and study materials.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <UploadDropzone
-                title="Upload Worksheet"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                files={chapter.contentUploads?.['Upload Worksheet'] || []}
-                onAddFile={onAddContentFile}
-                onRemoveFile={onRemoveContentFile}
-              />
-              <UploadDropzone
-                title="Assessments"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                files={chapter.contentUploads?.Assessments || []}
-                onAddFile={onAddContentFile}
-                onRemoveFile={onRemoveContentFile}
-              />
-              <UploadDropzone
-                title="Experiments"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                files={chapter.contentUploads?.Experiments || []}
-                onAddFile={onAddContentFile}
-                onRemoveFile={onRemoveContentFile}
-              />
-              <UploadDropzone
-                title="Report Upload"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                files={chapter.contentUploads?.['Report Upload'] || []}
-                onAddFile={onAddContentFile}
-                onRemoveFile={onRemoveContentFile}
-              />
+              <UploadDropzone title="Worksheet"      accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Assessments"    accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []}          onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Experiments"    accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []}           onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Report Upload"  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []}     onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
             </div>
 
-            {/* Worksheet link */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                <FlaskConical className="size-4 text-purple-500" /> Link or Upload a Worksheet
+            <Card>
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <FlaskConical className="size-4 text-purple-500" /> Worksheet File or Link
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="file"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
                   onChange={(e) => onAddWorksheetFile(e.target.files?.[0] || null)}
+                  className="cursor-pointer"
                 />
                 <Input
                   value={chapter.worksheetLink || ''}
                   onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                  placeholder="Or paste a worksheet link..."
+                  placeholder="Or paste a worksheet URL…"
                 />
               </div>
-              <div className="mt-2 space-y-2">
-                {(chapter.worksheetFiles || []).map((file) => (
-                  <FileUploadCard key={file.id} file={file} onRemove={onRemoveWorksheetFile} />
-                ))}
+              {(chapter.worksheetFiles || []).length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {chapter.worksheetFiles.map((file) => (
+                    <FileUploadCard key={file.id} file={file} onRemove={onRemoveWorksheetFile} />
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {/* Practice questions */}
+              <div className="flex flex-col justify-between rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-900/50 dark:bg-purple-950/20">
+                <div className="mb-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <Play className="size-4 text-purple-500" /> Practice Questions
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {chapter.tryouts?.length > 0
+                      ? `${chapter.tryouts.length} question(s) created`
+                      : 'Add interactive tryout questions for students'}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTryoutBuilder(true)}
+                  className="w-full border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-950/40"
+                >
+                  <Edit3 className="size-3.5 mr-1.5" />
+                  {chapter.tryouts?.length > 0 ? 'Edit Questions' : 'Create Tryout'}
+                </Button>
+              </div>
+
+              {/* Share with students */}
+              <div className="flex flex-col justify-between rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
+                <div className="mb-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    <UploadCloud className="size-4 text-blue-500" /> Share with Students
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Upload notes or reference files students can access</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenMaterialUpload}
+                  className="w-full border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                >
+                  <UploadCloud className="size-3.5 mr-1.5" /> Upload Material
+                </Button>
               </div>
             </div>
 
-            {/* Tryout questions */}
-            <div className="flex items-center justify-between rounded-2xl border border-purple-200 bg-purple-50/60 p-4 dark:border-purple-900/50 dark:bg-purple-950/20">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                  <Play className="size-4 text-purple-500" /> Interactive Practice Questions
-                </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {chapter.tryouts?.length > 0
-                    ? `${chapter.tryouts.length} question(s) created`
-                    : 'Create tryout questions students can answer'}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTryoutBuilder(true)}
-                className="shrink-0 border-purple-300 text-purple-600 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-400"
-              >
-                <Edit3 className="size-3.5 mr-1.5" />
-                {chapter.tryouts?.length > 0 ? 'Edit Questions' : 'Create Tryout'}
-              </Button>
-            </div>
-
-            {/* Share material with students */}
-            <div className="flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                  <UploadCloud className="size-4 text-blue-500" /> Share Study Material with Students
-                </p>
-                <p className="mt-0.5 text-xs text-slate-500">Upload notes or reference files students can access</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleOpenMaterialUpload}
-                className="shrink-0 border-blue-300 text-blue-600 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-400"
-              >
-                <UploadCloud className="size-3.5 mr-1.5" /> Upload
-              </Button>
-            </div>
-
-            {/* Assessments list */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            <Card>
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-100">Assessments</p>
-                <Button variant="outline" size="sm" onClick={onAddAssessment}>+ Add Assessment</Button>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Assessments</p>
+                <Button variant="outline" size="sm" onClick={onAddAssessment} className="text-xs">
+                  + Add Assessment
+                </Button>
               </div>
               {(chapter.assessments || []).length === 0 ? (
-                <p className="text-sm text-slate-400">No assessments yet. Click "Add Assessment" to create one.</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500">No assessments yet — click "Add Assessment" to create one.</p>
               ) : (
                 <div className="space-y-2">
-                  {(chapter.assessments || []).map((assessment) => (
+                  {chapter.assessments.map((assessment) => (
                     <AssessmentCard
                       key={assessment.id}
                       assessment={assessment}
@@ -326,7 +350,7 @@ const DrawerModal = ({
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
 
             <TryoutBuilder
               open={showTryoutBuilder}
@@ -340,74 +364,57 @@ const DrawerModal = ({
       case 'publish':
         return (
           <div className="space-y-4">
-            <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-              Rate your class, add private notes, then publish this chapter to students.
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Add private notes, rate the class, then publish this chapter to students.
             </p>
 
-            {/* Teacher notes */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                Teacher Notes <span className="text-xs font-normal text-slate-400">(private, not shown to students)</span>
+            <Card>
+              <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Teacher Notes{' '}
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(private — not shown to students)</span>
               </p>
               <Textarea
-                rows={2}
+                rows={3}
                 value={chapter.teacherNotes || ''}
                 onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })}
-                placeholder="Add private notes for yourself..."
+                placeholder="Personal observations, follow-up actions, reminders…"
+                className="resize-none"
               />
-            </div>
+            </Card>
 
-            {/* Student evaluation */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-100">
-                <UserCheck className="size-4 text-blue-500" /> Evaluate Your Students
+            <Card>
+              <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <UserCheck className="size-4 text-blue-500" /> Class Evaluation
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Participation</label>
-                  <Input
-                    value={chapter.evaluation?.participation || ''}
-                    onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, participation: e.target.value } })}
-                    placeholder="e.g. Very active"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Performance Remarks</label>
-                  <Input
-                    value={chapter.evaluation?.remarks || ''}
-                    onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, remarks: e.target.value } })}
-                    placeholder="e.g. Understood well"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Behaviour</label>
-                  <Input
-                    value={chapter.evaluation?.behaviour || ''}
-                    onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, behaviour: e.target.value } })}
-                    placeholder="e.g. Attentive and cooperative"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Progress</label>
-                  <Input
-                    value={chapter.evaluation?.progress || ''}
-                    onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, progress: e.target.value } })}
-                    placeholder="e.g. On track"
-                  />
-                </div>
+                {[
+                  { key: 'participation', label: 'Participation',       placeholder: 'e.g. Very active'              },
+                  { key: 'remarks',       label: 'Performance Remarks', placeholder: 'e.g. Understood well'          },
+                  { key: 'behaviour',     label: 'Behaviour',           placeholder: 'e.g. Attentive and cooperative'},
+                  { key: 'progress',      label: 'Progress',            placeholder: 'e.g. On track'                 },
+                ].map(({ key, label, placeholder }) => (
+                  <Field key={key} label={label}>
+                    <Input
+                      value={chapter.evaluation?.[key] || ''}
+                      onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, [key]: e.target.value } })}
+                      placeholder={placeholder}
+                      className="h-9 text-sm"
+                    />
+                  </Field>
+                ))}
               </div>
-              <div className="mt-3">
-                <p className="mb-2 text-xs font-medium text-slate-500">Overall Rating</p>
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall Rating</p>
                 <div className="flex flex-wrap gap-2">
                   {EVAL_TAGS.map((tag) => (
                     <button
                       key={tag}
                       type="button"
                       onClick={() => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, tag } })}
-                      className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                      className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
                         chapter.evaluation?.tag === tag
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                       }`}
                     >
                       {tag}
@@ -415,29 +422,29 @@ const DrawerModal = ({
                   ))}
                 </div>
               </div>
-            </div>
+            </Card>
 
-            {/* Version history */}
             {!!chapter.history?.length && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-100">Saved Versions</p>
+              <Card>
+                <p className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">Saved Versions</p>
                 <div className="space-y-2">
                   {chapter.history.slice(-5).reverse().map((item) => (
-                    <div key={item.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-2 text-xs dark:border-slate-700">
-                      <span>{item.label}</span>
-                      <Button size="xs" variant="outline" onClick={() => onRestoreVersion(item.id)}>Restore</Button>
+                    <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs dark:border-slate-700">
+                      <span className="text-slate-600 dark:text-slate-300">{item.label}</span>
+                      <Button size="xs" variant="outline" onClick={() => onRestoreVersion(item.id)} className="text-xs">
+                        Restore
+                      </Button>
                     </div>
                   ))}
                 </div>
-              </div>
+              </Card>
             )}
 
-            {/* Publish */}
-            <div className="rounded-2xl border-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 dark:border-emerald-700 dark:from-emerald-900/30 dark:to-teal-900/30">
+            <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-800 dark:bg-emerald-950/30">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
-                    <CheckCircle2 className="size-5" /> Ready to Publish?
+                    <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Ready to Publish?
                   </h3>
                   <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">
                     Students will see this chapter in their Smart Learning section.
@@ -446,7 +453,7 @@ const DrawerModal = ({
                 <Button
                   onClick={onPublishChapter}
                   disabled={isPublishing}
-                  className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 font-bold text-white hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50"
+                  className="rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {isPublishing ? 'Publishing…' : <><Send className="size-4 mr-2" />Publish Chapter</>}
                 </Button>
@@ -469,62 +476,84 @@ const DrawerModal = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
-          className="flex flex-col rounded-2xl border-2 border-blue-200 bg-gradient-to-b from-white to-slate-50/80 shadow-lg dark:border-slate-600 dark:from-slate-900 dark:to-slate-950/80"
+          className="flex flex-col self-start w-full rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"
         >
-          {/* Chapter header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl bg-gradient-to-r from-blue-50 to-purple-50 px-5 py-3 dark:from-slate-800 dark:to-slate-800">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-slate-100 bg-slate-50 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-800/60">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {chapter.title || 'Untitled Chapter'}
+            </h3>
             <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" onClick={onSaveVersion} className="gap-1">
+              <Button variant="outline" size="sm" onClick={onSaveVersion} className="gap-1 text-xs">
                 <RefreshCcw className="size-3.5" /> Save Version
               </Button>
-              <Button variant="outline" size="sm" onClick={exportPdf} className="gap-1">
-                <FileText className="size-3.5" /> PDF
+              <Button variant="outline" size="sm" onClick={exportPdf} className="gap-1 text-xs">
+                <FileText className="size-3.5" /> Export PDF
               </Button>
-              <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chapter">
+              <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chapter" className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">
                 <X className="size-4" />
               </Button>
             </div>
           </div>
 
-          {/* Step tabs */}
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-100 bg-white px-4 pt-3 dark:border-slate-800 dark:bg-slate-900">
-            {STEPS.map((step, index) => {
-              const isActive = index === currentStep;
-              const isPast = index < currentStep;
-              return (
-                <button
-                  key={step.key}
-                  type="button"
-                  onClick={() => setCurrentStep(index)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3 pb-2 text-xs font-semibold transition ${
-                    isActive
-                      ? 'border-blue-600 text-blue-700 dark:text-blue-300'
-                      : isPast
-                      ? 'border-transparent text-emerald-600 dark:text-emerald-400'
-                      : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {isPast ? (
-                    <CheckCircle2 className="size-3.5 text-emerald-500" />
-                  ) : (
-                    <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
-                      isActive ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
-                    }`}>
-                      {index + 1}
+          {/* Step progress bar */}
+          <div className="px-5 pt-4 pb-1">
+            <div className="relative flex items-center justify-between">
+              {/* connector line */}
+              <div className="absolute inset-x-0 top-4 h-0.5 bg-slate-200 dark:bg-slate-700 ml-10 mr-10" />
+              <div
+                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-5"
+                style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
+              />
+              {STEPS.map((step, index) => {
+                const isActive = index === currentStep;
+                const isDone   = index < currentStep;
+                const Icon     = step.icon;
+                const ac       = stepAccent[step.color];
+                return (
+                  <button
+                    key={step.key}
+                    type="button"
+                    onClick={() => setCurrentStep(index)}
+                    className="relative z-10 flex flex-col items-center gap-1.5 group"
+                  >
+                    <span
+                      className={`flex size-8 items-center justify-center rounded-full border-2 transition-all duration-200 ${
+                        isDone
+                          ? 'border-emerald-500 bg-emerald-500 text-white'
+                          : isActive
+                            ? `${ac.ring} ring-2 ring-offset-1 border-blue-500 bg-blue-600 text-white dark:ring-offset-slate-900`
+                            : 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500'
+                      }`}
+                    >
+                      {isDone ? (
+                        <CheckCircle2 className="size-4" />
+                      ) : (
+                        <Icon className="size-3.5" />
+                      )}
                     </span>
-                  )}
-                  <span className="hidden sm:inline">{step.label}</span>
-                </button>
-              );
-            })}
+                    <span
+                      className={`hidden text-[11px] font-semibold sm:block transition-colors ${
+                        isActive
+                          ? ac.text
+                          : isDone
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Step content */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+          <div className="max-h-[52vh] overflow-y-auto p-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
             <Motion.div
               key={currentStep}
-              initial={{ opacity: 0, x: 8 }}
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.15 }}
             >
@@ -532,18 +561,20 @@ const DrawerModal = ({
             </Motion.div>
           </div>
 
-          {/* Navigation footer */}
+          {/* Footer navigation */}
           <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 dark:border-slate-800">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
               disabled={currentStep === 0}
-              className="gap-1"
+              className="gap-1 text-slate-600 dark:text-slate-300"
             >
               <ChevronLeft className="size-4" /> Back
             </Button>
-            <span className="text-xs text-slate-400">Step {currentStep + 1} of {STEPS.length}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500">
+              Step <span className="font-semibold text-slate-600 dark:text-slate-300">{currentStep + 1}</span> / {STEPS.length}
+            </span>
             {currentStep < STEPS.length - 1 ? (
               <Button
                 size="sm"

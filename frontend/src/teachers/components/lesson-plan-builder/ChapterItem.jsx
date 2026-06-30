@@ -41,7 +41,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
   return (
     <Motion.div
       layout
-      whileHover={{ y: -2, scale: 1.01 }}
+      // whileHover={{ y: -2, scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       transition={{ type: 'spring', stiffness: 360, damping: 26 }}
       draggable
@@ -97,12 +97,13 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
                 }
               }}
               className="h-9 rounded-xl border-blue-200 bg-white text-sm dark:bg-slate-950"
+              style={{ color: '#0f172a', caretColor: '#0f172a' }}
               aria-label="Rename chapter"
             />
           ) : (
             <>
-              <p className="truncate text-sm font-semibold text-slate-850 dark:text-slate-100">{chapter.title}</p>
-              <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">AI-ready chapter block · Click to open</p>
+              <p className="truncate text-sm font-semibold text-slate-800">{chapter.title}</p>
+              <p className="mt-1 text-[10px]  text-slate-500 dark:text-slate-400 line-clamp-2">AI-ready chapter block · Click to open</p>
             </>
           )}
         </button>
@@ -116,7 +117,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
         <div className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
           <Sparkles className="size-3" /> Smart outline
         </div>
-        <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+        <div className={`flex items-center gap-1 transition ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
           <Button
             variant="ghost"
             size="icon-xs"
@@ -124,16 +125,16 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
               stopActionEvent(event);
               setIsEditing((prev) => !prev);
             }}
-            className="rounded-lg hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/40"
+            className="rounded-lg text-blue-700 hover:bg-blue-50 hover:text-blue-800"
             title="Rename chapter"
             aria-label="Rename chapter"
           >
             <Pencil className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
             <Copy className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Add section" aria-label="Add section">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Add section" aria-label="Add section">
             <Plus className="size-3.5" />
           </Button>
           <Button
@@ -147,7 +148,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           >
             <Trash2 className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="More actions" aria-label="More chapter actions">
+          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="More actions" aria-label="More chapter actions">
             <MoreHorizontal className="size-3.5" />
           </Button>
         </div>

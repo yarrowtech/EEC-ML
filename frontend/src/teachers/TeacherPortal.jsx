@@ -944,7 +944,7 @@ const TeacherPortal = () => {
           </div>
         </header>
 
-        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : 'p-2 sm:p-4'} ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <div className={isChatRoute ? 'h-full flex flex-col' : undefined}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
