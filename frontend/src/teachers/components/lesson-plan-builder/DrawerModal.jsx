@@ -1,20 +1,26 @@
 import React, { useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
+  BookOpen,
   Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  ClipboardList,
+  Clock,
   Edit3,
   FileText,
   FlaskConical,
   Lightbulb,
   ListChecks,
+  Plus,
   Play,
   RefreshCcw,
   Send,
   Sparkles,
+  Target,
+  Trash2,
   UploadCloud,
   UserCheck,
   X,
@@ -31,12 +37,20 @@ import AssessmentCard from './AssessmentCard';
 import TryoutBuilder from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
+const DEFAULT_INSTRUCTIONAL_FLOW = [
+  { id: 'hook',      phase: 'THE HOOK',       duration: '10', description: 'Introduction & Overview'  },
+  { id: 'instruct',  phase: 'INSTRUCTION',     duration: '25', description: 'Core Concepts & Theory'  },
+  { id: 'practice',  phase: 'GUIDED PRACTICE', duration: '30', description: 'Practice & Application'  },
+  { id: 'synthesis', phase: 'SYNTHESIS',       duration: '15', description: 'Review & Self-Assessment' },
+];
+
 const STEPS = [
-  { key: 'info',      label: 'Lesson Info',       icon: Calendar,     color: 'blue'    },
-  { key: 'intro',     label: 'Introduction',       icon: Lightbulb,    color: 'amber'   },
-  { key: 'content',   label: 'Content',            icon: ListChecks,   color: 'green'   },
-  { key: 'materials', label: 'Materials',          icon: FlaskConical, color: 'purple'  },
-  { key: 'publish',   label: 'Evaluate & Publish', icon: Send,         color: 'emerald' },
+  { key: 'info',       label: 'Lesson Info',       icon: Calendar,       color: 'blue'    },
+  { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber'   },
+  { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
+  { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
+  { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
+  { key: 'publish',    label: 'Evaluate & Publish', icon: Send,           color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
@@ -46,6 +60,7 @@ const stepAccent = {
   amber:   { ring: 'ring-amber-400',   text: 'text-amber-700 dark:text-amber-300',   banner: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'   },
   green:   { ring: 'ring-green-500',   text: 'text-green-700 dark:text-green-300',   banner: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'   },
   purple:  { ring: 'ring-purple-500',  text: 'text-purple-700 dark:text-purple-300', banner: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' },
+  rose:    { ring: 'ring-rose-500',    text: 'text-rose-700 dark:text-rose-300',     banner: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'     },
   emerald: { ring: 'ring-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
 };
 
@@ -60,6 +75,12 @@ const Card = ({ children, className = '' }) => (
   <div className={`rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 ${className}`}>
     {children}
   </div>
+);
+
+const SectionTitle = ({ icon: Icon, iconColor, children }) => (
+  <p className={`mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100`}>
+    <Icon className={`size-4 ${iconColor}`} /> {children}
+  </p>
 );
 
 const DrawerModal = ({
@@ -96,6 +117,21 @@ const DrawerModal = ({
 
   const accent = stepAccent[STEPS[currentStep].color];
 
+  // Learning objectives helpers
+  const objectives = chapter.learningObjectives || [];
+  const addObjective = () => onUpdate({ ...chapter, learningObjectives: [...objectives, ''] });
+  const updateObjective = (i, val) => {
+    const next = [...objectives];
+    next[i] = val;
+    onUpdate({ ...chapter, learningObjectives: next });
+  };
+  const removeObjective = (i) => onUpdate({ ...chapter, learningObjectives: objectives.filter((_, idx) => idx !== i) });
+
+  // Instructional flow helpers
+  const flow = chapter.instructionalFlow?.length > 0 ? chapter.instructionalFlow : DEFAULT_INSTRUCTIONAL_FLOW;
+  const updateFlow = (id, field, val) =>
+    onUpdate({ ...chapter, instructionalFlow: flow.map((p) => (p.id === id ? { ...p, [field]: val } : p)) });
+
   const handleSaveTryouts = (tryouts) => onUpdate({ ...chapter, tryouts });
 
   const handleOpenMaterialUpload = () => {
@@ -119,6 +155,7 @@ const DrawerModal = ({
   const renderStep = () => {
     switch (STEPS[currentStep].key) {
 
+      /* ─── LESSON INFO ─────────────────────────────────────────── */
       case 'info':
         return (
           <div className="space-y-4">
@@ -176,6 +213,7 @@ const DrawerModal = ({
           </div>
         );
 
+      /* ─── INTRODUCTION ────────────────────────────────────────── */
       case 'intro':
         return (
           <div className="space-y-4">
@@ -191,7 +229,7 @@ const DrawerModal = ({
                   size="sm"
                   variant="outline"
                   onClick={onApplyAiSuggestion}
-                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/40"
+                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400"
                 >
                   <Sparkles className="size-3.5" /> AI Suggestion
                 </Button>
@@ -205,18 +243,108 @@ const DrawerModal = ({
           </div>
         );
 
+      /* ─── CONTENT ─────────────────────────────────────────────── */
       case 'content':
         return (
           <div className="space-y-4">
             <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Add a step-by-step explanation and a short recap students can refer to later.
+              Define what students will learn, how the lesson flows, and the core explanation.
             </p>
+
+            {/* Learning Objectives */}
             <Card>
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                <ListChecks className="size-4 text-green-500" /> Step-by-Step Explanation
-              </p>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle icon={Target} iconColor="text-green-500">Learning Objectives</SectionTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={addObjective}
+                  className="gap-1 text-xs text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-700"
+                >
+                  <Plus className="size-3.5" /> Add Objective
+                </Button>
+              </div>
+              {objectives.length === 0 ? (
+                <p className="text-sm text-slate-400 dark:text-slate-500">
+                  No objectives yet — click "Add Objective" to define what students will learn.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {objectives.map((obj, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-green-100 text-[11px] font-bold text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                        {i + 1}
+                      </span>
+                      <Input
+                        value={obj}
+                        onChange={(e) => updateObjective(i, e.target.value)}
+                        placeholder={`Objective ${i + 1}…`}
+                        className="h-9 flex-1 text-sm"
+                        style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeObjective(i)}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Instructional Flow */}
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle icon={ListChecks} iconColor="text-green-500">Instructional Flow</SectionTitle>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">Suggested breakdown — edit as needed</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {flow.map((phase) => (
+                  <div
+                    key={phase.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/40"
+                  >
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-green-500 shrink-0" />
+                      <Input
+                        value={phase.phase}
+                        onChange={(e) => updateFlow(phase.id, 'phase', e.target.value)}
+                        className="h-7 flex-1 border-0 bg-transparent p-0 text-xs font-bold uppercase tracking-wide text-slate-700 dark:text-slate-200 focus-visible:ring-0"
+                        style={{ color: '#334155', caretColor: '#334155' }}
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Clock className="size-3 text-slate-400" />
+                        <input
+                          type="number"
+                          min="1"
+                          value={phase.duration}
+                          onChange={(e) => updateFlow(phase.id, 'duration', e.target.value)}
+                          className="w-10 rounded border border-slate-200 bg-white px-1 text-center text-[11px] text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                          style={{ color: '#475569', caretColor: '#475569' }}
+                        />
+                        <span className="text-[11px] text-slate-400">m</span>
+                      </div>
+                    </div>
+                    <Input
+                      value={phase.description}
+                      onChange={(e) => updateFlow(phase.id, 'description', e.target.value)}
+                      placeholder="Brief description…"
+                      className="h-8 border-slate-200 bg-white text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      style={{ color: '#475569', caretColor: '#475569' }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Explanation */}
+            <Card>
+              <SectionTitle icon={ListChecks} iconColor="text-green-400">Step-by-Step Explanation</SectionTitle>
               <Textarea
-                rows={6}
+                rows={5}
                 value={chapter.explanation || ''}
                 onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })}
                 placeholder="Walk through what you will teach — one step at a time…"
@@ -231,10 +359,10 @@ const DrawerModal = ({
                 />
               </Field>
             </Card>
+
+            {/* Quick Recap */}
             <Card>
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                <ClipboardCheck className="size-4 text-green-400" /> Quick Recap
-              </p>
+              <SectionTitle icon={CheckCircle2} iconColor="text-green-400">Quick Recap</SectionTitle>
               <Textarea
                 rows={3}
                 value={chapter.recap || ''}
@@ -246,24 +374,62 @@ const DrawerModal = ({
           </div>
         );
 
+      /* ─── MATERIALS ───────────────────────────────────────────── */
       case 'materials':
         return (
           <div className="space-y-4">
             <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Upload worksheets, experiments, practice questions, and study materials.
+              Upload study materials and reference files that students can access anytime.
             </p>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <UploadDropzone title="Worksheet"     accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Assessments"   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []}          onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Experiments"   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []}           onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []}     onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-            </div>
-
+            {/* Study Materials upload */}
             <Card>
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                <FlaskConical className="size-4 text-purple-500" /> Worksheet File or Link
-              </p>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle icon={BookOpen} iconColor="text-purple-500">Study Materials</SectionTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenMaterialUpload}
+                  className="gap-1 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-300"
+                >
+                  <UploadCloud className="size-3.5" /> Upload via Editor
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <UploadDropzone
+                  title="PDF / Documents"
+                  accept=".pdf,.doc,.docx"
+                  files={chapter.contentUploads?.['Study Materials'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Study Materials')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Study Materials')}
+                />
+                <UploadDropzone
+                  title="Presentations & Slides"
+                  accept=".ppt,.pptx,.pdf"
+                  files={chapter.contentUploads?.['Presentations'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Presentations')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Presentations')}
+                />
+                <UploadDropzone
+                  title="Images & Diagrams"
+                  accept="image/*"
+                  files={chapter.contentUploads?.['Images'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Images')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Images')}
+                />
+                <UploadDropzone
+                  title="Videos & Experiments"
+                  accept="video/*,.pdf,.doc,.docx"
+                  files={chapter.contentUploads?.['Experiments'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Experiments')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Experiments')}
+                />
+              </div>
+            </Card>
+
+            {/* Reference / Worksheet link */}
+            <Card>
+              <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Worksheet File or Link</SectionTitle>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="file"
@@ -286,56 +452,124 @@ const DrawerModal = ({
               )}
             </Card>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/* Practice questions */}
-              <div className="flex flex-col justify-between rounded-xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-900/50 dark:bg-purple-950/20">
-                <div className="mb-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    <Play className="size-4 text-purple-500" /> Practice Questions
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {chapter.tryouts?.length > 0
-                      ? `${chapter.tryouts.length} question(s) created`
-                      : 'Add interactive tryout questions for students'}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowTryoutBuilder(true)}
-                  className="w-full border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-950/40"
-                >
-                  <Edit3 className="size-3.5 mr-1.5" />
-                  {chapter.tryouts?.length > 0 ? 'Edit Questions' : 'Create Tryout'}
-                </Button>
+            {/* Report uploads */}
+            <Card>
+              <SectionTitle icon={FileText} iconColor="text-purple-400">Reports & Additional Files</SectionTitle>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <UploadDropzone
+                  title="Report Upload"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                  files={chapter.contentUploads?.['Report Upload'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Report Upload')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Report Upload')}
+                />
+                <UploadDropzone
+                  title="Additional Resources"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                  files={chapter.contentUploads?.['Additional Resources'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Additional Resources')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Additional Resources')}
+                />
               </div>
+            </Card>
+          </div>
+        );
 
-              {/* Share with students */}
-              <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
-                <div>
-                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    <UploadCloud className="size-4 text-blue-500" /> Share with Students
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Upload notes or reference files students can access</p>
-                </div>
-                <div className="rounded-xl border-2 border-dashed border-blue-300 bg-white/60 p-4 text-center dark:bg-slate-900/40">
-                  <UploadCloud className="mx-auto mb-2 size-7 text-blue-400" />
-                  <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">Share study material with students for this chapter</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenMaterialUpload}
-                    className="border-blue-300 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-400"
-                  >
-                    <UploadCloud className="size-3.5 mr-1.5" /> Upload Material
-                  </Button>
-                </div>
-              </div>
-            </div>
+      /* ─── ASSESSMENT ──────────────────────────────────────────── */
+      case 'assessment':
+        return (
+          <div className="space-y-4">
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Upload practice papers, worksheets, and create interactive tryout questions for students.
+            </p>
 
+            {/* Practice Papers */}
             <Card>
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Assessments</p>
+                <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Practice Papers</SectionTitle>
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
+                  Unlocks at 75% progress
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  { label: 'Basic',        bucket: 'Practice Papers Basic'        },
+                  { label: 'Intermediate', bucket: 'Practice Papers Intermediate'  },
+                  { label: 'Advanced',     bucket: 'Practice Papers Advanced'      },
+                ].map(({ label, bucket }) => (
+                  <div key={bucket} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                    <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
+                    <UploadDropzone
+                      title={label}
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                      files={chapter.contentUploads?.[bucket] || []}
+                      onAddFile={(file) => onAddContentFile(file, bucket)}
+                      onRemoveFile={(fileId) => onRemoveContentFile(fileId, bucket)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Worksheets */}
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle icon={FileText} iconColor="text-rose-400">Worksheets</SectionTitle>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                  Available in Uploaded Resources
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <UploadDropzone
+                  title="Worksheet Files"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                  files={chapter.contentUploads?.['Upload Worksheet'] || []}
+                  onAddFile={(file) => onAddContentFile(file, 'Upload Worksheet')}
+                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Upload Worksheet')}
+                />
+                <div className="flex flex-col justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                  <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Worksheet Link</p>
+                  <Input
+                    value={chapter.worksheetLink || ''}
+                    onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
+                    placeholder="Paste a Google Docs / Drive URL…"
+                    className="text-xs"
+                    style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                  />
+                </div>
+              </div>
+            </Card>
+
+            {/* Tryout / Interactive Questions */}
+            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  <Play className="size-4 text-rose-500" /> Tryout Section
+                </p>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {chapter.tryouts?.length > 0
+                    ? `${chapter.tryouts.length} question(s) ready`
+                    : 'No tryout questions yet'}
+                </span>
+              </div>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                Create interactive questions students answer inside the Smart Learning portal.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTryoutBuilder(true)}
+                className="w-full border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-300"
+              >
+                <Edit3 className="size-3.5 mr-1.5" />
+                {chapter.tryouts?.length > 0 ? 'Edit Tryout Questions' : 'Create Tryout Questions'}
+              </Button>
+            </div>
+
+            {/* Structured assessments */}
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle icon={ClipboardCheck} iconColor="text-rose-400">Structured Assessments</SectionTitle>
                 <Button variant="outline" size="sm" onClick={onAddAssessment} className="text-xs">
                   + Add Assessment
                 </Button>
@@ -365,6 +599,7 @@ const DrawerModal = ({
           </div>
         );
 
+      /* ─── EVALUATE & PUBLISH ──────────────────────────────────── */
       case 'publish':
         return (
           <div className="space-y-4">
@@ -403,6 +638,7 @@ const DrawerModal = ({
                       onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, [key]: e.target.value } })}
                       placeholder={placeholder}
                       className="h-9 text-sm"
+                      style={{ color: '#0f172a', caretColor: '#0f172a' }}
                     />
                   </Field>
                 ))}
@@ -503,9 +739,9 @@ const DrawerModal = ({
           {/* Step progress bar */}
           <div className="px-5 pt-4 pb-1">
             <div className="relative flex items-center justify-between">
-              <div className="absolute inset-x-0 top-4 h-0.5 bg-slate-200 dark:bg-slate-700 ml-10 mr-10" />
+              <div className="absolute inset-x-0 top-4 h-0.5 bg-slate-200 dark:bg-slate-700" />
               <div
-                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-3.5"
+                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300"
                 style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
               />
               {STEPS.map((step, index) => {
@@ -532,7 +768,7 @@ const DrawerModal = ({
                       {isDone ? <CheckCircle2 className="size-4" /> : <Icon className="size-3.5" />}
                     </span>
                     <span
-                      className={`hidden text-[11px] font-semibold sm:block transition-colors ${
+                      className={`hidden text-[10px] font-semibold sm:block transition-colors text-center leading-tight ${
                         isActive
                           ? ac.text
                           : isDone
