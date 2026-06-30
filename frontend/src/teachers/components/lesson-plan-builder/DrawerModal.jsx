@@ -1,7 +1,26 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
-import { Calendar, ClipboardCheck, FileText, FlaskConical, Lightbulb, ListChecks, RefreshCcw, Send, Sparkles, UserCheck, X, Play, Edit3, UploadCloud } from 'lucide-react';
+import {
+  Calendar,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardCheck,
+  Edit3,
+  FileText,
+  FlaskConical,
+  Lightbulb,
+  ListChecks,
+  Play,
+  RefreshCcw,
+  Send,
+  Sparkles,
+  UploadCloud,
+  UserCheck,
+  X,
+} from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,23 +29,24 @@ import UploadDropzone from './UploadDropzone';
 import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
 import TryoutBuilder from './TryoutBuilder';
+import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
 const STEPS = [
-  { key: 'info',      label: 'Lesson Info',       icon: Calendar,      color: 'blue'    },
-  { key: 'intro',     label: 'Introduction',       icon: Lightbulb,     color: 'amber'   },
-  { key: 'content',   label: 'Content',            icon: ListChecks,    color: 'green'   },
-  { key: 'materials', label: 'Materials',          icon: FlaskConical,  color: 'purple'  },
-  { key: 'publish',   label: 'Evaluate & Publish', icon: Send,          color: 'emerald' },
+  { key: 'info',      label: 'Lesson Info',       icon: Calendar,     color: 'blue'    },
+  { key: 'intro',     label: 'Introduction',       icon: Lightbulb,    color: 'amber'   },
+  { key: 'content',   label: 'Content',            icon: ListChecks,   color: 'green'   },
+  { key: 'materials', label: 'Materials',          icon: FlaskConical, color: 'purple'  },
+  { key: 'publish',   label: 'Evaluate & Publish', icon: Send,         color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
 
 const stepAccent = {
-  blue:    { ring: 'ring-blue-500',    bg: 'bg-blue-600',    text: 'text-blue-700 dark:text-blue-300',    banner: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'    },
-  amber:   { ring: 'ring-amber-400',   bg: 'bg-amber-500',   text: 'text-amber-700 dark:text-amber-300',   banner: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'   },
-  green:   { ring: 'ring-green-500',   bg: 'bg-green-600',   text: 'text-green-700 dark:text-green-300',   banner: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'   },
-  purple:  { ring: 'ring-purple-500',  bg: 'bg-purple-600',  text: 'text-purple-700 dark:text-purple-300',  banner: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300'  },
-  emerald: { ring: 'ring-emerald-500', bg: 'bg-emerald-600', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  blue:    { ring: 'ring-blue-500',    text: 'text-blue-700 dark:text-blue-300',     banner: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'     },
+  amber:   { ring: 'ring-amber-400',   text: 'text-amber-700 dark:text-amber-300',   banner: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'   },
+  green:   { ring: 'ring-green-500',   text: 'text-green-700 dark:text-green-300',   banner: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'   },
+  purple:  { ring: 'ring-purple-500',  text: 'text-purple-700 dark:text-purple-300', banner: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' },
+  emerald: { ring: 'ring-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
 };
 
 const Field = ({ label, children }) => (
@@ -47,6 +67,9 @@ const DrawerModal = ({
   chapter,
   durations,
   assessmentTypes,
+  classId,
+  sectionId,
+  subjectId,
   onClose,
   onUpdate,
   onAddContentFile,
@@ -63,13 +86,17 @@ const DrawerModal = ({
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
-  const materialInputRef = useRef(null);
+  const [showMaterialUpload, setShowMaterialUpload] = useState(false);
 
   if (!chapter) return null;
 
-  const handleSaveTryouts = (tryouts) => {
-    onUpdate({ ...chapter, tryouts });
-  };
+  const dayLabel = chapter.lessonDate
+    ? new Date(chapter.lessonDate).toLocaleDateString('en-US', { weekday: 'long' })
+    : '';
+
+  const accent = stepAccent[STEPS[currentStep].color];
+
+  const handleSaveTryouts = (tryouts) => onUpdate({ ...chapter, tryouts });
 
   const handleOpenMaterialUpload = () => {
     if (!classId || !sectionId) {
@@ -89,24 +116,62 @@ const DrawerModal = ({
     doc.save(`${chapter.title || 'lesson-plan'}.pdf`);
   };
 
-  return (
-    <AnimatePresence mode="wait">
-      {open && (
-        <motion.section
-          key={chapter.id}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -20 }}
-          transition={{ duration: 0.2 }}
-          className="flex flex-col rounded-2xl border-2 border-blue-200 bg-gradient-to-b from-white to-slate-50/80 p-5 shadow-lg dark:border-slate-600 dark:from-slate-900 dark:to-slate-950/80"
-        >
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 p-3 dark:from-slate-800 dark:to-slate-800">
-            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{chapter.title}</h3>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={onSaveVersion}><RefreshCcw className="size-4" /> Save Version</Button>
-              <Button variant="outline" size="sm" onClick={() => window.print()}><FileText className="size-4" /> Print</Button>
-              <Button variant="outline" size="sm" onClick={exportPdf}><FileText className="size-4" /> Export PDF</Button>
-              <Button variant="ghost" size="icon-sm" onClick={onClose}><X className="size-4" /></Button>
+  const renderStep = () => {
+    switch (STEPS[currentStep].key) {
+
+      case 'info':
+        return (
+          <div className="space-y-4">
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Name this lesson, pick a date and set how long it will run.
+            </p>
+            <Card>
+              <Field label="Chapter Title">
+                <Input
+                  value={chapter.title || ''}
+                  onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
+                  placeholder="e.g. Photosynthesis — Light Reactions"
+                  className="h-10 rounded-lg border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+                  style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                />
+              </Field>
+            </Card>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Card>
+                <Field label="Lesson Date">
+                  <input
+                    type="date"
+                    value={chapter.lessonDate || ''}
+                    onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </Field>
+              </Card>
+              <Card>
+                <Field label="Day">
+                  <input
+                    value={dayLabel || ''}
+                    readOnly
+                    placeholder="Auto-filled"
+                    style={{ color: '#64748b', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-3 text-sm"
+                  />
+                </Field>
+              </Card>
+              <Card>
+                <Field label="Duration">
+                  <select
+                    value={chapter.duration || ''}
+                    onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
+                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
+                    className="h-10 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    <option value="" disabled>Select duration</option>
+                    {(durations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </Field>
+              </Card>
             </div>
           </div>
         );
@@ -189,10 +254,10 @@ const DrawerModal = ({
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <UploadDropzone title="Worksheet"      accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Assessments"    accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []}          onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Experiments"    accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []}           onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-              <UploadDropzone title="Report Upload"  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []}     onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Worksheet"     accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Upload Worksheet'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Assessments"   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []}          onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Experiments"   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []}           onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
+              <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []}     onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
             </div>
 
             <Card>
@@ -246,37 +311,34 @@ const DrawerModal = ({
               </div>
 
               {/* Share with students */}
-              <div className="flex flex-col justify-between rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
-                <div className="mb-3">
+              <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-950/20">
+                <div>
                   <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                     <UploadCloud className="size-4 text-blue-500" /> Share with Students
                   </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Upload notes or reference files students can access</p>
                 </div>
-
-                <UploadDropzone title="Assessments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Assessments || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-                <UploadDropzone title="Experiments" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.Experiments || []} onAddFile={onAddContentFile} onRemoveContentFile={onRemoveContentFile} onRemoveFile={onRemoveContentFile} />
-                <UploadDropzone title="Report Upload" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" files={chapter.contentUploads?.['Report Upload'] || []} onAddFile={onAddContentFile} onRemoveFile={onRemoveContentFile} />
-
-                {/* Upload Material Section */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Upload Material</p>
-                  <div className="rounded-xl border-2 border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50 p-4 text-center dark:from-blue-900/20 dark:to-cyan-900/20">
-                    <UploadCloud className="mx-auto mb-2 size-8 text-blue-500" />
-                    <p className="mb-2 text-sm text-slate-600 dark:text-slate-300">
-                      Share study material with students for this chapter
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleOpenMaterialUpload}
-                      className="border-blue-300 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-400"
-                    >
-                      <UploadCloud className="size-4 mr-2" />
-                      Upload Material
-                    </Button>
-                  </div>
+                <div className="rounded-xl border-2 border-dashed border-blue-300 bg-white/60 p-4 text-center dark:bg-slate-900/40">
+                  <UploadCloud className="mx-auto mb-2 size-7 text-blue-400" />
+                  <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">Share study material with students for this chapter</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOpenMaterialUpload}
+                    className="border-blue-300 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-400"
+                  >
+                    <UploadCloud className="size-3.5 mr-1.5" /> Upload Material
+                  </Button>
                 </div>
+              </div>
+            </div>
+
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Assessments</p>
+                <Button variant="outline" size="sm" onClick={onAddAssessment} className="text-xs">
+                  + Add Assessment
+                </Button>
               </div>
               {(chapter.assessments || []).length === 0 ? (
                 <p className="text-sm text-slate-400 dark:text-slate-500">No assessments yet — click "Add Assessment" to create one.</p>
@@ -330,10 +392,10 @@ const DrawerModal = ({
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {[
-                  { key: 'participation', label: 'Participation',       placeholder: 'e.g. Very active'              },
-                  { key: 'remarks',       label: 'Performance Remarks', placeholder: 'e.g. Understood well'          },
-                  { key: 'behaviour',     label: 'Behaviour',           placeholder: 'e.g. Attentive and cooperative'},
-                  { key: 'progress',      label: 'Progress',            placeholder: 'e.g. On track'                 },
+                  { key: 'participation', label: 'Participation',       placeholder: 'e.g. Very active'               },
+                  { key: 'remarks',       label: 'Performance Remarks', placeholder: 'e.g. Understood well'           },
+                  { key: 'behaviour',     label: 'Behaviour',           placeholder: 'e.g. Attentive and cooperative' },
+                  { key: 'progress',      label: 'Progress',            placeholder: 'e.g. On track'                  },
                 ].map(({ key, label, placeholder }) => (
                   <Field key={key} label={label}>
                     <Input
@@ -441,17 +503,16 @@ const DrawerModal = ({
           {/* Step progress bar */}
           <div className="px-5 pt-4 pb-1">
             <div className="relative flex items-center justify-between">
-              {/* connector line */}
               <div className="absolute inset-x-0 top-4 h-0.5 bg-slate-200 dark:bg-slate-700 ml-10 mr-10" />
               <div
-                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-3.5 mr-32"
+                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-3.5"
                 style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
               />
               {STEPS.map((step, index) => {
                 const isActive = index === currentStep;
-                const isDone   = index < currentStep;
-                const Icon     = step.icon;
-                const ac       = stepAccent[step.color];
+                const isDone = index < currentStep;
+                const Icon = step.icon;
+                const ac = stepAccent[step.color];
                 return (
                   <button
                     key={step.key}
@@ -468,11 +529,7 @@ const DrawerModal = ({
                             : 'border-slate-300 bg-white text-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-500'
                       }`}
                     >
-                      {isDone ? (
-                        <CheckCircle2 className="size-4" />
-                      ) : (
-                        <Icon className="size-3.5" />
-                      )}
+                      {isDone ? <CheckCircle2 className="size-4" /> : <Icon className="size-3.5" />}
                     </span>
                     <span
                       className={`hidden text-[11px] font-semibold sm:block transition-colors ${
@@ -503,37 +560,72 @@ const DrawerModal = ({
             </Motion.div>
           </div>
 
-          {showMaterialUpload && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-              <div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl">
-                <button
-                  type="button"
-                  onClick={() => setShowMaterialUpload(false)}
-                  className="absolute right-4 top-4 z-10 rounded-full bg-white p-1.5 text-slate-500 shadow hover:bg-slate-100"
-                  aria-label="Close upload material"
-                >
-                  <X className="size-4" />
-                </button>
-                <RichTextMaterialEditor
-                  classId={classId}
-                  sectionId={sectionId}
-                  subjectId={subjectId}
-                  chapterId={chapter.id}
-                  chapterTitle={chapter.title}
-                  onCancel={() => setShowMaterialUpload(false)}
-                  onSave={(savedMaterial) => {
-                    setShowMaterialUpload(false);
-                    toast.success(
-                      savedMaterial?.status === 'published'
-                        ? 'Material is now visible to students'
-                        : 'Material saved as draft. Choose "Publish now" to make it visible to students.'
-                    );
-                  }}
-                />
-              </div>
-            </div>
-          )}
-        </motion.section>
+          {/* Footer navigation */}
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+              disabled={currentStep === 0}
+              className="gap-1 text-slate-600 dark:text-slate-300"
+            >
+              <ChevronLeft className="size-4" /> Back
+            </Button>
+            <span className="text-xs text-slate-400 dark:text-slate-500">
+              Step <span className="font-semibold text-slate-600 dark:text-slate-300">{currentStep + 1}</span> / {STEPS.length}
+            </span>
+            {currentStep < STEPS.length - 1 ? (
+              <Button
+                size="sm"
+                onClick={() => setCurrentStep((s) => s + 1)}
+                className="gap-1 bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Next <ChevronRight className="size-4" />
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={onPublishChapter}
+                disabled={isPublishing}
+                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isPublishing ? 'Publishing…' : <><Send className="size-3.5" /> Publish</>}
+              </Button>
+            )}
+          </div>
+        </Motion.section>
+      )}
+
+      {/* Material upload modal */}
+      {showMaterialUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setShowMaterialUpload(false)}
+              className="absolute right-4 top-4 z-10 rounded-full bg-white p-1.5 text-slate-500 shadow hover:bg-slate-100"
+              aria-label="Close upload material"
+            >
+              <X className="size-4" />
+            </button>
+            <RichTextMaterialEditor
+              classId={classId}
+              sectionId={sectionId}
+              subjectId={subjectId}
+              chapterId={chapter.id}
+              chapterTitle={chapter.title}
+              onCancel={() => setShowMaterialUpload(false)}
+              onSave={(savedMaterial) => {
+                setShowMaterialUpload(false);
+                toast.success(
+                  savedMaterial?.status === 'published'
+                    ? 'Material is now visible to students'
+                    : 'Material saved as draft. Choose "Publish now" to make it visible to students.'
+                );
+              }}
+            />
+          </div>
+        </div>
       )}
     </AnimatePresence>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { BookOpenCheck } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
