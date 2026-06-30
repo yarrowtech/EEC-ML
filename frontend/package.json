@@ -23,6 +23,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.40.0",
     "html2canvas": "^1.4.1",
+    "jodit-react": "^5.3.21",
     "jspdf": "^3.0.2",
     "lucide-react": "^0.514.0",
     "quill": "^1.3.7",

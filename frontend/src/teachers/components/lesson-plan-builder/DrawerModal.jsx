@@ -444,7 +444,7 @@ const DrawerModal = ({
               {/* connector line */}
               <div className="absolute inset-x-0 top-4 h-0.5 bg-slate-200 dark:bg-slate-700 ml-10 mr-10" />
               <div
-                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-5"
+                className="absolute top-4 left-0 h-0.5 bg-blue-500 transition-all duration-300 ml-3.5 mr-32"
                 style={{ width: `${(currentStep / (STEPS.length - 1)) * 100}%` }}
               />
               {STEPS.map((step, index) => {
