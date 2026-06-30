@@ -601,6 +601,29 @@ const AILearningCoursesLanding = () => {
       if (classLabel) item.classNames.add(classLabel);
     });
 
+    // Also include subjects that exist only in the Smart Learning map. This keeps
+    // standalone uploaded materials visible even when timetable/context data is
+    // missing or uses a slightly different subject label.
+    smartLearningMap.forEach((mappedSubject) => {
+      const key = normalize(mappedSubject?.key || mappedSubject?.title);
+      if (!key) return;
+
+      const matchingEntry = mappedSubject?.subjectId
+        ? Array.from(map.entries()).find(([, item]) => item.subjectId && String(item.subjectId) === String(mappedSubject.subjectId))
+        : null;
+      const mapKey = matchingEntry?.[0] || key;
+
+      if (!map.has(mapKey)) {
+        map.set(mapKey, {
+          key,
+          title: String(mappedSubject?.title || mappedSubject?.key || 'Subject').trim(),
+          subjectId: mappedSubject?.subjectId || null,
+          teacherNames: new Set(),
+          classNames: new Set(),
+        });
+      }
+    });
+
     // Then merge with smart learning map data (lesson plans)
     return Array.from(map.values()).map((item) => {
       const fromMap = smartLearningMap.find((m) => (

@@ -44,6 +44,7 @@ router.post('/', async (req, res, next) => {
       title,
       content,
       materialType,
+      learningType,
       typeLabel,
       classId,
       sectionId,
@@ -84,9 +85,11 @@ router.post('/', async (req, res, next) => {
     // Create material object
     const materialData = {
       schoolId: req.schoolId,
+      campusId: req.campusId || null,
       title: title.trim(),
       content: content || '',
       materialType: materialType || 'note',
+      learningType: learningType || 'note',
       typeLabel: typeLabel || 'Study Material',
       classId,
       sectionId,
@@ -108,6 +111,11 @@ router.post('/', async (req, res, next) => {
       hasPoll: hasPoll || false,
       folderId: folderId || null
     };
+
+    if (materialData.status === 'published') {
+      materialData.publishedAt = new Date();
+      materialData.publishedForStudentPortal = true;
+    }
 
     // Add optional fields
     if (quiz && hasQuiz) materialData.quiz = quiz;
@@ -358,6 +366,7 @@ router.post('/:id/publish', async (req, res, next) => {
 
     material.status = 'published';
     material.publishedAt = new Date();
+    material.publishedForStudentPortal = true;
 
     await material.save();
 

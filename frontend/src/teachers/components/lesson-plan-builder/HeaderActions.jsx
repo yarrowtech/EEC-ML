@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowRight, Clock, UploadCloud } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Clock, UploadCloud } from 'lucide-react';
 
 const HeaderActions = ({
   autosaveStatus,
@@ -10,11 +10,13 @@ const HeaderActions = ({
   onSectionChange,
   onSubjectChange,
   onUploadMaterial,
+  uploadMaterialDisabled = false,
   classOptions = [],
   sectionOptions = [],
   subjectOptions = [],
 }) => {
   const hasDynamicOptions = classOptions.length > 0;
+  const fileInputRef = useRef(null);
 
   return (
     <div className="rounded-xl border border-blue-100 bg-white/90 px-4 py-2.5 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
@@ -75,24 +77,24 @@ const HeaderActions = ({
             <><option>Mathematics</option><option>Science</option><option>English</option></>
           )}
         </select>
+      </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* {onUploadMaterial && (
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {onUploadMaterial ? (
           <button
             type="button"
             onClick={onUploadMaterial}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700"
+            className="inline-flex h-9 items-center gap-2 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700"
           >
-            <UploadCloud className="size-3" />
+            <UploadCloud className="size-3.5" />
             Upload Material
           </button>
-        )} */}
-
-        <div className="flex items-center gap-1.5">
-          <Clock className="size-3 text-slate-400" />
-          <span className="text-[11px] text-slate-400 dark:text-slate-500">{autosaveStatus}</span>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-2">
+          <Clock className="size-3.5 text-slate-400" />
+          <span className="text-xs text-slate-500 dark:text-slate-400">{autosaveStatus}</span>
         </div>
       </div>
     </div>

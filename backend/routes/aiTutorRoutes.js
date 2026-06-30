@@ -26,19 +26,50 @@ const formatResourceText = (value) => {
   return [title, url].filter(Boolean).join(' - ');
 };
 
-// Splits a material's HTML content into small, independently-rankable chunks for retrieval.
-// Most content is authored as <li> bullet points (see buildMaterialContent in lessonPlanRoutes.js),
-// so each bullet becomes its own candidate; anything else falls back to one chunk per material.
+const formatAttachmentText = (material, attachment, index) => {
+  const title = normalizeString(material.title) || `Material ${index + 1}`;
+  const subject = normalizeString(material.subjectName);
+  const chapter = normalizeString(material.chapterTitle || material.chapterId);
+  const topic = normalizeString(material.topicTitle);
+  const subTopic = normalizeString(material.subTopicTitle);
+  const attachmentName = normalizeString(attachment?.name) || title;
+  const attachmentType = normalizeString(attachment?.type || material.learningType || material.materialType);
+  const attachmentUrl = normalizeString(attachment?.url);
+  const scope = [subject, chapter, topic, subTopic].filter(Boolean).join(' > ');
+  const parts = [
+    scope ? `Scope: ${scope}` : '',
+    `Uploaded material: ${title}`,
+    `Attachment: ${attachmentName}`,
+    attachmentType ? `File type: ${attachmentType}` : '',
+    attachmentUrl ? `URL: ${attachmentUrl}` : '',
+  ].filter(Boolean);
+  return parts.join(' | ');
+};
+
+// Splits a material's HTML/plain text and file attachments into independently-rankable chunks.
+// File-only uploads have empty content and store the actual resource in attachments, so those
+// attachments must be indexed for the tutor to find and return them when students ask.
 const extractChunks = (material) => {
+  const chunks = [];
   const html = String(material.content || '');
   const liItems = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
     .map((match) => stripHtml(match[1]))
     .filter(Boolean);
   if (liItems.length) {
-    return liItems.map((text, index) => ({ id: `${material._id}-li-${index}`, text }));
+    liItems.forEach((text, index) => chunks.push({ id: `${material._id}-li-${index}`, text }));
+  } else {
+    const whole = stripHtml(html) || normalizeString(material.plainTextContent);
+    if (whole) chunks.push({ id: `${material._id}-full`, text: whole });
   }
-  const whole = stripHtml(html);
-  return whole ? [{ id: `${material._id}-full`, text: whole }] : [];
+
+  if (Array.isArray(material.attachments)) {
+    material.attachments.forEach((attachment, index) => {
+      const text = formatAttachmentText(material, attachment, index);
+      if (text) chunks.push({ id: `${material._id}-attachment-${index}`, text });
+    });
+  }
+
+  return chunks;
 };
 
 const addCandidate = (candidates, seen, id, text) => {
@@ -125,7 +156,12 @@ router.post('/generate', authStudent, async (req, res) => {
       status: 'published',
       publishedForStudentPortal: true,
     };
-    if (campusId) materialFilter.campusId = campusId;
+    if (campusId) {
+      materialFilter.$and = [
+        ...(materialFilter.$and || []),
+        { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] },
+      ];
+    }
     if (student.classId) materialFilter.classId = student.classId;
     if (student.sectionId) materialFilter.sectionId = student.sectionId;
     if (normalizeString(subject)) {

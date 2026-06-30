@@ -1662,7 +1662,10 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       materialFilter.campusId = campusId;
       paperFilter.campusId = campusId;
       assignmentFilter.campusId = campusId;
-      standaloneMaterialFilter.campusId = campusId;
+      standaloneMaterialFilter.$and = [
+        ...(standaloneMaterialFilter.$and || []),
+        { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] },
+      ];
     }
 
     const [materials, papers, assignments, standaloneMaterials] = await Promise.all([
