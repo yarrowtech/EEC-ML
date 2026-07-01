@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const axios = require('axios');
 const adminAuth = require('../middleware/adminAuth');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
@@ -17,6 +18,9 @@ const PracticePaper = require('../models/PracticePaper');
 const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 const normalizeString = (value) => String(value || '').trim();
 const normalizeLower = (value) => String(value || '').trim().toLowerCase();
@@ -100,6 +104,86 @@ const buildAttachmentList = (items) =>
       type: inferAttachmentType(item.url),
     }));
 
+const getAttachmentExtension = (attachment) => {
+  const type = normalizeString(attachment?.type).toLowerCase();
+  const name = normalizeString(attachment?.name).toLowerCase();
+  const fromName = name.includes('.') ? name.split('.').pop() : '';
+  if (fromName) return fromName;
+  if (type.includes('pdf')) return 'pdf';
+  if (type.includes('docx') || type.includes('word')) return 'docx';
+  if (type.includes('pptx') || type.includes('powerpoint') || type.includes('presentation')) return 'pptx';
+  return type;
+};
+
+const isVectorIngestible = (attachment) =>
+  Boolean(attachment?.url) && SUPPORTED_VECTOR_EXTENSIONS.has(getAttachmentExtension(attachment));
+
+const buildVectorSourceId = (material, attachment, index) => {
+  const stableAttachmentId = attachment.cloudinaryPublicId || attachment.url || attachment.name || index;
+  return `${String(material._id)}:${String(stableAttachmentId)}`;
+};
+
+const deleteMaterialVectors = (materialId) =>
+  axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
+    timeout: 60_000,
+  });
+
+const ingestPublishedMaterialAttachments = async (material) => {
+  const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];
+
+  if (!attachments.length) {
+    try {
+      await deleteMaterialVectors(material._id);
+    } catch (err) {
+      console.error(
+        '[Smart Learning ingest] failed to clear vectors for material',
+        String(material._id),
+        err.response?.data || err.message
+      );
+    }
+    return { indexedAttachmentCount: 0, failedAttachmentCount: 0 };
+  }
+
+  let indexedAttachmentCount = 0;
+  let failedAttachmentCount = 0;
+  for (let index = 0; index < attachments.length; index += 1) {
+    const attachment = attachments[index];
+    try {
+      const response = await axios.post(
+        `${AI_SERVICE_URL}/ingest/material`,
+        {
+          url: attachment.url,
+          material_id: String(material._id),
+          source_id: buildVectorSourceId(material, attachment, index),
+          file_name: attachment.name || '',
+          content_type: attachment.type || '',
+          replace_existing: index === 0,
+          school_id: String(material.schoolId),
+          class_id: String(material.classId || ''),
+          section_id: String(material.sectionId || ''),
+          subject_name: material.subjectName || '',
+          chapter_id: material.chapterId || '',
+          chapter_title: material.chapterTitle || '',
+          topic_title: material.topicTitle || '',
+        },
+        { timeout: 300_000 }
+      );
+      if ((response.data?.chunks_indexed || 0) > 0) indexedAttachmentCount += 1;
+      else failedAttachmentCount += 1;
+    } catch (err) {
+      failedAttachmentCount += 1;
+      console.error(
+        '[Smart Learning ingest] failed for material',
+        String(material._id),
+        attachment.name || attachment.url,
+        err.response?.data || err.message
+      );
+    }
+  }
+
+  return { indexedAttachmentCount, failedAttachmentCount };
+};
+
 const buildMaterialContent = (label, title, items) => {
   const normalized = normalizeStringList(items);
   if (!normalized.length) return '';
@@ -182,6 +266,8 @@ const createPublishedStudentNotification = async ({ schoolId, campusId, plan, ch
 const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex, publishAssignment = true, publishPracticePaper = true }) => {
   const base = buildSourceMaterialPayloads({ plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex });
   const createdMaterials = [];
+  let vectorIndexedAttachmentCount = 0;
+  let vectorFailedAttachmentCount = 0;
 
   for (const payload of base.payloads) {
     const materialFilter = {
@@ -272,6 +358,9 @@ const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter
       });
     }
     createdMaterials.push(material);
+    const vectorResult = await ingestPublishedMaterialAttachments(material);
+    vectorIndexedAttachmentCount += vectorResult.indexedAttachmentCount;
+    vectorFailedAttachmentCount += vectorResult.failedAttachmentCount;
   }
 
   let assignment = null;
@@ -447,7 +536,157 @@ const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter
     subTopicTitle: base.subTopicTitle,
   });
 
-  return { materials: createdMaterials, assignment, paper };
+  return {
+    materials: createdMaterials,
+    assignment,
+    paper,
+    vectorIndexedAttachmentCount,
+    vectorFailedAttachmentCount,
+  };
+};
+
+const publishPlanLevelResourceMaterial = async ({ schoolId, campusId, plan }) => {
+  const items = normalizeStringList(plan.materialsNeeded);
+  const attachments = buildAttachmentList(items);
+  if (!attachments.length) {
+    return {
+      material: null,
+      vectorIndexedAttachmentCount: 0,
+      vectorFailedAttachmentCount: 0,
+    };
+  }
+
+  const chapterTitle = normalizeString(plan.title) || 'Study Materials';
+  const materialFilter = {
+    schoolId,
+    sourceLessonPlanId: plan._id,
+    sourceSubTopicId: 'plan-materials-needed',
+    learningType: 'pdf',
+  };
+  if (campusId) materialFilter.campusId = campusId;
+
+  const payload = {
+    title: `${plan.subject || 'Subject'} • ${chapterTitle} • Uploaded Materials`,
+    content: buildMaterialContent('Uploaded Materials', chapterTitle, items),
+    attachments,
+    materialType: 'reading',
+    learningType: 'pdf',
+    typeLabel: 'Uploaded Materials',
+    category: 'reference',
+    chapterId: normalizeIdValue(plan._id),
+    chapterTitle,
+    topicTitle: chapterTitle,
+    subTopicTitle: 'Uploaded Materials',
+    sourceSubTopicId: 'plan-materials-needed',
+  };
+
+  let material = await TeachingMaterial.findOne(materialFilter);
+  if (material) {
+    material.title = payload.title;
+    material.content = payload.content;
+    material.materialType = payload.materialType;
+    material.learningType = payload.learningType;
+    material.typeLabel = payload.typeLabel;
+    material.classId = plan.classId;
+    material.sectionId = plan.sectionId;
+    material.subjectId = plan.subjectId;
+    material.className = plan.className || '';
+    material.sectionName = plan.sectionName || '';
+    material.subjectName = plan.subject || '';
+    material.chapterId = payload.chapterId;
+    material.chapterTitle = payload.chapterTitle;
+    material.topicTitle = payload.topicTitle;
+    material.subTopicTitle = payload.subTopicTitle;
+    material.sourceLessonPlanId = plan._id;
+    material.sourceSubTopicId = payload.sourceSubTopicId;
+    material.teacherId = plan.teacherId;
+    material.teacherName = plan.teacherName || 'Teacher';
+    material.status = 'published';
+    material.publishedForStudentPortal = true;
+    material.publishedAt = new Date();
+    material.priority = 'medium';
+    material.difficulty = 'intermediate';
+    material.category = payload.category;
+    material.tags = ['lesson-plan', 'smart-learning', 'uploaded-material'];
+    material.attachments = payload.attachments;
+    await material.save();
+  } else {
+    material = await TeachingMaterial.create({
+      schoolId,
+      campusId: campusId || null,
+      title: payload.title,
+      content: payload.content,
+      materialType: payload.materialType,
+      learningType: payload.learningType,
+      typeLabel: payload.typeLabel,
+      classId: plan.classId,
+      sectionId: plan.sectionId,
+      subjectId: plan.subjectId,
+      className: plan.className || '',
+      sectionName: plan.sectionName || '',
+      subjectName: plan.subject || '',
+      chapterId: payload.chapterId,
+      chapterTitle: payload.chapterTitle,
+      topicTitle: payload.topicTitle,
+      subTopicTitle: payload.subTopicTitle,
+      sourceLessonPlanId: plan._id,
+      sourceSubTopicId: payload.sourceSubTopicId,
+      teacherId: plan.teacherId,
+      teacherName: plan.teacherName || 'Teacher',
+      status: 'published',
+      publishedForStudentPortal: true,
+      publishedAt: new Date(),
+      priority: 'medium',
+      difficulty: 'intermediate',
+      category: payload.category,
+      tags: ['lesson-plan', 'smart-learning', 'uploaded-material'],
+      attachments: payload.attachments,
+    });
+  }
+
+  const vectorResult = await ingestPublishedMaterialAttachments(material);
+  return { material, ...vectorResult };
+};
+
+const publishPlanSmartLearningArtifacts = async ({ schoolId, campusId, plan }) => {
+  const planner = sanitizePlannerContent(plan.plannerContent);
+  const publishedArtifacts = [];
+  const planResource = await publishPlanLevelResourceMaterial({ schoolId, campusId, plan });
+
+  for (let chapterIndex = 0; chapterIndex < (planner.chapters || []).length; chapterIndex += 1) {
+    const chapter = planner.chapters[chapterIndex];
+    for (let topicIndex = 0; topicIndex < (chapter.topics || []).length; topicIndex += 1) {
+      const topic = chapter.topics[topicIndex];
+      for (let subTopicIndex = 0; subTopicIndex < (topic.subTopics || []).length; subTopicIndex += 1) {
+        const subTopic = topic.subTopics[subTopicIndex];
+        const artifacts = await publishSmartLearningArtifacts({
+          schoolId,
+          campusId,
+          plan,
+          chapter,
+          topic,
+          subTopic,
+          chapterIndex,
+          topicIndex,
+          subTopicIndex,
+        });
+        publishedArtifacts.push(artifacts);
+      }
+    }
+  }
+
+  return {
+    publishedArtifacts,
+    publishedCount: publishedArtifacts.length,
+    vectorIndexedAttachmentCount: publishedArtifacts.reduce(
+      (sum, item) => sum + Number(item?.vectorIndexedAttachmentCount || 0),
+      Number(planResource.vectorIndexedAttachmentCount || 0)
+    ),
+    vectorFailedAttachmentCount: publishedArtifacts.reduce(
+      (sum, item) => sum + Number(item?.vectorFailedAttachmentCount || 0),
+      Number(planResource.vectorFailedAttachmentCount || 0)
+    ),
+  };
 };
 
 const sanitizePlannerContent = (value) => {
@@ -1329,7 +1568,15 @@ router.post('/teacher', authTeacher, async (req, res) => {
       });
     }
 
-    res.status(201).json({ message: 'Lesson plan created', plan });
+    const publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
+
+    res.status(201).json({
+      message: 'Lesson plan created',
+      plan,
+      publishedCount: publishResult.publishedCount,
+      vectorIndexedAttachmentCount: publishResult.vectorIndexedAttachmentCount,
+      vectorFailedAttachmentCount: publishResult.vectorFailedAttachmentCount,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1382,30 +1629,7 @@ router.post('/teacher/:id/publish', authTeacher, async (req, res) => {
     const plan = await LessonPlan.findOne(filter);
     if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
 
-    const planner = sanitizePlannerContent(plan.plannerContent);
-    const publishedArtifacts = [];
-
-    for (let chapterIndex = 0; chapterIndex < (planner.chapters || []).length; chapterIndex += 1) {
-      const chapter = planner.chapters[chapterIndex];
-      for (let topicIndex = 0; topicIndex < (chapter.topics || []).length; topicIndex += 1) {
-        const topic = chapter.topics[topicIndex];
-        for (let subTopicIndex = 0; subTopicIndex < (topic.subTopics || []).length; subTopicIndex += 1) {
-          const subTopic = topic.subTopics[subTopicIndex];
-          const artifacts = await publishSmartLearningArtifacts({
-            schoolId,
-            campusId,
-            plan,
-            chapter,
-            topic,
-            subTopic,
-            chapterIndex,
-            topicIndex,
-            subTopicIndex,
-          });
-          publishedArtifacts.push(artifacts);
-        }
-      }
-    }
+    const publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
 
     plan.status = 'published';
     plan.publishedAt = new Date();
@@ -1416,7 +1640,9 @@ router.post('/teacher/:id/publish', authTeacher, async (req, res) => {
     res.json({
       message: 'Lesson plan published to Smart Learning',
       plan,
-      publishedCount: publishedArtifacts.length,
+      publishedCount: publishResult.publishedCount,
+      vectorIndexedAttachmentCount: publishResult.vectorIndexedAttachmentCount,
+      vectorFailedAttachmentCount: publishResult.vectorFailedAttachmentCount,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

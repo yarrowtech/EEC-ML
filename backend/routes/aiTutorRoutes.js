@@ -10,117 +10,63 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards'];
 
 const MAX_MATERIALS = 50;
-const MAX_CANDIDATES = 150;
+const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 const normalizeString = (value) => String(value || '').trim();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-const normalizeStringList = (value) =>
-  Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
-const formatResourceText = (value) => {
-  const text = normalizeString(value);
-  const separator = text.indexOf('::');
-  if (separator < 0) return text;
-  const title = normalizeString(text.slice(0, separator));
-  const url = normalizeString(text.slice(separator + 2));
-  return [title, url].filter(Boolean).join(' - ');
+
+const getAttachmentExtension = (attachment) => {
+  const type = normalizeString(attachment?.type).toLowerCase();
+  const name = normalizeString(attachment?.name).toLowerCase();
+  const fromName = name.includes('.') ? name.split('.').pop() : '';
+  if (fromName) return fromName;
+  if (type.includes('pdf')) return 'pdf';
+  if (type.includes('docx') || type.includes('word')) return 'docx';
+  if (type.includes('pptx') || type.includes('powerpoint') || type.includes('presentation')) return 'pptx';
+  return type;
 };
 
-const formatAttachmentText = (material, attachment, index) => {
-  const title = normalizeString(material.title) || `Material ${index + 1}`;
-  const subject = normalizeString(material.subjectName);
-  const chapter = normalizeString(material.chapterTitle || material.chapterId);
-  const topic = normalizeString(material.topicTitle);
-  const subTopic = normalizeString(material.subTopicTitle);
-  const attachmentName = normalizeString(attachment?.name) || title;
-  const attachmentType = normalizeString(attachment?.type || material.learningType || material.materialType);
-  const attachmentUrl = normalizeString(attachment?.url);
-  const scope = [subject, chapter, topic, subTopic].filter(Boolean).join(' > ');
-  const parts = [
-    scope ? `Scope: ${scope}` : '',
-    `Uploaded material: ${title}`,
-    `Attachment: ${attachmentName}`,
-    attachmentType ? `File type: ${attachmentType}` : '',
-    attachmentUrl ? `URL: ${attachmentUrl}` : '',
-  ].filter(Boolean);
-  return parts.join(' | ');
+const isVectorIngestible = (attachment) =>
+  Boolean(attachment?.url) && SUPPORTED_VECTOR_EXTENSIONS.has(getAttachmentExtension(attachment));
+
+const buildSourceId = (material, attachment, index) => {
+  const stableAttachmentId = attachment.cloudinaryPublicId || attachment.url || attachment.name || index;
+  return `${String(material._id)}:${String(stableAttachmentId)}`;
 };
 
-// Splits a material's HTML/plain text and file attachments into independently-rankable chunks.
-// File-only uploads have empty content and store the actual resource in attachments, so those
-// attachments must be indexed for the tutor to find and return them when students ask.
-const extractChunks = (material) => {
-  const chunks = [];
-  const html = String(material.content || '');
-  const liItems = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
-    .map((match) => stripHtml(match[1]))
-    .filter(Boolean);
-  if (liItems.length) {
-    liItems.forEach((text, index) => chunks.push({ id: `${material._id}-li-${index}`, text }));
-  } else {
-    const whole = stripHtml(html) || normalizeString(material.plainTextContent);
-    if (whole) chunks.push({ id: `${material._id}-full`, text: whole });
+const ingestMaterialAttachments = async (material) => {
+  const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];
+  for (let index = 0; index < attachments.length; index += 1) {
+    const attachment = attachments[index];
+    await axios.post(
+      `${AI_SERVICE_URL}/ingest/material`,
+      {
+        url: attachment.url,
+        material_id: String(material._id),
+        source_id: buildSourceId(material, attachment, index),
+        file_name: attachment.name || '',
+        content_type: attachment.type || '',
+        replace_existing: index === 0,
+        school_id: String(material.schoolId),
+        class_id: String(material.classId || ''),
+        section_id: String(material.sectionId || ''),
+        subject_name: material.subjectName || '',
+        chapter_id: material.chapterId || '',
+        chapter_title: material.chapterTitle || '',
+        topic_title: material.topicTitle || '',
+      },
+      { timeout: 300_000 }
+    );
   }
+  return attachments.length;
+};
 
-  if (Array.isArray(material.attachments)) {
-    material.attachments.forEach((attachment, index) => {
-      const text = formatAttachmentText(material, attachment, index);
-      if (text) chunks.push({ id: `${material._id}-attachment-${index}`, text });
-    });
+const ensureMaterialsIndexed = async (materials) => {
+  let indexedAttachmentCount = 0;
+  for (const material of materials) {
+    indexedAttachmentCount += await ingestMaterialAttachments(material);
   }
-
-  return chunks;
-};
-
-const addCandidate = (candidates, seen, id, text) => {
-  const normalized = normalizeString(text);
-  if (!normalized) return;
-  const key = normalized.toLowerCase();
-  if (seen.has(key)) return;
-  seen.add(key);
-  candidates.push({ id, text: normalized });
-};
-
-const extractLessonPlanChunks = (plan) => {
-  const candidates = [];
-  const seen = new Set();
-  const subject = normalizeString(plan.subject || plan.subjectName || plan.title);
-  const planPrefix = subject ? `${subject}: ` : '';
-
-  normalizeStringList(plan.materialsNeeded).forEach((item, index) => {
-    addCandidate(candidates, seen, `${plan._id}-material-${index}`, `${planPrefix}Uploaded chapter resource: ${formatResourceText(item)}`);
-  });
-
-  const chapters = Array.isArray(plan.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
-  chapters.forEach((chapter, chapterIndex) => {
-    const chapterTitle = normalizeString(chapter?.title) || `Chapter ${chapterIndex + 1}`;
-    (chapter?.topics || []).forEach((topic, topicIndex) => {
-      const topicTitle = normalizeString(topic?.title) || `Topic ${topicIndex + 1}`;
-      (topic?.subTopics || []).forEach((subTopic, subTopicIndex) => {
-        const subTopicTitle = normalizeString(subTopic?.title) || `Sub Topic ${subTopicIndex + 1}`;
-        const scope = [subject, chapterTitle, topicTitle, subTopicTitle].filter(Boolean).join(' > ');
-        [
-          ['learningPaths', 'Learning path'],
-          ['studyMaterials', 'Study material'],
-          ['mindMaps', 'Mind map'],
-          ['worksheets', 'Worksheet'],
-          ['referenceMaterials', 'Reference material'],
-          ['selfAssessments', 'Self-assessment'],
-        ].forEach(([key, label]) => {
-          normalizeStringList(subTopic?.[key]).forEach((item, itemIndex) => {
-            addCandidate(
-              candidates,
-              seen,
-              `${plan._id}-${chapterIndex}-${topicIndex}-${subTopicIndex}-${key}-${itemIndex}`,
-              `${scope} - ${label}: ${formatResourceText(item)}`
-            );
-          });
-        });
-      });
-    });
-  });
-
-  return candidates;
+  return indexedAttachmentCount;
 };
 
 router.post('/generate', authStudent, async (req, res) => {
@@ -131,7 +77,7 @@ router.post('/generate', authStudent, async (req, res) => {
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
-    const { subject, topic, subTopic, mode, question, chapterId, chapterTitle } = req.body || {};
+    const { subject, topic, subTopic, mode, question, chapterTitle } = req.body || {};
     const normalizedMode = normalizeString(mode);
     if (!ALLOWED_MODES.includes(normalizedMode)) {
       return res.status(400).json({ error: `mode must be one of: ${ALLOWED_MODES.join(', ')}` });
@@ -155,6 +101,7 @@ router.post('/generate', authStudent, async (req, res) => {
       schoolId,
       status: 'published',
       publishedForStudentPortal: true,
+      materialType: { $ne: 'folder' },
     };
     if (campusId) {
       materialFilter.$and = [
@@ -164,9 +111,10 @@ router.post('/generate', authStudent, async (req, res) => {
     }
     if (student.classId) materialFilter.classId = student.classId;
     if (student.sectionId) materialFilter.sectionId = student.sectionId;
-    if (normalizeString(subject)) {
-      materialFilter.subjectName = { $regex: `^${escapeRegex(normalizeString(subject))}$`, $options: 'i' };
-    }
+    // Do not hard-filter materials by subjectName here. Uploaded/auto-published
+    // materials can have slightly different denormalized subject labels than the
+    // Smart Learning UI title. Qdrant ranking below decides relevance; this query
+    // only establishes the student's class/section privacy scope.
 
     const lessonPlanFilter = {
       schoolId,
@@ -183,9 +131,11 @@ router.post('/generate', authStudent, async (req, res) => {
       TeachingMaterial.find(materialFilter).limit(MAX_MATERIALS).lean(),
       LessonPlan.find(lessonPlanFilter).limit(25).lean(),
     ]);
-    const materialCandidates = materials.flatMap(extractChunks);
-    const lessonPlanCandidates = lessonPlans.flatMap(extractLessonPlanChunks);
-    const candidates = [...materialCandidates, ...lessonPlanCandidates].slice(0, MAX_CANDIDATES);
+    // Do NOT re-ingest here. Publish already indexes attachments into Qdrant.
+    // Re-ingesting on every student query deletes and rewrites Qdrant chunks;
+    // if the re-parse fails mid-flight the material ends up with zero chunks,
+    // causing the model to answer from a different (wrong) PDF.
+    const indexedAttachmentCount = 0;
 
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
       mode: normalizedMode,
@@ -194,10 +144,12 @@ router.post('/generate', authStudent, async (req, res) => {
       subTopic: normalizeString(subTopic) || null,
       gradeLevel: student.grade ? `Grade ${student.grade}` : null,
       question: normalizeString(question) || null,
-      candidates,
+      candidates: [],
       schoolId: String(schoolId),
+      classId: student.classId ? String(student.classId) : null,
+      sectionId: student.sectionId ? String(student.sectionId) : null,
       chapterTitle: normalizeString(chapterTitle) || normalizedTopic || null,
-    }, { timeout: 60000 });
+    }, { timeout: 180000 });
 
     return res.json({
       success: true,
@@ -208,7 +160,9 @@ router.post('/generate', authStudent, async (req, res) => {
         noMaterialFound: aiResponse.data?.noMaterialFound || false,
         sourceMaterialCount: materials.length,
         sourceLessonPlanCount: lessonPlans.length,
-        candidateChunkCount: candidates.length,
+        candidateChunkCount: 0,
+        indexedAttachmentCount,
+        ragSource: 'qdrant',
       },
     });
   } catch (err) {

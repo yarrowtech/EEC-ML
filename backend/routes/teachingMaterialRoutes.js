@@ -11,28 +11,61 @@ const authTeacher = require('../middleware/authTeacher');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-const isPdf = (attachment) => {
+const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
+
+const getAttachmentExtension = (attachment) => {
   const type = String(attachment?.type || '').toLowerCase();
   const name = String(attachment?.name || '').toLowerCase();
-  return type.includes('pdf') || name.endsWith('.pdf');
+  const fromName = name.includes('.') ? name.split('.').pop() : '';
+  if (fromName) return fromName;
+  if (type.includes('pdf')) return 'pdf';
+  if (type.includes('docx') || type.includes('word')) return 'docx';
+  if (type.includes('pptx') || type.includes('powerpoint') || type.includes('presentation')) return 'pptx';
+  return type;
 };
 
-const triggerOcrIngest = (material, attachment) =>
-  axios.post(
-    `${AI_SERVICE_URL}/ingest/material`,
-    {
-      url: attachment.url,
-      material_id: String(material._id),
-      school_id: String(material.schoolId),
-      class_id: String(material.classId || ''),
-      section_id: String(material.sectionId || ''),
-      subject_name: material.subjectName || '',
-      chapter_id: material.chapterId || '',
-      chapter_title: material.chapterTitle || '',
-      topic_title: material.topicTitle || '',
-    },
-    { timeout: 300_000 }
-  );
+const isVectorIngestible = (attachment) =>
+  Boolean(attachment?.url) && SUPPORTED_VECTOR_EXTENSIONS.has(getAttachmentExtension(attachment));
+
+const deleteMaterialVectors = (materialId) =>
+  axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
+    timeout: 60_000,
+  });
+
+const buildSourceId = (material, attachment, index) => {
+  const stableAttachmentId = attachment.cloudinaryPublicId || attachment.url || attachment.name || index;
+  return `${String(material._id)}:${String(stableAttachmentId)}`;
+};
+
+const triggerMaterialIngest = async (material, attachments = []) => {
+  const ingestible = attachments.filter(isVectorIngestible);
+  if (!ingestible.length) {
+    await deleteMaterialVectors(material._id);
+    return;
+  }
+  for (let index = 0; index < ingestible.length; index += 1) {
+    const attachment = ingestible[index];
+    await axios.post(
+      `${AI_SERVICE_URL}/ingest/material`,
+      {
+        url: attachment.url,
+        material_id: String(material._id),
+        source_id: buildSourceId(material, attachment, index),
+        file_name: attachment.name || '',
+        content_type: attachment.type || '',
+        replace_existing: index === 0,
+        school_id: String(material.schoolId),
+        class_id: String(material.classId || ''),
+        section_id: String(material.sectionId || ''),
+        subject_name: material.subjectName || '',
+        chapter_id: material.chapterId || '',
+        chapter_title: material.chapterTitle || '',
+        topic_title: material.topicTitle || '',
+      },
+      { timeout: 300_000 }
+    );
+  }
+};
 
 // Middleware to ensure teacher is authenticated
 router.use(authTeacher);
@@ -169,12 +202,10 @@ router.post('/', async (req, res, next) => {
     const material = new TeachingMaterial(materialData);
     await material.save();
 
-    // Fire-and-forget: OCR-index any PDF attachments into Qdrant
-    (attachments || []).filter(isPdf).forEach((attachment) => {
-      triggerOcrIngest(material, attachment).catch((err) =>
-        console.error('[OCR ingest] failed for material', String(material._id), err.message)
-      );
-    });
+    // Fire-and-forget: parse/embed supported attachments into Qdrant.
+    triggerMaterialIngest(material, attachments || []).catch((err) =>
+      console.error('[material ingest] failed for material', String(material._id), err.message)
+    );
 
     res.status(201).json({
       success: true,
@@ -335,13 +366,11 @@ router.patch('/:id', async (req, res, next) => {
 
     await material.save();
 
-    // Re-index PDFs if attachments were replaced
+    // Re-index supported documents if attachments were replaced
     if (attachmentsChanged) {
-      (material.attachments || []).filter(isPdf).forEach((attachment) => {
-        triggerOcrIngest(material, attachment).catch((err) =>
-          console.error('[OCR ingest] failed on update for material', String(material._id), err.message)
-        );
-      });
+      triggerMaterialIngest(material, material.attachments || []).catch((err) =>
+        console.error('[material ingest] failed on update for material', String(material._id), err.message)
+      );
     }
 
     res.json({
@@ -373,6 +402,9 @@ router.delete('/:id', async (req, res, next) => {
 
     // TODO: Delete files from Cloudinary if needed
     // For now, files remain in Cloudinary (can be cleaned up later)
+    deleteMaterialVectors(material._id).catch((err) =>
+      console.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+    );
 
     res.json({
       success: true,
