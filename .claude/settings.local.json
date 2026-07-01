@@ -65,12 +65,8 @@
       "Bash(ls /home/raktim/.cache/ms-playwright/chromium-1223/chrome-linux/ 2>/dev/null | head -5 *)",
       "Read(//home/raktim/.cache/ms-playwright/chromium-1223/**)",
       "Bash(venv/bin/python -c ' *)",
-      "Bash(venv/bin/pip install *)",
-      "Bash(venv/bin/pip show *)",
-      "Bash(node --check \"/run/media/meow/New Volume/experimental/EEC ML/backend/routes/lessonPlanRoutes.js\")",
-      "Bash(node --check \"/run/media/meow/New Volume/experimental/EEC ML/backend/routes/aiTutorRoutes.js\")",
-      "Bash(\"/run/media/meow/New Volume/experimental/EEC ML/ai-service/.venv/bin/pip\" list)",
-      "Bash(\"/run/media/meow/New Volume/experimental/EEC ML/ai-service/.venv/bin/pip\" install requests pytesseract pdf2image)"
+      "Bash(node -c routes/lessonPlanRoutes.js)",
+      "Bash(node -c models/LessonPlan.js)"
     ]
   }
 }

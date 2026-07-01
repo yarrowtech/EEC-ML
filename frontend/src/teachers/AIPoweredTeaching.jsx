@@ -3,7 +3,7 @@ import { Toaster, toast } from 'react-hot-toast';
 import { BookOpenCheck } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
-import DrawerModal from './components/lesson-plan-builder/DrawerModal';
+import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
 import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -316,9 +316,16 @@ const AIPoweredTeaching = () => {
   };
 
   const handleAddChapter = () => {
-    // Must select class/section/subject first
-    if (!selectedClass || !selectedSection || !selectedSubject) {
-      toast.error('Please select class, section, and subject first');
+    const missing = [];
+    if (!selectedClass) missing.push('class');
+    if (!selectedSection) missing.push('section');
+    if (!selectedSubject) missing.push('subject');
+
+    if (missing.length > 0) {
+      const missingText = missing.join(', ');
+      const message = `Please select ${missingText} before adding a chapter.`;
+      toast.error(message);
+      // You could also use window.alert(message); for a more prominent alert.
       return;
     }
 
@@ -553,14 +560,16 @@ const AIPoweredTeaching = () => {
       title: chapterTitle,
       subject: selectedSubjectOption?.subjectName || 'Subject',
       date,
+      duration: String(chapter.duration || '').trim(),
       // Use the actual objectives array from the Content tab
       learningObjectives: Array.isArray(chapter.learningObjectives) && chapter.learningObjectives.some(Boolean)
         ? chapter.learningObjectives.filter(Boolean)
         : (stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle]),
       // Instructional flow phases from Content tab
-      instructionalFlow: Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0
+      instructionalFlow: (Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0
         ? chapter.instructionalFlow
-        : [],
+        : DEFAULT_INSTRUCTIONAL_FLOW
+      ).map(p => ({ id: p.id, phase: p.phase, duration: p.duration, description: p.description })),
       // Step-by-step explanation and quick recap from Content tab
       explanation: stripHtml(chapter.explanation) || '',
       recap: stripHtml(chapter.recap) || '',
@@ -718,6 +727,7 @@ const AIPoweredTeaching = () => {
             onAdd={handleAddChapter}
             onDelete={handleDeleteChapter}
             onRename={(id, title) => updateChapter(id, (chapter) => ({ ...chapter, title }))}
+            addDisabled={!selectedClass || !selectedSection || !selectedSubject}
             collapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
             onDragStart={setDraggedChapterId}
@@ -748,7 +758,7 @@ const AIPoweredTeaching = () => {
                     onApplyAiSuggestion={() => applyAiSuggestion(chapter.id)}
                     onSaveVersion={() => saveVersion(chapter.id)}
                     onRestoreVersion={(versionId) => restoreVersion(chapter.id, versionId)}
-                    onTogglePublish={(isPublished) => handleTogglePublish(chapter.id, isPublished)}
+                    onPublishChapter={() => handlePublishChapter(chapter.id)}
                     isPublishing={publishing}
                   />
                 ))}

@@ -12,6 +12,7 @@ import {
   Download,
   FileText,
   ClipboardList,
+  Clock,
   ExternalLink,
   X,
   Paperclip,
@@ -465,8 +466,8 @@ const AILearningCoursesReference = () => {
   const chapterInstructionalFlow = useMemo(() => {
     const flow = Array.isArray(selectedChapterMeta.instructionalFlow)
       ? selectedChapterMeta.instructionalFlow.filter((item) => item && typeof item === 'object')
-      : [];
-    if (!flow.length) return LEARNING_STEPS;
+      : []; 
+    if (!flow.length) return [];
     return flow.map((step, index) => ({
       id: step.id || `step-${index + 1}`,
       title: String(step.title || step.description || `Step ${index + 1}`).trim(),
@@ -479,8 +480,8 @@ const AILearningCoursesReference = () => {
   const chapterRecap = String(selectedChapterMeta.recap || '').trim();
 
   const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
-  const chapterDayLabel = selectedChapterMeta.day || (selectedChapterMeta.date ? new Date(selectedChapterMeta.date).toLocaleDateString('en-US', { weekday: 'long' }) : '');
-  const chapterDurationLabel = selectedChapterMeta.duration || `${chapterInstructionalFlow.reduce((sum, step) => sum + Number(step.duration || 0), 0)} Min`;
+  const chapterDayLabel = selectedChapterMeta.day || (selectedChapterMeta.date ? new Date(selectedChapterMeta.date).toLocaleDateString('en-US', { weekday: 'long' }) : '') || '';
+  const chapterDurationLabel = selectedChapterMeta.duration || (chapterInstructionalFlow.length > 0 ? `${chapterInstructionalFlow.reduce((sum, step) => sum + Number(step.duration || 0), 0)} Min` : '');
 
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
@@ -960,15 +961,19 @@ const AILearningCoursesReference = () => {
           <section className="col-span-3 row-span-3 rounded-2xl p-5 border shadow-sm flex flex-col overflow-hidden" style={{ backgroundColor: '#ffffff', borderColor: '#e7e8e9' }}>
             <div className="flex items-center gap-2 mb-4">
               <BookOpen size={20} style={{ color: '#004b71' }} />
-              <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
+              <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>
+                Instructional Flow
+              </h2>
             </div>
             <div className="flex-1 overflow-y-auto space-y-6" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {chapterInstructionalFlow.map((step) => (
+              {chapterInstructionalFlow.length > 0 ? chapterInstructionalFlow.map((step) => (
                 <div key={step.id} className="relative pl-6" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-xs font-bold uppercase" style={{ color: '#004b71' }}>{step.type}</h3>
-                    <span className="text-[10px] font-bold" style={{ color: '#a0aec0' }}>{step.duration}m</span>
+                    <h3 className="text-xs font-bold uppercase" style={{ color: '#004b71' }}>{step.phase || step.type}</h3>
+                    {step.duration > 0 && (
+                      <span className="text-[10px] font-bold" style={{ color: '#a0aec0' }}>{step.duration}m</span>
+                    )}
                   </div>
                   <p className="text-xs leading-snug" style={{ color: '#40484f' }}>{step.title}</p>
                   {completedSteps.includes(step.id) && (
@@ -977,7 +982,11 @@ const AILearningCoursesReference = () => {
                     </div>
                   )}
                 </div>
-              ))}
+              )) : (
+                <div className="text-center text-xs text-slate-500 pt-4">
+                  No instructional flow provided for this chapter.
+                </div>
+              )}
             </div>
           </section>
 
@@ -1006,20 +1015,19 @@ const AILearningCoursesReference = () => {
                 <div className="pt-6 flex gap-1 sm:gap-2 flex-wrap">
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Date</p>
-                    <p className="text-sm font-bold text-white">
-                      {/* {chapterDurationLabel} */}
-                      {chapterDateLabel || 'Not set'}
-                    </p>
+                    <p className="text-sm font-bold text-white">{chapterDateLabel || 'Not set'}</p>
                   </div>
-                  <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
-                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Day</p>
-                    <p className="text-sm font-bold text-white">{chapterDayLabel || 'Not set'}</p>
-                  </div>
+                  {chapterDayLabel && (
+                    <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
+                      <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Day</p>
+                      <p className="text-sm font-bold text-white">{chapterDayLabel}</p>
+                    </div>
+                  )}
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Duration</p>
                     <p className="text-sm font-bold text-white">{chapterDurationLabel || 'Not set'}</p>
                   </div>
-                  <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
+                  <div className="hidden sm:flex px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Steps Done</p>
                     <p className="text-sm font-bold text-white">
                       {completedSteps.length}/{chapterInstructionalFlow.length}
@@ -1145,11 +1153,13 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="overflow-y-auto space-y-4 text-xs" style={{ scrollbarWidth: 'thin' }}>
-              {chapterInstructionalFlow.map((step) => (
+              {chapterInstructionalFlow.length > 0 ? chapterInstructionalFlow.map((step) => (
                 <div key={step.id} className="relative pl-5" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[3px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-0.5">
-                    <h3 className="font-bold uppercase" style={{ color: '#004b71', fontSize: '9px' }}>{step.type}</h3>
+                    <h3 className="font-bold uppercase" style={{ color: '#004b71', fontSize: '9px' }}>
+                      {step.phase || step.type}
+                    </h3>
                     <span className="font-bold" style={{ color: '#a0aec0', fontSize: '8px' }}>{step.duration}m</span>
                   </div>
                   <p className="leading-snug" style={{ color: '#40484f' }}>{step.title}</p>
@@ -1159,7 +1169,11 @@ const AILearningCoursesReference = () => {
                     </div>
                   )}
                 </div>
-              ))}
+              )) : (
+                <div className="text-center text-xs text-slate-500 pt-4">
+                  No instructional flow provided.
+                </div>
+              )}
             </div>
           </section>
 
@@ -1193,15 +1207,14 @@ const AILearningCoursesReference = () => {
                     <p className="text-xs font-bold text-white">{completedSteps.length}/{chapterInstructionalFlow.length}</p>
                   </div>
                 </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden mt-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
-                  <div
-                    className="h-full transition-all duration-500"
-                    style={{
-                      width: `${overallProgress}%`,
-                      background: 'linear-gradient(to right, #ffdea9, #ffba27, #ffd386)'
-                    }}
-                  ></div>
-                </div>
+                {chapterInstructionalFlow.length > 0 && (
+                  <div className="w-full h-1.5 rounded-full overflow-hidden mt-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
+                    <div
+                      className="h-full transition-all duration-500"
+                      style={{ width: `${overallProgress}%`, background: 'linear-gradient(to right, #ffdea9, #ffba27, #ffd386)' }}
+                    ></div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1350,9 +1363,13 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
             <div className="mb-3 flex flex-wrap gap-2">
-              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Date: {chapterDateLabel || 'Not set'}</span>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Day: {chapterDayLabel || 'Not set'}</span>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Duration: {chapterDurationLabel || 'Not set'}</span>
+              {chapterDateLabel && (
+                <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Date: {chapterDateLabel}</span>
+              )}
+              {chapterDayLabel && (
+                <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Day: {chapterDayLabel}</span>
+              )}
+              {chapterDurationLabel && <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Duration: {chapterDurationLabel}</span>}
             </div>
             <div className="space-y-2">
               {learningMaterials.length === 0 ? (
@@ -1411,6 +1428,7 @@ const AILearningCoursesReference = () => {
                   <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Step-by-Step Explanation</h2>
                 </div>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#40484f' }}>{chapterExplanation}</p>
+            <p className="text-xs italic text-slate-500 mt-3">This content is provided by your teacher.</p>
               </section>
             )}
             {chapterRecap && (
@@ -1420,6 +1438,7 @@ const AILearningCoursesReference = () => {
                   <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Quick Recap</h2>
                 </div>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#40484f' }}>{chapterRecap}</p>
+            <p className="text-xs italic text-slate-500 mt-3">Key takeaways from this lesson.</p>
               </section>
             )}
           </div>

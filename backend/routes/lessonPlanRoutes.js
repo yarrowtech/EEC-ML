@@ -843,7 +843,11 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     title,
     subject,
     date,
+    duration,
     learningObjectives,
+    instructionalFlow,
+    explanation,
+    recap,
     materialsNeeded,
     additionalNotes,
     plannerContent,
@@ -892,9 +896,22 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
       subject: normalizeString(subject) || selectedCombo.subjectName,
       title: normalizeString(title),
       date: parsedDate,
+      duration: normalizeString(duration),
       learningObjectives: Array.isArray(learningObjectives)
         ? learningObjectives.map((item) => normalizeString(item)).filter(Boolean)
         : [],
+      instructionalFlow: Array.isArray(instructionalFlow)
+        ? instructionalFlow
+            .filter((item) => item && typeof item === 'object')
+            .map((item) => ({
+              id: normalizeString(item.id),
+              phase: normalizeString(item.phase),
+              duration: normalizeString(item.duration),
+              description: normalizeString(item.description),
+            }))
+        : [],
+      explanation: normalizeString(explanation),
+      recap: normalizeString(recap),
       materialsNeeded: Array.isArray(materialsNeeded)
         ? materialsNeeded.map((item) => normalizeString(item)).filter(Boolean)
         : [],

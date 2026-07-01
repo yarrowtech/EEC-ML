@@ -38,7 +38,7 @@ import TryoutBuilder from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
 const MotionButton = motion.button;
-const DEFAULT_INSTRUCTIONAL_FLOW = [
+export const DEFAULT_INSTRUCTIONAL_FLOW = [
   { id: 'hook',      phase: 'THE HOOK',       duration: '10', description: 'Introduction & Overview'  },
   { id: 'instruct',  phase: 'INSTRUCTION',     duration: '25', description: 'Core Concepts & Theory'  },
   { id: 'practice',  phase: 'GUIDED PRACTICE', duration: '30', description: 'Practice & Application'  },
@@ -103,7 +103,7 @@ const DrawerModal = ({
   onApplyAiSuggestion,
   onSaveVersion,
   onRestoreVersion,
-  onTogglePublish,
+  onPublishChapter,
   isPublishing = false,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -688,29 +688,29 @@ const DrawerModal = ({
             <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-800 dark:bg-emerald-950/30">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
-                    <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Ready to Publish?
-                  </h3>
-                  <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">
-                    Students will see this chapter in their Smart Learning section.
-                  </p>
+                  {isPublished ? (
+                    <>
+                      <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
+                        <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Chapter is Live
+                      </h3>
+                      <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">Changes will be updated for students.</p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
+                        <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Ready to Publish?
+                      </h3>
+                      <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">Students will see this chapter in their Smart Learning section.</p>
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-sm font-semibold ${isPublished ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {isPublished ? 'Published' : 'Draft'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onTogglePublish(!isPublished)}
-                    disabled={isPublishing}
-                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 ${isPublished ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'}`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isPublished ? 'translate-x-5' : 'translate-x-0'}`}
-                    />
-                  </button>
-                </div>
+                <Button
+                  onClick={onPublishChapter}
+                  disabled={isPublishing}
+                  className="rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : (isPublished ? 'Update Chapter' : 'Publish Chapter')}
+                </Button>
               </div>
             </div>
           </div>
@@ -835,11 +835,11 @@ const DrawerModal = ({
             ) : (
               <Button
                 size="sm"
-                onClick={() => onTogglePublish(!isPublished)}
+                onClick={onPublishChapter}
                 disabled={isPublishing}
-                className={`gap-1 disabled:opacity-50 ${isPublished ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {isPublishing ? 'Updating…' : <><Send className="size-3.5" /> {isPublished ? 'Unpublish' : 'Publish'}</>}
+                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Update' : 'Publish'}</>}
               </Button>
             )}
           </div>

@@ -38,6 +38,7 @@ const Sidebar = ({
   onAdd,
   onDelete,
   onRename,
+  addDisabled = false,
   collapsed,
   onToggleCollapse,
   onDragStart,
@@ -173,9 +174,10 @@ const Sidebar = ({
           <Button
             size={collapsed ? 'icon-lg' : 'sm'}
             onClick={onAdd}
+            disabled={addDisabled}
             title="Add chapter"
             aria-label="Add chapter"
-            className={`rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 ${collapsed ? '' : 'px-3.5 py-2'}`}
+            className={`rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed ${collapsed ? '' : 'px-3.5 py-2'}`}
           >
             <Plus className="size-4" />
             {!collapsed && <span className="ml-1.5 text-[11px] font-semibold">Add Chapter</span>}

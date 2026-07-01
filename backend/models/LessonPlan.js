@@ -14,6 +14,7 @@ const lessonPlanSchema = new mongoose.Schema(
     subject: { type: String, required: false, default: '', trim: true },
     title: { type: String, required: true, trim: true },
     date: { type: Date, required: false, default: null },
+    duration: { type: String, default: '' },
     learningObjectives: [{ type: String, trim: true }],
     instructionalFlow: { type: mongoose.Schema.Types.Mixed, default: () => [] },
     explanation: { type: String, default: '' },
