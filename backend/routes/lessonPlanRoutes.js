@@ -1750,6 +1750,8 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         duration: chapterDuration || planDuration || '',
         learningObjectives,
         instructionalFlow,
+        explanation: normalizeString(plan?.explanation) || '',
+        recap: normalizeString(plan?.recap) || '',
       };
     };
 
@@ -1761,6 +1763,8 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       instructionalFlow: Array.isArray(nextMeta.instructionalFlow) && nextMeta.instructionalFlow.length > 0
         ? nextMeta.instructionalFlow
         : (Array.isArray(currentMeta.instructionalFlow) ? currentMeta.instructionalFlow : []),
+      explanation: nextMeta.explanation || currentMeta.explanation || '',
+      recap: nextMeta.recap || currentMeta.recap || '',
     });
 
     const ensureChapterTopicSubTopic = (subjectEntry, plan, chapter, topic, subTopic) => {

@@ -472,6 +472,9 @@ const AILearningCoursesReference = () => {
     }));
   }, [selectedChapterMeta]);
 
+  const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
+  const chapterRecap = String(selectedChapterMeta.recap || '').trim();
+
   const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
   const chapterDayLabel = selectedChapterMeta.day || (selectedChapterMeta.date ? new Date(selectedChapterMeta.date).toLocaleDateString('en-US', { weekday: 'long' }) : '');
   const chapterDurationLabel = selectedChapterMeta.duration || `${chapterInstructionalFlow.reduce((sum, step) => sum + Number(step.duration || 0), 0)} Min`;
@@ -1388,6 +1391,30 @@ const AILearningCoursesReference = () => {
             </div>
           </section>
         </div>
+
+        {/* Step-by-Step Explanation + Quick Recap — shown on all screen sizes when data is available */}
+        {(chapterExplanation || chapterRecap) && (
+          <div className="grid gap-3 sm:grid-cols-2 mt-1">
+            {chapterExplanation && (
+              <section className="rounded-2xl p-5 border shadow-sm" style={{ backgroundColor: '#f0f4ff', borderColor: '#c7d7fd' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <BookOpen size={18} style={{ color: '#3b4ec8' }} />
+                  <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Step-by-Step Explanation</h2>
+                </div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#40484f' }}>{chapterExplanation}</p>
+              </section>
+            )}
+            {chapterRecap && (
+              <section className="rounded-2xl p-5 border shadow-sm" style={{ backgroundColor: '#fffbeb', borderColor: '#fde68a' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <CheckCircle2 size={18} style={{ color: '#b45309' }} />
+                  <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Quick Recap</h2>
+                </div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#40484f' }}>{chapterRecap}</p>
+              </section>
+            )}
+          </div>
+        )}
 
         <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
       </main>

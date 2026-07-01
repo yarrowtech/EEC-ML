@@ -516,7 +516,17 @@ const AIPoweredTeaching = () => {
       title: chapterTitle,
       subject: selectedSubjectOption?.subjectName || 'Subject',
       date,
-      learningObjectives: stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle],
+      // Use the actual objectives array from the Content tab
+      learningObjectives: Array.isArray(chapter.learningObjectives) && chapter.learningObjectives.some(Boolean)
+        ? chapter.learningObjectives.filter(Boolean)
+        : (stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle]),
+      // Instructional flow phases from Content tab
+      instructionalFlow: Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0
+        ? chapter.instructionalFlow
+        : [],
+      // Step-by-step explanation and quick recap from Content tab
+      explanation: stripHtml(chapter.explanation) || '',
+      recap: stripHtml(chapter.recap) || '',
       materialsNeeded: Object.entries(chapter.contentUploads || {})
         .filter(([bucket]) => MATERIAL_BUCKETS.has(bucket))
         .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),

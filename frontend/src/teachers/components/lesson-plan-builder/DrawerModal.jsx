@@ -349,6 +349,7 @@ const DrawerModal = ({
                 onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })}
                 placeholder="Walk through what you will teach — one step at a time…"
                 className="mb-3 resize-none"
+                style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
               <Field label="Attach a file (image, video, PDF…)">
                 <Input
@@ -369,6 +370,7 @@ const DrawerModal = ({
                 onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
                 placeholder="Key points students must take away from this lesson…"
                 className="resize-none"
+                style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
             </Card>
           </div>
@@ -618,6 +620,7 @@ const DrawerModal = ({
                 onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })}
                 placeholder="Personal observations, follow-up actions, reminders…"
                 className="resize-none"
+                style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
             </Card>
 
