@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AnimatePresence, motion as Motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
   Calendar,
@@ -37,6 +37,7 @@ import AssessmentCard from './AssessmentCard';
 import TryoutBuilder from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
+const MotionButton = motion.button;
 const DEFAULT_INSTRUCTIONAL_FLOW = [
   { id: 'hook',      phase: 'THE HOOK',       duration: '10', description: 'Introduction & Overview'  },
   { id: 'instruct',  phase: 'INSTRUCTION',     duration: '25', description: 'Core Concepts & Theory'  },
@@ -102,7 +103,7 @@ const DrawerModal = ({
   onApplyAiSuggestion,
   onSaveVersion,
   onRestoreVersion,
-  onPublishChapter,
+  onTogglePublish,
   isPublishing = false,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
@@ -115,6 +116,7 @@ const DrawerModal = ({
     ? new Date(chapter.lessonDate).toLocaleDateString('en-US', { weekday: 'long' })
     : '';
 
+  const isPublished = chapter.status === 'published' && !chapter.isDraft;
   const accent = stepAccent[STEPS[currentStep].color];
 
   // Learning objectives helpers
@@ -165,7 +167,7 @@ const DrawerModal = ({
             <Card>
               <Field label="Chapter Title">
                 <Input
-                  value={chapter.title || ''}
+                  value={chapter.title}
                   onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
                   placeholder="e.g. Photosynthesis — Light Reactions"
                   className="h-10 rounded-lg border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
@@ -178,7 +180,7 @@ const DrawerModal = ({
                 <Field label="Lesson Date">
                   <input
                     type="date"
-                    value={chapter.lessonDate || ''}
+                    value={chapter.lessonDate}
                     onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
                     style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
                     className="h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -199,7 +201,7 @@ const DrawerModal = ({
               <Card>
                 <Field label="Duration">
                   <select
-                    value={chapter.duration || ''}
+                    value={chapter.duration}
                     onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
                     style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
                     className="h-10 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -235,7 +237,7 @@ const DrawerModal = ({
                 </Button>
               </div>
               <RichTextEditor
-                value={chapter.introductionText || ''}
+                value={chapter.introductionText}
                 onChange={(value) => onUpdate({ ...chapter, introductionText: value })}
                 placeholder="How will you hook students into this lesson?"
               />
@@ -345,7 +347,7 @@ const DrawerModal = ({
               <SectionTitle icon={ListChecks} iconColor="text-green-400">Step-by-Step Explanation</SectionTitle>
               <Textarea
                 rows={5}
-                value={chapter.explanation || ''}
+                value={chapter.explanation}
                 onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })}
                 placeholder="Walk through what you will teach — one step at a time…"
                 className="mb-3 resize-none"
@@ -366,7 +368,7 @@ const DrawerModal = ({
               <SectionTitle icon={CheckCircle2} iconColor="text-green-400">Quick Recap</SectionTitle>
               <Textarea
                 rows={3}
-                value={chapter.recap || ''}
+                value={chapter.recap}
                 onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
                 placeholder="Key points students must take away from this lesson…"
                 className="resize-none"
@@ -440,7 +442,7 @@ const DrawerModal = ({
                   className="cursor-pointer"
                 />
                 <Input
-                  value={chapter.worksheetLink || ''}
+                  value={chapter.worksheetLink}
                   onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
                   placeholder="Or paste a worksheet URL…"
                 />
@@ -616,7 +618,7 @@ const DrawerModal = ({
               </p>
               <Textarea
                 rows={3}
-                value={chapter.teacherNotes || ''}
+                value={chapter.teacherNotes}
                 onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })}
                 placeholder="Personal observations, follow-up actions, reminders…"
                 className="resize-none"
@@ -693,13 +695,22 @@ const DrawerModal = ({
                     Students will see this chapter in their Smart Learning section.
                   </p>
                 </div>
-                <Button
-                  onClick={onPublishChapter}
-                  disabled={isPublishing}
-                  className="rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {isPublishing ? 'Publishing…' : <><Send className="size-4 mr-2" />Publish Chapter</>}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-semibold ${isPublished ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {isPublished ? 'Published' : 'Draft'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onTogglePublish(!isPublished)}
+                    disabled={isPublishing}
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:opacity-50 ${isPublished ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isPublished ? 'translate-x-5' : 'translate-x-0'}`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -713,7 +724,7 @@ const DrawerModal = ({
   return (
     <AnimatePresence mode="wait">
       {open && (
-        <Motion.section
+        <motion.section
           key={chapter.id}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -789,14 +800,14 @@ const DrawerModal = ({
 
           {/* Step content */}
           <div className="max-h-[52vh] overflow-y-auto p-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
-            <Motion.div
+            <motion.div
               key={currentStep}
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.15 }}
             >
               {renderStep()}
-            </Motion.div>
+            </motion.div>
           </div>
 
           {/* Footer navigation */}
@@ -824,15 +835,15 @@ const DrawerModal = ({
             ) : (
               <Button
                 size="sm"
-                onClick={onPublishChapter}
+                onClick={() => onTogglePublish(!isPublished)}
                 disabled={isPublishing}
-                className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                className={`gap-1 disabled:opacity-50 ${isPublished ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
               >
-                {isPublishing ? 'Publishing…' : <><Send className="size-3.5" /> Publish</>}
+                {isPublishing ? 'Updating…' : <><Send className="size-3.5" /> {isPublished ? 'Unpublish' : 'Publish'}</>}
               </Button>
             )}
           </div>
-        </Motion.section>
+        </motion.section>
       )}
 
       {/* Material upload modal */}

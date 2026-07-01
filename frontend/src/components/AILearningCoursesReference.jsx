@@ -14,8 +14,10 @@ import {
   ClipboardList,
   ExternalLink,
   X,
+  Paperclip,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
+import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -82,12 +84,12 @@ const MaterialQuickActions = ({ material, onRead }) => {
       {material.url && (
         <>
           <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-[#004b71] hover:bg-slate-100">
-            <ExternalLink size={12} />
-            Open
+            <ExternalLink size={12} className="text-[#004b71]"/>
+            <span className="text-[#004b71]"> Open</span>
           </a>
           <a href={material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-[#004b71] px-2 py-1 text-[10px] font-bold text-white hover:brightness-110">
-            <Download size={12} />
-            Download
+            <Download size={12} className='text-white'/>
+           <span className="text-white"> Download</span>
           </a>
         </>
       )}
@@ -111,109 +113,110 @@ const UploadedResourcesPanel = ({ resources }) => {
   })).filter((group) => group.items.length > 0);
 
   return (
-    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-black text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Uploaded Resources</h2>
-          <p className="text-sm text-slate-500">Teacher-published materials and assessments for this chapter.</p>
-        </div>
-        <span className="text-sm font-bold text-[#004b71]">{resources.length} item{resources.length === 1 ? '' : 's'}</span>
-      </div>
+    <></>
+    // <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+    //   <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+    //     <div>
+    //       <h2 className="text-xl font-black text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Uploaded Resources</h2>
+    //       <p className="text-sm text-slate-500">Teacher-published materials and assessments for this chapter.</p>
+    //     </div>
+    //     <span className="text-sm font-bold text-[#004b71]">{resources.length} item{resources.length === 1 ? '' : 's'}</span>
+    //   </div>
 
-      {resourcesByGroup.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-          <p className="text-sm font-bold text-slate-700">No uploaded resources found for this chapter yet.</p>
-          <p className="mt-1 text-xs text-slate-500">Published teacher uploads will appear here automatically.</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {resourcesByGroup.map((group) => {
-            const Icon = group.icon;
-            return (
-              <div key={group.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-white text-[#004b71]">
-                    <Icon size={16} />
-                  </span>
-                  <div>
-                    <p className="text-sm font-black text-slate-900">{group.title}</p>
-                    <p className="text-xs text-slate-500">{group.items.length} available</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {group.items.map((resource) => (
-                    <div key={resource.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">{resource.title}</p>
-                        <p className="truncate text-xs text-slate-500">{resource.description || group.title}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {resource.content && (
-                          <button
-                            type="button"
-                            onClick={() => setReaderResource(resource)}
-                            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
-                          >
-                            Read
-                          </button>
-                        )}
-                        {resource.url ? (
-                          <>
-                            <a
-                              href={getInlineDocumentUrl(resource.url)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
-                            >
-                              Open <ExternalLink size={12} />
-                            </a>
-                            <a
-                              href={resource.url}
-                              download
-                              className="inline-flex items-center gap-1 rounded-lg bg-[#004b71] px-2.5 py-1.5 text-xs font-bold text-white hover:brightness-110"
-                            >
-                              <Download size={12} /> Download
-                            </a>
-                          </>
-                        ) : !resource.content ? (
-                          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">Listed</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+    //   {resourcesByGroup.length === 0 ? (
+    //     <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+    //       <p className="text-sm font-bold text-slate-700">No uploaded resources found for this chapter yet.</p>
+    //       <p className="mt-1 text-xs text-slate-500">Published teacher uploads will appear here automatically.</p>
+    //     </div>
+    //   ) : (
+    //     <div className="grid gap-4 lg:grid-cols-2">
+    //       {resourcesByGroup.map((group) => {
+    //         const Icon = group.icon;
+    //         return (
+    //           <div key={group.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    //             <div className="mb-3 flex items-center gap-2">
+    //               <span className="flex size-8 items-center justify-center rounded-lg bg-white text-[#004b71]">
+    //                 <Icon size={16} />
+    //               </span>
+    //               <div>
+    //                 <p className="text-sm font-black text-slate-900">{group.title}</p>
+    //                 <p className="text-xs text-slate-500">{group.items.length} available</p>
+    //               </div>
+    //             </div>
+    //             <div className="space-y-2">
+    //               {group.items.map((resource) => (
+    //                 <div key={resource.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+    //                   <div className="min-w-0">
+    //                     <p className="truncate text-sm font-bold text-slate-900">{resource.title}</p>
+    //                     <p className="truncate text-xs text-slate-500">{resource.description || group.title}</p>
+    //                   </div>
+    //                   <div className="flex shrink-0 items-center gap-1">
+    //                     {resource.content && (
+    //                       <button
+    //                         type="button"
+    //                         onClick={() => setReaderResource(resource)}
+    //                         className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
+    //                       >
+    //                         Read
+    //                       </button>
+    //                     )}
+    //                     {resource.url ? (
+    //                       <>
+    //                         <a
+    //                           href={getInlineDocumentUrl(resource.url)}
+    //                           target="_blank"
+    //                           rel="noreferrer"
+    //                           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-[#004b71] hover:bg-slate-50"
+    //                         >
+    //                           Open <ExternalLink size={12} />
+    //                         </a>
+    //                         <a
+    //                           href={resource.url}
+    //                           download
+    //                           className="inline-flex items-center gap-1 rounded-lg bg-[#004b71] px-2.5 py-1.5 text-xs font-bold text-white hover:brightness-110"
+    //                         >
+    //                           <Download size={12} /> Download
+    //                         </a>
+    //                       </>
+    //                     ) : !resource.content ? (
+    //                       <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-500">Listed</span>
+    //                     ) : null}
+    //                   </div>
+    //                 </div>
+    //               ))}
+    //             </div>
+    //           </div>
+    //         );
+    //       })}
+    //     </div>
+    //   )}
 
-      {readerResource && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wide text-[#004b71]">{readerResource.group}</p>
-                <h3 className="truncate text-lg font-black text-slate-900">{readerResource.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReaderResource(null)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                aria-label="Close reader"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="max-h-[65vh] overflow-y-auto p-5">
-              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                {stripHtml(readerResource.content)}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
+    //   {readerResource && (
+    //     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
+    //       <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+    //         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4">
+    //           <div className="min-w-0">
+    //             <p className="text-xs font-bold uppercase tracking-wide text-[#004b71]">{readerResource.group}</p>
+    //             <h3 className="truncate text-lg font-black text-slate-900">{readerResource.title}</h3>
+    //           </div>
+    //           <button
+    //             type="button"
+    //             onClick={() => setReaderResource(null)}
+    //             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+    //             aria-label="Close reader"
+    //           >
+    //             <X size={18} />
+    //           </button>
+    //         </div>
+    //         <div className="max-h-[65vh] overflow-y-auto p-5">
+    //           <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+    //             {stripHtml(readerResource.content)}
+    //           </p>
+    //         </div>
+    //       </div>
+    //     </div>
+    //   )}
+    // </section>
   );
 };
 
@@ -1000,16 +1003,21 @@ const AILearningCoursesReference = () => {
                 </p>
 
                 {/* Metadata Cards */}
-                <div className="pt-6 flex gap-2 sm:gap-4 flex-wrap">
+                <div className="pt-6 flex gap-1 sm:gap-2 flex-wrap">
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
-                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Total Duration</p>
+                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Date</p>
                     <p className="text-sm font-bold text-white">
-                      {chapterDurationLabel}
+                      {/* {chapterDurationLabel} */}
+                      {chapterDateLabel || 'Not set'}
                     </p>
                   </div>
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
-                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Progress</p>
-                    <p className="text-sm font-bold text-white">{overallProgress}%</p>
+                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Day</p>
+                    <p className="text-sm font-bold text-white">{chapterDayLabel || 'Not set'}</p>
+                  </div>
+                  <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
+                    <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Duration</p>
+                    <p className="text-sm font-bold text-white">{chapterDurationLabel || 'Not set'}</p>
                   </div>
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Steps Done</p>
@@ -1044,7 +1052,7 @@ const AILearningCoursesReference = () => {
               <Layers size={20} style={{ color: '#2c694e' }} />
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
-            <div className="mb-4 flex flex-wrap gap-2">
+            {/* <div className="mb-4 flex flex-wrap gap-2">
               <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
                 Date: {chapterDateLabel || 'Not set'}
               </span>
@@ -1054,7 +1062,7 @@ const AILearningCoursesReference = () => {
               <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
                 Duration: {chapterDurationLabel || 'Not set'}
               </span>
-            </div>
+            </div> */}
             <div className="flex-1 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
               {learningMaterials.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-emerald-200 bg-white/80 p-4 text-center">
@@ -1062,15 +1070,16 @@ const AILearningCoursesReference = () => {
                   <p className="mt-1 text-xs text-slate-500">Only files from the material section will appear here.</p>
                 </div>
               ) : learningMaterials.map((material, idx) => (
-                <div key={idx} className="flex items-center gap-3 rounded-xl border border-[#f3f4f5] bg-white p-3">
+                <div key={idx} className="flex flex-col items-start gap-3 rounded-xl border border-[#f3f4f5] bg-white p-3">
                   <span className="flex-shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
                     {normalizeLabel(material.formatLabel || material.description || 'File')}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center gap-2">
+                      <Paperclip size={16} className="text-blue-700"/>
                       <p className="truncate text-xs font-bold" style={{ color: '#191c1d' }}>{material.title}</p>
                     </div>
-                    <p className="truncate text-[10px]" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
+                      {/* <p className="truncate text-[10px]" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p> */}
                   </div>
                   <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>

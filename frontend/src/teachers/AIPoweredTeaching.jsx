@@ -61,12 +61,15 @@ const toIdString = (value) => String(value || '').trim();
 const normalizeLoadedChapter = (chapter, plan, index) => {
   const source = chapter && typeof chapter === 'object' ? chapter : {};
   const chapterTitle = String(source.title || plan?.title || 'Untitled Chapter').trim() || 'Untitled Chapter';
-  const planDate = plan?.date ? new Date(plan.date) : null;
-  const lessonDate = source.lessonDate || (planDate && !Number.isNaN(planDate.getTime()) ? planDate.toISOString().slice(0, 10) : '');
+  const lessonDate = source.lessonDate || (plan?.date ? new Date(plan.date).toISOString().slice(0, 10) : '');
   const status = plan?.status === 'published' && plan?.isDraft === false ? 'published' : 'draft';
+
   return enrichChapter({
     ...source,
     id: toIdString(source.id || `${toIdString(plan?._id) || 'plan'}-${index}`),
+    introductionText: source.introductionText || plan?.introductionText || '',
+    learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
+    publishedPlanId: status === 'published' ? toIdString(plan?._id) : null,
     title: chapterTitle,
     lessonDate,
     status,
@@ -400,7 +403,11 @@ const AIPoweredTeaching = () => {
     try {
       const uploaded = await uploadTeachingFile(file);
       const nextFile = { id: `f-${Date.now()}`, ...uploaded, progress: 100 };
-      updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...(chapter.contentUploads[bucket] || []), nextFile] } }));
+      updateChapter(chapterId, (chapter) => {
+        const currentBucketFiles = chapter.contentUploads?.[bucket] || [];
+        const newContentUploads = { ...chapter.contentUploads, [bucket]: [...currentBucketFiles, nextFile] };
+        return { ...chapter, contentUploads: newContentUploads };
+      });
       toast.success('File uploaded');
     } catch (err) {
       toast.error(err?.message || 'Failed to upload file');
@@ -453,6 +460,36 @@ const AIPoweredTeaching = () => {
       return target ? { ...enrichChapter(target.snapshot), history: chapter.history } : chapter;
     });
     toast.success('Lesson version restored');
+  };
+
+  const handleTogglePublish = async (chapterId, isPublished) => {
+    const chapter = chapters.find((ch) => ch.id === chapterId);
+    if (!chapter) return;
+
+    if (isPublished) {
+      // If toggled on, call the existing publish logic
+      await handlePublishChapter(chapterId);
+    } else {
+      // If toggled off, unpublish the chapter
+      if (!chapter.publishedPlanId) return; // Cannot unpublish something not yet published
+
+      try {
+        setPublishing(true);
+        const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/unpublish/${chapter.publishedPlanId}`, {
+          method: 'PUT',
+          headers: authHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to unpublish chapter');
+
+        updateChapter(chapterId, (ch) => ({ ...ch, status: 'draft', isDraft: true }));
+        toast.success(`Chapter "${chapter.title}" unpublished successfully.`);
+      } catch (err) {
+        toast.error(err?.message || 'Failed to unpublish chapter');
+      } finally {
+        setPublishing(false);
+      }
+    }
   };
 
   const handlePublishChapter = async (chapterId) => {
@@ -536,14 +573,28 @@ const AIPoweredTeaching = () => {
 
     try {
       setPublishing(true);
-      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher`, {
-        method: 'POST',
+      const isUpdate = !!chapter.publishedPlanId;
+      const url = isUpdate
+        ? `${API_BASE}/api/lesson-plans/teacher/${chapter.publishedPlanId}`
+        : `${API_BASE}/api/lesson-plans/teacher`;
+      const method = isUpdate ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: authHeaders(),
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to publish chapter');
 
+      // If it was a new chapter, update its state with the new plan ID
+      const newPlanId = data?.data?._id;
+      updateChapter(chapterId, (ch) => ({
+        ...ch,
+        publishedPlanId: isUpdate ? ch.publishedPlanId : newPlanId,
+        status: 'published',
+        isDraft: false,
+      }));
       toast.success(`Chapter "${chapterTitle}" published successfully!`);
     } catch (err) {
       toast.error(err?.message || 'Failed to publish chapter');
@@ -697,7 +748,7 @@ const AIPoweredTeaching = () => {
                     onApplyAiSuggestion={() => applyAiSuggestion(chapter.id)}
                     onSaveVersion={() => saveVersion(chapter.id)}
                     onRestoreVersion={(versionId) => restoreVersion(chapter.id, versionId)}
-                    onPublishChapter={() => handlePublishChapter(chapter.id)}
+                    onTogglePublish={(isPublished) => handleTogglePublish(chapter.id, isPublished)}
                     isPublishing={publishing}
                   />
                 ))}
