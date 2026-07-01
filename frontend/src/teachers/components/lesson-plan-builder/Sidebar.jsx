@@ -51,7 +51,7 @@ const Sidebar = ({
       animate={collapsed ? 'collapsed' : 'expanded'}
       variants={sidebarVariants}
       transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-      className="relative shrink-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20 self-start"
+      className="relative h-full min-h-0 shrink-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20 self-stretch"
       aria-label="Lesson chapters sidebar"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-linear-to-b from-blue-50/90 to-transparent dark:from-blue-950/20" />

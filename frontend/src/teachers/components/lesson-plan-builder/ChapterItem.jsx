@@ -37,6 +37,10 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
   };
 
   const progress = total ? Math.round(((index + 1) / total) * 100) : 0;
+  const status = chapter.status === 'published' && chapter.isDraft === false ? 'Published' : 'Draft';
+  const statusClass = status === 'Published'
+    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
 
   return (
     <Motion.div
@@ -48,11 +52,10 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
       onDragStart={() => onDragStart(chapter.id)}
       onDragOver={(event) => event.preventDefault()}
       onDrop={() => onDrop(chapter.id)}
-      className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-3 transition-all focus-within:ring-2 focus-within:ring-blue-300 ${
-        isActive
+      className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-3 transition-all focus-within:ring-2 focus-within:ring-blue-300 ${isActive
           ? 'border-blue-300 bg-linear-to-br from-blue-50 via-white to-violet-50 shadow-lg shadow-blue-500/10 dark:border-blue-600 dark:from-blue-950/40 dark:via-slate-900 dark:to-violet-950/30'
           : 'border-slate-200 bg-white shadow-sm hover:border-blue-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-700'
-      }`}
+        }`}
     >
       {isActive && (
         <Motion.div
@@ -60,6 +63,20 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-linear-to-b from-blue-500 to-violet-500"
         />
       )}
+
+      <div className="absolute right-2 top-2 z-10">
+        {/* <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          className="rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
+          title={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
+          aria-label={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
+        >
+          <Trash2 className="size-3.5" />
+        </Button> */}
+      </div>
 
       <div className="flex items-start gap-2">
         <button
@@ -79,6 +96,9 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
             </span>
             <Badge className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400">
               {progress}% mapped
+            </Badge>
+            <Badge className={`rounded-full px-2 py-0.5 text-[8px] font-semibold ${statusClass}`}>
+              {status}
             </Badge>
             {isActive && <Sparkles className="ml-auto size-3.5 text-blue-500" />}
           </div>
@@ -117,7 +137,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
         <div className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
           <Sparkles className="size-3" /> Smart outline
         </div>
-        <div className={`flex items-center gap-1 transition ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
+        <div className={`flex items-center gap-1 transition ${isActive ? 'opacity-100' : 'opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
           <Button
             variant="ghost"
             size="icon-xs"

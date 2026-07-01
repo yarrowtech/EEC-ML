@@ -56,10 +56,38 @@ const enrichChapter = (chapter) => ({
   tryouts: chapter.tryouts || [],
 });
 
+const toIdString = (value) => String(value || '').trim();
+
+const normalizeLoadedChapter = (chapter, plan, index) => {
+  const source = chapter && typeof chapter === 'object' ? chapter : {};
+  const chapterTitle = String(source.title || plan?.title || 'Untitled Chapter').trim() || 'Untitled Chapter';
+  const planDate = plan?.date ? new Date(plan.date) : null;
+  const lessonDate = source.lessonDate || (planDate && !Number.isNaN(planDate.getTime()) ? planDate.toISOString().slice(0, 10) : '');
+  const status = plan?.status === 'published' && plan?.isDraft === false ? 'published' : 'draft';
+  return enrichChapter({
+    ...source,
+    id: toIdString(source.id || `${toIdString(plan?._id) || 'plan'}-${index}`),
+    title: chapterTitle,
+    lessonDate,
+    status,
+    isDraft: status !== 'published',
+    contentUploads: source.contentUploads || defaultContentUploads,
+    worksheetFiles: Array.isArray(source.worksheetFiles) ? source.worksheetFiles : [],
+    worksheetLink: source.worksheetLink || '',
+    assessments: Array.isArray(source.assessments) ? source.assessments : [],
+    history: Array.isArray(source.history) ? source.history : [],
+    tryouts: Array.isArray(source.tryouts) ? source.tryouts : [],
+  });
+};
+
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-const serializeResourceRef = (file) => {
+const MATERIAL_BUCKETS = new Set(['Study Materials', 'Presentations', 'Images', 'Experiments', 'Report Upload', 'Additional Resources']);
+
+const serializeResourceRef = (file, bucket = '') => {
   const name = String(file?.name || '').trim();
   const url = String(file?.url || '').trim();
+  const safeBucket = String(bucket || '').trim();
+  if (name && url && safeBucket) return `${safeBucket}::${name}::${url}`;
   if (name && url) return `${name}::${url}`;
   return name || url;
 };
@@ -125,6 +153,55 @@ const AIPoweredTeaching = () => {
     setClassOptions(Array.isArray(data?.classes) ? data.classes : []);
     setSectionOptions(Array.isArray(data?.sections) ? data.sections : []);
     setSubjectOptions(Array.isArray(data?.subjects) ? data.subjects : []);
+  };
+
+  const chapterLoadSeqRef = useRef(0);
+
+  const loadChaptersForSelection = async (classId, sectionId, subjectId) => {
+    if (!classId || !sectionId || !subjectId) {
+      setChapters([]);
+      setOpenChapterIds([]);
+      return;
+    }
+    const requestSeq = ++chapterLoadSeqRef.current;
+    try {
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/my`, { headers: authHeaders() });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'Failed to load saved chapters');
+
+      // Only load chapters the teacher explicitly published — ignore auto-save drafts
+      const matchingPlans = Array.isArray(data)
+        ? data.filter((plan) =>
+            toIdString(plan?.classId) === toIdString(classId) &&
+            toIdString(plan?.sectionId) === toIdString(sectionId) &&
+            toIdString(plan?.subjectId) === toIdString(subjectId) &&
+            plan?.status === 'published' &&
+            !plan?.isDraft
+          )
+        : [];
+
+      const nextChapters = matchingPlans.flatMap((plan, pi) => {
+        const plannerChapters = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
+        const rawChapters = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+        const source = plannerChapters.length > 0 ? plannerChapters : rawChapters;
+        return source.map((ch, ci) => normalizeLoadedChapter(ch, plan, pi * 100 + ci));
+      });
+
+      if (requestSeq !== chapterLoadSeqRef.current) return;
+
+      setChapters(nextChapters);
+      setOpenChapterIds((prev) => prev.filter((cid) => nextChapters.some((ch) => ch.id === cid)));
+      setAutosaveStatus(nextChapters.length > 0 ? 'Chapters loaded' : 'No chapters yet');
+      // Published plans only — reset draft tracking so autosave creates a fresh draft
+      setCurrentDraftId(null);
+      localStorage.removeItem('currentLessonPlanDraft');
+    } catch (err) {
+      if (requestSeq !== chapterLoadSeqRef.current) return;
+      setChapters([]);
+      setOpenChapterIds([]);
+      setAutosaveStatus('Load failed');
+      toast.error(err?.message || 'Failed to load saved chapters');
+    }
   };
 
   // Always-current snapshot so the timer callback reads fresh state, not a stale closure
@@ -207,6 +284,11 @@ const AIPoweredTeaching = () => {
     initializePage();
   }, []);
 
+  useEffect(() => {
+    if (!selectedClass || !selectedSection || !selectedSubject) return;
+    loadChaptersForSelection(selectedClass, selectedSection, selectedSubject);
+  }, [selectedClass, selectedSection, selectedSubject]);
+
   const filteredChapters = useMemo(() => {
     if (!searchQuery.trim()) return chapters;
     const query = searchQuery.toLowerCase();
@@ -248,6 +330,18 @@ const AIPoweredTeaching = () => {
     const chapter = chapters.find((item) => item.id === id);
     const chapterTitle = String(chapter?.title || '').trim();
 
+    // Remove from local state immediately — don't wait for the API so the sidebar
+    // updates right away and can't be blocked by a failed network call.
+    const nextChapters = chapters.filter((ch) => ch.id !== id);
+    setChapters(nextChapters);
+    setOpenChapterIds((prev) => prev.filter((cid) => cid !== id));
+
+    // Flush the updated list to draft storage right away.
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveStateRef.current = { ...autosaveStateRef.current, chapters: nextChapters };
+    saveDraft();
+
+    // Best-effort: archive from student Smart Learning side (non-blocking).
     if (selectedClass && selectedSection && selectedSubject && chapterTitle && chapterTitle !== 'Untitled Chapter') {
       try {
         const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/smart-learning/chapter`, {
@@ -261,22 +355,14 @@ const AIPoweredTeaching = () => {
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Failed to unpublish chapter');
-        const removedPublishedItems = (data.archivedPlans || 0) + (data.updatedPlans || 0) + (data.archivedMaterials || 0) + (data.archivedPapers || 0) + (data.hiddenAssignments || 0);
-        if (removedPublishedItems > 0) {
-          toast.success('Chapter removed from student Smart Learning');
-        } else {
-          toast('No published student chapter matched; removing it from this workspace only');
+        if (res.ok) {
+          const removed = (data.archivedPlans || 0) + (data.updatedPlans || 0) + (data.archivedMaterials || 0) + (data.archivedPapers || 0) + (data.hiddenAssignments || 0);
+          if (removed > 0) toast.success('Chapter removed from student Smart Learning');
         }
       } catch (err) {
-        toast.error(err?.message || 'Failed to remove chapter from students');
-        return;
+        console.warn('Could not un-publish chapter from student side:', err?.message);
       }
     }
-
-    setChapters((prev) => prev.filter((chapter) => chapter.id !== id));
-    setOpenChapterIds((prev) => prev.filter((chapterId) => chapterId !== id));
-    touchAutosave();
   };
 
   const handleChapterDrop = (targetId) => {
@@ -431,8 +517,9 @@ const AIPoweredTeaching = () => {
       subject: selectedSubjectOption?.subjectName || 'Subject',
       date,
       learningObjectives: stripHtml(chapter.introductionText) ? [stripHtml(chapter.introductionText)] : [chapterTitle],
-      materialsNeeded: Object.values(chapter.contentUploads || {})
-        .flatMap((files) => (files || []).map(serializeResourceRef).filter(Boolean)),
+      materialsNeeded: Object.entries(chapter.contentUploads || {})
+        .filter(([bucket]) => MATERIAL_BUCKETS.has(bucket))
+        .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),
       additionalNotes: stripHtml(chapter.teacherNotes) || '',
       plannerContent: singleChapterContent,
     };
@@ -503,7 +590,6 @@ const AIPoweredTeaching = () => {
 
       toast.success(`${uploadedCount} material${uploadedCount === 1 ? '' : 's'} uploaded`);
       setAutosaveStatus('Material uploaded');
-      await loadChaptersForSelection(selectedClass, selectedSection, selectedSubject);
     } catch (err) {
       toast.error(err?.message || 'Failed to upload material');
       setAutosaveStatus(uploadedCount > 0 ? 'Some materials uploaded' : 'Upload failed');
@@ -553,6 +639,7 @@ const AIPoweredTeaching = () => {
             setOpenChapterIds([]);
             setCurrentDraftId(null);
             setAutosaveStatus('Not saved');
+            localStorage.removeItem('currentLessonPlanDraft');
           }}
         />
 

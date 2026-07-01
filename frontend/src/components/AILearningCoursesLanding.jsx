@@ -647,7 +647,20 @@ const AILearningCoursesLanding = () => {
   const selectedSubject = useMemo(() => {
     if (!subjectKey) return null;
     const normalizedKey = normalize(subjectKey);
-    return assignedSubjects.find(s => s.key === normalizedKey);
+    const exactMatch = assignedSubjects.find((s) => s.key === normalizedKey);
+    if (exactMatch) return exactMatch;
+
+    const fuzzyMatch = assignedSubjects.find((s) => {
+      const subjectTitle = normalize(s?.title);
+      if (!subjectTitle) return false;
+      return (
+        subjectTitle === normalizedKey ||
+        subjectTitle.includes(normalizedKey) ||
+        normalizedKey.includes(subjectTitle)
+      );
+    });
+
+    return fuzzyMatch || assignedSubjects.find((s) => String(s?.subjectId || '').trim() === String(subjectKey).trim()) || null;
   }, [subjectKey, assignedSubjects]);
 
   // Redirect unknown subject URLs or topic URLs for subjects without topics

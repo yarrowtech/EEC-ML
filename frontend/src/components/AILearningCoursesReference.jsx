@@ -20,8 +20,6 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
 const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback/context`;
-const STUDENT_learningMaterials_ENDPOINT = `${API_BASE}/api/student/materials?limit=100`;
-const STUDENT_PAPERS_ENDPOINT = `${API_BASE}/api/practice-papers/student/papers?limit=100`;
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 
 
@@ -39,6 +37,7 @@ const LEARNING_OBJECTIVES = [
 ];
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
+const normalizeLabel = (value) => String(value || '').trim();
 
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -58,6 +57,12 @@ const getInlineDocumentUrl = (rawUrl = '') => {
 };
 
 const buildResourceTitle = (item, fallback) => String(item?.title || item?.name || fallback || 'Resource').trim();
+const formatDateLabel = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
@@ -110,7 +115,7 @@ const UploadedResourcesPanel = ({ resources }) => {
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-xl font-black text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Uploaded Resources</h2>
-          <p className="text-sm text-slate-500">Teacher-published materials, worksheets, assessments, and chapter uploads for this selection.</p>
+          <p className="text-sm text-slate-500">Teacher-published materials and assessments for this chapter.</p>
         </div>
         <span className="text-sm font-bold text-[#004b71]">{resources.length} item{resources.length === 1 ? '' : 's'}</span>
       </div>
@@ -220,8 +225,6 @@ const AILearningCoursesReference = () => {
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
-  const [teacherMaterials, setTeacherMaterials] = useState([]);
-  const [practicePapers, setPracticePapers] = useState([]);
   const [smartLearningSubjects, setSmartLearningSubjects] = useState([]);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
@@ -286,16 +289,12 @@ const AILearningCoursesReference = () => {
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
         ]);
 
-        const [materialsRes, papersRes, mapRes] = await Promise.all([
-          fetchCachedJson(STUDENT_learningMaterials_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { materials: [] } })),
-          fetchCachedJson(STUDENT_PAPERS_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { papers: [] } })),
+        const [mapRes] = await Promise.all([
           fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { subjects: [] } })),
         ]);
 
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
-        setTeacherMaterials(Array.isArray(materialsRes?.data?.materials) ? materialsRes.data.materials : []);
-        setPracticePapers(Array.isArray(papersRes?.data?.papers) ? papersRes.data.papers : []);
         setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
@@ -329,6 +328,8 @@ const AILearningCoursesReference = () => {
     return chapters.find((chapter) => normalizeKey(chapter?.title || chapter?.id) === lookup) || null;
   }, [selectedSmartSubject, topicSlug]);
 
+  const selectedChapterMeta = useMemo(() => selectedChapter?.meta || {}, [selectedChapter]);
+
   const selectedTopicFromMap = useMemo(() => {
     const lookup = normalizeKey(topicSlug);
     if (selectedChapter) return null;
@@ -349,6 +350,7 @@ const AILearningCoursesReference = () => {
         label: selectedChapter.title,
         chapterTitle: selectedChapter.title,
         topics,
+        chapterMeta: selectedChapterMeta,
         chapterUploads: Array.isArray(selectedChapter.uploads) ? selectedChapter.uploads : [],
       };
     }
@@ -366,11 +368,12 @@ const AILearningCoursesReference = () => {
       label: topicSlug,
       chapterTitle: '',
       topics: [],
+      chapterMeta: {},
       chapterUploads: [],
     };
-  }, [selectedChapter, selectedTopicFromMap, topicSlug]);
+  }, [selectedChapter, selectedChapterMeta, selectedTopicFromMap, topicSlug]);
 
-  const uploadedResources = useMemo(() => {
+  const chapterMaterials = useMemo(() => {
     const resources = [];
     const seen = new Set();
     const addResource = (item, group, fallbackTitle) => {
@@ -388,115 +391,107 @@ const AILearningCoursesReference = () => {
         content: item?.content || item?.description || '',
         url,
         publishedAt: item?.publishedAt || item?.createdAt || item?.dueDate || null,
+        formatLabel: normalizeLabel(item?.bucket || item?.typeLabel || item?.learningType || item?.materialType || item?.type || 'File'),
       });
     };
 
-    mapScope.chapterUploads.forEach((upload) => addResource(upload, 'Uploaded Material', upload?.title));
+    const allowedMaterialBuckets = new Set(['study materials', 'presentations', 'images', 'experiments', 'report upload', 'additional resources']);
+    mapScope.chapterUploads.forEach((upload) => {
+      const bucket = normalizeKey(upload?.bucket);
+      if (bucket && !allowedMaterialBuckets.has(bucket)) return;
+      addResource(upload, 'Material', upload?.title);
+    });
     mapScope.topics.forEach((topic) => {
       (topic.subtopics || []).forEach((subtopic) => {
-        (subtopic.worksheetUploads || []).forEach((upload) => addResource(upload, 'Worksheet Upload', upload?.title));
         (subtopic.materials || []).forEach((material) => addResource(material, 'Material', material?.title));
-        (subtopic.assignments || []).forEach((assignment) => addResource(assignment, 'Worksheet', assignment?.title));
-        (subtopic.assessments || []).forEach((assessment) => addResource(assessment, 'Assessment', assessment?.title));
       });
     });
 
     return resources;
   }, [mapScope]);
 
-  const filteredTeacherMaterials = useMemo(() => {
-    const subjectKey = normalizeKey(subjectSlug);
-    const topicKey = normalizeKey(topicSlug);
-    const chapterTitle = normalizeKey(mapScope.chapterTitle || topicSlug);
-    const topicTitles = new Set(mapScope.topics.map((topic) => normalizeKey(topic.title)).filter(Boolean));
-
-    return teacherMaterials.filter((material) => {
-      const materialSubject = normalizeKey(material?.subjectName);
-      const materialChapter = normalizeKey(material?.chapterTitle || material?.chapterId);
-      const materialTopic = normalizeKey(material?.topicTitle);
-      const title = normalizeKey(material?.title);
-      const content = normalizeKey(material?.content);
-      const subjectMatch = !subjectKey || materialSubject === subjectKey || materialSubject.includes(subjectKey);
-      const exactChapterMatch = chapterTitle && materialChapter === chapterTitle;
-      const exactTopicMatch = materialTopic && topicTitles.has(materialTopic);
-      const topicMatch = !topicKey || exactChapterMatch || exactTopicMatch || title.includes(topicKey) || content.includes(topicKey);
-      return subjectMatch && topicMatch;
-    });
-  }, [teacherMaterials, subjectSlug, topicSlug, mapScope]);
-
-  const learningMaterials = useMemo(() => {
-    const mapMaterials = uploadedResources
-      .filter((resource) => ['Material', 'Uploaded Material', 'Worksheet Upload'].includes(resource.group))
-      .map((resource) => ({
-        title: resource.title,
-        description: resource.description || resource.group,
-        url: resource.url,
-        content: resource.content,
-      }));
-
-    const endpointMaterials = filteredTeacherMaterials.map((material) => ({
-      title: material.title,
-      description: material.typeLabel || material.category || 'Study Material',
-      url: getAttachmentUrl(material),
-      content: material.content || '',
-    }));
-
+  const chapterAssessments = useMemo(() => {
+    const resources = [];
     const seen = new Set();
-    return [...mapMaterials, ...endpointMaterials].filter((material) => {
-      const key = [material.title, material.url].map(normalizeKey).join('::');
-      if (seen.has(key)) return false;
+    const addAssessment = (item, fallbackTitle) => {
+      const title = buildResourceTitle(item, fallbackTitle);
+      if (!title) return;
+      const url = getAttachmentUrl(item);
+      const key = ['Assessment', title, url].map(normalizeKey).join('::');
+      if (seen.has(key)) return;
       seen.add(key);
-      return true;
-    }).slice(0, 12);
-  }, [filteredTeacherMaterials, uploadedResources]);
+      resources.push({
+        id: item?.id || item?._id || key,
+        title,
+        group: 'Assessment',
+        description: item?.description || item?.typeLabel || item?.learningType || item?.paperType || 'Assessment',
+        content: item?.content || item?.description || '',
+        url,
+        publishedAt: item?.publishedAt || item?.createdAt || item?.dueDate || null,
+        formatLabel: normalizeLabel(item?.typeLabel || item?.learningType || item?.materialType || item?.paperType || 'Assessment'),
+      });
+    };
 
-  const assessmentItems = useMemo(() => {
-    const topicKey = normalizeKey(topicSlug);
-    const chapterTitle = normalizeKey(mapScope.chapterTitle || topicSlug);
-    const topicTitles = new Set(mapScope.topics.map((topic) => normalizeKey(topic.title)).filter(Boolean));
-    const mapAssessmentCount = uploadedResources.filter((resource) => resource.group === 'Assessment').length;
-    const worksheetCount = uploadedResources.filter((resource) => ['Worksheet', 'Worksheet Upload'].includes(resource.group)).length;
-    const papersCount = practicePapers.filter((paper) => {
-      const title = normalizeKey(paper?.title);
-      const chapter = normalizeKey(paper?.chapterTitle || paper?.chapter);
-      const topic = normalizeKey(paper?.topicTitle);
-      return chapter === chapterTitle || topicTitles.has(topic) || title.includes(topicKey) || !topicKey;
-    }).length + mapAssessmentCount;
-    const tryoutCount = filteredTeacherMaterials.filter((m) => normalizeKey(m?.typeLabel).includes('tryout')).length;
-    return [
-      { title: 'Practice Papers', description: papersCount > 0 ? `${papersCount} real papers available` : 'No real paper found' },
-      { title: 'Worksheets', description: worksheetCount > 0 ? `${worksheetCount} worksheet resource${worksheetCount > 1 ? 's' : ''} available` : 'No worksheet found' },
-      { title: 'Tryout Section', description: tryoutCount > 0 ? `${tryoutCount} real tryout resources available` : 'No real tryout found' },
-      { title: 'Self-Assessment', description: 'Based on published class materials only' },
-    ];
-  }, [practicePapers, filteredTeacherMaterials, topicSlug, mapScope, uploadedResources]);
+    mapScope.chapterUploads.forEach((upload) => {
+      const bucket = normalizeKey(upload?.bucket);
+      if (bucket.includes('assessment') || bucket.includes('practice papers') || bucket.includes('tryout')) {
+        addAssessment(upload, upload?.title);
+      }
+    });
 
-  const isPracticeUnlocked = overallProgress >= 75;
-  const isAssessmentItemClickable = (itemTitle) => {
-    const normalizedTitle = String(itemTitle || '').toLowerCase();
-    return isPracticeUnlocked && (normalizedTitle === 'practice papers' || normalizedTitle === 'tryout section');
-  };
-  const getAssessmentStatusText = (itemTitle) => {
-    const normalizedTitle = String(itemTitle || '').toLowerCase();
-    if (normalizedTitle === 'worksheets') return 'Available in Uploaded Resources';
-    if (normalizedTitle === 'self-assessment') return 'Use after reviewing the resources';
-    return isAssessmentItemClickable(itemTitle) ? 'Ready to start' : 'Unlocks at 75% progress';
-  };
+    mapScope.topics.forEach((topic) => {
+      (topic.subtopics || []).forEach((subtopic) => {
+        (subtopic.assessments || []).forEach((assessment) => addAssessment(assessment, assessment?.title));
+      });
+    });
+
+    return resources;
+  }, [mapScope]);
+
+  const learningMaterials = useMemo(() => chapterMaterials, [chapterMaterials]);
+
+  const assessmentItems = useMemo(() => chapterAssessments, [chapterAssessments]);
+
+  const chapterLearningObjectives = useMemo(() => {
+    const objectives = Array.isArray(selectedChapterMeta.learningObjectives)
+      ? selectedChapterMeta.learningObjectives.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    return objectives.length > 0 ? objectives : LEARNING_OBJECTIVES;
+  }, [selectedChapterMeta]);
+
+  const chapterInstructionalFlow = useMemo(() => {
+    const flow = Array.isArray(selectedChapterMeta.instructionalFlow)
+      ? selectedChapterMeta.instructionalFlow.filter((item) => item && typeof item === 'object')
+      : [];
+    if (!flow.length) return LEARNING_STEPS;
+    return flow.map((step, index) => ({
+      id: step.id || `step-${index + 1}`,
+      title: String(step.title || step.description || `Step ${index + 1}`).trim(),
+      duration: Number(step.duration || 0) || LEARNING_STEPS[index % LEARNING_STEPS.length]?.duration || 0,
+      type: String(step.type || step.phase || `Step ${index + 1}`).trim(),
+    }));
+  }, [selectedChapterMeta]);
+
+  const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
+  const chapterDayLabel = selectedChapterMeta.day || (selectedChapterMeta.date ? new Date(selectedChapterMeta.date).toLocaleDateString('en-US', { weekday: 'long' }) : '');
+  const chapterDurationLabel = selectedChapterMeta.duration || `${chapterInstructionalFlow.reduce((sum, step) => sum + Number(step.duration || 0), 0)} Min`;
+
   const normalizedTopicSlug = encodeURIComponent(String(topicSlug || '').trim());
   const normalizedSubjectSlug = encodeURIComponent(String(subjectSlug || '').trim());
   const readingContent = useMemo(() => {
-    if (!filteredTeacherMaterials.length) return { intro: '', sections: [] };
+    const sourceMaterials = chapterMaterials.filter((item) => String(item.content || '').trim());
+    if (!sourceMaterials.length) return { intro: '', sections: [] };
 
     const strip = (html) => String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-    const first = filteredTeacherMaterials[0];
+    const first = sourceMaterials[0];
     const intro = strip(first?.content).slice(0, 900);
-    const sections = filteredTeacherMaterials.slice(1, 6).map((item) => ({
+    const sections = sourceMaterials.slice(1, 6).map((item) => ({
       title: item.title || 'Learning Note',
       text: strip(item.content).slice(0, 1200),
     })).filter((sec) => sec.text);
 
     return { intro, sections };
-  }, [filteredTeacherMaterials]);
+  }, [chapterMaterials]);
 
   const openDetailsPage = () => {
     navigate(
@@ -580,16 +575,6 @@ const AILearningCoursesReference = () => {
     }
   };
 
-  const handleAssessmentItemClick = (itemTitle) => {
-    const normalizedTitle = String(itemTitle || '').toLowerCase();
-    if (normalizedTitle === 'practice papers') {
-      navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/practice-paper`);
-      return;
-    }
-    if (normalizedTitle === 'tryout section') {
-      navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
-    }
-  };
   const goToTryoutSection = () => {
     navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
   };
@@ -674,11 +659,11 @@ const AILearningCoursesReference = () => {
       });
 
       addHeading('Learning Objectives');
-      LEARNING_OBJECTIVES.forEach((objective) => addBullet(objective));
+      chapterLearningObjectives.forEach((objective) => addBullet(objective));
       y += 3;
 
       addHeading('Instructional Flow');
-      LEARNING_STEPS.forEach((step, index) => {
+      chapterInstructionalFlow.forEach((step, index) => {
         addBullet(`${index + 1}. ${step.type} - ${step.title} (${step.duration} min)`);
       });
       y += 3;
@@ -954,7 +939,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Learning Objectives</h2>
             </div>
             <div className="flex-1 overflow-y-auto space-y-4" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {LEARNING_OBJECTIVES.map((obj, idx) => (
+              {chapterLearningObjectives.map((obj, idx) => (
                 <div key={idx} className="flex gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: '#7d5800' }}>
                     {idx + 1}
@@ -972,7 +957,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="flex-1 overflow-y-auto space-y-6" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {LEARNING_STEPS.map((step) => (
+              {chapterInstructionalFlow.map((step) => (
                 <div key={step.id} className="relative pl-6" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[5px] top-0 w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-1">
@@ -1016,7 +1001,7 @@ const AILearningCoursesReference = () => {
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Total Duration</p>
                     <p className="text-sm font-bold text-white">
-                      {LEARNING_STEPS.reduce((sum, step) => sum + step.duration, 0)} Min
+                      {chapterDurationLabel}
                     </p>
                   </div>
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
@@ -1026,7 +1011,7 @@ const AILearningCoursesReference = () => {
                   <div className="px-3 sm:px-4 py-2 rounded-xl border text-sm sm:text-base" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[9px] sm:text-[10px] uppercase font-bold" style={{ fontFamily: 'Work Sans, sans-serif', color: 'rgba(255, 255, 255, 0.6)' }}>Steps Done</p>
                     <p className="text-sm font-bold text-white">
-                      {completedSteps.length}/{LEARNING_STEPS.length}
+                      {completedSteps.length}/{chapterInstructionalFlow.length}
                     </p>
                   </div>
                 </div>
@@ -1043,7 +1028,7 @@ const AILearningCoursesReference = () => {
                     ></div>
                   </div>
                   <p className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.7)', fontFamily: 'Work Sans, sans-serif' }}>
-                    {completedSteps.length} of {LEARNING_STEPS.length} learning steps completed
+                    {completedSteps.length} of {chapterInstructionalFlow.length} learning steps completed
                   </p>
                 </div>
               </div>
@@ -1056,15 +1041,33 @@ const AILearningCoursesReference = () => {
               <Layers size={20} style={{ color: '#2c694e' }} />
               <h2 className="text-lg font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
+                Date: {chapterDateLabel || 'Not set'}
+              </span>
+              <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
+                Day: {chapterDayLabel || 'Not set'}
+              </span>
+              <span className="rounded-full bg-white px-3 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
+                Duration: {chapterDurationLabel || 'Not set'}
+              </span>
+            </div>
             <div className="flex-1 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
-              {learningMaterials.map((material, idx) => (
-                <div key={idx} className="p-3 rounded-xl flex items-center gap-3" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
-                  <span className="text-2xl flex-shrink-0">
-                    {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
+              {learningMaterials.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-emerald-200 bg-white/80 p-4 text-center">
+                  <p className="text-sm font-semibold text-slate-700">No chapter material uploaded yet.</p>
+                  <p className="mt-1 text-xs text-slate-500">Only files from the material section will appear here.</p>
+                </div>
+              ) : learningMaterials.map((material, idx) => (
+                <div key={idx} className="flex items-center gap-3 rounded-xl border border-[#f3f4f5] bg-white p-3">
+                  <span className="flex-shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
+                    {normalizeLabel(material.formatLabel || material.description || 'File')}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
-                    <p className="text-[10px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
+                    <div className="mb-1 flex items-center gap-2">
+                      <p className="truncate text-xs font-bold" style={{ color: '#191c1d' }}>{material.title}</p>
+                    </div>
+                    <p className="truncate text-[10px]" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
                   <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
@@ -1080,29 +1083,24 @@ const AILearningCoursesReference = () => {
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
               <p className="text-xs italic leading-relaxed mb-4" style={{ color: '#40484f' }}>
-                Measure mastery through structured practice and self-assessment tools.
+                Only assessments uploaded or published by the teacher are shown here.
               </p>
-              {assessmentItems.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-3 rounded-xl border text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <CheckCircle2 size={16} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
-                    <h4 className="text-xs font-bold truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
-                      {item.title}
-                    </h4>
+              {assessmentItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center">
+                  <p className="text-sm font-semibold text-slate-700">No assessment uploaded yet.</p>
+                  <p className="mt-1 text-xs text-slate-500">Teacher assessment files will appear here.</p>
+                </div>
+              ) : assessmentItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-300 bg-white p-3">
+                  <span className="flex-shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-slate-700">
+                    {normalizeLabel(item.formatLabel || item.description || 'Assessment')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold" style={{ color: '#191c1d' }}>{item.title}</p>
+                    <p className="truncate text-[10px]" style={{ color: '#40484f' }}>{item.description}</p>
                   </div>
-                  <p className="text-[10px]" style={{ color: '#40484f' }}>
-                    {item.description}
-                  </p>
-                  <p className="mt-2 text-[10px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
-                    {getAssessmentStatusText(item.title)}
-                  </p>
-                </button>
+                  <MaterialQuickActions material={item} onRead={setActiveMaterial} />
+                </div>
               ))}
             </div>
           </section>
@@ -1117,7 +1115,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Learning Objectives</h2>
             </div>
             <div className="overflow-y-auto space-y-3 text-sm" style={{ scrollbarWidth: 'thin' }}>
-              {LEARNING_OBJECTIVES.map((obj, idx) => (
+              {chapterLearningObjectives.map((obj, idx) => (
                 <div key={idx} className="flex gap-2">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white" style={{ backgroundColor: '#7d5800' }}>
                     {idx + 1}
@@ -1135,7 +1133,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="overflow-y-auto space-y-4 text-xs" style={{ scrollbarWidth: 'thin' }}>
-              {LEARNING_STEPS.map((step) => (
+              {chapterInstructionalFlow.map((step) => (
                 <div key={step.id} className="relative pl-5" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[3px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-0.5">
@@ -1180,7 +1178,7 @@ const AILearningCoursesReference = () => {
                   </div>
                   <div className="px-2 py-1 rounded-lg border text-xs" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[8px] text-white/60" style={{ fontFamily: 'Work Sans, sans-serif' }}>Steps</p>
-                    <p className="text-xs font-bold text-white">{completedSteps.length}/{LEARNING_STEPS.length}</p>
+                    <p className="text-xs font-bold text-white">{completedSteps.length}/{chapterInstructionalFlow.length}</p>
                   </div>
                 </div>
                 <div className="w-full h-1.5 rounded-full overflow-hidden mt-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
@@ -1202,15 +1200,24 @@ const AILearningCoursesReference = () => {
               <Layers size={18} style={{ color: '#2c694e' }} />
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Date: {chapterDateLabel || 'Not set'}</span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Day: {chapterDayLabel || 'Not set'}</span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Duration: {chapterDurationLabel || 'Not set'}</span>
+            </div>
             <div className="overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin' }}>
-              {learningMaterials.map((material, idx) => (
-                <div key={idx} className="p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
-                  <span className="text-lg flex-shrink-0">
-                    {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
+              {learningMaterials.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-emerald-200 bg-white p-3 text-center">
+                  <p className="text-xs font-semibold text-slate-700">No chapter material uploaded yet.</p>
+                </div>
+              ) : learningMaterials.map((material, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded-lg border border-[#f3f4f5] bg-white p-2">
+                  <span className="flex-shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                    {normalizeLabel(material.formatLabel || material.description || 'File')}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
-                    <p className="text-[9px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
+                    <p className="truncate text-[11px] font-bold" style={{ color: '#191c1d' }}>{material.title}</p>
+                    <p className="truncate text-[9px]" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
                   <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
@@ -1225,27 +1232,21 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Assessment</h2>
             </div>
             <div className="overflow-y-auto space-y-2" style={{ scrollbarWidth: 'thin' }}>
-              {assessmentItems.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
-                >
-                  <div className="flex items-center gap-1 mb-1">
-                    <CheckCircle2 size={14} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
-                    <h4 className="font-bold text-[11px] truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
-                      {item.title}
-                    </h4>
+              {assessmentItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-3 text-center">
+                  <p className="text-xs font-semibold text-slate-700">No assessment uploaded yet.</p>
+                </div>
+              ) : assessmentItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2">
+                  <span className="flex-shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-slate-700">
+                    {normalizeLabel(item.formatLabel || item.description || 'Assessment')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-bold" style={{ color: '#191c1d' }}>{item.title}</p>
+                    <p className="truncate text-[9px]" style={{ color: '#40484f' }}>{item.description}</p>
                   </div>
-                  <p className="text-[9px]" style={{ color: '#40484f' }}>
-                    {item.description}
-                  </p>
-                  <p className="mt-1 text-[9px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
-                    {getAssessmentStatusText(item.title)}
-                  </p>
-                </button>
+                  <MaterialQuickActions material={item} onRead={setActiveMaterial} />
+                </div>
               ))}
             </div>
           </section>
@@ -1280,7 +1281,7 @@ const AILearningCoursesReference = () => {
                   </div>
                   <div className="px-2 py-1 rounded-lg border text-xs" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', borderColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <p className="text-[8px] text-white/60">Steps</p>
-                    <p className="text-xs font-bold text-white">{completedSteps.length}/{LEARNING_STEPS.length}</p>
+                    <p className="text-xs font-bold text-white">{completedSteps.length}/{chapterInstructionalFlow.length}</p>
                   </div>
                 </div>
               </div>
@@ -1294,7 +1295,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Learning Objectives</h2>
             </div>
             <div className="space-y-3 text-sm">
-              {LEARNING_OBJECTIVES.map((obj, idx) => (
+              {chapterLearningObjectives.map((obj, idx) => (
                 <div key={idx} className="flex gap-2">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white" style={{ backgroundColor: '#7d5800' }}>
                     {idx + 1}
@@ -1312,7 +1313,7 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Instructional Flow</h2>
             </div>
             <div className="space-y-4 text-xs">
-              {LEARNING_STEPS.map((step) => (
+              {chapterInstructionalFlow.map((step) => (
                 <div key={step.id} className="relative pl-5" style={{ borderLeft: '1px solid rgba(0, 75, 113, 0.2)' }}>
                   <div className="absolute -left-[3px] top-1 w-2 h-2 rounded-full" style={{ backgroundColor: '#004b71' }}></div>
                   <div className="flex justify-between items-start mb-0.5">
@@ -1336,15 +1337,24 @@ const AILearningCoursesReference = () => {
               <Layers size={18} style={{ color: '#2c694e' }} />
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Materials</h2>
             </div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Date: {chapterDateLabel || 'Not set'}</span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Day: {chapterDayLabel || 'Not set'}</span>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[9px] font-semibold text-slate-700 shadow-sm">Duration: {chapterDurationLabel || 'Not set'}</span>
+            </div>
             <div className="space-y-2">
-              {learningMaterials.map((material, idx) => (
-                <div key={idx} className="p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#ffffff', border: '1px solid #f3f4f5' }}>
-                  <span className="text-lg flex-shrink-0">
-                    {idx === 0 ? '💻' : idx === 1 ? '📊' : '📚'}
+              {learningMaterials.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-emerald-200 bg-white p-3 text-center">
+                  <p className="text-xs font-semibold text-slate-700">No chapter material uploaded yet.</p>
+                </div>
+              ) : learningMaterials.map((material, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded-lg border border-[#f3f4f5] bg-white p-2">
+                  <span className="flex-shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                    {normalizeLabel(material.formatLabel || material.description || 'File')}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold truncate" style={{ color: '#191c1d' }}>{material.title}</p>
-                    <p className="text-[9px] truncate" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
+                    <p className="truncate text-[11px] font-bold" style={{ color: '#191c1d' }}>{material.title}</p>
+                    <p className="truncate text-[9px]" style={{ fontFamily: 'Work Sans, sans-serif', color: '#40484f' }}>{material.description}</p>
                   </div>
                   <MaterialQuickActions material={material} onRead={setActiveMaterial} />
                 </div>
@@ -1359,33 +1369,27 @@ const AILearningCoursesReference = () => {
               <h2 className="text-base font-black" style={{ fontFamily: 'Manrope, sans-serif', color: '#191c1d' }}>Assessment</h2>
             </div>
             <div className="space-y-2">
-              {assessmentItems.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleAssessmentItemClick(item.title)}
-                  className={`w-full p-2 rounded-lg border text-xs text-left ${isAssessmentItemClickable(item.title) ? 'hover:shadow-sm' : ''}`}
-                  style={{ backgroundColor: isAssessmentItemClickable(item.title) ? '#ffffff' : '#f8fafc', borderColor: '#c0c7d0', cursor: isAssessmentItemClickable(item.title) ? 'pointer' : 'default' }}
-                >
-                  <div className="flex items-center gap-1 mb-1">
-                    <CheckCircle2 size={14} style={{ color: isAssessmentItemClickable(item.title) ? '#004b71' : '#94a3b8' }} />
-                    <h4 className="font-bold text-[11px] truncate" style={{ color: isPracticeUnlocked ? '#004b71' : '#40484f' }}>
-                      {item.title}
-                    </h4>
+              {assessmentItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-3 text-center">
+                  <p className="text-xs font-semibold text-slate-700">No assessment uploaded yet.</p>
+                </div>
+              ) : assessmentItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white p-2">
+                  <span className="flex-shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-slate-700">
+                    {normalizeLabel(item.formatLabel || item.description || 'Assessment')}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-bold" style={{ color: '#191c1d' }}>{item.title}</p>
+                    <p className="truncate text-[9px]" style={{ color: '#40484f' }}>{item.description}</p>
                   </div>
-                  <p className="text-[9px]" style={{ color: '#40484f' }}>
-                    {item.description}
-                  </p>
-                  <p className="mt-1 text-[9px] font-semibold" style={{ color: isAssessmentItemClickable(item.title) ? '#166534' : '#64748b' }}>
-                    {getAssessmentStatusText(item.title)}
-                  </p>
-                </button>
+                  <MaterialQuickActions material={item} onRead={setActiveMaterial} />
+                </div>
               ))}
             </div>
           </section>
         </div>
 
-        <UploadedResourcesPanel resources={uploadedResources} />
+        <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
       </main>
 
       {activeMaterial && (

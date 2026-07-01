@@ -63,6 +63,13 @@ const inferAttachmentType = (value) => {
 const parseResourceRef = (value) => {
   const text = normalizeString(value);
   if (!text) return { title: '', url: '' };
+  const parts = text.split('::');
+  if (parts.length >= 3) {
+    const bucket = normalizeString(parts[0]);
+    const title = normalizeString(parts[1]);
+    const url = normalizeString(parts.slice(2).join('::'));
+    return { bucket, title: title || url, url: /^https?:\/\//i.test(url) ? url : '' };
+  }
   const separator = text.indexOf('::');
   if (separator >= 0) {
     const title = normalizeString(text.slice(0, separator));
@@ -73,6 +80,13 @@ const parseResourceRef = (value) => {
     title: text,
     url: /^https?:\/\//i.test(text) ? text : '',
   };
+};
+
+const formatPlanDay = (dateValue) => {
+  if (!dateValue) return '';
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { weekday: 'long' });
 };
 
 const buildAttachmentList = (items) =>
@@ -1719,7 +1733,37 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       return title || normalizeIdValue(chapter?.id);
     };
 
-    const ensureChapterTopicSubTopic = (subjectEntry, chapter, topic, subTopic) => {
+    const buildChapterMeta = (plan, chapter = null) => {
+      const planDate = plan?.date ? new Date(plan.date) : null;
+      const chapterDuration = normalizeString(chapter?.duration);
+      const planDuration = normalizeString(plan?.duration);
+      const learningObjectives = Array.isArray(plan?.learningObjectives)
+        ? plan.learningObjectives.map((item) => normalizeString(item)).filter(Boolean)
+        : [];
+      const instructionalFlow = Array.isArray(plan?.instructionalFlow)
+        ? plan.instructionalFlow.filter((item) => item && typeof item === 'object')
+        : [];
+
+      return {
+        date: planDate && !Number.isNaN(planDate.getTime()) ? planDate.toISOString() : null,
+        day: planDate && !Number.isNaN(planDate.getTime()) ? planDate.toLocaleDateString('en-US', { weekday: 'long' }) : '',
+        duration: chapterDuration || planDuration || '',
+        learningObjectives,
+        instructionalFlow,
+      };
+    };
+
+    const mergeChapterMeta = (currentMeta = {}, nextMeta = {}) => ({
+      date: nextMeta.date || currentMeta.date || null,
+      day: nextMeta.day || currentMeta.day || '',
+      duration: nextMeta.duration || currentMeta.duration || '',
+      learningObjectives: Array.from(new Set([...(currentMeta.learningObjectives || []), ...(nextMeta.learningObjectives || [])])),
+      instructionalFlow: Array.isArray(nextMeta.instructionalFlow) && nextMeta.instructionalFlow.length > 0
+        ? nextMeta.instructionalFlow
+        : (Array.isArray(currentMeta.instructionalFlow) ? currentMeta.instructionalFlow : []),
+    });
+
+    const ensureChapterTopicSubTopic = (subjectEntry, plan, chapter, topic, subTopic) => {
       const chapterTitle = normalizeString(chapter?.title) || 'Chapter';
       const topicTitle = normalizeString(topic?.title) || 'Topic';
       const subTopicTitle = normalizeString(subTopic?.title) || 'Sub Topic';
@@ -1733,10 +1777,12 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
           id: chapterId,
           title: chapterTitle,
           uploads: [],
+          meta: {},
           topics: new Map(),
         });
       }
       const chapterEntry = subjectEntry.chapters.get(chapterKey);
+      chapterEntry.meta = mergeChapterMeta(chapterEntry.meta, buildChapterMeta(plan, chapter));
 
       if (!chapterEntry.topics.has(topicId)) {
         chapterEntry.topics.set(topicId, {
@@ -1776,7 +1822,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const subTopic = topic?.subTopics?.find((item) => normalizeString(item.title) === normalizeString(doc.subTopicTitle));
       const subjectEntry = getSubjectEntry(plan);
       if (!subjectEntry || !chapter || !topic || !subTopic) return;
-      const subTopicEntry = ensureChapterTopicSubTopic(subjectEntry, chapter, topic, subTopic);
+      const subTopicEntry = ensureChapterTopicSubTopic(subjectEntry, plan, chapter, topic, subTopic);
       const dedupeKey = [
         String(doc.sourceLessonPlanId || ''),
         bucketKey,
@@ -1851,6 +1897,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
           id: chapterId,
           title: chapterTitle,
           uploads: [],
+          meta: {},
           topics: new Map(),
         });
       }
@@ -1919,13 +1966,14 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
           });
         }
         const chapterEntry = subjectEntry.chapters.get(chapterKey);
+        chapterEntry.meta = mergeChapterMeta(chapterEntry.meta, buildChapterMeta(plan, chapter));
         const planUploads = normalizeStringList(plan.materialsNeeded).map((item, index) => {
           const resource = parseResourceRef(item);
           return {
             id: `plan-upload-${chapterId}-${index + 1}`,
             title: resource.title,
             type: inferAttachmentType(resource.url || resource.title),
-            bucket: 'Uploaded Material',
+            bucket: resource.bucket || 'Uploaded Material',
             url: resource.url,
           };
         });
@@ -1996,6 +2044,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       chapters: Array.from(subject.chapters.values()).map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
+        meta: chapter.meta || {},
         uploads: chapter.uploads || [],
         topics: Array.from(chapter.topics.values()).map((topic) => ({
           id: topic.id,
