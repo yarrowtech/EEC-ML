@@ -445,6 +445,11 @@ router.post('/:id/publish', async (req, res, next) => {
 
     await material.save();
 
+    // Re-index attachments: archiving removes vectors, so republish must restore them.
+    triggerMaterialIngest(material, material.attachments || []).catch((err) =>
+      console.error('[material ingest] failed on publish for material', String(material._id), err.message)
+    );
+
     res.json({
       success: true,
       message: 'Material published successfully',
@@ -474,6 +479,11 @@ router.post('/:id/archive', async (req, res, next) => {
 
     material.status = 'archived';
     await material.save();
+
+    // Archived materials must stop feeding the AI tutor's RAG context.
+    deleteMaterialVectors(material._id).catch((err) =>
+      console.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+    );
 
     res.json({
       success: true,

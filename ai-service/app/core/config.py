@@ -16,8 +16,11 @@ class Settings(BaseSettings):
 
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_database: str = "eec_ai"
-    rag_relevance_threshold: float = 0.30
+    rag_relevance_threshold: float = 0.55
     max_context_chunks: int = 4
+    max_chapter_context_chunks: int = 12
+    ollama_num_ctx: int = 8192
+    ollama_num_predict: int = 1500
     download_timeout: int = 30
 
     log_level: str = "INFO"

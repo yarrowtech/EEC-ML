@@ -143,6 +143,7 @@ def search_chunks(
             "text": hit.payload.get("chunk_text", ""),
             "chapter_title": hit.payload.get("chapter_title", ""),
             "topic_title": hit.payload.get("topic_title", ""),
+            "chunk_index": hit.payload.get("chunk_index", 0),
         }
         for hit in response.points
     ]

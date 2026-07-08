@@ -1,3 +1,5 @@
+import re
+from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterator
@@ -10,6 +12,35 @@ from PIL import Image
 
 
 MIN_TEXT_CHARS = 20
+REPEATED_LINE_MAX_CHARS = 80
+REPEATED_LINE_MIN_PAGES = 3
+
+
+def strip_repeated_lines(page_texts: list[str]) -> list[str]:
+    """Drop headers/footers: short lines repeated across many pages, and bare page numbers."""
+    if len(page_texts) < 4:
+        return page_texts
+
+    line_pages: Counter[str] = Counter()
+    for page in page_texts:
+        line_pages.update({" ".join(line.split()) for line in page.splitlines() if line.strip()})
+
+    threshold = max(REPEATED_LINE_MIN_PAGES, len(page_texts) // 3)
+    repeated = {
+        line for line, count in line_pages.items()
+        if count >= threshold and len(line) <= REPEATED_LINE_MAX_CHARS
+    }
+
+    cleaned: list[str] = []
+    for page in page_texts:
+        kept = []
+        for line in page.splitlines():
+            normalized = " ".join(line.split())
+            if normalized in repeated or re.fullmatch(r"\d{1,4}", normalized):
+                continue
+            kept.append(line)
+        cleaned.append("\n".join(kept).strip())
+    return cleaned
 
 
 def validate_pdf_upload(file: UploadFile) -> None:
@@ -42,7 +73,7 @@ def extract_text_pdf(path: Path) -> tuple[str, int]:
         if document.page_count == 0:
             raise HTTPException(status_code=400, detail="Invalid PDF. The document has no pages.")
 
-        pages = [page.get_text("text").strip() for page in document]
+        pages = strip_repeated_lines([page.get_text("text").strip() for page in document])
         return "\n\n".join(page_text for page_text in pages if page_text), document.page_count
 
 

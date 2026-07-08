@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Core Modules:** Academic management, attendance, financial management (payments via Razorpay), real-time chat, notifications, AI tutoring, lesson planning, timetable management, and reporting.
 
-**Type:** Full-stack React + Node.js/Express application with MongoDB and Socket.IO for real-time features.
+**Type:** Full-stack React + Node.js/Express application with MongoDB and Socket.IO for real-time features, plus a Python FastAPI microservice (`/ai-service`) that powers RAG-based AI tutoring (document ingestion, OCR, embeddings, retrieval, LLM generation).
 
 ---
 
@@ -31,7 +31,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Backend:** Node.js, Express 5, MongoDB (Mongoose), JWT auth, bcryptjs, Socket.IO, Nodemailer, Multer, Cloudinary, Razorpay, Pino logging
 
-**Testing:** Jest (both frontend and backend), Supertest for API testing, @testing-library/react
+**AI Service:** Python 3.11, FastAPI, Ollama (chat/summary/embedding models), Qdrant (vector store), MongoDB (motor), PyMuPDF, pytesseract/pdf2image (OCR), python-docx/python-pptx
+
+**Testing:** Jest (both frontend and backend), Supertest for API testing, @testing-library/react, pytest (ai-service)
 
 ---
 
@@ -51,10 +53,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Custom hooks:** `/frontend/src/hooks/` (notifications, feedback)
 - **Tests:** `/frontend/src/__tests__/`
 
+### Key AI Service Paths (`/ai-service`)
+- **App entry:** `app/main.py` (FastAPI app; root `main.py` re-exports it for uvicorn)
+- **Settings:** `app/core/config.py` (pydantic-settings, reads `ai-service/.env`)
+- **Feature modules:** `app/modules/{documents,parser,embeddings,retrieval,chat,summaries}/` — each with `router.py` / `service.py` / `schemas.py` as applicable
+- **Maintenance scripts:** `scripts/` (e.g., `reingest_materials.py`)
+- **Tests:** `tests/`
+
 ### Documentation
 - `/docs/` - API endpoint maps for each role
 - `TESTING_GUIDE.md` - Test writing standards
 - `AGENTS.md` - Developer conventions
+- `/ai-service/Docs/AI_Tutor_SaaS_Knowledge_Base.txt` - AI tutor vision/design doc
 
 ---
 
@@ -85,6 +95,16 @@ npm test -- path/to/Component.test.jsx  # Run single test file
 npm run test:coverage   # Coverage report
 ```
 
+### AI Service (`cd ai-service`)
+```bash
+.venv/bin/uvicorn main:app --reload --port 8000   # Development server
+.venv/bin/pytest                                   # Run all tests (mocked; no services needed)
+.venv/bin/pytest tests/test_chunker.py             # Run single test file
+RUN_AI_EVALS=1 .venv/bin/pytest -m eval            # Live RAG eval vs golden set (needs Ollama+Qdrant and tests/golden/golden_set.json)
+.venv/bin/python scripts/reingest_materials.py     # Re-ingest all Qdrant materials after parser/chunker changes
+```
+Dependencies live in a local venv: `.venv/bin/pip install -r requirements.txt`. Requires Ollama running locally (chat + embedding models) and a reachable Qdrant instance.
+
 ---
 
 ## Configuration
@@ -108,6 +128,20 @@ CORS_ORIGINS=http://localhost:5173,...
 VITE_API_URL=http://localhost:5000
 VITE_RAZORPAY_KEY_ID=rzp_test_...
 ```
+
+### AI Service `.env` (defaults in `app/core/config.py`)
+```env
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2:3b            # Tutor chat model
+OLLAMA_EMBED_MODEL=nomic-embed-text # 768-dim embeddings
+OLLAMA_SUMMARY_MODEL=qwen2.5:14b
+QDRANT_URL=...                      # Qdrant Cloud or local
+QDRANT_API_KEY=...
+QDRANT_COLLECTION=teacher_documents
+MONGO_URI=mongodb://localhost:27017
+```
+
+The Node backend reaches the AI service via `AI_SERVICE_URL` (defaults to `http://localhost:8000`).
 
 Note: Never commit `.env` files; keep them locally only.
 
@@ -206,6 +240,23 @@ Protected routes require corresponding middleware: `router.get('/path', authStud
 - **Backend:** Centralized error middleware + try-catch in async routes
 - **Frontend:** Axios response interceptor for global error handling (401 → redirect to login)
 
+### AI Tutor (RAG pipeline via `/ai-service`)
+The Node backend proxies AI work to the FastAPI service; the Python service owns OCR, embeddings, vector search, and LLM calls, while mastery/gap/curriculum logic stays in Node.
+
+**AI service endpoints:**
+```
+POST   /ingest/material              - Download, parse, chunk, embed, upsert into Qdrant
+DELETE /ingest/material/{id}         - Remove a material's chunks from Qdrant
+POST   /generate/tutor               - RAG tutor answer (retrieval + Ollama chat)
+POST   /ocr                          - OCR an uploaded file
+POST   /ocr/summarize                - OCR + summary
+GET    /health                       - Service/model status
+```
+
+**Ingestion flow** (`app/modules/documents/service.py`): backend uploads teaching material to Cloudinary, then calls `/ingest/material` with the URL and metadata (`teachingMaterialRoutes.js`). The service downloads the file, picks a parser — PyMuPDF for text PDFs, Tesseract OCR for scanned PDFs (`is_text_pdf()` decides), python-docx/pptx for office files — then chunks (`parser/chunker.py`), embeds via Ollama, and upserts to Qdrant with payload metadata (`school_id`, `class_id`, `section_id`, `subject_name`, `chapter_title`, `topic_title`, `material_id`).
+
+**Retrieval flow** (`app/modules/retrieval/service.py`): tutor questions are embedded and searched in Qdrant with payload filters (school/class/section/subject, then chapter-scoped first with a fallback to subject-wide + relevance threshold). An in-memory/lexical fallback in `chat/service.py` is used only when no `school_id` is present. Deleting a material in the backend also fire-and-forgets a `DELETE /ingest/material/{id}` so Qdrant stays in sync.
+
 ---
 
 ## Testing
@@ -221,11 +272,15 @@ npm run test:coverage       # Coverage report
 cd frontend && npm test
 npm run test:watch          # Watch mode
 npm run test:coverage       # Coverage report
+
+# AI service
+cd ai-service && .venv/bin/pytest
 ```
 
 ### Test File Locations
 - Backend tests: `/backend/__tests__/` (API tests use Supertest)
 - Frontend tests: `/frontend/src/**/__tests__/` (Components use Testing Library)
+- AI service tests: `/ai-service/tests/` (pytest)
 
 ### Coverage Targets
 - General code: 70-80%
@@ -264,4 +319,4 @@ Content-Type: application/json
 
 ---
 
-**Last Updated:** 2026-05-26
+**Last Updated:** 2026-07-08

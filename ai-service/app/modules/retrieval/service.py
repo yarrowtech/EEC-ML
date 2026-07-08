@@ -23,8 +23,10 @@ def retrieve_from_qdrant(
     sub_topic: str | None,
     question: str | None,
 ) -> list[str]:
-    query_text = " ".join(filter(None, [subject, topic, sub_topic, (question or "").strip()]))
-    vectors = embed_texts([query_text])
+    # The subject is enforced via payload filter; embedding it into every query
+    # just compresses the score range between relevant and irrelevant chunks.
+    query_text = " ".join(filter(None, [topic, sub_topic, (question or "").strip()])) or subject or ""
+    vectors = embed_texts([query_text], kind="query")
     query_vector = vectors[0]
 
     subject_norm = _normalize_subject(subject)
@@ -50,10 +52,20 @@ def retrieve_from_qdrant(
             subject_name=attempt["subject_name"],
             limit=settings.max_context_chunks,
         )
-        relevant = [
-            hit for hit in hits
-            if hit.get("text") and hit.get("score", 0) >= settings.rag_relevance_threshold
-        ]
+        if attempt["chapter_title"]:
+            # The student explicitly selected this chapter, so the filter already
+            # guarantees provenance; a similarity threshold would wrongly reject
+            # generic prompts like "explain this chapter" whose embedding shares
+            # little with the chapter text. Document order reads more coherently.
+            relevant = sorted(
+                (hit for hit in hits if hit.get("text")),
+                key=lambda hit: hit.get("chunk_index", 0),
+            )
+        else:
+            relevant = [
+                hit for hit in hits
+                if hit.get("text") and hit.get("score", 0) >= settings.rag_relevance_threshold
+            ]
         if relevant:
             logger.info(
                 "Qdrant RAG matched %d chunks chapter=%r subject=%r scores=%s",

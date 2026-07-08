@@ -74,14 +74,15 @@ def _lexical_fallback(req: TutorGenerateRequest) -> list[str]:
 def _retrieve_in_memory(req: TutorGenerateRequest) -> list[str]:
     if not req.candidates:
         return []
-    query_text = " ".join(
-        filter(None, [req.mode, req.subject, req.topic, req.subTopic, (req.question or "").strip()])
+    query_text = (
+        " ".join(filter(None, [req.topic, req.subTopic, (req.question or "").strip()]))
+        or req.subject
+        or ""
     )
-    texts = [query_text] + [c.text for c in req.candidates]
-    embeddings = embed_texts(texts)
-    query_emb = embeddings[0]
+    query_emb = embed_texts([query_text], kind="query")[0]
+    embeddings = embed_texts([c.text for c in req.candidates], kind="document")
     scored = sorted(
-        ((_cosine(query_emb, emb), candidate.text) for emb, candidate in zip(embeddings[1:], req.candidates)),
+        ((_cosine(query_emb, emb), candidate.text) for emb, candidate in zip(embeddings, req.candidates)),
         key=lambda p: p[0],
         reverse=True,
     )

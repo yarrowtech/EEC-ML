@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from PIL import Image
 from pytesseract import TesseractNotFoundError
 
-from app.modules.parser.pdf import convert_pdf_to_images, get_page_count
+from app.modules.parser.pdf import convert_pdf_to_images, get_page_count, strip_repeated_lines
 
 
 TESSERACT_CONFIG = "--oem 3 --psm 6"
@@ -32,4 +32,4 @@ def ocr_pdf(path: Path) -> tuple[str, int]:
         else:
             page_texts.append(f"[Page {page_number}: no readable text detected]")
 
-    return "\n\n".join(page_texts), page_count
+    return "\n\n".join(strip_repeated_lines(page_texts)), page_count

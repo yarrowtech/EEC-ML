@@ -98,7 +98,7 @@ def ingest_material(
     if not chunks:
         return 0, document_type
 
-    vectors = embed_texts(chunks)
+    vectors = embed_texts(chunks, kind="document")
 
     if replace_existing:
         try:

@@ -1,0 +1,49 @@
+{
+  "$comment": "Copy this file to golden_set.json and fill it with questions about materials actually ingested in your Qdrant collection. Fields: request = the /generate/tutor payload a student would send; expect_no_material = true for out-of-scope questions that must be refused; retrieval_any_of = at least one keyword must appear in the retrieved chunks; answer_any_of = at least one keyword must appear in the final answer.",
+  "cases": [
+    {
+      "name": "lost-spring-chapter-question",
+      "request": {
+        "mode": "explain",
+        "subject": "English",
+        "topic": "Lost Spring",
+        "chapterTitle": "Lost Spring",
+        "question": "Why do the bangle makers of Firozabad stay poor?",
+        "gradeLevel": "class 12",
+        "schoolId": "<real school id>",
+        "classId": "<real class id>",
+        "sectionId": "<real section id>"
+      },
+      "expect_no_material": false,
+      "retrieval_any_of": ["firozabad", "bangle"],
+      "answer_any_of": ["bangle", "firozabad"]
+    },
+    {
+      "name": "quiz-mode-stays-in-material",
+      "request": {
+        "mode": "quiz",
+        "subject": "English",
+        "topic": "Lost Spring",
+        "chapterTitle": "Lost Spring",
+        "gradeLevel": "class 12",
+        "schoolId": "<real school id>",
+        "classId": "<real class id>"
+      },
+      "expect_no_material": false,
+      "retrieval_any_of": ["firozabad", "bangle"],
+      "answer_any_of": ["answer:"]
+    },
+    {
+      "name": "out-of-scope-question-is-refused",
+      "request": {
+        "mode": "explain",
+        "subject": "English",
+        "topic": "Quantum entanglement",
+        "question": "Explain quantum entanglement in detail",
+        "schoolId": "<real school id>",
+        "classId": "<real class id>"
+      },
+      "expect_no_material": true
+    }
+  ]
+}

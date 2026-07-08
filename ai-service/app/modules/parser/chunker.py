@@ -19,6 +19,11 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     if len(text) <= chunk_size:
         return [text]
 
+    # A boundary is only accepted in the back half of the window, and the
+    # cursor always advances by at least half a window; a separator right
+    # after `start` can otherwise stall the loop into emitting hundreds of
+    # tiny chunks shifted by one character.
+    min_step = chunk_size // 2
     chunks: list[str] = []
     start = 0
     while start < len(text):
@@ -30,8 +35,8 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
             break
 
         for separator in ["\n\n", "\n", ". ", " "]:
-            boundary = text.rfind(separator, start, end)
-            if boundary > start:
+            boundary = text.rfind(separator, start + min_step, end)
+            if boundary != -1:
                 end = boundary + len(separator)
                 break
 
@@ -39,6 +44,6 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
         if len(chunk) >= MIN_CHUNK_CHARS:
             chunks.append(chunk)
 
-        start = max(start + 1, end - overlap)
+        start = max(end - overlap, start + min_step)
 
     return chunks
