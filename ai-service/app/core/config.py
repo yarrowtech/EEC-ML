@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.2:3b"
     ollama_embed_model: str = "nomic-embed-text"
     ollama_summary_model: str = "qwen2.5:14b"
+    ollama_clean_model: str = "llama3.2:3b"  # lightweight model for ingestion-time cleaning
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
@@ -18,9 +19,10 @@ class Settings(BaseSettings):
     mongo_database: str = "eec_ai"
     rag_relevance_threshold: float = 0.55
     max_context_chunks: int = 4
-    max_chapter_context_chunks: int = 12
+    max_chapter_context_chunks: int = 20
     ollama_num_ctx: int = 8192
     ollama_num_predict: int = 1500
+    ollama_num_predict_extended: int = 3000  # for mind_map, notes, flashcards, summarize
     download_timeout: int = 30
 
     log_level: str = "INFO"

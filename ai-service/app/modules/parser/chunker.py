@@ -1,49 +1,39 @@
-import re
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
 MIN_CHUNK_CHARS = 80
 
 
-def _split_paragraphs(text: str) -> list[str]:
-    paras = re.split(r"\n{2,}", text.strip())
-    return [p.strip() for p in paras if p.strip()]
+def chunk_text_with_offsets(
+    text: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+) -> list[tuple[str, int]]:
+    """Split text into overlapping chunks, each paired with its start-char offset.
 
-
-def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """Split text into overlapping chunks without breaking words."""
+    The offset is stored in Qdrant so retrieval can reconstruct the original text
+    without string-matching heuristics.
+    """
     text = text.strip()
     if not text:
         return []
-
     if len(text) <= chunk_size:
-        return [text]
+        return [(text, 0)]
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
+        add_start_index=True,
+    )
+    docs = splitter.create_documents([text])
+    return [
+        (doc.page_content, doc.metadata["start_index"])
+        for doc in docs
+        if len(doc.page_content) >= MIN_CHUNK_CHARS
+    ]
 
-    # A boundary is only accepted in the back half of the window, and the
-    # cursor always advances by at least half a window; a separator right
-    # after `start` can otherwise stall the loop into emitting hundreds of
-    # tiny chunks shifted by one character.
-    min_step = chunk_size // 2
-    chunks: list[str] = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        if end >= len(text):
-            chunk = text[start:].strip()
-            if len(chunk) >= MIN_CHUNK_CHARS:
-                chunks.append(chunk)
-            break
 
-        for separator in ["\n\n", "\n", ". ", " "]:
-            boundary = text.rfind(separator, start + min_step, end)
-            if boundary != -1:
-                end = boundary + len(separator)
-                break
-
-        chunk = text[start:end].strip()
-        if len(chunk) >= MIN_CHUNK_CHARS:
-            chunks.append(chunk)
-
-        start = max(end - overlap, start + min_step)
-
-    return chunks
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    """Return plain chunk strings (drops offsets). Used by tests and legacy callers."""
+    return [chunk for chunk, _ in chunk_text_with_offsets(text, chunk_size, overlap)]

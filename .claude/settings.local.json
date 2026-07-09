@@ -70,7 +70,13 @@
       "Bash(.venv/bin/python -)",
       "Bash(.venv/bin/python -m pytest tests/test_chunker.py -q)",
       "Bash(.venv/bin/python scripts/reingest_materials.py)",
-      "Bash(.venv/bin/pytest --co -q)"
+      "Bash(.venv/bin/pytest --co -q)",
+      "Bash(timeout 500 /tmp/selenv/bin/python /tmp/drive_aicenter.py)",
+      "Bash(timeout 500 /tmp/selenv/bin/python /tmp/run3_aicenter.py)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/pytest tests/ -x -q)",
+      "Bash(.venv/bin/pytest --tb=short -q)"
     ]
   }
 }

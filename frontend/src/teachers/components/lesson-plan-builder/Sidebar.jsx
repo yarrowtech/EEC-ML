@@ -138,7 +138,7 @@ const Sidebar = ({
                       layout
                       initial="hidden"
                       animate="visible"
-                      exit={{ opacity: 0, x: -10, height: 0 }}
+                      exit={{ opacity: 0, x: -10 }}
                     >
                       <ChapterItem
                         chapter={chapter}

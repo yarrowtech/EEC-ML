@@ -19,18 +19,35 @@ MODE_INSTRUCTIONS: dict[str, str] = {
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
     "summarize": "Summarize the material into concise revision notes with bullet points covering only the key ideas.",
     "quiz": (
-        "Write exactly 5 multiple-choice questions testing understanding of the material. "
+        "Write exactly 5 multiple-choice questions testing student understanding of the material. "
         "Return them as a numbered list, each with 4 options labeled A-D and the correct answer marked at the end "
-        "as 'Answer: <letter>'."
+        "as 'Answer: <letter>'. "
+        "Base every question and answer option solely on story content, vocabulary, or exercises visible "
+        "to students. Never write questions about pedagogical methods, repetition counts, audio resources, "
+        "teacher suggestions, or anything that belongs in a 'Note to the Teacher' section."
     ),
     "homework_help": (
         "Help the student work through their question step by step without simply giving "
         "the final answer outright until they've seen the reasoning."
     ),
-    "notes": "Turn the material into short, well-structured study notes with headings and bullet points.",
+    "notes": (
+        "Turn the material into short, well-structured study notes with headings and bullet points. "
+        "For activities and exercises that appear in the material, list them as tasks to do — "
+        "copy their instructions faithfully but do NOT fill in answers or blank spaces."
+    ),
     "mind_map": (
         "Produce a hierarchical mind map of the material as a nested bullet-point outline (no diagrams), "
-        "with the topic as the root and key concepts branching from it."
+        "with the topic as the root and key concepts branching from it. "
+        "Cover EVERY section in the material — do not stop early or skip any section. "
+        "For exercises and activities, list every individual item exactly as it appears in the text "
+        "(e.g. list all word groups, all blank phrases, all word pairs, all crossword clues) — "
+        "never collapse items into vague summaries like 'additional groups provided'. "
+        "NEVER provide sorted results, filled-in answers, solved puzzles, or example answers. "
+        "Some exercises (e.g. spelling, matching) may have their raw word variants jumbled due to "
+        "multi-column PDF layout — for those, write 'Activity: [exercise instruction] "
+        "([N] items)' and skip the garbled word list. "
+        "Reproduce section headings word-for-word; never paraphrase or merge sections. "
+        "Attribute each item to the section it appears under — do not move content between sections."
     ),
     "flashcards": (
         "Turn the material into exactly 6 flashcards. Return them as a numbered list, "
@@ -120,7 +137,17 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         "or URLs unless they appear inside the retrieved text. If the retrieved material does not "
         "contain enough information for the requested task, say that the uploaded material does "
         "not contain enough relevant text yet. For quizzes, every question, option, and answer "
-        "must be supported by the retrieved text. Keep the tone age-appropriate."
+        "must be supported by the retrieved text. "
+        "IMPORTANT: When the material contains student exercises of any kind — fill-in-the-blank, "
+        "arrange-in-order, sort-by-size-or-weight, match-the-following, complete-the-story, crossword, "
+        "encircle-the-answer, or any other task — never solve, answer, or demonstrate the exercise. "
+        "Describe what the exercise asks students to do, using the exact wording from the material. "
+        "Use section headings exactly as they appear in the material; never paraphrase, rename, or merge "
+        "sections, and never attribute an activity to the wrong section. "
+        "Completely ignore any 'Note to the Teacher' or 'Note to Teacher' blocks — these are "
+        "facilitator instructions and must not appear in student-facing output. "
+        "Each section must appear only once; if you see the same section repeated, include it once "
+        "at its first occurrence and skip all repeats. Keep the tone age-appropriate."
     )
     location = " > ".join(filter(None, [req.subject, req.chapterTitle or req.topic, req.subTopic]))
     parts = [

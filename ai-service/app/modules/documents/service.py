@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.modules.documents.repository import delete_material_chunks, upsert_chunks
 from app.modules.embeddings.service import embed_texts
-from app.modules.parser.chunker import chunk_text
+from app.modules.parser.chunker import chunk_text_with_offsets
 from app.modules.parser.ocr import ocr_pdf
 from app.modules.parser.office import extract_office_text
 from app.modules.parser.pdf import extract_text_pdf, is_text_pdf
@@ -94,9 +94,12 @@ def ingest_material(
         logger.warning("No text extracted from material %s", material_id)
         return 0, document_type
 
-    chunks = chunk_text(raw_text)
-    if not chunks:
+    chunk_pairs = chunk_text_with_offsets(raw_text)
+    if not chunk_pairs:
         return 0, document_type
+
+    chunks = [text for text, _ in chunk_pairs]
+    start_chars = [offset for _, offset in chunk_pairs]
 
     vectors = embed_texts(chunks, kind="document")
 
@@ -119,6 +122,7 @@ def ingest_material(
         topic_title=topic_title,
         chunks=chunks,
         vectors=vectors,
+        start_chars=start_chars,
     )
     logger.info("Ingested material %s → Qdrant: %d chunks (%s)", material_id, indexed, document_type)
     return indexed, document_type

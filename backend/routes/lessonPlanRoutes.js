@@ -1613,19 +1613,31 @@ router.put('/teacher/:id', authTeacher, async (req, res) => {
 
     const existing = await LessonPlan.findOne(filter);
     if (!existing) return res.status(404).json({ error: 'Lesson plan not found' });
+    const wasPublished = existing.status === 'published' && existing.isDraft === false;
 
     const resolved = await resolvePlanPayload({ schoolId, campusId, payload: req.body, forcedTeacherId: teacherId });
     if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
 
     Object.assign(existing, resolved.data);
-    if (existing.status === 'published') {
-      existing.status = 'draft';
-      existing.publishedAt = null;
-      existing.publishedBy = null;
+    if (wasPublished) {
+      existing.status = 'published';
+      existing.isDraft = false;
+      existing.publishedAt = existing.publishedAt || new Date();
+      existing.publishedBy = existing.publishedBy || teacherId;
     }
     await existing.save();
 
-    res.json({ message: 'Lesson plan updated', plan: existing });
+    const publishResult = wasPublished
+      ? await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan: existing })
+      : null;
+
+    res.json({
+      message: wasPublished ? 'Lesson plan updated and republished to Smart Learning' : 'Lesson plan updated',
+      plan: existing,
+      publishedCount: publishResult?.publishedCount || 0,
+      vectorIndexedAttachmentCount: publishResult?.vectorIndexedAttachmentCount || 0,
+      vectorFailedAttachmentCount: publishResult?.vectorFailedAttachmentCount || 0,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1750,10 +1762,14 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
 
-    const { classId, sectionId, subjectId, chapterTitle } = req.body || {};
+    const { classId, sectionId, subjectId, chapterTitle, lessonPlanId } = req.body || {};
     const title = normalizeString(chapterTitle);
-    if (!classId || !sectionId || !subjectId || !title) {
-      return res.status(400).json({ error: 'classId, sectionId, subjectId and chapterTitle are required' });
+    const planId = normalizeString(lessonPlanId);
+    if (!classId || !sectionId || !subjectId || (!title && !planId)) {
+      return res.status(400).json({ error: 'classId, sectionId, subjectId and chapterTitle or lessonPlanId are required' });
+    }
+    if (planId && !mongoose.Types.ObjectId.isValid(planId)) {
+      return res.status(400).json({ error: 'lessonPlanId is invalid' });
     }
 
     const planFilter = {
@@ -1766,12 +1782,17 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
       isDraft: false,
     };
     if (campusId) planFilter.campusId = campusId;
+    if (planId) planFilter._id = planId;
 
     const plans = await LessonPlan.find(planFilter);
-    const matchingPlans = plans.filter((plan) => {
-      const planner = sanitizePlannerContent(plan.plannerContent);
-      return (planner.chapters || []).some((chapter) => normalizeLower(chapter?.title) === normalizeLower(title));
-    });
+    const matchingPlans = planId
+      ? plans
+      : title
+        ? plans.filter((plan) => {
+            const planner = sanitizePlannerContent(plan.plannerContent);
+            return (planner.chapters || []).some((chapter) => normalizeLower(chapter?.title) === normalizeLower(title));
+          })
+        : plans;
 
     if (!matchingPlans.length) {
       return res.json({
@@ -1789,8 +1810,10 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
       schoolId,
       teacherId,
       sourceLessonPlanId: { $in: matchingPlanIds },
-      chapterTitle: { $regex: `^${escapeRegex(title)}$`, $options: 'i' },
     };
+    if (title) {
+      artifactFilter.chapterTitle = { $regex: `^${escapeRegex(title)}$`, $options: 'i' };
+    }
     if (campusId) artifactFilter.campusId = campusId;
 
     const [materialResult, paperResult, assignmentResult] = await Promise.all([
@@ -1803,10 +1826,16 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
     let updatedPlans = 0;
     for (const plan of matchingPlans) {
       const planner = sanitizePlannerContent(plan.plannerContent);
-      const remainingChapters = (planner.chapters || []).filter((chapter) => normalizeLower(chapter?.title) !== normalizeLower(title));
+      const shouldArchiveWholePlan = planId && (planner.chapters || []).length <= 1;
+      const remainingChapters = shouldArchiveWholePlan
+        ? []
+        : title
+          ? (planner.chapters || []).filter((chapter) => normalizeLower(chapter?.title) !== normalizeLower(title))
+          : [];
 
       if (!remainingChapters.length) {
         plan.status = 'archived';
+        plan.isDraft = false;
         plan.publishedForStudentPortal = false;
         archivedPlans += 1;
       } else {

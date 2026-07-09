@@ -1,11 +1,15 @@
 import logging
 
-import ollama
 from fastapi import HTTPException
+from langchain_ollama import OllamaEmbeddings
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _get_embeddings() -> OllamaEmbeddings:
+    return OllamaEmbeddings(base_url=settings.ollama_url, model=settings.ollama_embed_model)
 
 
 def embed_texts(texts: list[str], *, kind: str = "document") -> list[list[float]]:
@@ -13,12 +17,11 @@ def embed_texts(texts: list[str], *, kind: str = "document") -> list[list[float]
     prefix = ""
     if "nomic" in settings.ollama_embed_model:
         prefix = "search_query: " if kind == "query" else "search_document: "
+    prefixed = [prefix + text for text in texts]
     try:
-        client = ollama.Client(host=settings.ollama_url)
-        response = client.embed(
-            model=settings.ollama_embed_model,
-            input=[prefix + text for text in texts],
-        )
-        return response["embeddings"]
+        embeddings = _get_embeddings()
+        if kind == "query" and len(prefixed) == 1:
+            return [embeddings.embed_query(prefixed[0])]
+        return embeddings.embed_documents(prefixed)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Embedding failed: {exc}") from exc

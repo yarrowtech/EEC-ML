@@ -1045,8 +1045,9 @@ function useStudentCurriculum() {
       if (!token) { setStatus('error'); return; }
       try {
         const { data } = await fetchCachedJson(`${API_BASE}/api/lesson-plans/student/smart-learning-map`, {
-          ttlMs: 5 * 60 * 1000,
-          fetchOptions: { headers: { Authorization: `Bearer ${token}` } },
+          forceRefresh: true,
+          ttlMs: 1,
+          fetchOptions: { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } },
         });
         if (cancelled) return;
         const list = Array.isArray(data?.subjects) ? data.subjects : [];
@@ -1930,8 +1931,9 @@ function useSubjectExplorerData() {
       if (!token) return;
       try {
         const { data } = await fetchCachedJson(`${API_BASE}/api/lesson-plans/student/smart-learning-overview`, {
-          ttlMs: 5 * 60 * 1000,
-          fetchOptions: { headers: { Authorization: `Bearer ${token}` } },
+          forceRefresh: true,
+          ttlMs: 1,
+          fetchOptions: { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } },
         });
         if (cancelled) return;
         const map = {};

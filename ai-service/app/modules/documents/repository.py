@@ -60,6 +60,7 @@ def upsert_chunks(
     topic_title: str,
     chunks: list[str],
     vectors: list[list[float]],
+    start_chars: list[int] | None = None,
 ) -> int:
     _ensure_collection()
     client = make_qdrant_client()
@@ -81,12 +82,65 @@ def upsert_chunks(
                 "topic_title": topic_title,
                 "chunk_text": chunk,
                 "chunk_index": i,
+                "start_char": start_chars[i] if start_chars else None,
             },
         )
         for i, (chunk, vector) in enumerate(zip(chunks, vectors))
     ]
     client.upsert(collection_name=settings.qdrant_collection, points=points, wait=True)
     return len(points)
+
+
+def get_chapter_chunks(
+    *,
+    school_id: str,
+    class_id: str | None = None,
+    section_id: str | None = None,
+    chapter_title: str,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Scroll all chunks for a chapter without vector similarity ranking.
+
+    Using scroll instead of query_points so every chunk is considered regardless
+    of how its embedding scores against the current query. This prevents narrative
+    content (poems, story text) from being dropped because it happens to score
+    below exercise or vocabulary chunks on a 'simplify notes' query vector.
+    """
+    client = make_qdrant_client()
+    conditions: list[FieldCondition] = [
+        FieldCondition(key="school_id", match=MatchValue(value=school_id)),
+        FieldCondition(key="chapter_title", match=MatchValue(value=chapter_title)),
+    ]
+    if class_id:
+        conditions.append(FieldCondition(key="class_id", match=MatchValue(value=class_id)))
+    if section_id:
+        conditions.append(FieldCondition(key="section_id", match=MatchValue(value=section_id)))
+
+    try:
+        results, _ = client.scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=Filter(must=conditions),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        logger.warning("Qdrant chapter scroll failed: %s", exc)
+        return []
+
+    return [
+        {
+            "id": str(point.id),
+            "score": 1.0,
+            "text": point.payload.get("chunk_text", ""),
+            "chapter_title": point.payload.get("chapter_title", ""),
+            "topic_title": point.payload.get("topic_title", ""),
+            "chunk_index": point.payload.get("chunk_index", 0),
+            "start_char": point.payload.get("start_char"),
+        }
+        for point in results
+        if point.payload.get("chunk_text")
+    ]
 
 
 def delete_material_chunks(material_id: str) -> None:

@@ -23,6 +23,12 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
   const stopActionEvent = (event) => {
     event.preventDefault();
     event.stopPropagation();
+    event.nativeEvent?.stopImmediatePropagation?.();
+  };
+
+  const stopActionPointer = (event) => {
+    event.stopPropagation();
+    event.nativeEvent?.stopImmediatePropagation?.();
   };
 
   const handleDelete = async (event) => {
@@ -48,8 +54,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
       // whileHover={{ y: -2, scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       transition={{ type: 'spring', stiffness: 360, damping: 26 }}
-      draggable
-      onDragStart={() => onDragStart(chapter.id)}
       onDragOver={(event) => event.preventDefault()}
       onDrop={() => onDrop(chapter.id)}
       className={`group relative cursor-pointer overflow-hidden rounded-2xl border p-3 transition-all focus-within:ring-2 focus-within:ring-blue-300 ${isActive
@@ -81,6 +85,11 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
       <div className="flex items-start gap-2">
         <button
           type="button"
+          draggable
+          onDragStart={(event) => {
+            event.stopPropagation();
+            onDragStart(chapter.id);
+          }}
           className="mt-0.5 cursor-grab rounded-lg p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
           aria-label={`Drag chapter ${chapter.title}`}
           title="Drag to reorder"
@@ -141,6 +150,8 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           <Button
             variant="ghost"
             size="icon-xs"
+            onPointerDown={stopActionPointer}
+            onMouseDown={stopActionPointer}
             onClick={(event) => {
               stopActionEvent(event);
               setIsEditing((prev) => !prev);
@@ -151,15 +162,17 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           >
             <Pencil className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
+          <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
             <Copy className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Add section" aria-label="Add section">
+          <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Add section" aria-label="Add section">
             <Plus className="size-3.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon-xs"
+            onPointerDown={stopActionPointer}
+            onMouseDown={stopActionPointer}
             onClick={handleDelete}
             disabled={isDeleting}
             className="rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
@@ -168,7 +181,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           >
             <Trash2 className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="More actions" aria-label="More chapter actions">
+          <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="More actions" aria-label="More chapter actions">
             <MoreHorizontal className="size-3.5" />
           </Button>
         </div>

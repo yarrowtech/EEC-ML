@@ -14,3 +14,4 @@ coverage/
 
 # Ignore the virtual environment
 ai-service/venv/
+ai-service/.venv/

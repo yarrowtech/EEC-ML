@@ -14,24 +14,21 @@ PAYLOAD = {
 }
 
 
-class FakeOllamaClient:
+class FakeChain:
     last_messages = None
 
-    def __init__(self, host=None):
-        pass
-
-    def chat(self, model, messages):
-        FakeOllamaClient.last_messages = messages
-        return {"message": {"content": "Photosynthesis converts light energy."}}
+    def invoke(self, messages):
+        FakeChain.last_messages = messages
+        return "Photosynthesis converts light energy."
 
 
 def test_no_material_returns_safe_message_without_calling_llm(monkeypatch):
     monkeypatch.setattr(chat_router, "retrieve_relevant_chunks", lambda req: [])
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Ollama must not be called when no material matched")
+    def forbidden():
+        raise AssertionError("LLM must not be called when no material matched")
 
-    monkeypatch.setattr(chat_router.ollama, "Client", forbidden)
+    monkeypatch.setattr(chat_router, "_create_chain", forbidden)
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 200
     body = resp.json()
@@ -45,7 +42,8 @@ def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     monkeypatch.setattr(
         chat_router, "retrieve_relevant_chunks", lambda req: ["Chunk about photosynthesis."]
     )
-    monkeypatch.setattr(chat_router.ollama, "Client", FakeOllamaClient)
+    fake = FakeChain()
+    monkeypatch.setattr(chat_router, "_create_chain", lambda **_: fake)
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 200
     body = resp.json()
@@ -53,22 +51,19 @@ def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     assert body["noMaterialFound"] is False
     assert body["content"] == "Photosynthesis converts light energy."
 
-    system, user = (m["content"] for m in FakeOllamaClient.last_messages)
-    assert "ONLY the retrieved course material" in system
-    assert "Chunk about photosynthesis." in user
+    system_msg, user_msg = FakeChain.last_messages
+    assert "ONLY the retrieved course material" in system_msg.content
+    assert "Chunk about photosynthesis." in user_msg.content
 
 
-def test_ollama_failure_returns_502(monkeypatch):
+def test_llm_failure_returns_502(monkeypatch):
     monkeypatch.setattr(chat_router, "retrieve_relevant_chunks", lambda req: ["chunk"])
 
-    class BrokenClient:
-        def __init__(self, host=None):
-            pass
-
-        def chat(self, model, messages):
+    class BrokenChain:
+        def invoke(self, messages):
             raise ConnectionError("connection refused")
 
-    monkeypatch.setattr(chat_router.ollama, "Client", BrokenClient)
+    monkeypatch.setattr(chat_router, "_create_chain", lambda **_: BrokenChain())
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 502
 

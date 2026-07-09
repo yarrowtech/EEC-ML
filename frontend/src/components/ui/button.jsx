@@ -46,6 +46,7 @@ const Button = React.forwardRef(({
   variant = "default",
   size = "default",
   asChild = false,
+  type,
   ...props
 }, ref) => {
   const Comp = asChild ? Slot.Root : "button"
@@ -53,6 +54,7 @@ const Button = React.forwardRef(({
   return (
     <Comp
       ref={ref}
+      type={asChild ? undefined : (type || "button")}
       data-slot="button"
       data-variant={variant}
       data-size={size}

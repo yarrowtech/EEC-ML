@@ -7,6 +7,7 @@ import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-pla
 import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const TEACHING_SELECTION_STORAGE_KEY = 'aiPoweredTeachingSelection';
 
 const getFileType = (name = '') => {
   const lower = name.toLowerCase();
@@ -70,6 +71,7 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     introductionText: source.introductionText || plan?.introductionText || '',
     learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
     publishedPlanId: status === 'published' ? toIdString(plan?._id) : null,
+    publishedChapterTitle: status === 'published' ? chapterTitle : '',
     title: chapterTitle,
     lessonDate,
     status,
@@ -93,6 +95,34 @@ const serializeResourceRef = (file, bucket = '') => {
   if (name && url && safeBucket) return `${safeBucket}::${name}::${url}`;
   if (name && url) return `${name}::${url}`;
   return name || url;
+};
+
+const readStoredSelection = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TEACHING_SELECTION_STORAGE_KEY) || '{}');
+    return {
+      classId: toIdString(saved.classId),
+      sectionId: toIdString(saved.sectionId),
+      subjectId: toIdString(saved.subjectId),
+    };
+  } catch {
+    return { classId: '', sectionId: '', subjectId: '' };
+  }
+};
+
+const writeStoredSelection = ({ classId = '', sectionId = '', subjectId = '' }) => {
+  const next = {
+    classId: toIdString(classId),
+    sectionId: toIdString(sectionId),
+    subjectId: toIdString(subjectId),
+  };
+
+  if (!next.classId && !next.sectionId && !next.subjectId) {
+    localStorage.removeItem(TEACHING_SELECTION_STORAGE_KEY);
+    return;
+  }
+
+  localStorage.setItem(TEACHING_SELECTION_STORAGE_KEY, JSON.stringify(next));
 };
 
 const AIPoweredTeaching = () => {
@@ -274,11 +304,25 @@ const AIPoweredTeaching = () => {
 
     const initializePage = async () => {
       try {
-        // Load options first
+        const storedSelection = readStoredSelection();
+
         await loadOptions().catch((err) => {
           toast.error(err?.message || 'Failed to load teaching options');
         });
 
+        if (storedSelection.classId) {
+          setSelectedClass(storedSelection.classId);
+          await loadOptions({ classId: storedSelection.classId });
+        }
+
+        if (storedSelection.classId && storedSelection.sectionId) {
+          setSelectedSection(storedSelection.sectionId);
+          await loadOptions({ classId: storedSelection.classId, sectionId: storedSelection.sectionId });
+        }
+
+        if (storedSelection.classId && storedSelection.sectionId && storedSelection.subjectId) {
+          setSelectedSubject(storedSelection.subjectId);
+        }
       } catch (err) {
         console.error('Initialization error:', err);
       }
@@ -339,20 +383,23 @@ const AIPoweredTeaching = () => {
   const handleDeleteChapter = async (id) => {
     const chapter = chapters.find((item) => item.id === id);
     const chapterTitle = String(chapter?.title || '').trim();
+    const publishedChapterTitle = String(chapter?.publishedChapterTitle || chapterTitle).trim();
+    const publishedPlanId = toIdString(chapter?.publishedPlanId);
+    const isPublishedChapter = chapter?.status === 'published' && chapter?.isDraft === false;
 
-    // Remove from local state immediately — don't wait for the API so the sidebar
-    // updates right away and can't be blocked by a failed network call.
+    if (!chapter) return;
+
     const nextChapters = chapters.filter((ch) => ch.id !== id);
+    setSidebarCollapsed(false);
     setChapters(nextChapters);
     setOpenChapterIds((prev) => prev.filter((cid) => cid !== id));
+    setAutosaveStatus('Deleting...');
 
-    // Flush the updated list to draft storage right away.
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     autosaveStateRef.current = { ...autosaveStateRef.current, chapters: nextChapters };
-    saveDraft();
+    await saveDraft();
 
-    // Best-effort: archive from student Smart Learning side (non-blocking).
-    if (selectedClass && selectedSection && selectedSubject && chapterTitle && chapterTitle !== 'Untitled Chapter') {
+    if (selectedClass && selectedSection && selectedSubject && isPublishedChapter && (publishedPlanId || publishedChapterTitle)) {
       try {
         const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/smart-learning/chapter`, {
           method: 'DELETE',
@@ -361,18 +408,21 @@ const AIPoweredTeaching = () => {
             classId: selectedClass,
             sectionId: selectedSection,
             subjectId: selectedSubject,
-            chapterTitle,
+            lessonPlanId: publishedPlanId || undefined,
+            chapterTitle: publishedChapterTitle || undefined,
           }),
         });
         const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          const removed = (data.archivedPlans || 0) + (data.updatedPlans || 0) + (data.archivedMaterials || 0) + (data.archivedPapers || 0) + (data.hiddenAssignments || 0);
-          if (removed > 0) toast.success('Chapter removed from student Smart Learning');
-        }
+        if (!res.ok) throw new Error(data?.error || 'Failed to delete published chapter');
       } catch (err) {
-        console.warn('Could not un-publish chapter from student side:', err?.message);
+        console.warn('Could not remove chapter from Smart Learning:', err?.message);
+        setAutosaveStatus('Deleted locally');
+        toast.error('Chapter deleted from this page, but Smart Learning cleanup failed');
+        return;
       }
     }
+
+    toast.success(`Chapter "${chapterTitle || 'Untitled Chapter'}" deleted`);
   };
 
   const handleChapterDrop = (targetId) => {
@@ -467,36 +517,6 @@ const AIPoweredTeaching = () => {
       return target ? { ...enrichChapter(target.snapshot), history: chapter.history } : chapter;
     });
     toast.success('Lesson version restored');
-  };
-
-  const handleTogglePublish = async (chapterId, isPublished) => {
-    const chapter = chapters.find((ch) => ch.id === chapterId);
-    if (!chapter) return;
-
-    if (isPublished) {
-      // If toggled on, call the existing publish logic
-      await handlePublishChapter(chapterId);
-    } else {
-      // If toggled off, unpublish the chapter
-      if (!chapter.publishedPlanId) return; // Cannot unpublish something not yet published
-
-      try {
-        setPublishing(true);
-        const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/unpublish/${chapter.publishedPlanId}`, {
-          method: 'PUT',
-          headers: authHeaders(),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Failed to unpublish chapter');
-
-        updateChapter(chapterId, (ch) => ({ ...ch, status: 'draft', isDraft: true }));
-        toast.success(`Chapter "${chapter.title}" unpublished successfully.`);
-      } catch (err) {
-        toast.error(err?.message || 'Failed to unpublish chapter');
-      } finally {
-        setPublishing(false);
-      }
-    }
   };
 
   const handlePublishChapter = async (chapterId) => {
@@ -601,6 +621,7 @@ const AIPoweredTeaching = () => {
       updateChapter(chapterId, (ch) => ({
         ...ch,
         publishedPlanId: isUpdate ? ch.publishedPlanId : newPlanId,
+        publishedChapterTitle: chapterTitle,
         status: 'published',
         isDraft: false,
       }));
@@ -685,6 +706,7 @@ const AIPoweredTeaching = () => {
             setSelectedClass(value);
             setSelectedSection('');
             setSelectedSubject('');
+            writeStoredSelection({ classId: value });
             setSubjectOptions([]);
             // Clear chapters when class changes
             setChapters([]);
@@ -696,6 +718,7 @@ const AIPoweredTeaching = () => {
           onSectionChange={async (value) => {
             setSelectedSection(value);
             setSelectedSubject('');
+            writeStoredSelection({ classId: selectedClass, sectionId: value });
             // Clear chapters when section changes
             setChapters([]);
             setOpenChapterIds([]);
@@ -705,6 +728,7 @@ const AIPoweredTeaching = () => {
           }}
           onSubjectChange={(value) => {
             setSelectedSubject(value);
+            writeStoredSelection({ classId: selectedClass, sectionId: selectedSection, subjectId: value });
             setChapters([]);
             setOpenChapterIds([]);
             setCurrentDraftId(null);
