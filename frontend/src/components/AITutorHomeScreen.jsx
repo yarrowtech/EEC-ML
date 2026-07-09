@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion as Motion, useInView } from 'framer-motion';
+import { motion as Motion, useInView, AnimatePresence } from 'framer-motion';
 import {
   BookOpen,
   FileText,
@@ -64,6 +64,14 @@ import {
 } from '@/components/ui/tooltip';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fetchCachedJson } from '@/utils/studentApiCache';
 
@@ -186,6 +194,615 @@ const TutorMessageContent = ({ text }) => {
     </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Mode-specific parsers
+// ---------------------------------------------------------------------------
+
+function parseQuiz(text) {
+  const questions = [];
+  const lines = (text || '').split('\n');
+  let current = null;
+  for (const line of lines) {
+    const t = line.trim();
+    const qMatch = t.match(/^\d+[.)]\s+(.+)/);
+    const optMatch = t.match(/^([A-D])[.)]\s+(.+)/);
+    const ansMatch = t.match(/^[*_]*Answer[*_]*:\s*\*?([A-D])\*?/i);
+    if (qMatch) {
+      if (current) questions.push(current);
+      current = { question: qMatch[1], options: {}, answer: null };
+    } else if (optMatch && current) {
+      current.options[optMatch[1]] = optMatch[2];
+    } else if (ansMatch && current) {
+      current.answer = ansMatch[1].toUpperCase();
+    }
+  }
+  if (current) questions.push(current);
+  return questions.filter(q => Object.keys(q.options).length >= 2);
+}
+
+function parseFlashcards(text) {
+  const cards = [];
+  let q = null, a = null;
+  for (const line of (text || '').split('\n')) {
+    const t = line.trim();
+    const qMatch = t.match(/^Q:\s*(.+)/i);
+    const aMatch = t.match(/^A:\s*(.+)/i);
+    if (qMatch) {
+      if (q !== null && a !== null) cards.push({ q, a });
+      q = qMatch[1]; a = null;
+    } else if (aMatch && q !== null) {
+      a = aMatch[1];
+    }
+  }
+  if (q !== null && a !== null) cards.push({ q, a });
+  return cards;
+}
+
+// ---------------------------------------------------------------------------
+// Quiz UI
+// ---------------------------------------------------------------------------
+
+function QuizUI({ text }) {
+  const questions = useMemo(() => parseQuiz(text), [text]);
+  const [idx, setIdx] = useState(0);
+  const [picks, setPicks] = useState({});
+  const [shown, setShown] = useState({});
+  const [done, setDone] = useState(false);
+
+  if (!questions.length) return <TutorMessageContent text={text} />;
+
+  if (done) {
+    const correct = questions.filter((q, i) => picks[i] === q.answer).length;
+    const emoji = correct === questions.length ? '🎉' : correct >= Math.ceil(questions.length / 2) ? '👍' : '📚';
+    return (
+      <Motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-6 text-center"
+      >
+        <p className="text-4xl mb-1">{emoji}</p>
+        <p className="text-3xl font-extrabold text-violet-800">{correct}/{questions.length}</p>
+        <p className="text-sm text-violet-600 mt-1">Questions correct</p>
+        <button
+          onClick={() => { setIdx(0); setPicks({}); setShown({}); setDone(false); }}
+          className="mt-4 rounded-xl bg-violet-500 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-600 transition-colors"
+        >
+          Try Again
+        </button>
+      </Motion.div>
+    );
+  }
+
+  const q = questions[idx];
+  const picked = picks[idx];
+  const isShown = shown[idx];
+  const isCorrect = picked === q.answer;
+
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-bold text-violet-500">Q {idx + 1}/{questions.length}</span>
+        <div className="flex gap-1">
+          {questions.map((q2, i) => (
+            <div
+              key={i}
+              className={cn('h-1.5 rounded-full transition-all duration-300',
+                i < idx
+                  ? (picks[i] === questions[i].answer ? 'w-6 bg-emerald-400' : 'w-6 bg-rose-300')
+                  : i === idx ? 'w-6 bg-violet-500' : 'w-4 bg-slate-200'
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
+      <AnimatePresence mode="wait">
+        <Motion.div
+          key={idx}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.2 }}
+          className="rounded-xl border border-violet-100 bg-violet-50/70 p-4"
+        >
+          <p className="text-sm font-semibold leading-relaxed text-slate-800">{q.question}</p>
+        </Motion.div>
+      </AnimatePresence>
+
+      <div className="space-y-2">
+        {Object.entries(q.options).map(([letter, optText]) => {
+          const isPicked = picked === letter;
+          const isAnswer = letter === q.answer;
+          let cls = 'border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/50';
+          if (isShown) {
+            if (isAnswer) cls = 'border-emerald-300 bg-emerald-50';
+            else if (isPicked) cls = 'border-rose-300 bg-rose-50';
+          } else if (isPicked) {
+            cls = 'border-violet-400 bg-violet-50 shadow-sm';
+          }
+          return (
+            <Motion.button
+              key={letter}
+              whileHover={!isShown ? { scale: 1.01 } : {}}
+              whileTap={!isShown ? { scale: 0.99 } : {}}
+              disabled={isShown}
+              onClick={() => !isShown && setPicks(p => ({ ...p, [idx]: letter }))}
+              className={cn('flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors', cls)}
+            >
+              <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
+                isShown && isAnswer ? 'bg-emerald-500 text-white' :
+                isShown && isPicked ? 'bg-rose-400 text-white' :
+                isPicked ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-500'
+              )}>{letter}</span>
+              <span className="flex-1 text-sm text-slate-700">{optText}</span>
+              {isShown && isAnswer && <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />}
+            </Motion.button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        {!isShown ? (
+          <button
+            disabled={!picked}
+            onClick={() => setShown(s => ({ ...s, [idx]: true }))}
+            className="rounded-xl bg-violet-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-violet-600 disabled:opacity-40 transition-colors"
+          >
+            Check Answer
+          </button>
+        ) : (
+          <>
+            <span className={cn('flex-1 rounded-xl px-3 py-1.5 text-xs font-semibold',
+              isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+            )}>
+              {isCorrect ? '✓ Correct!' : `✗ Answer: ${q.answer}`}
+            </span>
+            <button
+              onClick={() => idx < questions.length - 1 ? setIdx(i => i + 1) : setDone(true)}
+              className="rounded-xl bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-900 transition-colors"
+            >
+              {idx < questions.length - 1 ? 'Next →' : 'Finish'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Flashcard UI
+// ---------------------------------------------------------------------------
+
+function FlashcardUI({ text }) {
+  const cards = useMemo(() => parseFlashcards(text), [text]);
+  const [idx, setIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [known, setKnown] = useState({});
+
+  const goTo = useCallback((next) => { setIdx(next); setFlipped(false); }, []);
+
+  useEffect(() => {
+    if (!cards.length) return;
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight') goTo(Math.min(cards.length - 1, idx + 1));
+      else if (e.key === 'ArrowLeft') goTo(Math.max(0, idx - 1));
+      else if (e.key === ' ') { e.preventDefault(); setFlipped(f => !f); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [idx, cards.length, goTo]);
+
+  if (!cards.length) return <TutorMessageContent text={text} />;
+
+  const card = cards[idx];
+  const knownCount = Object.values(known).filter(Boolean).length;
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-fuchsia-500">Card {idx + 1} / {cards.length}</span>
+        <span className="text-[11px] font-medium text-emerald-600">{knownCount} / {cards.length} known</span>
+      </div>
+
+      {/* Progress dots — clickable */}
+      <div className="flex flex-wrap gap-1.5">
+        {cards.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className={cn(
+              'h-1.5 rounded-full transition-all duration-300',
+              i === idx ? 'w-8 bg-fuchsia-500' : known[i] ? 'w-5 bg-emerald-400' : 'w-4 bg-slate-200'
+            )}
+          />
+        ))}
+      </div>
+
+      {/* 3-D flip card */}
+      <div
+        className="relative h-52 cursor-pointer select-none"
+        style={{ perspective: '1400px' }}
+        onClick={() => setFlipped(f => !f)}
+      >
+        <Motion.div
+          animate={{ rotateY: flipped ? 180 : 0 }}
+          transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          style={{ transformStyle: 'preserve-3d', position: 'relative', width: '100%', height: '100%' }}
+        >
+          {/* Front — Question */}
+          <div
+            style={{ backfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}
+            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 via-violet-50 to-purple-50 p-6 text-center shadow-md"
+          >
+            <span className="rounded-full bg-fuchsia-100 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-600">
+              Question
+            </span>
+            <p className="text-sm font-semibold leading-relaxed text-slate-800">{card.q}</p>
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+              <span>Tap or press</span>
+              <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] shadow-sm">Space</kbd>
+              <span>to reveal</span>
+            </p>
+          </div>
+
+          {/* Back — Answer */}
+          <div
+            style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}
+            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-teal-100 bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-6 text-center shadow-md"
+          >
+            <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+              Answer
+            </span>
+            <p className="text-sm font-semibold leading-relaxed text-slate-800">{card.a}</p>
+          </div>
+        </Motion.div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => goTo(Math.max(0, idx - 1))}
+          disabled={idx === 0}
+          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+        >
+          <ChevronLeft className="size-3.5" /> Prev
+        </button>
+
+        <AnimatePresence mode="wait">
+          {flipped ? (
+            <Motion.div
+              key="rating"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.18 }}
+              className="flex flex-1 gap-2"
+            >
+              <button
+                onClick={() => { setKnown(k => ({ ...k, [idx]: false })); goTo(Math.min(cards.length - 1, idx + 1)); }}
+                className="flex-1 rounded-xl bg-rose-50 py-1.5 text-xs font-bold text-rose-500 border border-rose-100 hover:bg-rose-100 transition-colors"
+              >
+                ✗ Still learning
+              </button>
+              <button
+                onClick={() => { setKnown(k => ({ ...k, [idx]: true })); goTo(Math.min(cards.length - 1, idx + 1)); }}
+                className="flex-1 rounded-xl bg-emerald-50 py-1.5 text-xs font-bold text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-colors"
+              >
+                ✓ Got it!
+              </button>
+            </Motion.div>
+          ) : (
+            <Motion.div key="spacer" className="flex-1" />
+          )}
+        </AnimatePresence>
+
+        <button
+          onClick={() => goTo(Math.min(cards.length - 1, idx + 1))}
+          disabled={idx === cards.length - 1}
+          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+        >
+          Next <ChevronRight className="size-3.5" />
+        </button>
+      </div>
+
+      <p className="text-center text-[10px] text-slate-400">← → to navigate · Space to flip</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mind Map UI — visual node graph
+// ---------------------------------------------------------------------------
+
+function parseMindMap(text) {
+  // Keep raw lines so we can measure leading-space depth.
+  const lines = (text || '').split('\n');
+  let root = 'Topic';
+  const branches = [];
+  let currentBranch = null;
+  let rootSet = false;
+
+  const stripMarkdown = (s) =>
+    s.replace(/^#{1,6}\s*/, '')
+     .replace(/^[-*+•]\s*/, '')
+     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+     .trim();
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    const indent = (line.match(/^(\s*)/)?.[1] ?? '').length;
+    const trimmed = line.trim();
+    const clean = stripMarkdown(trimmed);
+    if (!clean) continue;
+
+    // "Mind Map — Chapter Name" → extract chapter name as root
+    if (/^mind\s*map/i.test(clean)) {
+      const m = clean.match(/mind\s*map\s*[—–\-:]\s*(.+)/i);
+      root = m ? m[1].trim() : clean;
+      rootSet = true;
+      continue;
+    }
+
+    // 0-indent non-bullet → branch heading (or initial root)
+    if (indent === 0) {
+      if (!rootSet && !branches.length) {
+        // Skip bare "Topic" placeholder
+        if (!/^topic$/i.test(clean)) { root = clean; rootSet = true; }
+        continue;
+      }
+      // Skip repeated root or "Topic" placeholder
+      if (/^topic$/i.test(clean) || clean === root) continue;
+      currentBranch = { title: clean, items: [] };
+      branches.push(currentBranch);
+    } else {
+      // Indented or bulleted → item under current branch
+      if (!currentBranch) {
+        currentBranch = { title: root, items: [] };
+        branches.push(currentBranch);
+      }
+      // Deeper indent (≥ 6 spaces) = sub-item
+      if (indent >= 6 && currentBranch.items.length) {
+        const last = currentBranch.items[currentBranch.items.length - 1];
+        if (typeof last === 'object') last.sub = [...(last.sub || []), clean];
+        else currentBranch.items[currentBranch.items.length - 1] = { label: last, sub: [clean] };
+      } else {
+        currentBranch.items.push(clean);
+      }
+    }
+  }
+
+  // Cap items per branch so cards stay compact; show overflow count
+  for (const b of branches) {
+    if (b.items.length > 6) {
+      const extra = b.items.length - 5;
+      b.items = b.items.slice(0, 5);
+      b.items.push(`+${extra} more…`);
+    }
+  }
+
+  return { root, branches: branches.length ? branches : [{ title: 'Overview', items: [] }] };
+}
+
+const BRANCH_PALETTE = [
+  { bg: 'bg-sky-50',     border: 'border-sky-200',     titleBg: 'bg-sky-500',     hex: '#0ea5e9' },
+  { bg: 'bg-violet-50',  border: 'border-violet-200',  titleBg: 'bg-violet-500',  hex: '#8b5cf6' },
+  { bg: 'bg-rose-50',    border: 'border-rose-200',    titleBg: 'bg-rose-500',    hex: '#f43f5e' },
+  { bg: 'bg-emerald-50', border: 'border-emerald-200', titleBg: 'bg-emerald-500', hex: '#10b981' },
+  { bg: 'bg-amber-50',   border: 'border-amber-200',   titleBg: 'bg-amber-500',   hex: '#f59e0b' },
+  { bg: 'bg-fuchsia-50', border: 'border-fuchsia-200', titleBg: 'bg-fuchsia-500', hex: '#d946ef' },
+  { bg: 'bg-teal-50',    border: 'border-teal-200',    titleBg: 'bg-teal-500',    hex: '#14b8a6' },
+  { bg: 'bg-orange-50',  border: 'border-orange-200',  titleBg: 'bg-orange-500',  hex: '#f97316' },
+];
+
+function MindMapUI({ text }) {
+  const { root, branches } = useMemo(() => parseMindMap(text), [text]);
+  const containerRef = useRef(null);
+  const rootRef = useRef(null);
+  const branchRefs = useRef([]);
+  const [svgPaths, setSvgPaths] = useState([]);
+  const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
+
+  const recalc = useCallback(() => {
+    const container = containerRef.current;
+    const rootEl = rootRef.current;
+    if (!container || !rootEl) return;
+
+    const cRect = container.getBoundingClientRect();
+    const rRect = rootEl.getBoundingClientRect();
+    const rx = rRect.left - cRect.left + rRect.width / 2;
+    const ry = rRect.top  - cRect.top  + rRect.height;
+
+    const paths = branchRefs.current
+      .map((el, i) => {
+        if (!el) return null;
+        const bRect = el.getBoundingClientRect();
+        const bx = bRect.left - cRect.left + bRect.width / 2;
+        const by = bRect.top  - cRect.top;
+        const cy = ry + (by - ry) * 0.5;
+        return {
+          d: `M ${rx} ${ry} C ${rx} ${cy}, ${bx} ${cy}, ${bx} ${by}`,
+          color: BRANCH_PALETTE[i % BRANCH_PALETTE.length].hex,
+        };
+      })
+      .filter(Boolean);
+
+    setSvgPaths(paths);
+    setSvgSize({ w: cRect.width, h: cRect.height });
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(recalc, 120);
+    const ro = new ResizeObserver(recalc);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => { clearTimeout(t); ro.disconnect(); };
+  }, [branches, recalc]);
+
+  return (
+    <div ref={containerRef} className="relative w-full min-h-[160px]">
+      {/* SVG connection lines */}
+      {svgSize.w > 0 && (
+        <svg
+          className="pointer-events-none absolute inset-0"
+          width={svgSize.w}
+          height={svgSize.h}
+          style={{ zIndex: 0 }}
+        >
+          {svgPaths.map((p, i) => (
+            <Motion.path
+              key={i}
+              d={p.d}
+              stroke={p.color}
+              strokeWidth="1.5"
+              fill="none"
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 0.7 }}
+              transition={{ duration: 0.55, delay: 0.2 + i * 0.08, ease: 'easeOut' }}
+            />
+          ))}
+        </svg>
+      )}
+
+      <div className="relative z-10 flex flex-col items-center gap-4 py-1">
+        {/* Root node */}
+        <Motion.div
+          ref={rootRef}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35 }}
+          className="rounded-2xl bg-slate-800 px-5 py-2.5 shadow-lg"
+        >
+          <span className="text-sm font-bold tracking-wide text-white">{root}</span>
+        </Motion.div>
+
+        {/* Branch cards — 2-column grid */}
+        <div className="grid w-full grid-cols-2 gap-2.5">
+          {branches.map((branch, i) => {
+            const pal = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
+            const items = branch.items || [];
+            return (
+              <Motion.div
+                key={i}
+                ref={el => { branchRefs.current[i] = el; }}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.15 + i * 0.07 }}
+                className={cn('overflow-hidden rounded-xl border shadow-sm', pal.bg, pal.border)}
+              >
+                {/* Colored title bar */}
+                <div className={cn('px-3 py-1.5', pal.titleBg)}>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-white leading-tight">
+                    {branch.title}
+                  </p>
+                </div>
+                {/* Items */}
+                {items.length > 0 && (
+                  <ul className="max-h-44 space-y-0.5 overflow-y-auto p-2.5">
+                    {items.map((item, j) => {
+                      const label = typeof item === 'object' ? item.label : item;
+                      const sub   = typeof item === 'object' ? (item.sub || []) : [];
+                      return (
+                        <li key={j}>
+                          <div className="flex items-start gap-1.5">
+                            <span className="mt-1.5 size-1.5 shrink-0 rounded-full" style={{ background: pal.hex }} />
+                            <span className="text-[11px] leading-relaxed text-slate-700">{label}</span>
+                          </div>
+                          {sub.map((s, k) => (
+                            <div key={k} className="ml-4 flex items-start gap-1.5">
+                              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-slate-300" />
+                              <span className="text-[10px] leading-relaxed text-slate-500">{s}</span>
+                            </div>
+                          ))}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notes UI
+// ---------------------------------------------------------------------------
+
+function NotesUI({ text }) {
+  const SECTION_STYLES = [
+    { border: 'border-amber-200', bg: 'bg-amber-50/70', heading: 'text-amber-700' },
+    { border: 'border-sky-200', bg: 'bg-sky-50/70', heading: 'text-sky-700' },
+    { border: 'border-violet-200', bg: 'bg-violet-50/70', heading: 'text-violet-700' },
+    { border: 'border-emerald-200', bg: 'bg-emerald-50/70', heading: 'text-emerald-700' },
+    { border: 'border-rose-200', bg: 'bg-rose-50/70', heading: 'text-rose-700' },
+  ];
+
+  const sections = useMemo(() => {
+    const result = [];
+    let current = null;
+    for (const line of (text || '').split('\n')) {
+      const t = line.trim();
+      const hMatch = t.match(/^\*\*(.+?)\*\*\s*:?\s*$/);
+      if (hMatch) {
+        if (current) result.push(current);
+        current = { heading: hMatch[1], lines: [] };
+      } else if (current) {
+        current.lines.push(line);
+      } else if (t) {
+        current = { heading: null, lines: [line] };
+      }
+    }
+    if (current) result.push(current);
+    return result;
+  }, [text]);
+
+  if (!sections.length || (sections.length === 1 && !sections[0].heading)) {
+    return <TutorMessageContent text={text} />;
+  }
+
+  return (
+    <div className="w-full space-y-2">
+      {sections.map((section, i) => {
+        const style = SECTION_STYLES[i % SECTION_STYLES.length];
+        return (
+          <Motion.div
+            key={i}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className={cn('rounded-xl border p-3', style.border, style.bg)}
+          >
+            {section.heading && (
+              <p className={cn('mb-2 text-xs font-bold uppercase tracking-wide', style.heading)}>
+                {section.heading}
+              </p>
+            )}
+            <TutorMessageContent text={section.lines.join('\n')} />
+          </Motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Response dispatcher — picks the right UI for each mode
+// ---------------------------------------------------------------------------
+
+function TutorResponseRenderer({ text, mode }) {
+  if (mode === 'quiz') return <QuizUI text={text} />;
+  if (mode === 'flashcards') return <FlashcardUI text={text} />;
+  if (mode === 'mind_map') return <MindMapUI text={text} />;
+  if (mode === 'notes') return <NotesUI text={text} />;
+  return <TutorMessageContent text={text} />;
+}
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -1204,7 +1821,7 @@ function AiTutorPanel() {
     setMessages((prev) => [
       ...prev,
       { id: userId, role: 'user', text: userLabel },
-      { id: assistantId, role: 'assistant', thinking: true, text: '' },
+      { id: assistantId, role: 'assistant', thinking: true, text: '', mode },
     ]);
     setSending(true);
     try {
@@ -1265,30 +1882,46 @@ function AiTutorPanel() {
             </div>
 
             <div className="flex w-full flex-col gap-2 text-slate-900">
-              <select
-                value={subjectKey}
-                onChange={(e) => { setSubjectKey(e.target.value); setTopicTitle(''); setChapterTitle(''); }}
-                className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+              <Select
+                value={subjectKey || undefined}
+                onValueChange={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
               >
-                <option value="">
-                  {curriculumStatus === 'loading' ? 'Loading subjects…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No published subjects yet' : 'Choose a subject (optional)'}
-                </option>
-                {subjects.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
-              </select>
-              {subjectKey && (
-                <select
-                  value={topicTitle}
-                  onChange={(e) => {
-                    const selected = topics.find((t) => t.title === e.target.value);
-                    setTopicTitle(e.target.value);
-                    setChapterTitle(selected?.chapterTitle || '');
-                  }}
-                  className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
-                >
-                  <option value="">Choose a chapter / topic (optional)</option>
-                  {topics.map((t) => <option key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</option>)}
-                </select>
-              )}
+                <SelectTrigger className="w-full rounded-xl border-sky-200 bg-white py-5 text-sm text-slate-900 shadow-sm">
+                  <SelectValue
+                    placeholder={curriculumStatus === 'loading' ? 'Loading subjects…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No published subjects yet' : 'Choose a subject (optional)'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map((s) => <SelectItem key={s.key} value={s.key}>{s.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <AnimatePresence initial={false}>
+                {subjectKey && (
+                  <Motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="overflow-hidden"
+                  >
+                    <Select
+                      value={topicTitle || undefined}
+                      onValueChange={(value) => {
+                        const selected = topics.find((t) => t.title === value);
+                        setTopicTitle(value);
+                        setChapterTitle(selected?.chapterTitle || '');
+                      }}
+                    >
+                      <SelectTrigger className="w-full rounded-xl border-sky-200 bg-white py-5 text-sm text-slate-900 shadow-sm">
+                        <SelectValue placeholder="Choose a chapter / topic (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {topics.map((t) => <SelectItem key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="mt-auto flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/80 px-3 py-2 text-xs text-sky-700 shadow-sm backdrop-blur">
@@ -1349,83 +1982,121 @@ function AiTutorPanel() {
             <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
               {messages.length > 0 ? (
                 <div className="space-y-3">
-                  {messages.map((msg, i) => (
-                    <div key={msg.id || i} className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                      <div className={cn('flex max-w-[85%] items-end gap-2', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row')}>
-                        <div
-                          className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
-                            msg.role === 'user'
-                              ? 'border-blue-300 bg-blue-500 text-white'
-                              : msg.error
-                                ? 'border-rose-200 bg-rose-100 text-rose-600'
-                                : 'border-sky-200 bg-sky-50 text-sky-700'
-                          )}
-                        >
-                          {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
-                        </div>
-                        <div
-                          className={cn(
-                            'min-w-0 rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm',
-                            msg.role === 'user' ? 'whitespace-pre-wrap break-words' : '',
-                            msg.role === 'user'
-                              ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
-                              : msg.thinking
-                                ? 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
+                  <AnimatePresence initial={false}>
+                    {messages.map((msg, i) => (
+                      <Motion.div
+                        key={msg.id || i}
+                        layout
+                        initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.28, ease: 'easeOut' }}
+                        className={cn('flex w-full', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                      >
+                        <div className={cn(
+                          'flex items-end gap-2',
+                          msg.role === 'user'
+                            ? 'max-w-[85%] flex-row-reverse'
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes'].includes(msg.mode))
+                              ? 'w-full flex-row'
+                              : 'max-w-[85%] flex-row'
+                        )}>
+                          <Motion.div
+                            initial={{ scale: 0.6, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ duration: 0.25, delay: 0.05 }}
+                            className={cn(
+                              'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
+                              msg.role === 'user'
+                                ? 'border-blue-300 bg-blue-500 text-white'
                                 : msg.error
-                                ? 'rounded-bl-sm border border-rose-200 bg-rose-50 text-rose-700'
-                                : 'rounded-bl-sm border border-sky-200 bg-white text-slate-800'
-                          )}
-                        >
-                          {msg.thinking ? (
-                            <div className="flex min-w-[120px] items-center gap-2 text-slate-500">
-                              {/* <Bot className="size-4 text-sky-500" /> */}
-                              <span className="text-sm font-medium">Thinking</span>
-                              <span className="flex items-center gap-1">
-                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:0ms]" />
-                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:150ms]" />
-                                <span className="size-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:300ms]" />
-                              </span>
-                            </div>
-                          ) : (
-                            msg.role === 'assistant' ? (
-                              <>
-                                <TutorMessageContent text={msg.text} />
-                                {msg.streaming && (
-                                  <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-sky-500 align-middle" />
-                                )}
-                              </>
-                            ) : msg.text
-                          )}
-                          {msg.role === 'assistant' && !msg.error && !msg.thinking && (
-                            <div className={cn(
-                              'mt-2 text-[11px] font-medium',
-                              msg.noMaterialFound ? 'text-amber-700' : 'text-sky-600'
-                            )}>
-                              {msg.noMaterialFound
-                                ? 'No matching uploaded material found'
-                                : msg.groundedInMaterial
-                                  ? 'Grounded in your teacher\'s material'
-                                  : 'General answer from the tutor'}
-                            </div>
-                          )}
+                                  ? 'border-rose-200 bg-rose-100 text-rose-600'
+                                  : 'border-sky-200 bg-sky-50 text-sky-700'
+                            )}
+                          >
+                            {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
+                          </Motion.div>
+                          <div
+                            className={cn(
+                              'min-w-0 text-sm leading-relaxed',
+                              msg.role === 'user' ? 'whitespace-pre-wrap break-words rounded-2xl px-4 py-3 shadow-sm' : '',
+                              msg.role === 'user'
+                                ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
+                                : msg.thinking
+                                  ? 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
+                                  : msg.error
+                                  ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
+                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes'].includes(msg.mode))
+                                    ? 'w-full'
+                                    : 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
+                            )}
+                          >
+                            {msg.thinking ? (
+                              <div className="flex min-w-[120px] items-center gap-2 text-slate-500">
+                                <span className="text-sm font-medium">Thinking</span>
+                                <span className="flex items-center gap-1">
+                                  {[0, 0.15, 0.3].map((delay) => (
+                                    <Motion.span
+                                      key={delay}
+                                      animate={{ y: [0, -5, 0] }}
+                                      transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut', delay }}
+                                      className="size-1.5 rounded-full bg-sky-400"
+                                    />
+                                  ))}
+                                </span>
+                              </div>
+                            ) : (
+                              msg.role === 'assistant' ? (
+                                <>
+                                  {msg.streaming
+                                    ? <TutorMessageContent text={msg.text} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} />
+                                  }
+                                  {msg.streaming && (
+                                    <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-sky-500 align-middle" />
+                                  )}
+                                </>
+                              ) : msg.text
+                            )}
+                            {msg.role === 'assistant' && !msg.error && !msg.thinking && (
+                              <div className={cn(
+                                'mt-2 text-[11px] font-medium',
+                                msg.noMaterialFound ? 'text-amber-700' : 'text-sky-600'
+                              )}>
+                                {msg.noMaterialFound
+                                  ? 'No matching uploaded material found'
+                                  : msg.groundedInMaterial
+                                    ? 'Grounded in your teacher\'s material'
+                                    : 'General answer from the tutor'}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      </Motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
               ) : (
-                <div className="flex h-full min-h-[90px] items-center justify-center text-center">
+                <Motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex h-full min-h-[90px] items-center justify-center text-center"
+                >
                   <div className="max-w-sm">
-                    <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+                    <Motion.div
+                      animate={{ y: [0, -6, 0] }}
+                      transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                      className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600"
+                    >
                       <MessageCircleQuestion className="size-6" />
-                    </div>
+                    </Motion.div>
                     <p className="text-sm font-semibold text-slate-700">Your latest messages will stay here</p>
                     <p className="mt-1 text-xs leading-relaxed text-slate-500">
                       Send a question and the conversation will keep scrolling inside this panel, without moving the page.
                     </p>
                   </div>
-                </div>
+                </Motion.div>
               )}
             </div>
 
@@ -1437,12 +2108,20 @@ function AiTutorPanel() {
                 onChange={handleAttachmentChange}
                 aria-label="Attach a file"
               />
-              {attachmentName && (
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-                  <Paperclip className="size-3.5" />
-                  <span className="max-w-[220px] truncate">{attachmentName}</span>
-                </div>
-              )}
+              <AnimatePresence>
+                {attachmentName && (
+                  <Motion.div
+                    initial={{ opacity: 0, y: -6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: -6, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="mb-2 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700"
+                  >
+                    <Paperclip className="size-3.5" />
+                    <span className="max-w-[220px] truncate">{attachmentName}</span>
+                  </Motion.div>
+                )}
+              </AnimatePresence>
               <div className="flex items-center justify-center gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1458,7 +2137,7 @@ function AiTutorPanel() {
                   <TooltipContent>Attach notes or homework</TooltipContent>
                 </Tooltip>
 
-                <textarea
+                <Textarea
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   onKeyDown={(e) => {
@@ -1469,7 +2148,7 @@ function AiTutorPanel() {
                   }}
                   placeholder="Ask anything"
                   rows={1}
-                  className="min-h-9 flex-1 resize-none bg-transparent px-0 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  className="min-h-9 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
                   style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
                 />
 
