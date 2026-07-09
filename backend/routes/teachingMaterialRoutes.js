@@ -309,7 +309,7 @@ router.get('/:id', async (req, res, next) => {
 // UPDATE: Update material
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { title, content, attachments, tags, priority, category, difficulty, typeLabel, expiresAt } = req.body;
+    const { title, content, attachments, tags, priority, category, difficulty, typeLabel, status, scheduledFor, expiresAt } = req.body;
 
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
@@ -357,11 +357,22 @@ router.patch('/:id', async (req, res, next) => {
     if (category) material.category = category;
     if (difficulty) material.difficulty = difficulty;
     if (typeLabel) material.typeLabel = typeLabel;
+    if (scheduledFor) material.scheduledFor = new Date(scheduledFor);
     if (expiresAt) material.expiresAt = new Date(expiresAt);
 
-    // Reset status to draft if previously published
-    if (material.status === 'published') {
+    if (status === 'published') {
+      material.status = 'published';
+      material.publishedAt = material.publishedAt || new Date();
+      material.publishedForStudentPortal = true;
+    } else if (status === 'scheduled' && scheduledFor) {
+      material.status = 'scheduled';
+      material.publishedForStudentPortal = false;
+    } else if (status === 'draft') {
       material.status = 'draft';
+      material.publishedForStudentPortal = false;
+    } else if (material.status === 'published') {
+      material.status = 'draft';
+      material.publishedForStudentPortal = false;
     }
 
     await material.save();

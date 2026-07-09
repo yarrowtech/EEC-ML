@@ -89,6 +89,7 @@ const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replac
 const MATERIAL_BUCKETS = new Set(['Study Materials', 'Presentations', 'Images', 'Experiments', 'Report Upload', 'Additional Resources']);
 
 const serializeResourceRef = (file, bucket = '') => {
+  if (file?.isUploading || !file?.url) return '';
   const name = String(file?.name || '').trim();
   const url = String(file?.url || '').trim();
   const safeBucket = String(bucket || '').trim();
@@ -140,6 +141,7 @@ const AIPoweredTeaching = () => {
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(0);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
 
   const authHeaders = () => ({
@@ -147,19 +149,43 @@ const AIPoweredTeaching = () => {
     Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
   });
 
-  const uploadTeachingFile = async (file) => {
+  const uploadTeachingFile = async (file, onProgress) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', 'smart_learning_materials');
     formData.append('tags', 'smart_learning,lesson_plan,teaching_material');
 
-    const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-      body: formData,
+    const data = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/uploads/cloudinary/single`);
+      xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') || ''}`);
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable || !onProgress) return;
+        const percent = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+        onProgress(percent);
+      };
+
+      xhr.onload = () => {
+        const responseData = (() => {
+          try {
+            return JSON.parse(xhr.responseText || '{}');
+          } catch {
+            return {};
+          }
+        })();
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress?.(100);
+          resolve(responseData);
+        } else {
+          reject(new Error(responseData?.message || responseData?.error || 'Failed to upload file'));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Failed to upload file'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.send(formData);
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.message || 'Failed to upload file');
 
     const uploaded = data?.files?.[0];
     if (!uploaded?.secure_url) throw new Error('Upload completed without a file URL');
@@ -457,16 +483,55 @@ const AIPoweredTeaching = () => {
 
   const addContentFile = async (chapterId, file, bucket) => {
     if (!chapterId || !file || !bucket) return;
-    try {
-      const uploaded = await uploadTeachingFile(file);
-      const nextFile = { id: `f-${Date.now()}`, ...uploaded, progress: 100 };
+    const tempId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const setProgress = (progress) => {
       updateChapter(chapterId, (chapter) => {
         const currentBucketFiles = chapter.contentUploads?.[bucket] || [];
-        const newContentUploads = { ...chapter.contentUploads, [bucket]: [...currentBucketFiles, nextFile] };
+        return {
+          ...chapter,
+          contentUploads: {
+            ...chapter.contentUploads,
+            [bucket]: currentBucketFiles.map((item) => (
+              item.id === tempId ? { ...item, progress } : item
+            )),
+          },
+        };
+      });
+    };
+
+    updateChapter(chapterId, (chapter) => {
+      const currentBucketFiles = chapter.contentUploads?.[bucket] || [];
+      const pendingFile = {
+        id: tempId,
+        name: file.name || 'Uploading file',
+        size: file.size || 0,
+        type: getFileType(file.name || ''),
+        progress: 1,
+        isUploading: true,
+      };
+      return { ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: [...currentBucketFiles, pendingFile] } };
+    });
+
+    try {
+      const uploaded = await uploadTeachingFile(file, setProgress);
+      const nextFile = { id: tempId, ...uploaded, progress: 100, isUploading: false };
+      updateChapter(chapterId, (chapter) => {
+        const currentBucketFiles = chapter.contentUploads?.[bucket] || [];
+        const newContentUploads = {
+          ...chapter.contentUploads,
+          [bucket]: currentBucketFiles.map((item) => (item.id === tempId ? nextFile : item)),
+        };
         return { ...chapter, contentUploads: newContentUploads };
       });
       toast.success('File uploaded');
     } catch (err) {
+      updateChapter(chapterId, (chapter) => ({
+        ...chapter,
+        contentUploads: {
+          ...chapter.contentUploads,
+          [bucket]: (chapter.contentUploads?.[bucket] || []).filter((item) => item.id !== tempId),
+        },
+      }));
       toast.error(err?.message || 'Failed to upload file');
     }
   };
@@ -478,12 +543,44 @@ const AIPoweredTeaching = () => {
 
   const addWorksheetFile = async (chapterId, file) => {
     if (!chapterId || !file) return;
+    const tempId = `worksheet-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const setProgress = (progress) => {
+      updateChapter(chapterId, (chapter) => ({
+        ...chapter,
+        worksheetFiles: (chapter.worksheetFiles || []).map((item) => (
+          item.id === tempId ? { ...item, progress } : item
+        )),
+      }));
+    };
+
+    updateChapter(chapterId, (chapter) => ({
+      ...chapter,
+      worksheetFiles: [
+        ...(chapter.worksheetFiles || []),
+        {
+          id: tempId,
+          name: file.name || 'Uploading worksheet',
+          size: file.size || 0,
+          type: getFileType(file.name || ''),
+          progress: 1,
+          isUploading: true,
+        },
+      ],
+    }));
+
     try {
-      const uploaded = await uploadTeachingFile(file);
-      const nextFile = { id: `wf-${Date.now()}`, ...uploaded, progress: 100 };
-      updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: [...(chapter.worksheetFiles || []), nextFile] }));
+      const uploaded = await uploadTeachingFile(file, setProgress);
+      const nextFile = { id: tempId, ...uploaded, progress: 100, isUploading: false };
+      updateChapter(chapterId, (chapter) => ({
+        ...chapter,
+        worksheetFiles: (chapter.worksheetFiles || []).map((item) => (item.id === tempId ? nextFile : item)),
+      }));
       toast.success('Worksheet uploaded');
     } catch (err) {
+      updateChapter(chapterId, (chapter) => ({
+        ...chapter,
+        worksheetFiles: (chapter.worksheetFiles || []).filter((item) => item.id !== tempId),
+      }));
       toast.error(err?.message || 'Failed to upload worksheet');
     }
   };
@@ -534,6 +631,15 @@ const AIPoweredTeaching = () => {
 
     if (!chapter.title || chapter.title === 'Untitled Chapter') {
       toast.error('Please add a title to this chapter');
+      return;
+    }
+
+    const hasUploadingFiles = [
+      ...(chapter.worksheetFiles || []),
+      ...Object.values(chapter.contentUploads || {}).flat(),
+    ].some((file) => file?.isUploading);
+    if (hasUploadingFiles) {
+      toast.error('Please wait for uploads to finish before publishing');
       return;
     }
 
@@ -600,8 +706,18 @@ const AIPoweredTeaching = () => {
       plannerContent: singleChapterContent,
     };
 
+    let progressTimer = null;
     try {
       setPublishing(true);
+      setPublishProgress(8);
+      progressTimer = setInterval(() => {
+        setPublishProgress((current) => {
+          if (current >= 92) return current;
+          const nextStep = current < 45 ? 9 : current < 75 ? 5 : 2;
+          return Math.min(92, current + nextStep);
+        });
+      }, 450);
+
       const isUpdate = !!chapter.publishedPlanId;
       const url = isUpdate
         ? `${API_BASE}/api/lesson-plans/teacher/${chapter.publishedPlanId}`
@@ -613,11 +729,13 @@ const AIPoweredTeaching = () => {
         headers: authHeaders(),
         body: JSON.stringify(payload),
       });
+      setPublishProgress(95);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to publish chapter');
+      setPublishProgress(100);
 
       // If it was a new chapter, update its state with the new plan ID
-      const newPlanId = data?.data?._id;
+      const newPlanId = data?.plan?._id || data?.data?._id;
       updateChapter(chapterId, (ch) => ({
         ...ch,
         publishedPlanId: isUpdate ? ch.publishedPlanId : newPlanId,
@@ -629,7 +747,11 @@ const AIPoweredTeaching = () => {
     } catch (err) {
       toast.error(err?.message || 'Failed to publish chapter');
     } finally {
-      setPublishing(false);
+      if (progressTimer) clearInterval(progressTimer);
+      setTimeout(() => {
+        setPublishing(false);
+        setPublishProgress(0);
+      }, 900);
     }
   };
 
@@ -784,6 +906,7 @@ const AIPoweredTeaching = () => {
                     onRestoreVersion={(versionId) => restoreVersion(chapter.id, versionId)}
                     onPublishChapter={() => handlePublishChapter(chapter.id)}
                     isPublishing={publishing}
+                    publishProgress={publishProgress}
                   />
                 ))}
               </div>

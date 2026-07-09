@@ -271,21 +271,6 @@ const SubjectTopicsView = ({ subject, onBack }) => {
         </h2>
 
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white">
-          <div className="flex items-center justify-between bg-slate-50 px-6 py-5">
-            <div>
-              <p className="text-3xl font-black text-[#0f1b3a]">{subject.title} Chapters</p>
-              <p className="text-lg text-slate-500">
-                {chapters.length === 0 ? 'Waiting for teacher to publish' : `${chapters.length} Chapter${chapters.length > 1 ? 's' : ''} Available`}
-              </p>
-            </div>
-            <p className="text-right text-2xl font-black text-[#2f7dff]">
-              STATUS<br />
-              <span className={chapters.length === 0 ? 'text-amber-500' : 'text-emerald-500'}>
-                {chapters.length === 0 ? 'PENDING' : 'ACTIVE'}
-              </span>
-            </p>
-          </div>
-
           <div className="space-y-4 bg-slate-50 p-4 sm:p-6">
             {chapters.length === 0 ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center">

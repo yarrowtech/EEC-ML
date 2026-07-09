@@ -29,6 +29,7 @@ import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import UploadDropzone from './UploadDropzone';
@@ -78,9 +79,9 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-const SectionTitle = ({ icon: Icon, iconColor, children }) => (
+const SectionTitle = ({ icon, iconColor, children }) => (
   <p className={`mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100`}>
-    <Icon className={`size-4 ${iconColor}`} /> {children}
+    {React.createElement(icon, { className: `size-4 ${iconColor}` })} {children}
   </p>
 );
 
@@ -105,6 +106,7 @@ const DrawerModal = ({
   onRestoreVersion,
   onPublishChapter,
   isPublishing = false,
+  publishProgress = 0,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
@@ -685,33 +687,21 @@ const DrawerModal = ({
               </Card>
             )}
 
-            <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-800 dark:bg-emerald-950/30">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  {isPublished ? (
-                    <>
-                      <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
-                        <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Chapter is Live
-                      </h3>
-                      <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">Changes will be updated for students.</p>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className="flex items-center gap-2 text-base font-bold text-emerald-900 dark:text-emerald-100">
-                        <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" /> Ready to Publish?
-                      </h3>
-                      <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-300">Students will see this chapter in their Smart Learning section.</p>
-                    </>
-                  )}
-                </div>
-                <Button
-                  onClick={onPublishChapter}
-                  disabled={isPublishing}
-                  className="rounded-xl bg-emerald-600 px-6 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : (isPublished ? 'Update Chapter' : 'Publish Chapter')}
-                </Button>
+            <div >
+              <div >
               </div>
+              {(isPublishing || publishProgress > 0) && (
+                <div className="mt-4 max-w-md">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <ProgressLabel>Data Ingestion Pipeline</ProgressLabel>
+                    <ProgressValue value={publishProgress} />
+                  </div>
+                  <Progress value={publishProgress} className="h-1.5 bg-emerald-200/80 [&>div]:bg-emerald-600" />
+                  <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    Converting the chapter's PDF into chunks and storing them in the Qdrant vector database.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         );

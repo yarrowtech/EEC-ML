@@ -68,12 +68,15 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
         }
 
         // Add temporary attachment with loading state
+        const tempId = `attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const tempAttachment = {
+          id: tempId,
           name: file.name,
           size: file.size,
           type: file.type,
           url: null,
-          isUploading: true
+          isUploading: true,
+          progress: 1
         };
 
         setAttachments(prev => [...prev, tempAttachment]);
@@ -85,30 +88,53 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
         formData.append('tags', 'study_material,smart_teaching,teaching_material');
 
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/uploads/cloudinary/single`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: formData
+          const data = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${import.meta.env.VITE_API_URL}/api/uploads/cloudinary/single`);
+            xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
+
+            xhr.upload.onprogress = (event) => {
+              if (!event.lengthComputable) return;
+              const progress = Math.max(1, Math.min(99, Math.round((event.loaded / event.total) * 100)));
+              setAttachments(prev => prev.map(att => (att.id === tempId ? { ...att, progress } : att)));
+            };
+
+            xhr.onload = () => {
+              const responseData = (() => {
+                try {
+                  return JSON.parse(xhr.responseText || '{}');
+                } catch {
+                  return {};
+                }
+              })();
+              if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(responseData);
+              } else {
+                reject(new Error(responseData?.message || responseData?.error || 'Upload failed'));
+              }
+            };
+
+            xhr.onerror = () => reject(new Error('Upload failed'));
+            xhr.onabort = () => reject(new Error('Upload cancelled'));
+            xhr.send(formData);
           });
 
-          if (!response.ok) throw new Error('Upload failed');
-
-          const data = await response.json();
           const uploadedFile = data.files[0];
+          if (!uploadedFile?.secure_url) throw new Error('Upload completed without a file URL');
 
           // Update attachment with URL
           setAttachments(prev =>
             prev.map(att =>
-              att.name === file.name && !att.url
+              att.id === tempId
                 ? {
+                    id: tempId,
                     name: uploadedFile.originalName || file.name,
                     url: uploadedFile.secure_url,
                     size: file.size,
                     type: file.type,
                     cloudinaryPublicId: uploadedFile.public_id,
-                    isUploading: false
+                    isUploading: false,
+                    progress: 100
                   }
                 : att
             )
@@ -117,7 +143,7 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
           toast.success(`${file.name} uploaded`);
         } catch (err) {
           console.error('Upload error:', err);
-          setAttachments(prev => prev.filter(a => a.name !== file.name));
+          setAttachments(prev => prev.filter(a => a.id !== tempId));
           toast.error(`Failed to upload ${file.name}`);
         }
       }
@@ -287,14 +313,19 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
         {attachments.length > 0 && (
           <div className="mt-3 space-y-2">
             {attachments.map((att, idx) => (
-              <div key={idx} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+              <div key={idx} className="relative flex items-center justify-between bg-gray-50 p-2 pb-4 rounded">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{att.name}</p>
                     <p className="text-xs text-gray-500">{(att.size / 1024 / 1024).toFixed(2)} MB</p>
                   </div>
-                  {att.isUploading && <Loader className="w-4 h-4 animate-spin text-blue-500 flex-shrink-0" />}
+                  {att.isUploading && (
+                    <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-600">
+                      <Loader className="w-4 h-4 animate-spin text-blue-500" />
+                      {Math.round(att.progress || 0)}%
+                    </span>
+                  )}
                   {att.url && !att.isUploading && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
                 </div>
                 <button
@@ -304,6 +335,11 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
                 >
                   <X className="w-4 h-4" />
                 </button>
+                {att.isUploading && (
+                  <div className="absolute inset-x-2 bottom-1 h-1 rounded-full bg-slate-200">
+                    <div className="h-1 rounded-full bg-blue-500 transition-all duration-200" style={{ width: `${att.progress || 1}%` }} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
