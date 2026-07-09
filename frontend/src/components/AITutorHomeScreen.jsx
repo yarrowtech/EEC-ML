@@ -601,18 +601,24 @@ const BRANCH_PALETTE = [
 function MindMapUI({ text }) {
   const { root, branches } = useMemo(() => parseMindMap(text), [text]);
   const containerRef = useRef(null);
-  const rootRef = useRef(null);
+  const rootNodeRef = useRef(null);   // plain div wrapper so ref is always a DOM node
   const branchRefs = useRef([]);
   const [svgPaths, setSvgPaths] = useState([]);
-  const [svgSize, setSvgSize] = useState({ w: 0, h: 0 });
+
+  // Reset stale refs when branch count changes
+  useEffect(() => {
+    branchRefs.current = branchRefs.current.slice(0, branches.length);
+  }, [branches.length]);
 
   const recalc = useCallback(() => {
     const container = containerRef.current;
-    const rootEl = rootRef.current;
+    const rootEl = rootNodeRef.current;
     if (!container || !rootEl) return;
 
     const cRect = container.getBoundingClientRect();
     const rRect = rootEl.getBoundingClientRect();
+    if (cRect.width === 0) return;
+
     const rx = rRect.left - cRect.left + rRect.width / 2;
     const ry = rRect.top  - cRect.top  + rRect.height;
 
@@ -622,62 +628,64 @@ function MindMapUI({ text }) {
         const bRect = el.getBoundingClientRect();
         const bx = bRect.left - cRect.left + bRect.width / 2;
         const by = bRect.top  - cRect.top;
-        const cy = ry + (by - ry) * 0.5;
+        const mid = ry + (by - ry) * 0.45;
         return {
-          d: `M ${rx} ${ry} C ${rx} ${cy}, ${bx} ${cy}, ${bx} ${by}`,
+          d: `M ${rx} ${ry} C ${rx} ${mid}, ${bx} ${mid}, ${bx} ${by}`,
           color: BRANCH_PALETTE[i % BRANCH_PALETTE.length].hex,
+          key: i,
         };
       })
       .filter(Boolean);
 
     setSvgPaths(paths);
-    setSvgSize({ w: cRect.width, h: cRect.height });
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(recalc, 120);
+    // Wait for framer-motion entrance animations to settle before measuring
+    const t = setTimeout(recalc, 420);
     const ro = new ResizeObserver(recalc);
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => { clearTimeout(t); ro.disconnect(); };
+    window.addEventListener('resize', recalc);
+    return () => { clearTimeout(t); ro.disconnect(); window.removeEventListener('resize', recalc); };
   }, [branches, recalc]);
 
   return (
     <div ref={containerRef} className="relative w-full min-h-[160px]">
-      {/* SVG connection lines */}
-      {svgSize.w > 0 && (
-        <svg
-          className="pointer-events-none absolute inset-0"
-          width={svgSize.w}
-          height={svgSize.h}
-          style={{ zIndex: 0 }}
-        >
-          {svgPaths.map((p, i) => (
+      {/* SVG overlay — CSS-sized so it always matches container, overflow:visible so lines never clip */}
+      <svg
+        className="pointer-events-none absolute inset-0"
+        style={{ width: '100%', height: '100%', overflow: 'visible', zIndex: 0 }}
+      >
+        <AnimatePresence>
+          {svgPaths.map((p) => (
             <Motion.path
-              key={i}
+              key={p.key}
               d={p.d}
               stroke={p.color}
               strokeWidth="1.5"
               fill="none"
               strokeLinecap="round"
               initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.7 }}
-              transition={{ duration: 0.55, delay: 0.2 + i * 0.08, ease: 'easeOut' }}
+              animate={{ pathLength: 1, opacity: 0.65 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6, delay: 0.05 + p.key * 0.07, ease: 'easeOut' }}
             />
           ))}
-        </svg>
-      )}
+        </AnimatePresence>
+      </svg>
 
       <div className="relative z-10 flex flex-col items-center gap-4 py-1">
-        {/* Root node */}
-        <Motion.div
-          ref={rootRef}
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.35 }}
-          className="rounded-2xl bg-slate-800 px-5 py-2.5 shadow-lg"
-        >
-          <span className="text-sm font-bold tracking-wide text-white">{root}</span>
-        </Motion.div>
+        {/* Root node — plain wrapper div so ref gives a stable DOM node for getBoundingClientRect */}
+        <div ref={rootNodeRef} className="inline-block">
+          <Motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.35 }}
+            className="rounded-2xl bg-slate-800 px-5 py-2.5 shadow-lg"
+          >
+            <span className="text-sm font-bold tracking-wide text-white">{root}</span>
+          </Motion.div>
+        </div>
 
         {/* Branch cards — 2-column grid */}
         <div className="grid w-full grid-cols-2 gap-2.5">
@@ -793,6 +801,93 @@ function NotesUI({ text }) {
 }
 
 // ---------------------------------------------------------------------------
+// Homework Help UI — Socratic conversation card
+// ---------------------------------------------------------------------------
+
+function parseHomeworkHelp(text) {
+  if (!text) return { content: '', question: null };
+  const trimmed = text.trim();
+  const lastQ = trimmed.lastIndexOf('?');
+  if (lastQ === -1) return { content: trimmed, question: null };
+
+  // Walk back to find start of the sentence containing the last '?'
+  const before = trimmed.slice(0, lastQ);
+  const startCandidates = [
+    before.lastIndexOf('. ') + 2,
+    before.lastIndexOf('!\n') + 2,
+    before.lastIndexOf('?\n') + 2,
+    before.lastIndexOf('\n\n') + 2,
+    0,
+  ];
+  const sentenceStart = Math.max(...startCandidates);
+  return {
+    content: trimmed.slice(0, sentenceStart).trim(),
+    question: trimmed.slice(sentenceStart, lastQ + 1).trim(),
+  };
+}
+
+function HomeworkHelpUI({ text }) {
+  const { content, question } = useMemo(() => parseHomeworkHelp(text), [text]);
+
+  if (!question) return <TutorMessageContent text={text} />;
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Hint / context text */}
+      {content && (
+        <Motion.p
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="text-sm leading-relaxed text-slate-700"
+        >
+          {content}
+        </Motion.p>
+      )}
+
+      {/* Guiding question card — springs in after content */}
+      <Motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 240, damping: 22, delay: content ? 0.22 : 0.05 }}
+        className="overflow-hidden rounded-2xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm"
+      >
+        {/* Top accent bar */}
+        <div className="bg-gradient-to-r from-amber-400 to-orange-400 px-4 py-1.5 flex items-center gap-2">
+          <Motion.span
+            animate={{ scale: [1, 1.2, 1] }}
+            transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 3 }}
+            className="text-base"
+          >
+            💭
+          </Motion.span>
+          <span className="text-[11px] font-bold uppercase tracking-widest text-white">
+            Think about this
+          </span>
+        </div>
+
+        {/* Question text */}
+        <div className="px-4 py-3">
+          <p className="text-sm font-semibold leading-relaxed text-slate-800">{question}</p>
+        </div>
+
+        {/* Animated dots nudging the student to respond */}
+        <div className="flex items-center gap-1.5 px-4 pb-3">
+          {[0, 0.18, 0.36].map((delay) => (
+            <Motion.span
+              key={delay}
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1.5, delay }}
+              className="size-1.5 rounded-full bg-amber-300"
+            />
+          ))}
+        </div>
+      </Motion.div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Response dispatcher — picks the right UI for each mode
 // ---------------------------------------------------------------------------
 
@@ -801,6 +896,7 @@ function TutorResponseRenderer({ text, mode }) {
   if (mode === 'flashcards') return <FlashcardUI text={text} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
+  if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
   return <TutorMessageContent text={text} />;
 }
 
@@ -2026,6 +2122,8 @@ function AiTutorPanel() {
                                   ? 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
+                                  : (!msg.streaming && msg.mode === 'homework_help')
+                                  ? 'rounded-2xl rounded-bl-sm border border-amber-100 bg-amber-50/50 px-4 py-3 shadow-sm'
                                   : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'

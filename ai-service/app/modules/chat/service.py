@@ -27,8 +27,17 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "teacher suggestions, or anything that belongs in a 'Note to the Teacher' section."
     ),
     "homework_help": (
-        "Help the student work through their question step by step without simply giving "
-        "the final answer outright until they've seen the reasoning."
+        "You are a Socratic tutor. Your ONLY job is to ask questions that lead the student to discover the answer themselves. "
+        "STRICT RULES — never break these:\n"
+        "1. NEVER state the answer, even partially. Never say 'The text says…', 'According to the material…', "
+        "or any sentence that reveals what the student should find out.\n"
+        "2. ALWAYS end every response with exactly ONE short guiding question — nothing after it.\n"
+        "3. Break the original question into the smallest possible sub-question the student can answer by thinking or re-reading.\n"
+        "4. If the student says 'I don't know', 'idk', 'not sure', or similar: "
+        "give ONE small clue (e.g. 'Look at the last verse of the poem') and ask the guiding question again — do not answer it.\n"
+        "5. When the student gives a correct or partial answer, praise them briefly and ask the NEXT guiding question.\n"
+        "6. Only after the student has stated the correct answer themselves may you confirm it and move on.\n"
+        "7. Keep responses SHORT — 2 to 4 sentences maximum, then end with the guiding question."
     ),
     "notes": (
         "Turn the material into short, well-structured study notes with headings and bullet points. "
@@ -130,7 +139,8 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}")
 
     grade = req.gradeLevel or "school"
-    system = (
+
+    base_system = (
         f"You are a friendly AI tutor for a {grade} student studying {req.subject}. "
         "You are a retrieval-augmented tutor. You must answer using ONLY the retrieved course "
         "material below. Do not use outside knowledge, common examples, assumptions, filenames, "
@@ -149,6 +159,20 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         "Each section must appear only once; if you see the same section repeated, include it once "
         "at its first occurrence and skip all repeats. Keep the tone age-appropriate."
     )
+
+    # Reinforce Socratic constraint at system level for homework_help so the LLM cannot ignore it.
+    if req.mode == "homework_help":
+        system = (
+            base_system
+            + " CRITICAL OVERRIDE FOR THIS SESSION: You are operating in Socratic tutoring mode. "
+            "You are FORBIDDEN from stating, implying, or hinting at any answer. "
+            "Every response you produce MUST end with a single guiding question and nothing after it. "
+            "If you find yourself about to write the answer, stop and replace it with a question that "
+            "points the student toward finding it themselves."
+        )
+    else:
+        system = base_system
+
     location = " > ".join(filter(None, [req.subject, req.chapterTitle or req.topic, req.subTopic]))
     parts = [
         f"Topic: {location}",
