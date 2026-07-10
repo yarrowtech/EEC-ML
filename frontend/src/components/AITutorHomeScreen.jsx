@@ -609,7 +609,7 @@ function MindMapUI({ text }) {
   const scrollRef = useRef(null);       // pannable viewport
   const containerRef = useRef(null);    // inner canvas (sizes to content)
   const nodeRefs = useRef({});          // node id -> DOM element
-  const [expanded, setExpanded] = useState(() => new Set(['root']));
+  const [expanded, setExpanded] = useState(() => new Set());
   const [svgPaths, setSvgPaths] = useState([]);
 
   // Drag-to-pan bookkeeping
@@ -625,7 +625,7 @@ function MindMapUI({ text }) {
   }, []);
 
   const setExpandAll = useCallback((open) => {
-    if (!open) { setExpanded(new Set(['root'])); return; }
+    if (!open) { setExpanded(new Set()); return; }
     const all = new Set(['root']);
     branches.forEach((_, i) => all.add(`b${i}`));
     setExpanded(all);
@@ -891,59 +891,405 @@ function MindMapUI({ text }) {
 // Notes UI
 // ---------------------------------------------------------------------------
 
-function NotesUI({ text }) {
-  const SECTION_STYLES = [
-    { border: 'border-amber-200', bg: 'bg-amber-50/70', heading: 'text-amber-700' },
-    { border: 'border-sky-200', bg: 'bg-sky-50/70', heading: 'text-sky-700' },
-    { border: 'border-violet-200', bg: 'bg-violet-50/70', heading: 'text-violet-700' },
-    { border: 'border-emerald-200', bg: 'bg-emerald-50/70', heading: 'text-emerald-700' },
-    { border: 'border-rose-200', bg: 'bg-rose-50/70', heading: 'text-rose-700' },
-  ];
+const stripTutorMarkdown = (value) => String(value || '')
+  .replace(/\*\*([^*]+)\*\*/g, '$1')
+  .replace(/^#{1,6}\s*/, '')
+  .trim();
 
-  const sections = useMemo(() => {
-    const result = [];
-    let current = null;
-    for (const line of (text || '').split('\n')) {
-      const t = line.trim();
-      const hMatch = t.match(/^\*\*(.+?)\*\*\s*:?\s*$/);
-      if (hMatch) {
-        if (current) result.push(current);
-        current = { heading: hMatch[1], lines: [] };
-      } else if (current) {
-        current.lines.push(line);
-      } else if (t) {
-        current = { heading: null, lines: [line] };
-      }
+const isLikelyNotesHeading = (line, nextLine = '') => {
+  const text = stripTutorMarkdown(line);
+  if (!text || !nextLine.trim()) return false;
+  if (/^\d+[.)]/.test(text) || /^[a-z][.)]\s/i.test(text)) return false;
+  if (/[.!?;:]$/.test(text)) return false;
+  if (text.length > 72) return false;
+  if (/^(new words|tasks to do)$/i.test(text)) return false;
+  return /^[A-Z0-9]/.test(text);
+};
+
+const normalizeTaskSignature = (task) => {
+  const body = [task.title, ...task.items]
+    .map((item) => stripTutorMarkdown(item).toLowerCase().replace(/\s+/g, ' ').trim())
+    .join('|');
+  return body.replace(/^[a-z][.)]\s*/gm, '');
+};
+
+const classifyTask = (title) => {
+  const text = title.toLowerCase();
+  if (/answer|factual|question/.test(text)) return { label: 'Questions', tone: 'sky' };
+  if (/think|discuss|share|views/.test(text)) return { label: 'Discuss', tone: 'violet' };
+  if (/complete|fill|tense|sentence|blank/.test(text)) return { label: 'Practice', tone: 'emerald' };
+  if (/listen|repeat|pronounce|read/.test(text)) return { label: 'Reading', tone: 'amber' };
+  if (/draw|make|choose|find out|self-assessment/.test(text)) return { label: 'Activity', tone: 'rose' };
+  return { label: 'Task', tone: 'slate' };
+};
+
+const TASK_TONE_CLASS = {
+  sky: 'border-sky-200 bg-sky-50 text-sky-700',
+  violet: 'border-violet-200 bg-violet-50 text-violet-700',
+  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  amber: 'border-amber-200 bg-amber-50 text-amber-700',
+  rose: 'border-rose-200 bg-rose-50 text-rose-700',
+  slate: 'border-slate-200 bg-slate-50 text-slate-700',
+};
+
+function parseNotesResponse(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean);
+  const parsed = {
+    title: 'Study Notes',
+    subtitle: '',
+    sections: [],
+    words: [],
+    tasks: [],
+    duplicateCount: 0,
+  };
+
+  let index = 0;
+  if (lines[index]) {
+    parsed.title = stripTutorMarkdown(lines[index]);
+    index += 1;
+  }
+  if (lines[index] && /study notes/i.test(lines[index])) {
+    parsed.subtitle = stripTutorMarkdown(lines[index]);
+    index += 1;
+  }
+
+  let mode = 'sections';
+  let currentSection = null;
+  let currentTask = null;
+
+  const flushSection = () => {
+    if (currentSection && (currentSection.heading || currentSection.lines.length)) {
+      parsed.sections.push(currentSection);
     }
-    if (current) result.push(current);
-    return result;
+    currentSection = null;
+  };
+
+  const flushTask = () => {
+    if (currentTask) parsed.tasks.push(currentTask);
+    currentTask = null;
+  };
+
+  for (; index < lines.length; index += 1) {
+    const clean = stripTutorMarkdown(lines[index]);
+
+    if (/^new words$/i.test(clean)) {
+      flushSection();
+      flushTask();
+      mode = 'words';
+      continue;
+    }
+    if (/^tasks to do$/i.test(clean)) {
+      flushSection();
+      flushTask();
+      mode = 'tasks';
+      continue;
+    }
+
+    if (mode === 'words') {
+      parsed.words.push(clean.replace(/^[-*+]\s*/, ''));
+      continue;
+    }
+
+    if (mode === 'tasks') {
+      const taskMatch = clean.match(/^(\d+)\.\s*(.+)$/);
+      if (taskMatch) {
+        flushTask();
+        currentTask = { number: taskMatch[1], title: taskMatch[2], items: [] };
+        continue;
+      }
+      if (!currentTask) currentTask = { number: String(parsed.tasks.length + 1), title: clean, items: [] };
+      currentTask.items.push(clean);
+      continue;
+    }
+
+    if (isLikelyNotesHeading(clean, lines[index + 1] || '')) {
+      flushSection();
+      currentSection = { heading: clean, lines: [] };
+      continue;
+    }
+
+    if (!currentSection) currentSection = { heading: '', lines: [] };
+    currentSection.lines.push(clean);
+  }
+
+  flushSection();
+  flushTask();
+
+  const seenTasks = new Set();
+  parsed.tasks = parsed.tasks.filter((task) => {
+    const signature = normalizeTaskSignature(task);
+    if (!signature) return false;
+    if (seenTasks.has(signature)) {
+      parsed.duplicateCount += 1;
+      return false;
+    }
+    seenTasks.add(signature);
+    return true;
+  });
+
+  parsed.words = [...new Set(parsed.words.filter(Boolean))];
+  return parsed;
+}
+
+function NotesUI({ text }) {
+  const notes = useMemo(() => parseNotesResponse(text), [text]);
+  const [markedSections, setMarkedSections] = useState(() => new Set());
+  const studyStats = useMemo(() => {
+    const minutes = Math.max(5, Math.min(30, notes.sections.length * 2 + Math.ceil(notes.tasks.length / 2) + Math.ceil(notes.words.length / 4)));
+    const focus = notes.sections.slice(0, 3).map((section) => section.heading).filter(Boolean);
+    return { minutes, focus };
+  }, [notes.sections, notes.tasks.length, notes.words.length]);
+  const markedCount = markedSections.size;
+  const sectionProgress = notes.sections.length ? Math.round((markedCount / notes.sections.length) * 100) : 0;
+
+  useEffect(() => {
+    setMarkedSections(new Set());
   }, [text]);
 
-  if (!sections.length || (sections.length === 1 && !sections[0].heading)) {
+  const toggleSectionMarked = (index) => {
+    setMarkedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  if (!notes.sections.length && !notes.words.length && !notes.tasks.length) {
     return <TutorMessageContent text={text} />;
   }
 
   return (
-    <div className="w-full space-y-2">
-      {sections.map((section, i) => {
-        const style = SECTION_STYLES[i % SECTION_STYLES.length];
-        return (
-          <Motion.div
-            key={i}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06 }}
-            className={cn('rounded-xl border p-3', style.border, style.bg)}
-          >
-            {section.heading && (
-              <p className={cn('mb-2 text-xs font-bold uppercase tracking-wide', style.heading)}>
-                {section.heading}
-              </p>
-            )}
-            <TutorMessageContent text={section.lines.join('\n')} />
-          </Motion.div>
-        );
-      })}
+    <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_48%,#ecfdf5_100%)] px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white/80 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-sky-700">
+              <GraduationCap className="size-3.5" />
+              Study mode
+            </p>
+            <h3 className="mt-1 text-base font-bold leading-snug text-slate-900">{notes.title}</h3>
+            {notes.subtitle && <p className="mt-0.5 text-xs text-slate-500">{notes.subtitle}</p>}
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+            <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-violet-700">{studyStats.minutes} min revision</span>
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">{notes.sections.length} sections</span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">{notes.tasks.length} tasks</span>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">{notes.words.length} words</span>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-white bg-white/75 p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="size-4 text-emerald-600" />
+              <p className="text-xs font-bold text-slate-900">Study progress</p>
+            </div>
+            <span className="text-xs font-semibold text-emerald-700">
+              {markedCount}/{notes.sections.length} sections marked
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <Motion.div
+              className="h-full rounded-full bg-emerald-500"
+              animate={{ width: `${sectionProgress}%` }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          {[
+            { label: 'Read', value: `${notes.sections.length} short parts`, icon: BookOpen, tone: 'text-sky-700 bg-sky-100' },
+            { label: 'Recall', value: `${notes.words.length} word prompts`, icon: BrainCircuit, tone: 'text-violet-700 bg-violet-100' },
+            { label: 'Practice', value: `${notes.tasks.length} task cards`, icon: Pencil, tone: 'text-emerald-700 bg-emerald-100' },
+          ].map((step) => {
+            const Icon = step.icon;
+            return (
+              <div key={step.label} className="flex items-center gap-2 rounded-xl border border-white bg-white/75 px-3 py-2 shadow-sm">
+                <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', step.tone)}>
+                  <Icon className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900">{step.label}</p>
+                  <p className="truncate text-[11px] text-slate-500">{step.value}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <Tabs defaultValue="notes" className="w-full">
+        <TabsList className="mx-3 mt-3 grid h-auto grid-cols-3 rounded-xl bg-slate-100 p-1">
+          <TabsTrigger value="notes" className="gap-1.5 rounded-lg text-xs">
+            <BookOpen className="size-3.5" />
+            Notes
+          </TabsTrigger>
+          <TabsTrigger value="tasks" className="gap-1.5 rounded-lg text-xs">
+            <ListChecks className="size-3.5" />
+            Tasks
+          </TabsTrigger>
+          <TabsTrigger value="words" className="gap-1.5 rounded-lg text-xs">
+            <NotebookPen className="size-3.5" />
+            Words
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="notes" className="m-0 p-3">
+          {studyStats.focus.length > 0 && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50/70 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <Target className="size-4 text-violet-700" />
+                <p className="text-xs font-bold uppercase tracking-wide text-violet-700">Focus while reading</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {studyStats.focus.map((item) => (
+                  <span key={item} className="rounded-full border border-violet-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="grid gap-3 lg:grid-cols-2">
+            {notes.sections.map((section, i) => {
+              const isMarked = markedSections.has(i);
+              return (
+                <Motion.div
+                  key={`${section.heading || 'section'}-${i}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                  className={cn(
+                    'relative overflow-hidden rounded-xl border bg-white p-3 shadow-sm transition-colors',
+                    'before:absolute before:bottom-0 before:left-0 before:top-0 before:w-1',
+                    isMarked
+                      ? 'border-emerald-300 bg-emerald-50/30 before:bg-emerald-500'
+                      : i === 0 ? 'border-sky-200 before:bg-sky-400 lg:col-span-2' : 'border-slate-200 before:bg-emerald-300',
+                    i === 0 && 'lg:col-span-2'
+                  )}
+                >
+                  {section.heading && (
+                    <div className="mb-2 flex items-start gap-2 pl-1">
+                      <span className={cn(
+                        'flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
+                        isMarked ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white'
+                      )}>
+                        {isMarked ? <CheckCircle2 className="size-4" /> : String(i + 1).padStart(2, '0')}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-900">{section.heading}</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-400">Read, cover, then explain in your own words</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleSectionMarked(i)}
+                        className={cn(
+                          'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors',
+                          isMarked
+                            ? 'border-emerald-300 bg-emerald-600 text-white hover:bg-emerald-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
+                        )}
+                        aria-pressed={isMarked}
+                      >
+                        <CheckCircle2 className="size-3.5" />
+                        {isMarked ? 'Marked' : 'Mark studied'}
+                      </button>
+                    </div>
+                  )}
+                  <div className={cn(
+                    'space-y-2 rounded-lg px-3 py-2 text-sm leading-7 text-slate-700',
+                    isMarked
+                      ? 'bg-[repeating-linear-gradient(to_bottom,#f0fdf4_0,#f0fdf4_27px,#dcfce7_28px)]'
+                      : 'bg-[repeating-linear-gradient(to_bottom,#ffffff_0,#ffffff_27px,#f1f5f9_28px)]'
+                  )}>
+                    {section.lines.map((line, lineIndex) => (
+                      <p key={lineIndex}>{renderInlineTutorText(line, `note-${i}-${lineIndex}`)}</p>
+                    ))}
+                  </div>
+                  <div className={cn(
+                    'mt-2 flex items-center gap-1.5 text-[11px] font-medium',
+                    isMarked ? 'text-emerald-700' : 'text-slate-400'
+                  )}>
+                    <CheckCircle2 className={cn('size-3.5', isMarked ? 'text-emerald-600' : 'text-slate-300')} />
+                    {isMarked ? 'Section marked as studied' : 'Mark after you can retell this section'}
+                  </div>
+                </Motion.div>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="tasks" className="m-0 p-3">
+          {notes.duplicateCount > 0 && (
+            <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              {notes.duplicateCount} repeated task group{notes.duplicateCount === 1 ? '' : 's'} collapsed for easier revision.
+            </div>
+          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            {notes.tasks.map((task, i) => {
+              const type = classifyTask(task.title);
+              return (
+                <Motion.div
+                  key={`${task.number}-${task.title}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.035 }}
+                  className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="mb-2 flex items-start gap-2">
+                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 bg-white">
+                      <Circle className="size-3 text-slate-300" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide', TASK_TONE_CLASS[type.tone])}>
+                        {type.label}
+                      </span>
+                      <p className="mt-1 text-sm font-semibold leading-snug text-slate-900">
+                        {renderInlineTutorText(task.title, `task-title-${i}`)}
+                      </p>
+                    </div>
+                  </div>
+                  {task.items.length > 0 && (
+                    <div className="space-y-1.5 border-t border-slate-100 pt-2">
+                      {task.items.map((item, itemIndex) => (
+                        <div key={itemIndex} className="grid grid-cols-[auto_1fr] gap-2 text-xs leading-relaxed text-slate-700">
+                          <span className="mt-1.5 size-1.5 rounded-full bg-slate-300" />
+                          <span>{renderInlineTutorText(item, `task-${i}-${itemIndex}`)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Motion.div>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="words" className="m-0 p-3">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Word bank</p>
+                <p className="mt-0.5 text-[11px] text-amber-800/70">Say the word, guess the meaning, then use it in one sentence.</p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700">
+                <Sparkles className="size-3.5" />
+                Recall drill
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {notes.words.map((word) => (
+                <div key={word} className="rounded-xl border border-white bg-white p-3 shadow-sm">
+                  <p className="text-sm font-bold text-slate-900">{word}</p>
+                  <div className="mt-2 h-8 rounded-lg border border-dashed border-amber-200 bg-amber-50/60" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -980,57 +1326,352 @@ function HomeworkHelpUI({ text }) {
   if (!question) return <TutorMessageContent text={text} />;
 
   return (
-    <div className="w-full space-y-3">
-      {/* Hint / context text */}
-      {content && (
-        <Motion.p
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="text-sm leading-relaxed text-slate-700"
-        >
-          {content}
-        </Motion.p>
-      )}
-
-      {/* Guiding question card — springs in after content */}
+    <div className="w-full">
       <Motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 240, damping: 22, delay: content ? 0.22 : 0.05 }}
-        className="overflow-hidden rounded-2xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 shadow-sm"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm"
       >
-        {/* Top accent bar */}
-        <div className="bg-gradient-to-r from-amber-400 to-orange-400 px-4 py-1.5 flex items-center gap-2">
+        {/* Mentor header */}
+        <div className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-400 px-4 py-2.5">
           <Motion.span
-            animate={{ scale: [1, 1.2, 1] }}
-            transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 3 }}
-            className="text-base"
+            animate={{ rotate: [0, -8, 8, 0] }}
+            transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 2 }}
+            className="flex size-7 items-center justify-center rounded-full bg-white/25 text-base backdrop-blur-sm"
           >
-            💭
+            🦉
           </Motion.span>
-          <span className="text-[11px] font-bold uppercase tracking-widest text-white">
-            Think about this
-          </span>
+          <div className="leading-tight">
+            <p className="text-[13px] font-bold text-white">Let's figure it out together</p>
+            <p className="text-[10px] font-medium text-white/80">I'll guide you — you find the answer</p>
+          </div>
         </div>
 
-        {/* Question text */}
-        <div className="px-4 py-3">
-          <p className="text-sm font-semibold leading-relaxed text-slate-800">{question}</p>
-        </div>
+        <div className="space-y-3 px-4 py-3.5">
+          {/* Hint / context */}
+          {content && (
+            <Motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.15 }}
+              className="text-[13px] leading-relaxed text-slate-600"
+            >
+              {content}
+            </Motion.p>
+          )}
 
-        {/* Animated dots nudging the student to respond */}
-        <div className="flex items-center gap-1.5 px-4 pb-3">
-          {[0, 0.18, 0.36].map((delay) => (
-            <Motion.span
-              key={delay}
-              animate={{ y: [0, -4, 0] }}
-              transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1.5, delay }}
-              className="size-1.5 rounded-full bg-amber-300"
-            />
-          ))}
+          {/* The guiding question — the hero */}
+          <Motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 22, delay: content ? 0.28 : 0.1 }}
+            className="relative rounded-xl border-l-[3px] border-amber-400 bg-amber-50 px-3.5 py-3"
+          >
+            <span className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-500">
+              <Lightbulb className="size-3" /> Your turn
+            </span>
+            <p className="text-[15px] font-semibold leading-relaxed text-slate-800">{question}</p>
+          </Motion.div>
+
+          {/* Nudge toward the input */}
+          <Motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: content ? 0.5 : 0.3 }}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-amber-600"
+          >
+            <span className="flex gap-1">
+              {[0, 0.18, 0.36].map((delay) => (
+                <Motion.span
+                  key={delay}
+                  animate={{ y: [0, -3, 0] }}
+                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1.4, delay }}
+                  className="size-1.5 rounded-full bg-amber-300"
+                />
+              ))}
+            </span>
+            Type your answer below to keep going
+          </Motion.div>
         </div>
       </Motion.div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Explain Like I'm 10 UI — a friendly, sectioned study guide
+// ---------------------------------------------------------------------------
+
+const EXPLAIN_SECTION_RULES = [
+  { type: 'vocab',    re: /new words|vocab|glossary|word meaning|meanings/i },
+  { type: 'exercise', re: /complete the|fill in|blank|exercise|activity|practice|match the|let'?s do|let us do/i },
+  { type: 'qa',       re: /question|answer|comprehension|let'?s think|let us think/i },
+  { type: 'steps',    re: /step|explanation|how it|why|summary|recap|story|overview|what happen/i },
+];
+
+function classifyExplainSection(title) {
+  for (const rule of EXPLAIN_SECTION_RULES) if (rule.re.test(title)) return rule.type;
+  return 'generic';
+}
+
+function explainHeading(line, hasFollowing) {
+  const t = line.trim();
+  const bold = t.match(/^#{0,4}\s*\*\*(.+?)\*\*:?\s*$/) || t.match(/^#{1,4}\s+(.+?):?\s*$/);
+  if (bold) return bold[1].trim();
+  // Plain short title line: capitalised, ≤6 words, no terminal punctuation, followed by content
+  if (
+    hasFollowing &&
+    /^[A-Z]/.test(t) &&
+    t.length <= 42 &&
+    t.split(/\s+/).length <= 6 &&
+    !/[.,;:?!)]$/.test(t) &&
+    !/^\d+[.)]/.test(t) &&
+    !/^[-*+•]/.test(t)
+  ) {
+    return t;
+  }
+  return null;
+}
+
+function parseExplain(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  const nextNonEmpty = (i) => {
+    for (let k = i + 1; k < lines.length; k++) if (lines[k].trim()) return true;
+    return false;
+  };
+
+  const intro = [];
+  const sections = [];
+  let current = null;
+  let started = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    const heading = t ? explainHeading(lines[i], nextNonEmpty(i)) : null;
+    if (heading) {
+      started = true;
+      current = { type: classifyExplainSection(heading), title: heading, body: [] };
+      sections.push(current);
+    } else if (!started) {
+      if (t) intro.push(t);
+    } else if (current) {
+      current.body.push(lines[i]);
+    }
+  }
+
+  // Build the hero from the intro block
+  let eyebrow = null;
+  let location = null;
+  const leftover = [];
+  for (const l of intro) {
+    if (!eyebrow && /explain like/i.test(l)) eyebrow = l.split(/[—–-]/)[0].trim();
+    else if (!location && /^topic:/i.test(l)) location = l.replace(/^topic:\s*/i, '').trim();
+    else leftover.push(l);
+  }
+  const title = leftover.length ? leftover[leftover.length - 1] : null;
+
+  return { eyebrow: eyebrow || "Explain Like I'm 10", location, title, sections };
+}
+
+function explainParagraphs(bodyLines) {
+  const paras = [];
+  let cur = [];
+  for (const l of bodyLines) {
+    if (!l.trim()) { if (cur.length) { paras.push(cur.join(' ').trim()); cur = []; } }
+    else cur.push(l.trim());
+  }
+  if (cur.length) paras.push(cur.join(' ').trim());
+  return paras.filter(Boolean);
+}
+
+const REVEAL_STYLES = {
+  emerald: { box: 'border-emerald-200 bg-emerald-50 text-emerald-800', btn: 'border-emerald-300 text-emerald-600 hover:bg-emerald-50' },
+  amber:   { box: 'border-amber-200 bg-amber-50 text-amber-800',       btn: 'border-amber-300 text-amber-600 hover:bg-amber-50' },
+};
+
+function RevealAnswer({ children, accent = 'emerald', label = 'Show answer' }) {
+  const [open, setOpen] = useState(false);
+  const s = REVEAL_STYLES[accent] || REVEAL_STYLES.emerald;
+  if (open) {
+    return (
+      <Motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={cn('ml-7 mt-1.5 rounded-lg border px-3 py-1.5 text-[13px] leading-relaxed', s.box)}
+      >
+        {children}
+      </Motion.div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className={cn('ml-7 mt-1.5 inline-flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1 text-[11px] font-semibold transition-colors', s.btn)}
+    >
+      <Sparkles className="size-3" /> {label}
+    </button>
+  );
+}
+
+function ExplainStepsBody({ body }) {
+  const paras = explainParagraphs(body);
+  if (paras.length <= 1) {
+    return <p className="text-[13px] leading-relaxed text-slate-700">{paras[0] || ''}</p>;
+  }
+  return (
+    <ol className="relative ml-1 space-y-3.5 border-l-2 border-dashed border-sky-200 pl-5">
+      {paras.map((p, i) => (
+        <Motion.li
+          key={i}
+          initial={{ opacity: 0, x: -6 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: i * 0.07 }}
+          className="relative"
+        >
+          <span className="absolute -left-[26px] top-0 flex size-5 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white shadow-sm">
+            {i + 1}
+          </span>
+          <p className="text-[13px] leading-relaxed text-slate-700">{p}</p>
+        </Motion.li>
+      ))}
+    </ol>
+  );
+}
+
+function ExplainVocabBody({ body }) {
+  const rows = [];
+  for (const l of body) {
+    const t = l.trim();
+    if (!t) continue;
+    const m = t.match(/^[-*+•]?\s*([^:]{1,40}?)\s*[:–]\s*(.+)$/);
+    if (m) rows.push({ term: m[1].trim(), def: m[2].trim() });
+    else if (rows.length) rows[rows.length - 1].def += ' ' + t;
+  }
+  if (!rows.length) return <TutorMessageContent text={body.join('\n')} />;
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((r, i) => (
+        <Motion.div
+          key={i}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.05 }}
+          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+        >
+          <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[12px] font-bold text-violet-700">{r.term}</span>
+          <span className="text-[13px] text-slate-600">{r.def}</span>
+        </Motion.div>
+      ))}
+    </div>
+  );
+}
+
+function ExplainQABody({ body, accent = 'emerald', label = 'Show answer' }) {
+  const pairs = [];
+  let cur = null;
+  for (const l of body) {
+    const t = l.trim();
+    if (!t) continue;
+    const q = t.match(/^\d+[.)]\s*(.+)$/);
+    if (q) {
+      if (cur) pairs.push(cur);
+      cur = { q: q[1].trim(), a: [] };
+    } else if (cur) {
+      cur.a.push(t.replace(/^answer:\s*/i, ''));
+    }
+  }
+  if (cur) pairs.push(cur);
+  if (!pairs.length) return <TutorMessageContent text={body.join('\n')} />;
+
+  const dot = accent === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+  return (
+    <ol className="space-y-3">
+      {pairs.map((p, i) => (
+        <li key={i}>
+          <div className="flex gap-2">
+            <span className={cn('mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold', dot)}>
+              {i + 1}
+            </span>
+            <p className="text-[13px] font-semibold leading-relaxed text-slate-800">{p.q}</p>
+          </div>
+          {p.a.length > 0 && (
+            <RevealAnswer accent={accent} label={label}>{p.a.join(' ')}</RevealAnswer>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const EXPLAIN_SECTION_STYLE = {
+  steps:    { icon: BookOpen,                ring: 'bg-sky-100 text-sky-600',       title: 'text-sky-900' },
+  vocab:    { icon: Languages,               ring: 'bg-violet-100 text-violet-600', title: 'text-violet-900' },
+  qa:       { icon: MessageCircleQuestion,   ring: 'bg-emerald-100 text-emerald-600', title: 'text-emerald-900' },
+  exercise: { icon: ListChecks,              ring: 'bg-amber-100 text-amber-600',   title: 'text-amber-900' },
+  generic:  { icon: Sparkles,                ring: 'bg-slate-100 text-slate-500',   title: 'text-slate-900' },
+};
+
+function ExplainUI({ text }) {
+  const { eyebrow, location, title, sections } = useMemo(() => parseExplain(text), [text]);
+
+  if (!sections.length) return <TutorMessageContent text={text} />;
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Hero */}
+      <Motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="overflow-hidden rounded-2xl bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-500 p-[1.5px] shadow-sm"
+      >
+        <div className="rounded-[15px] bg-white px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Motion.span
+              animate={{ scale: [1, 1.12, 1] }}
+              transition={{ duration: 2.2, repeat: Infinity, repeatDelay: 2 }}
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-orange-400 shadow-inner"
+            >
+              <Lightbulb className="size-5 text-white" />
+            </Motion.span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">{eyebrow}</p>
+              {title && <p className="truncate text-[15px] font-extrabold text-slate-900">{title}</p>}
+            </div>
+          </div>
+          {location && <p className="mt-2 text-[11px] font-medium text-slate-400">{location}</p>}
+        </div>
+      </Motion.div>
+
+      {/* Sections */}
+      {sections.map((s, i) => {
+        const st = EXPLAIN_SECTION_STYLE[s.type] || EXPLAIN_SECTION_STYLE.generic;
+        const Icon = st.icon;
+        return (
+          <Motion.div
+            key={i}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 + i * 0.06 }}
+            className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm"
+          >
+            <div className="flex items-center gap-2 px-3.5 pt-3">
+              <span className={cn('flex size-6 shrink-0 items-center justify-center rounded-lg', st.ring)}>
+                <Icon className="size-3.5" />
+              </span>
+              <h4 className={cn('text-[13px] font-bold', st.title)}>{s.title}</h4>
+            </div>
+            <div className="px-3.5 pb-3.5 pt-2.5">
+              {s.type === 'steps' && <ExplainStepsBody body={s.body} />}
+              {s.type === 'vocab' && <ExplainVocabBody body={s.body} />}
+              {s.type === 'qa' && <ExplainQABody body={s.body} accent="emerald" label="Show answer" />}
+              {s.type === 'exercise' && <ExplainQABody body={s.body} accent="amber" label="Reveal answer" />}
+              {s.type === 'generic' && <TutorMessageContent text={s.body.join('\n')} />}
+            </div>
+          </Motion.div>
+        );
+      })}
     </div>
   );
 }
@@ -1044,6 +1685,7 @@ function TutorResponseRenderer({ text, mode }) {
   if (mode === 'flashcards') return <FlashcardUI text={text} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
+  if (mode === 'explain') return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
   return <TutorMessageContent text={text} />;
 }
@@ -2078,7 +2720,7 @@ function AiTutorPanel() {
           subject: selectedSubject?.title || '',
           topic: topicTitle,
           question: question.trim(),
-          chapterTitle: chapterTitle || topicTitle || '',
+          chapterTitle: chapterTitle || '',
         }),
       });
       const payload = await res.json();
@@ -2241,7 +2883,7 @@ function AiTutorPanel() {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -2272,7 +2914,7 @@ function AiTutorPanel() {
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
                                   : (!msg.streaming && msg.mode === 'homework_help')
                                   ? 'rounded-2xl rounded-bl-sm border border-amber-100 bg-amber-50/50 px-4 py-3 shadow-sm'
-                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}

@@ -14,6 +14,70 @@ const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 const normalizeString = (value) => String(value || '').trim();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizeLookup = (value) => normalizeString(value).toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ');
+
+const GENERIC_TEXTBOOK_SECTION_TITLES = new Set([
+  'let us recite',
+  'let us read',
+  'let us speak',
+  'let us listen',
+  'let us write',
+  'let us learn',
+  'let us do',
+  'let us think',
+  'let us discuss',
+  'new words',
+  'word meaning',
+  'word meanings',
+  'tasks to do',
+  'activity',
+  'activities',
+  'exercise',
+  'exercises',
+  'grammar',
+  'vocabulary',
+  'reading',
+  'writing',
+  'speaking',
+  'listening',
+]);
+
+const isGenericTextbookSectionTitle = (value) => {
+  const normalized = normalizeLookup(value);
+  if (!normalized) return false;
+  if (GENERIC_TEXTBOOK_SECTION_TITLES.has(normalized)) return true;
+  return /^(let us|listen and|read and|think and|look at|complete the|fill in|answer the)\b/.test(normalized);
+};
+
+const resolveChapterTitleForRag = ({ requestedChapterTitle, topic, subTopic, materials }) => {
+  const requested = normalizeString(requestedChapterTitle);
+  const normalizedTopic = normalizeLookup(topic);
+  const normalizedSubTopic = normalizeLookup(subTopic);
+  const requestedLooksUnsafe = !requested
+    || normalizeLookup(requested) === normalizedTopic
+    || isGenericTextbookSectionTitle(requested);
+
+  if (!requestedLooksUnsafe) return requested;
+
+  const matchingMaterial = (materials || []).find((material) => {
+    const materialChapter = normalizeString(material.chapterTitle);
+    if (!materialChapter || isGenericTextbookSectionTitle(materialChapter)) return false;
+    const candidates = [
+      material.chapterTitle,
+      material.topicTitle,
+      material.subTopicTitle,
+      material.title,
+      material.typeLabel,
+    ].map(normalizeLookup).filter(Boolean);
+    return candidates.includes(normalizedTopic) || (normalizedSubTopic && candidates.includes(normalizedSubTopic));
+  });
+
+  if (matchingMaterial?.chapterTitle) {
+    return normalizeString(matchingMaterial.chapterTitle);
+  }
+
+  return requestedLooksUnsafe ? null : requested;
+};
 
 const getAttachmentExtension = (attachment) => {
   const type = normalizeString(attachment?.type).toLowerCase();
@@ -136,6 +200,12 @@ router.post('/generate', authStudent, async (req, res) => {
     // if the re-parse fails mid-flight the material ends up with zero chunks,
     // causing the model to answer from a different (wrong) PDF.
     const indexedAttachmentCount = 0;
+    const resolvedChapterTitle = resolveChapterTitleForRag({
+      requestedChapterTitle: chapterTitle,
+      topic: normalizedTopic,
+      subTopic,
+      materials,
+    });
 
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
       mode: normalizedMode,
@@ -148,7 +218,7 @@ router.post('/generate', authStudent, async (req, res) => {
       schoolId: String(schoolId),
       classId: student.classId ? String(student.classId) : null,
       sectionId: student.sectionId ? String(student.sectionId) : null,
-      chapterTitle: normalizeString(chapterTitle) || normalizedTopic || null,
+      chapterTitle: resolvedChapterTitle,
     }, { timeout: 180000 });
 
     return res.json({
@@ -163,6 +233,7 @@ router.post('/generate', authStudent, async (req, res) => {
         candidateChunkCount: 0,
         indexedAttachmentCount,
         ragSource: 'qdrant',
+        resolvedChapterTitle,
       },
     });
   } catch (err) {

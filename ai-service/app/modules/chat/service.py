@@ -17,7 +17,13 @@ NOT_FOUND_MESSAGE = (
 
 MODE_INSTRUCTIONS: dict[str, str] = {
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
-    "summarize": "Summarize the material into concise revision notes with bullet points covering only the key ideas.",
+    "summarize": (
+        "Summarize the material into concise revision notes with bullet points covering only the key ideas. "
+        "For any exercises, activities, or practice questions in the material (fill-in-the-blanks, "
+        "complete-the-sentence, grammar drills, collective-noun tables, etc.), list them as tasks the "
+        "student still has to do — keep the blanks and questions intact and NEVER fill in, solve, or "
+        "reveal the answer to any of them."
+    ),
     "quiz": (
         "Write exactly 10 multiple-choice questions testing student understanding of the material. "
         "Cover a broad range of concepts across the whole material — do not repeat or rephrase the same question. "
@@ -41,9 +47,12 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "7. Keep responses SHORT — 2 to 4 sentences maximum, then end with the guiding question."
     ),
     "notes": (
-        "Turn the material into short, well-structured study notes with headings and bullet points. "
-        "For activities and exercises that appear in the material, list them as tasks to do — "
-        "copy their instructions faithfully but do NOT fill in answers or blank spaces."
+        "Turn the material into short, well-structured student study notes. Use this exact structure: "
+        "a title, short chapter section headings with 1-3 simple bullet points each, a 'New Words' section, "
+        "and a 'Tasks to Do' section. For activities and exercises that appear in the material, list them "
+        "as tasks to do — copy their student-facing instructions faithfully but do NOT fill in answers or "
+        "blank spaces. Do not include teacher guidance, classroom facilitation notes, repeated activities, "
+        "or the same task group more than once."
     ),
     "mind_map": (
         "Produce a hierarchical mind map of the material as a nested bullet-point outline (no diagrams), "
