@@ -19,7 +19,8 @@ MODE_INSTRUCTIONS: dict[str, str] = {
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
     "summarize": "Summarize the material into concise revision notes with bullet points covering only the key ideas.",
     "quiz": (
-        "Write exactly 5 multiple-choice questions testing student understanding of the material. "
+        "Write exactly 10 multiple-choice questions testing student understanding of the material. "
+        "Cover a broad range of concepts across the whole material — do not repeat or rephrase the same question. "
         "Return them as a numbered list, each with 4 options labeled A-D and the correct answer marked at the end "
         "as 'Answer: <letter>'. "
         "Base every question and answer option solely on story content, vocabulary, or exercises visible "

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/generate", tags=["Chat"])
 
 
 # Modes that produce long structured output for an entire chapter need a higher token budget.
-_LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize"}
+_LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize", "quiz"}
 
 # Higher temperature for generative/creative modes so each run produces different questions/cards.
 # Lower temperature for structured/factual modes so output is consistent and well-formatted.
