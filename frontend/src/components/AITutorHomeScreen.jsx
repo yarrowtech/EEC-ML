@@ -1889,6 +1889,13 @@ const COMPANION_CHIPS = [
   { label: 'Homework Help', icon: MessageCircleQuestion },
 ];
 
+const STARTER_PROMPTS = [
+  { mode: "Explain Like I'm 10", text: 'Explain this topic in simple words', icon: Lightbulb },
+  { mode: 'Create Quiz', text: 'Make me a 5-question quiz', icon: Target },
+  { mode: 'Flashcards', text: 'Turn this chapter into flashcards', icon: Layers3 },
+  { mode: 'Homework Help', text: 'Help me solve this step by step', icon: MessageCircleQuestion },
+];
+
 const SMART_INSIGHTS = [
   { label: 'Strongest Subject', value: 'English', detail: '91% mastery', icon: Trophy, color: 'text-emerald-600 bg-emerald-100', trend: [30, 48, 44, 64, 72, 88] },
   { label: 'Weakest Subject', value: 'Science', detail: 'Focus: Motion', icon: TrendingDown, color: 'text-rose-600 bg-rose-100', trend: [70, 64, 60, 52, 49, 43] },
@@ -2051,117 +2058,128 @@ function AnimatedProgress({ value, className }) {
 // Section 1 — Hero Banner
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Calm design tokens — "study desk, soft focus"
+// One sage-teal accent, warm clay reserved for streak/XP, warm-paper ground.
+// ---------------------------------------------------------------------------
+const C = {
+  paper: '#F4F1EA',
+  surface: '#FBF9F4',
+  card: '#FFFFFF',
+  ink: '#26332E',
+  muted: '#78827B',
+  line: '#E7E3D9',
+  teal: '#3F7D6E',
+  tealDeep: '#2E5C50',
+  tealSoft: '#E9F0EB',
+  clay: '#C07A4C',
+  claySoft: '#F4E9DE',
+};
+
+const todayLabel = () =>
+  new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+// A quiet paper card — the one surface shape used across the page.
+function Panel({ children, className, as: Tag = 'div', ...rest }) {
+  return (
+    <Tag
+      className={cn(
+        'rounded-[22px] border border-[#E7E3D9] bg-white shadow-[0_1px_2px_rgba(38,51,46,0.04),0_10px_30px_-24px_rgba(38,51,46,0.5)]',
+        className
+      )}
+      {...rest}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+function FocusRing({ value = 65, label = 'of today done' }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative size-36 shrink-0">
+      <svg viewBox="0 0 120 120" className="size-full -rotate-90">
+        <circle cx="60" cy="60" r={r} fill="none" stroke={C.tealSoft} strokeWidth="9" />
+        <Motion.circle
+          cx="60" cy="60" r={r} fill="none" stroke={C.teal} strokeWidth="9" strokeLinecap="round"
+          strokeDasharray={c}
+          initial={{ strokeDashoffset: c }}
+          animate={{ strokeDashoffset: c * (1 - value / 100) }}
+          transition={{ duration: 1.4, ease: 'easeOut', delay: 0.2 }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="font-[Nunito] text-3xl font-extrabold text-[#26332E]">{value}%</span>
+        <span className="mt-0.5 max-w-[5rem] text-[10px] font-semibold uppercase leading-tight tracking-wide text-[#78827B]">{label}</span>
+      </div>
+    </div>
+  );
+}
+
 function HeroBanner({ onStartLearning, onPracticeQuestions, onAskAiTutor }) {
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/40 bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 p-6 shadow-xl sm:p-8 md:p-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.25),_transparent_55%)]" />
-      <div className="pointer-events-none absolute -right-16 -top-16 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-20 left-10 h-72 w-72 rounded-full bg-fuchsia-300/20 blur-3xl" />
-
-      <div className="relative z-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_1fr] lg:items-center">
-        {/* Left */}
-        <Motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-          className="text-white"
-        >
-          <Motion.h1 variants={fadeInUp} className="text-2xl font-bold sm:text-3xl md:text-4xl">
-            {getGreeting()}, {STUDENT.name} 👋
+    <Panel className="bg-[#FBF9F4] p-6 sm:p-9">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.5fr_auto] lg:items-center">
+        <Motion.div variants={staggerContainer} initial="hidden" animate="visible" className="min-w-0">
+          <Motion.p variants={fadeInUp} className="text-xs font-bold uppercase tracking-[0.18em] text-[#78827B]">
+            {todayLabel()}
+          </Motion.p>
+          <Motion.h1 variants={fadeInUp} className="mt-2 font-[Nunito] text-3xl font-extrabold leading-tight text-[#26332E] sm:text-4xl">
+            {getGreeting()}, {STUDENT.name}.
           </Motion.h1>
-          <Motion.p variants={fadeInUp} className="mt-2 max-w-md text-base text-indigo-100 sm:text-lg">
-            What would you like to learn today?
+          <Motion.p variants={fadeInUp} className="mt-3 max-w-lg text-[15px] leading-relaxed text-[#5c655f]">
+            Three things on your desk today — wrap up <span className="font-semibold text-[#2E5C50]">Fractions</span>,
+            take one quiz, and ask the tutor anything that stuck.
           </Motion.p>
 
-          <Motion.div variants={fadeInUp} className="mt-5 flex flex-wrap gap-2">
-            <Badge className="gap-1.5 border-0 bg-white/15 px-3 py-1.5 text-white backdrop-blur-sm">
-              <Flame className="size-3.5 text-orange-300" />
-              {STUDENT.streak} Day Streak
-            </Badge>
-            <Badge className="gap-1.5 border-0 bg-white/15 px-3 py-1.5 text-white backdrop-blur-sm">
-              <Zap className="size-3.5 text-yellow-300" />
-              {STUDENT.xp.toLocaleString()} XP
-            </Badge>
-            <Badge className="gap-1.5 border-0 bg-white/15 px-3 py-1.5 text-white backdrop-blur-sm">
-              <Trophy className="size-3.5 text-amber-200" />
-              Level {STUDENT.level}
-            </Badge>
+          <Motion.div variants={fadeInUp} className="mt-6 flex flex-wrap gap-3">
+            <Button
+              onClick={onAskAiTutor}
+              className="h-11 gap-2 rounded-xl bg-[#3F7D6E] px-5 text-sm font-semibold text-white shadow-none hover:bg-[#356b5e]"
+            >
+              <Bot className="size-4" />
+              Ask your tutor
+            </Button>
+            <Button
+              onClick={onStartLearning}
+              variant="outline"
+              className="h-11 gap-2 rounded-xl border-[#E7E3D9] bg-white px-5 text-sm font-semibold text-[#26332E] hover:bg-[#F4F1EA] hover:text-[#26332E]"
+            >
+              <BookOpen className="size-4 text-[#3F7D6E]" />
+              Resume lesson
+            </Button>
+            <Button
+              onClick={onPracticeQuestions}
+              variant="ghost"
+              className="h-11 gap-2 rounded-xl px-4 text-sm font-semibold text-[#5c655f] hover:bg-[#F4F1EA] hover:text-[#26332E]"
+            >
+              <Target className="size-4" />
+              Practice
+            </Button>
           </Motion.div>
 
-          <Motion.div variants={fadeInUp} className="mt-7 flex flex-wrap gap-3">
-            <Motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-              <Button
-                onClick={onStartLearning}
-                className="h-11 gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-indigo-700 shadow-[0_0_0_0_rgba(255,255,255,0.6)] hover:bg-white hover:shadow-[0_0_24px_4px_rgba(255,255,255,0.5)]"
-              >
-                <Rocket className="size-4" />
-                Start Learning
-              </Button>
-            </Motion.div>
-            <Motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-              <Button
-                onClick={onPracticeQuestions}
-                variant="outline"
-                className="h-11 gap-2 rounded-xl border-white/40 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20 hover:text-white"
-              >
-                <Target className="size-4" />
-                Practice Questions
-              </Button>
-            </Motion.div>
-            <Motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-              <Button
-                onClick={onAskAiTutor}
-                variant="outline"
-                className="h-11 gap-2 rounded-xl border-white/40 bg-white/10 px-5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20 hover:text-white"
-              >
-                <Bot className="size-4" />
-                Ask AI Tutor
-              </Button>
-            </Motion.div>
+          <Motion.div variants={fadeInUp} className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-[#C07A4C]">
+              <Flame className="size-4" />
+              {STUDENT.streak}-day streak
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[#5c655f]">
+              <Zap className="size-4 text-[#C07A4C]" />
+              {STUDENT.xp.toLocaleString()} XP
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[#5c655f]">
+              <Trophy className="size-4 text-[#78827B]" />
+              Level {STUDENT.level}
+            </span>
           </Motion.div>
         </Motion.div>
 
-        {/* Right — illustration */}
-        <div className="relative mx-auto hidden h-64 w-full max-w-sm items-center justify-center sm:flex lg:h-72">
-          <Motion.div
-            className="absolute h-44 w-44 rounded-full bg-white/20 backdrop-blur-md sm:h-52 sm:w-52"
-            animate={{ scale: [1, 1.06, 1] }}
-            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-          />
-          <Motion.div
-            {...floatingAnimation(0, 10, 3.5)}
-            className="relative z-10 flex h-28 w-28 items-center justify-center rounded-3xl bg-white/90 shadow-2xl sm:h-32 sm:w-32"
-          >
-            <Bot className="size-14 text-indigo-600 sm:size-16" />
-          </Motion.div>
-
-          <Motion.div
-            {...floatingAnimation(0.4, 12, 4)}
-            className="absolute left-2 top-2 flex size-12 items-center justify-center rounded-2xl bg-white/90 shadow-lg sm:left-4 sm:top-0"
-          >
-            <BookOpen className="size-6 text-blue-600" />
-          </Motion.div>
-          <Motion.div
-            {...floatingAnimation(0.8, 10, 3.2)}
-            className="absolute right-0 top-6 flex size-10 items-center justify-center rounded-2xl bg-white/90 shadow-lg sm:right-2"
-          >
-            <Star className="size-5 text-amber-500" />
-          </Motion.div>
-          <Motion.div
-            {...floatingAnimation(1.1, 14, 4.5)}
-            className="absolute bottom-2 left-0 flex size-12 items-center justify-center rounded-2xl bg-white/90 shadow-lg sm:left-2"
-          >
-            <GraduationCap className="size-6 text-fuchsia-600" />
-          </Motion.div>
-          <Motion.div
-            {...floatingAnimation(0.6, 11, 3.8)}
-            className="absolute bottom-4 right-4 flex size-9 items-center justify-center rounded-2xl bg-white/90 shadow-lg"
-          >
-            <Sparkles className="size-4 text-violet-600" />
-          </Motion.div>
-        </div>
+        <Motion.div variants={fadeInUp} initial="hidden" animate="visible" className="mx-auto flex items-center justify-center">
+          <FocusRing value={65} />
+        </Motion.div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -2169,8 +2187,8 @@ function SectionHeading({ eyebrow, title, action }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div>
-        {eyebrow && <p className="mb-1 text-xs font-bold uppercase text-indigo-600">{eyebrow}</p>}
-        <h2 className="text-xl font-bold text-slate-800 sm:text-2xl">{title}</h2>
+        {eyebrow && <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#3F7D6E]">{eyebrow}</p>}
+        <h2 className="font-[Nunito] text-xl font-extrabold text-[#26332E] sm:text-[1.6rem]">{title}</h2>
       </div>
       {action}
     </div>
@@ -2579,6 +2597,18 @@ function AiTutorPanel() {
   const messagesScrollRef = useRef(null);
   const attachmentInputRef = useRef(null);
   const chipsScrollRef = useRef(null);
+  const composerRef = useRef(null);
+  const activeChipMeta = COMPANION_CHIPS.find((c) => c.label === activeChip) || COMPANION_CHIPS[0];
+  const applyStarter = (starter) => {
+    setActiveChip(starter.mode);
+    setQuestion(starter.text);
+    requestAnimationFrame(() => composerRef.current?.querySelector('textarea')?.focus());
+  };
+  const clearConversation = () => {
+    streamTimersRef.current.forEach((id) => clearTimeout(id));
+    streamTimersRef.current = [];
+    setMessages([]);
+  };
   const streamTimersRef = useRef([]);
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
   const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
@@ -2747,126 +2777,87 @@ function AiTutorPanel() {
   };
 
   return (
-    <Section className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden">
+    <Section>
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-sky-200 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-100 p-5 shadow-2xl sm:p-8">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,.22),transparent_35%)]" />
-        <div className="relative z-10 grid gap-7 lg:h-full lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
-          <Motion.div variants={slideInLeft} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex min-w-0 flex-col items-start gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+      <Panel className="flex h-[min(760px,82vh)] flex-col overflow-hidden p-0">
+        {/* Header — tutor identity, context, controls */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
+          <div className="relative">
             <Motion.div
-              animate={{ boxShadow: ['0 0 0px rgba(59,130,246,0.25)', '0 0 32px rgba(59,130,246,0.4)', '0 0 0px rgba(59,130,246,0.25)'] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-blue-500"
+              animate={{ boxShadow: ['0 0 0 0 rgba(63,125,110,0.0)', '0 0 0 6px rgba(63,125,110,0.10)', '0 0 0 0 rgba(63,125,110,0.0)'] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+              className="flex size-11 items-center justify-center rounded-2xl bg-[#3F7D6E]"
             >
-              <Bot className="size-9 text-white" />
+              <Bot className="size-6 text-white" />
             </Motion.div>
-            <div>
-              <h3 className="text-2xl font-bold text-slate-900">What are we learning?</h3>
-              <p className="mt-1 max-w-sm text-sm text-slate-600">
-                Pick a subject and topic your teacher has published, or just ask a question.
-              </p>
-            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-[#FBF9F4] bg-green-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-[Nunito] text-base font-extrabold leading-tight text-[#26332E]">Study Tutor</h3>
+            <p className="truncate text-xs text-[#78827B]">
+              {selectedSubject
+                ? <>Focused on <span className="font-semibold text-[#2E5C50]">{selectedSubject.title}{topicTitle ? ` · ${topicTitle}` : ''}</span></>
+                : 'Online · answers grounded in your teacher’s material'}
+            </p>
+          </div>
 
-            <div className="flex w-full flex-col gap-2 text-slate-900">
-              <Select
-                value={subjectKey || undefined}
-                onValueChange={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
-              >
-                <SelectTrigger className="w-full rounded-xl border-sky-200 bg-white py-5 text-sm text-slate-900 shadow-sm">
-                  <SelectValue
-                    placeholder={curriculumStatus === 'loading' ? 'Loading subjects…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No published subjects yet' : 'Choose a subject (optional)'}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {subjects.map((s) => <SelectItem key={s.key} value={s.key}>{s.title}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <AnimatePresence initial={false}>
-                {subjectKey && (
-                  <Motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    className="overflow-hidden"
+          <div className="flex items-center gap-2">
+            <Select
+              value={subjectKey || undefined}
+              onValueChange={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
+            >
+              <SelectTrigger className="h-9 w-[128px] rounded-lg border-[#E7E3D9] bg-white text-xs text-[#26332E] shadow-sm sm:w-[150px]">
+                <SelectValue
+                  placeholder={curriculumStatus === 'loading' ? 'Loading…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No subjects' : 'Subject'}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {subjects.map((s) => <SelectItem key={s.key} value={s.key}>{s.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <AnimatePresence initial={false}>
+              {subjectKey && (
+                <Motion.div
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="overflow-hidden"
+                >
+                  <Select
+                    value={topicTitle || undefined}
+                    onValueChange={(value) => {
+                      const selected = topics.find((t) => t.title === value);
+                      setTopicTitle(value);
+                      setChapterTitle(selected?.chapterTitle || '');
+                    }}
                   >
-                    <Select
-                      value={topicTitle || undefined}
-                      onValueChange={(value) => {
-                        const selected = topics.find((t) => t.title === value);
-                        setTopicTitle(value);
-                        setChapterTitle(selected?.chapterTitle || '');
-                      }}
-                    >
-                      <SelectTrigger className="w-full rounded-xl border-sky-200 bg-white py-5 text-sm text-slate-900 shadow-sm">
-                        <SelectValue placeholder="Choose a chapter / topic (optional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {topics.map((t) => <SelectItem key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            <div className="mt-auto flex items-center gap-2 rounded-xl border border-green-200 bg-green-50/80 px-3 py-2 text-xs text-sky-700 shadow-sm backdrop-blur">
-              <span className="size-2 rounded-full bg-green-500" />
-              AI Tutor is online
-            </div>
-          </Motion.div>
-
-          <Motion.div variants={slideInRight} initial="hidden" whileInView="visible" viewport={{ once: true }} className="flex min-w-0 flex-col gap-4 lg:h-full lg:min-h-0">
-            <div className="flex min-w-0 items-center gap-2">
-              {canScrollChipsLeft && (
-                <button
-                  type="button"
-                  onClick={() => scrollChips(-1)}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white hover:text-slate-900"
-                  aria-label="Scroll actions left"
-                >
-                  <ChevronLeft className="size-4" />
-                </button>
+                    <SelectTrigger className="h-9 w-[128px] rounded-lg border-[#E7E3D9] bg-white text-xs text-[#26332E] shadow-sm sm:w-[150px]">
+                      <SelectValue placeholder="Chapter / topic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {topics.map((t) => <SelectItem key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Motion.div>
               )}
-              <div
-                ref={chipsScrollRef}
-                className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scroll-smooth whitespace-nowrap py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            </AnimatePresence>
+            {messages.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearConversation}
+                className="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-[#78827B] hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
               >
-                {COMPANION_CHIPS.map((chip) => {
-                  const Icon = chip.icon;
-                  return (
-                    <Motion.button
-                      key={chip.label}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => setActiveChip(chip.label)}
-                      className={cn(
-                        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm',
-                        activeChip === chip.label
-                          ? 'border-sky-300 bg-sky-500 text-white shadow-sm'
-                          : 'border-sky-200 bg-white/70 text-slate-700 hover:bg-white'
-                      )}
-                    >
-                      <Icon className={cn('size-3.5', activeChip === chip.label ? 'text-white' : 'text-sky-500')} />
-                      {chip.label}
-                    </Motion.button>
-                  );
-                })}
-              </div>
-              {canScrollChipsRight && (
-                <button
-                  type="button"
-                  onClick={() => scrollChips(1)}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-white/80 text-slate-600 shadow-sm hover:bg-white hover:text-slate-900"
-                  aria-label="Scroll actions right"
-                >
-                  <ChevronRight className="size-4" />
-                </button>
-              )}
-            </div>
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
 
-            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded-2xl border border-sky-200 bg-white/80 p-3 shadow-inner backdrop-blur">
-              {messages.length > 0 ? (
+        {/* Messages */}
+        <div ref={messagesScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white px-4 py-4 sm:px-5">
+          {messages.length > 0 ? (
                 <div className="space-y-3">
                   <AnimatePresence initial={false}>
                     {messages.map((msg, i) => (
@@ -2894,10 +2885,10 @@ function AiTutorPanel() {
                             className={cn(
                               'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold',
                               msg.role === 'user'
-                                ? 'border-blue-300 bg-blue-500 text-white'
+                                ? 'border-[#26332E] bg-[#26332E] text-white'
                                 : msg.error
                                   ? 'border-rose-200 bg-rose-100 text-rose-600'
-                                  : 'border-sky-200 bg-sky-50 text-sky-700'
+                                  : 'border-[#E7E3D9] bg-[#E9F0EB] text-[#3F7D6E]'
                             )}
                           >
                             {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
@@ -2907,16 +2898,16 @@ function AiTutorPanel() {
                               'min-w-0 text-sm leading-relaxed',
                               msg.role === 'user' ? 'whitespace-pre-wrap break-words rounded-2xl px-4 py-3 shadow-sm' : '',
                               msg.role === 'user'
-                                ? 'rounded-br-sm bg-gradient-to-r from-sky-500 to-blue-600 text-white'
+                                ? 'rounded-br-sm bg-[#3F7D6E] text-white'
                                 : msg.thinking
-                                  ? 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
+                                  ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
                                   : (!msg.streaming && msg.mode === 'homework_help')
                                   ? 'rounded-2xl rounded-bl-sm border border-amber-100 bg-amber-50/50 px-4 py-3 shadow-sm'
                                   : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain'].includes(msg.mode))
                                     ? 'w-full'
-                                    : 'rounded-2xl rounded-bl-sm border border-sky-200 bg-white px-4 py-3 shadow-sm text-slate-800'
+                                    : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
                           >
                             {msg.thinking ? (
@@ -2928,7 +2919,7 @@ function AiTutorPanel() {
                                       key={delay}
                                       animate={{ y: [0, -5, 0] }}
                                       transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut', delay }}
-                                      className="size-1.5 rounded-full bg-sky-400"
+                                      className="size-1.5 rounded-full bg-[#3F7D6E]"
                                     />
                                   ))}
                                 </span>
@@ -2941,7 +2932,7 @@ function AiTutorPanel() {
                                     : <TutorResponseRenderer text={msg.text} mode={msg.mode} />
                                   }
                                   {msg.streaming && (
-                                    <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-sky-500 align-middle" />
+                                    <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#3F7D6E] align-middle" />
                                   )}
                                 </>
                               ) : msg.text
@@ -2949,7 +2940,7 @@ function AiTutorPanel() {
                             {msg.role === 'assistant' && !msg.error && !msg.thinking && (
                               <div className={cn(
                                 'mt-2 text-[11px] font-medium',
-                                msg.noMaterialFound ? 'text-amber-700' : 'text-sky-600'
+                                msg.noMaterialFound ? 'text-amber-700' : 'text-[#3F7D6E]'
                               )}>
                                 {msg.noMaterialFound
                                   ? 'No matching uploaded material found'
@@ -2969,105 +2960,170 @@ function AiTutorPanel() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.3 }}
-                  className="flex h-full min-h-[90px] items-center justify-center text-center"
+                  className="flex h-full flex-col items-center justify-center px-2 text-center"
                 >
-                  <div className="max-w-sm">
-                    <Motion.div
-                      animate={{ y: [0, -6, 0] }}
-                      transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                      className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600"
-                    >
-                      <MessageCircleQuestion className="size-6" />
-                    </Motion.div>
-                    <p className="text-sm font-semibold text-slate-700">Your latest messages will stay here</p>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Send a question and the conversation will keep scrolling inside this panel, without moving the page.
-                    </p>
+                  <Motion.div
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                    className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-[#E9F0EB] text-[#3F7D6E]"
+                  >
+                    <MessageCircleQuestion className="size-7" />
+                  </Motion.div>
+                  <p className="font-[Nunito] text-lg font-extrabold text-[#26332E]">Ask me anything, {STUDENT.name}.</p>
+                  <p className="mt-1 max-w-sm text-sm leading-relaxed text-[#78827B]">
+                    Pick a subject up top for answers from your teacher’s material, or start with one of these:
+                  </p>
+                  <div className="mt-5 grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+                    {STARTER_PROMPTS.map((starter) => {
+                      const Icon = starter.icon;
+                      return (
+                        <Motion.button
+                          key={starter.text}
+                          whileHover={{ y: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => applyStarter(starter)}
+                          className="flex items-center gap-2.5 rounded-xl border border-[#E7E3D9] bg-white px-3 py-2.5 text-left text-sm text-[#26332E] transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]"
+                        >
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#E9F0EB] text-[#3F7D6E]">
+                            <Icon className="size-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[11px] font-semibold text-[#3F7D6E]">{starter.mode}</span>
+                            <span className="block truncate text-xs text-[#78827B]">{starter.text}</span>
+                          </span>
+                        </Motion.button>
+                      );
+                    })}
                   </div>
                 </Motion.div>
               )}
-            </div>
-
-            <div className="rounded-full border border-sky-200 bg-white/90 p-1 shadow-lg backdrop-blur-xl lg:shrink-0">
-              <input
-                ref={attachmentInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleAttachmentChange}
-                aria-label="Attach a file"
-              />
-              <AnimatePresence>
-                {attachmentName && (
-                  <Motion.div
-                    initial={{ opacity: 0, y: -6, height: 0 }}
-                    animate={{ opacity: 1, y: 0, height: 'auto' }}
-                    exit={{ opacity: 0, y: -6, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="mb-2 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700"
-                  >
-                    <Paperclip className="size-3.5" />
-                    <span className="max-w-[220px] truncate">{attachmentName}</span>
-                  </Motion.div>
-                )}
-              </AnimatePresence>
-              <div className="flex items-center justify-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={openAttachmentPicker}
-                      className="size-9 shrink-0 rounded-full text-slate-700 hover:bg-sky-50 hover:text-slate-900"
-                    >
-                      <Plus className="size-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Attach notes or homework</TooltipContent>
-                </Tooltip>
-
-                <Textarea
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder="Ask anything"
-                  rows={1}
-                  className="min-h-9 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
-                  style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
-                />
-
-                {/* <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-9 shrink-0 rounded-full text-slate-700 hover:bg-sky-50 hover:text-slate-900"
-                    >
-                      <Mic className="size-5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Voice input</TooltipContent>
-                </Tooltip> */}
-
-                <Motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
-                  <Button
-                    onClick={handleSend}
-                    disabled={sending}
-                    className="size-10 shrink-0 rounded-full bg-sky-500 p-0 text-white hover:bg-sky-600 disabled:opacity-50"
-                    aria-label={sending ? 'Sending' : 'Send message'}
-                  >
-                    <Send className="size-4" />
-                  </Button>
-                </Motion.div>
-              </div>
-            </div>
-          </Motion.div>
         </div>
-      </div>
+
+        {/* Composer */}
+        <div className="border-t border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
+          {/* Action selector */}
+          <div className="mb-2.5 flex min-w-0 items-center gap-2">
+            <span className="hidden shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-[#78827B] sm:inline-flex">
+              <Sparkles className="size-3.5 text-[#3F7D6E]" /> Do
+            </span>
+            {canScrollChipsLeft && (
+              <button
+                type="button"
+                onClick={() => scrollChips(-1)}
+                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                aria-label="Scroll actions left"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+            )}
+            <div
+              ref={chipsScrollRef}
+              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scroll-smooth whitespace-nowrap py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {COMPANION_CHIPS.map((chip) => {
+                const Icon = chip.icon;
+                const active = activeChip === chip.label;
+                return (
+                  <Motion.button
+                    key={chip.label}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setActiveChip(chip.label)}
+                    aria-pressed={active}
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                      active
+                        ? 'border-[#3F7D6E] bg-[#3F7D6E] text-white shadow-sm'
+                        : 'border-[#E7E3D9] bg-white text-[#5c655f] hover:bg-[#E9F0EB]'
+                    )}
+                  >
+                    <Icon className={cn('size-3.5', active ? 'text-white' : 'text-[#3F7D6E]')} />
+                    {chip.label}
+                  </Motion.button>
+                );
+              })}
+            </div>
+            {canScrollChipsRight && (
+              <button
+                type="button"
+                onClick={() => scrollChips(1)}
+                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                aria-label="Scroll actions right"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            )}
+          </div>
+
+          <input
+            ref={attachmentInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleAttachmentChange}
+            aria-label="Attach a file"
+          />
+          <AnimatePresence>
+            {attachmentName && (
+              <Motion.div
+                initial={{ opacity: 0, y: -6, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -6, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#E9F0EB] px-3 py-1 text-xs font-medium text-[#2E5C50]"
+              >
+                <Paperclip className="size-3.5" />
+                <span className="max-w-[220px] truncate">{attachmentName}</span>
+              </Motion.div>
+            )}
+          </AnimatePresence>
+
+          <div ref={composerRef} className="flex items-end gap-2 rounded-2xl border border-[#E7E3D9] bg-white p-1.5 shadow-[0_8px_24px_-18px_rgba(38,51,46,0.6)] focus-within:border-[#3F7D6E]">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={openAttachmentPicker}
+                  className="size-9 shrink-0 rounded-xl text-[#5c655f] hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                >
+                  <Plus className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Attach notes or homework</TooltipContent>
+            </Tooltip>
+
+            <Textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={`${activeChipMeta.label} — type your question…`}
+              rows={1}
+              className="max-h-32 min-h-9 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
+              style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
+            />
+
+            <Motion.div whileTap={{ scale: 0.94 }}>
+              <Button
+                onClick={handleSend}
+                disabled={sending || (!question.trim() && !topicTitle)}
+                className="size-10 shrink-0 rounded-xl bg-[#3F7D6E] p-0 text-white hover:bg-[#356b5e] disabled:opacity-40"
+                aria-label={sending ? 'Sending' : 'Send message'}
+              >
+                {sending
+                  ? <Motion.span animate={{ rotate: 360 }} transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }} className="block size-4 rounded-full border-2 border-white/40 border-t-white" />
+                  : <Send className="size-4" />}
+              </Button>
+            </Motion.div>
+          </div>
+          <p className="mt-1.5 px-1 text-[11px] text-[#a3aaa2]">
+            Press <kbd className="rounded border border-[#E7E3D9] bg-white px-1 font-sans text-[10px] text-[#78827B]">Enter</kbd> to send · <kbd className="rounded border border-[#E7E3D9] bg-white px-1 font-sans text-[10px] text-[#78827B]">Shift + Enter</kbd> for a new line
+          </p>
+        </div>
+      </Panel>
     </Section>
   );
 }
@@ -3456,27 +3512,27 @@ function SubjectCard({ subject, onExplore }) {
       whileHover={{ y: -6, scale: 1.02 }}
       className="h-full"
     >
-      <Card className="group h-full rounded-2xl border border-slate-100 p-0 shadow-sm transition-shadow hover:shadow-[0_8px_30px_rgba(99,102,241,0.18)]">
+      <Card className="group h-full rounded-2xl border border-[#E7E3D9] bg-white p-0 shadow-[0_1px_2px_rgba(38,51,46,0.04)] transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]">
         <CardContent className="flex h-full flex-col gap-4 p-5">
-          <div className={cn('flex size-12 items-center justify-center rounded-xl bg-gradient-to-br text-white transition-transform group-hover:-translate-y-1', subject.color)}>
+          <div className="flex size-12 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E] transition-colors group-hover:bg-[#3F7D6E] group-hover:text-white">
             <Icon className="size-6" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-800">{subject.name}</h3>
-            <p className="text-xs text-slate-500">{subject.topicsCount} topic{subject.topicsCount === 1 ? '' : 's'} published</p>
+            <h3 className="text-base font-bold text-[#26332E]">{subject.name}</h3>
+            <p className="text-xs text-[#78827B]">{subject.topicsCount} topic{subject.topicsCount === 1 ? '' : 's'} published</p>
           </div>
           <div>
-            <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+            <div className="mb-1.5 flex items-center justify-between text-xs text-[#78827B]">
               <span>Progress</span>
-              <span className="font-semibold text-slate-700">{subject.progress}%</span>
+              <span className="font-semibold text-[#26332E]">{subject.progress}%</span>
             </div>
-            <AnimatedProgress value={subject.progress} />
+            <AnimatedProgress value={subject.progress} className="bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => onExplore?.(subject)}
-            className="mt-auto w-full gap-1.5 rounded-lg"
+            className="mt-auto w-full gap-1.5 rounded-lg border-[#E7E3D9] text-[#2E5C50] hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
           >
             Explore
             <ChevronRight className="size-3.5" />
@@ -3530,9 +3586,9 @@ function SubjectExplorer({ onExploreSubject }) {
 
   return (
     <Section>
-      <h2 className="mb-4 text-xl font-bold text-slate-800 sm:text-2xl">Subject Explorer</h2>
+      <SectionHeading eyebrow="Published by your teachers" title="Subject explorer" />
       {status === 'loading' && (
-        <p className="text-sm text-slate-500">Loading your subjects…</p>
+        <p className="text-sm text-[#78827B]">Loading your subjects…</p>
       )}
       {status !== 'loading' && subjects.length === 0 && (
         <Card className="rounded-2xl border border-dashed border-slate-200 p-8 text-center shadow-none">
@@ -3763,6 +3819,369 @@ function MotivationalFooter() {
   );
 }
 
+// ===========================================================================
+// Consolidated calm sections — 24 blocks trimmed to 10
+// ===========================================================================
+
+// Today — the single next step + a quiet stat strip.
+// (merges Learning Journey · Continue Where You Left Off · AI Recommended · Daily Goals)
+function TodayFocus({ onResume }) {
+  const active = LEARNING_JOURNEY.find((s) => s.state === 'active') || LEARNING_JOURNEY[0];
+  return (
+    <Section>
+      <SectionHeading eyebrow="Up next" title="Take the Fractions quiz" />
+      <Panel className="overflow-hidden">
+        <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
+          <div className="p-6 sm:p-7">
+            <div className="flex items-center gap-2 text-xs font-semibold text-[#78827B]">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E9F0EB] px-2.5 py-1 text-[#2E5C50]">
+                <Calculator className="size-3.5" /> Mathematics
+              </span>
+              <span>· Fractions and Decimals · lesson 7</span>
+            </div>
+            <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#5c655f]">
+              You solved 8 of 12 practice questions. {active.subtitle === 'Ready now' ? 'The quiz is ready' : active.subtitle} —
+              finish it to unlock the AI review and bank <span className="font-semibold text-[#C07A4C]">+120 XP</span>.
+            </p>
+
+            <div className="mt-5 flex items-center gap-3">
+              {LEARNING_JOURNEY.map((step, i) => (
+                <div key={step.title} className="flex items-center gap-3">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          'flex size-8 items-center justify-center rounded-full border text-[11px] font-bold',
+                          step.state === 'complete' && 'border-[#3F7D6E] bg-[#3F7D6E] text-white',
+                          step.state === 'active' && 'border-[#C07A4C] bg-[#F4E9DE] text-[#C07A4C]',
+                          step.state === 'upcoming' && 'border-[#E7E3D9] bg-white text-[#a8afa8]'
+                        )}
+                      >
+                        {step.state === 'complete' ? <CircleCheck className="size-4" /> : i + 1}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{step.title} — {step.subtitle}</TooltipContent>
+                  </Tooltip>
+                  {i < LEARNING_JOURNEY.length - 1 && (
+                    <span className={cn('h-px w-5', step.state === 'complete' ? 'bg-[#3F7D6E]' : 'bg-[#E7E3D9]')} />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <Button
+              onClick={onResume}
+              className="mt-6 h-11 gap-2 rounded-xl bg-[#3F7D6E] px-5 text-sm font-semibold text-white hover:bg-[#356b5e]"
+            >
+              <Play className="size-4 fill-current" /> Start the quiz
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 border-t border-[#E7E3D9] bg-[#FBF9F4] lg:border-l lg:border-t-0">
+            {DAILY_GOALS.map((goal, i) => {
+              const Icon = goal.icon;
+              return (
+                <div
+                  key={goal.id}
+                  className={cn(
+                    'flex flex-col gap-1 p-5',
+                    i % 2 === 0 && 'border-r border-[#E7E3D9]',
+                    i < 2 && 'border-b border-[#E7E3D9]'
+                  )}
+                >
+                  <Icon className="size-4 text-[#3F7D6E]" />
+                  <p className="mt-1 font-[Nunito] text-2xl font-extrabold text-[#26332E]">
+                    <AnimatedCounter value={goal.value} suffix={goal.suffix} />
+                  </p>
+                  <p className="text-[11px] font-medium leading-tight text-[#78827B]">{goal.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Panel>
+    </Section>
+  );
+}
+
+// Ways to study — one calm grid. (merges Quick Actions · Learning Modes)
+function WaysToStudy() {
+  return (
+    <Section>
+      <SectionHeading eyebrow="Pick a way in" title="Ways to study" />
+      <Motion.div
+        variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.1 }}
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+      >
+        {LEARNING_MODES.map((mode) => {
+          const Icon = mode.icon;
+          return (
+            <Motion.button
+              key={mode.title}
+              variants={fadeInUp}
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
+              className="group flex items-start gap-3 rounded-2xl border border-[#E7E3D9] bg-white p-4 text-left transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E] transition-colors group-hover:bg-[#3F7D6E] group-hover:text-white">
+                <Icon className="size-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-[#26332E]">{mode.title}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-[#78827B]">{mode.description}</span>
+              </span>
+            </Motion.button>
+          );
+        })}
+      </Motion.div>
+    </Section>
+  );
+}
+
+// Continue — quiet reslist. (Continue Learning)
+function ContinueLearningCalm() {
+  return (
+    <Section>
+      <SectionHeading eyebrow="Half-finished" title="Continue learning" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {CONTINUE_LEARNING.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Panel key={item.id} className="flex items-center gap-4 p-4">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E]">
+                <Icon className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="truncate text-sm font-bold text-[#26332E]">{item.subject}</p>
+                  <span className="shrink-0 text-xs font-semibold text-[#78827B]">{item.progress}%</span>
+                </div>
+                <p className="truncate text-xs text-[#78827B]">{item.lesson}</p>
+                <AnimatedProgress value={item.progress} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+              </div>
+              <Button size="icon" variant="ghost" className="size-9 shrink-0 rounded-full text-[#3F7D6E] hover:bg-[#E9F0EB]">
+                <PlayCircle className="size-5" />
+              </Button>
+            </Panel>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+// Progress — analytics in one place. (merges Smart Insights · Subject Performance)
+function ProgressPanel() {
+  return (
+    <Section>
+      <SectionHeading eyebrow="How it's going" title="Your progress" />
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+        <Panel className="p-5 sm:p-6">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">This week</p>
+          <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5">
+            {SMART_INSIGHTS.map((insight) => {
+              const Icon = insight.icon;
+              return (
+                <div key={insight.label}>
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#78827B]">
+                    <Icon className="size-3.5 text-[#3F7D6E]" /> {insight.label}
+                  </div>
+                  <p className="mt-1 font-[Nunito] text-lg font-extrabold text-[#26332E]">
+                    {typeof insight.value === 'number'
+                      ? <AnimatedCounter value={insight.value} suffix={insight.suffix} />
+                      : insight.value}
+                  </p>
+                  <MiniChart points={insight.trend} color={C.teal} />
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+
+        <div className="grid gap-3">
+          {SUBJECT_PERFORMANCE.map((subject) => {
+            const Icon = subject.icon;
+            return (
+              <Panel key={subject.name} className="p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E]">
+                    <Icon className="size-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-sm font-bold text-[#26332E]">{subject.name}</p>
+                      <span className="text-xs font-semibold text-[#78827B]">{subject.mastery} · {subject.score}%</span>
+                    </div>
+                    <AnimatedProgress value={subject.completion} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+                  </div>
+                  <span className="font-[Nunito] text-xl font-extrabold text-[#26332E]">{subject.completion}%</span>
+                </div>
+              </Panel>
+            );
+          })}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// Momentum — streak, week, and today's missions together.
+// (merges Learning Streak · Daily Missions · Learning Calendar)
+function MomentumPanel() {
+  const [missions, setMissions] = useState(MISSIONS);
+  const toggle = (id) => setMissions((m) => m.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+  const done = missions.filter((m) => m.done).length;
+  return (
+    <Section>
+      <SectionHeading eyebrow="Keep the rhythm" title="Momentum" />
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
+        <Panel className="flex flex-col justify-between gap-6 bg-[#F4E9DE] p-6" >
+          <div className="flex items-center gap-4">
+            <Motion.div
+              animate={{ scale: [1, 1.08, 1] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+              className="flex size-14 items-center justify-center rounded-2xl bg-white text-[#C07A4C] shadow-sm"
+            >
+              <Flame className="size-8" />
+            </Motion.div>
+            <div>
+              <p className="font-[Nunito] text-3xl font-extrabold text-[#26332E]">{STUDENT.streak} days</p>
+              <p className="text-sm text-[#8a6b52]">Your longest streak yet. Two more to a new badge.</p>
+            </div>
+          </div>
+          <div className="flex justify-between">
+            {WEEK_TRACKER.map((d, i) => (
+              <div key={i} className="flex flex-col items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-[#8a6b52]">{d.day}</span>
+                <span className={cn(
+                  'flex size-8 items-center justify-center rounded-full',
+                  d.done ? 'bg-[#C07A4C] text-white' : 'border border-[#e2cbb6] text-transparent'
+                )}>
+                  <Flame className="size-4" />
+                </span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel className="p-5 sm:p-6">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">Today's missions</p>
+            <span className="text-xs font-semibold text-[#3F7D6E]">{done} / {missions.length} done</span>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {missions.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => toggle(m.id)}
+                className={cn(
+                  'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors',
+                  m.done ? 'border-[#cfe0d8] bg-[#E9F0EB]' : 'border-[#E7E3D9] bg-white hover:border-[#cfdbd4]'
+                )}
+              >
+                <span className={cn(
+                  'flex size-7 items-center justify-center rounded-full',
+                  m.done ? 'bg-[#3F7D6E] text-white' : 'border border-[#E7E3D9] text-[#a8afa8]'
+                )}>
+                  {m.done ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
+                </span>
+                <span className="flex-1">
+                  <span className={cn('block text-sm font-semibold', m.done ? 'text-[#2E5C50] line-through' : 'text-[#26332E]')}>{m.label}</span>
+                  <span className="text-xs text-[#78827B]">{m.progress}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </Section>
+  );
+}
+
+// Achievements — badges, standings, and rewards. (merges Achievements · Wall · Leaderboard · Rewards Shop)
+function AchievementsPanel() {
+  return (
+    <Section>
+      <SectionHeading eyebrow="Earned along the way" title="Achievements" />
+      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+        <Panel className="p-5 sm:p-6">
+          <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
+            {ACHIEVEMENTS.map((badge) => {
+              const Icon = badge.icon;
+              return (
+                <Tooltip key={badge.id}>
+                  <TooltipTrigger asChild>
+                    <div className="flex cursor-default flex-col items-center gap-2">
+                      <span className={cn(
+                        'flex size-14 items-center justify-center rounded-2xl',
+                        badge.earned ? 'bg-[#E9F0EB] text-[#3F7D6E]' : 'border border-dashed border-[#E7E3D9] text-[#c3c9c2]'
+                      )}>
+                        {badge.earned ? <Icon className="size-6" /> : <LockKeyhole className="size-5" />}
+                      </span>
+                      <span className="text-center text-[11px] font-semibold leading-tight text-[#5c655f]">{badge.name}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>{badge.earned ? badge.description : `Locked — ${badge.description}`}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+          <div className="mt-6 border-t border-[#E7E3D9] pt-5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold text-[#26332E]">Next: Genius Thinker</span>
+              <span className="text-xs text-[#78827B]">74 / 100 AI questions</span>
+            </div>
+            <AnimatedProgress value={74} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+          </div>
+        </Panel>
+
+        <Panel className="p-5 sm:p-6">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">Class standings</p>
+          <div className="mt-4 grid gap-1.5">
+            {LEADERBOARD.map((row) => {
+              const me = row.name === 'Koushik';
+              return (
+                <div
+                  key={row.rank}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl px-3 py-2',
+                    me ? 'bg-[#E9F0EB]' : 'bg-transparent'
+                  )}
+                >
+                  <span className="w-5 text-sm font-bold text-[#78827B]">{row.rank}</span>
+                  <span className="flex size-8 items-center justify-center rounded-full bg-[#FBF9F4] text-[11px] font-bold text-[#3F7D6E]">{row.initials}</span>
+                  <span className={cn('flex-1 text-sm', me ? 'font-bold text-[#2E5C50]' : 'font-medium text-[#26332E]')}>
+                    {row.name}{me && ' · you'}
+                  </span>
+                  <span className="text-xs font-semibold text-[#78827B]">{row.xp.toLocaleString()} XP</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-5 flex items-center gap-2 border-t border-[#E7E3D9] pt-4 text-xs text-[#78827B]">
+            <Coins className="size-4 text-[#C07A4C]" />
+            <span className="font-semibold text-[#26332E]">{STUDENT.xp.toLocaleString()} XP</span>
+            <span>to spend — next up: Premium Frame (1,200)</span>
+          </div>
+        </Panel>
+      </div>
+    </Section>
+  );
+}
+
+function ClosingNote() {
+  return (
+    <Section>
+      <div className="rounded-[22px] border border-[#E7E3D9] bg-[#FBF9F4] px-6 py-10 text-center">
+        <p className="mx-auto max-w-xl font-[Nunito] text-lg font-extrabold text-[#26332E] sm:text-xl">
+          Small steps, every day. That&apos;s the whole trick.
+        </p>
+        <p className="mt-2 text-sm text-[#78827B]">See you tomorrow, {STUDENT.name}.</p>
+      </div>
+    </Section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -3775,34 +4194,23 @@ export default function AITutorHomeScreen({
 }) {
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex w-full flex-col gap-8 p-4 sm:p-6 lg:p-8">
-        <HeroBanner
-          onStartLearning={onStartLearning}
-          onPracticeQuestions={onPracticeQuestions}
-          onAskAiTutor={onAskAiTutor}
-        />
-        <LearningJourney />
-        <QuickActions />
-        <ContinueWhereLeftOff onResume={onStartLearning} />
-        <AiRecommendedNext />
-        <ContinueLearning />
-        <DailyGoals />
-        <LearningModes />
-        <AiTutorPanel />
-        <SmartInsights />
-        <DailyMissions />
-        <SubjectExplorer onExploreSubject={onExploreSubject} />
-        <SubjectPerformance />
-        <LearningGames />
-        <ExamPreparationCenter />
-        <LearningStreak />
-        <FriendsLeaderboard />
-        <LearningCalendar />
-        <Achievements />
-        <RewardsShop />
-        <RecommendedForYou />
-        <AchievementWall />
-        <MotivationalFooter />
+      <div className="w-full bg-[#F4F1EA] font-[Inter,system-ui,sans-serif] text-[#26332E]">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 p-4 sm:p-6 lg:p-10">
+          <HeroBanner
+            onStartLearning={onStartLearning}
+            onPracticeQuestions={onPracticeQuestions}
+            onAskAiTutor={onAskAiTutor}
+          />
+          <TodayFocus onResume={onStartLearning} />
+          <WaysToStudy />
+          <AiTutorPanel />
+          <ContinueLearningCalm />
+          <SubjectExplorer onExploreSubject={onExploreSubject} />
+          <ProgressPanel />
+          <MomentumPanel />
+          <AchievementsPanel />
+          <ClosingNote />
+        </div>
       </div>
     </TooltipProvider>
   );
