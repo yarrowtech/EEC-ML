@@ -85,6 +85,8 @@ const studentMaterialRoutes = require('./routes/studentMaterialRoutes');
 const practicePaperRoutes = require('./routes/practicePaperRoutes');
 const practiceSectionRoutes = require('./routes/practiceSectionRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
+const paymentSettingsRoutes = require('./routes/paymentSettingsRoutes');
+const paymentWebhookController = require('./controllers/paymentWebhookController');
 const ChatThread = require('./models/ChatThread');
 const ChatMessage = require('./models/ChatMessage');
 const StudentUser = require('./models/StudentUser');
@@ -318,6 +320,8 @@ const requireOrganizationDomain = (req, res, next) => {
 };
 
 app.use('/api', generalApiLimiter);
+// Razorpay signs the exact request bytes; this must stay before express.json().
+app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '1mb' }), paymentWebhookController);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(tenantResolver);
@@ -421,6 +425,7 @@ app.use('/api/schools', writeHeavyApiLimiter, adminActionLogger, schoolRoutes);
 app.use('/api/school-registration', authApiLimiter, schoolRegistrationRoutes);
 app.use('/api/academic', writeHeavyApiLimiter, academicRoutes);
 app.use('/api/fees', feeRoutes);
+app.use('/api/settings/payment', writeHeavyApiLimiter, adminActionLogger, paymentSettingsRoutes);
 app.use('/api/reports', writeHeavyApiLimiter, reportRoutes);
 app.use('/api/timetable', writeHeavyApiLimiter, timetableRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -505,8 +510,21 @@ io.use(async (socket, next) => {
       if (!decoded.organizationId || String(decoded.organizationId) !== String(organization._id)) {
         return next(new Error('Organization mismatch'));
       }
-    } else if (decoded.organizationId) {
-      return next(new Error('Organization domain required'));
+    } else if (decoded.organizationId || decoded.schoolId) {
+      organization = decoded.organizationId
+        ? await Organization.findOne({ _id: decoded.organizationId, status: 'active' }).lean()
+        : null;
+      if (!organization && decoded.schoolId) {
+        organization = await Organization.findOne({ schoolId: decoded.schoolId, status: 'active' }).lean();
+      }
+      if (!organization) return next(new Error('Organization not found'));
+      const organizationMatches = decoded.organizationId
+        && String(decoded.organizationId) === String(organization._id);
+      const schoolMatches = decoded.schoolId
+        && String(decoded.schoolId) === String(organization.schoolId);
+      if (!organizationMatches && !schoolMatches) {
+        return next(new Error('Organization mismatch'));
+      }
     }
 
     socket.user = decoded;
@@ -775,7 +793,7 @@ io.on('connection', (socket) => {
 });
 
 const KEEP_ALIVE_ENABLED = process.env.KEEP_ALIVE_ENABLED !== 'false';
-const KEEP_ALIVE_INTERVAL_MS = Number(process.env.KEEP_ALIVE_INTERVAL_MS || 120000);
+const KEEP_ALIVE_INTERVAL_MS = Number(process.env.KEEP_ALIVE_INTERVAL_MS || 600000);
 
 const getDefaultHealthUrl = () => {
   if (HOST === '::') return `http://localhost:${PORT}/health`;
@@ -783,11 +801,16 @@ const getDefaultHealthUrl = () => {
   return `http://${HOST}:${PORT}/health`;
 };
 
+const getKeepAliveUrl = () => {
+  if (process.env.KEEP_ALIVE_URL) return process.env.KEEP_ALIVE_URL;
+  if (process.env.RENDER_EXTERNAL_URL) {
+    return new URL('/health', process.env.RENDER_EXTERNAL_URL).toString();
+  }
+  return getDefaultHealthUrl();
+};
+
 const pingKeepAliveUrl = () => {
-  const targetUrl =
-    process.env.KEEP_ALIVE_URL ||
-    process.env.RENDER_EXTERNAL_URL ||
-    getDefaultHealthUrl();
+  const targetUrl = getKeepAliveUrl();
 
   try {
     const parsedUrl = new URL(targetUrl);
@@ -813,11 +836,10 @@ const startServer = (host) => {
 
     if (KEEP_ALIVE_ENABLED && KEEP_ALIVE_INTERVAL_MS > 0) {
       pingKeepAliveUrl();
-      setInterval(pingKeepAliveUrl, KEEP_ALIVE_INTERVAL_MS);
+      const keepAliveTimer = setInterval(pingKeepAliveUrl, KEEP_ALIVE_INTERVAL_MS);
+      keepAliveTimer.unref();
       console.log(
-        `[keep-alive] Enabled. Interval=${KEEP_ALIVE_INTERVAL_MS}ms, URL=${
-          process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL_URL || getDefaultHealthUrl()
-        }`
+        `[keep-alive] Enabled. Interval=${KEEP_ALIVE_INTERVAL_MS}ms, URL=${getKeepAliveUrl()}`
       );
     }
   });

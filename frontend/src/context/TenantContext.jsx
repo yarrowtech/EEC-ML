@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 const DEFAULT_BRANDING = Object.freeze({
   name: 'Electronic Educare',
@@ -12,41 +12,55 @@ const DEFAULT_BRANDING = Object.freeze({
 });
 
 const TenantContext = createContext(null);
+const DEFAULT_FAVICON = '/logo_new.png';
 const isCssColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || ''));
+const resolveAssetUrl = (asset) => {
+  if (!asset) return '';
+  if (typeof asset === 'string') return asset.trim();
+  if (typeof asset === 'object') return asset.secure_url || asset.url || asset.path || '';
+  return '';
+};
 
 export function TenantProvider({ children }) {
   const [organization, setOrganization] = useState(null);
   const [isMainDomain, setIsMainDomain] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const requestSequence = useRef(0);
+
+  const loadTenant = useCallback(async (signal) => {
+    const requestId = ++requestSequence.current;
+    const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    const token = localStorage.getItem('token');
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBase}/api/tenant`, {
+        signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        throw new Error(response.status === 404 ? 'Organization not found' : 'Unable to load organization');
+      }
+      const payload = await response.json();
+      if (requestId !== requestSequence.current) return;
+      setOrganization(payload.organization || null);
+      setIsMainDomain(Boolean(payload.isMainDomain));
+    } catch (requestError) {
+      if (requestId === requestSequence.current && requestError.name !== 'AbortError') {
+        setError(requestError.message);
+      }
+    } finally {
+      if (requestId === requestSequence.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    let active = true;
-    const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-
-    fetch(`${apiBase}/api/tenant`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(response.status === 404 ? 'Organization not found' : 'Unable to load organization');
-        return response.json();
-      })
-      .then((payload) => {
-        if (!active) return;
-        setOrganization(payload.organization || null);
-        setIsMainDomain(Boolean(payload.isMainDomain));
-      })
-      .catch((requestError) => {
-        if (active && requestError.name !== 'AbortError') setError(requestError.message);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, []);
+    loadTenant(controller.signal);
+    return () => controller.abort();
+  }, [loadTenant]);
 
   const branding = useMemo(() => ({
     ...DEFAULT_BRANDING,
@@ -57,17 +71,18 @@ export function TenantProvider({ children }) {
     const root = document.documentElement;
     root.style.setProperty('--tenant-primary', isCssColor(branding.primaryColor) ? branding.primaryColor : DEFAULT_BRANDING.primaryColor);
     root.style.setProperty('--tenant-secondary', isCssColor(branding.secondaryColor) ? branding.secondaryColor : DEFAULT_BRANDING.secondaryColor);
-    document.title = branding.name;
+    document.title = String(branding.name || DEFAULT_BRANDING.name).trim() || DEFAULT_BRANDING.name;
 
     let favicon = document.querySelector("link[rel~='icon']");
-    if (branding.favicon) {
-      if (!favicon) {
-        favicon = document.createElement('link');
-        favicon.rel = 'icon';
-        document.head.appendChild(favicon);
-      }
-      favicon.href = branding.favicon;
+    const faviconUrl = resolveAssetUrl(branding.favicon) || resolveAssetUrl(branding.logo) || DEFAULT_FAVICON;
+    if (!favicon) {
+      favicon = document.createElement('link');
+      favicon.rel = 'icon';
+      document.head.appendChild(favicon);
     }
+    // The school logo can be PNG, JPEG, SVG, or a Cloudinary URL without an extension.
+    favicon.removeAttribute('type');
+    favicon.href = faviconUrl;
     root.dataset.tenantTheme = branding.theme;
   }, [branding]);
 
@@ -85,7 +100,8 @@ export function TenantProvider({ children }) {
     },
     theme: branding.theme,
     settings: branding.settings,
-  }), [branding, error, isMainDomain, loading, organization]);
+    refreshBranding: loadTenant,
+  }), [branding, error, isMainDomain, loadTenant, loading, organization]);
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
 }

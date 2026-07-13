@@ -60,6 +60,7 @@ describe('backend API bootstrap', () => {
     '../routes/student',
     '../routes/principalDashboardRoutes',
     '../routes/organizationRoutes',
+    '../routes/paymentSettingsRoutes',
   ];
 
   const apiPrefixes = [
@@ -114,6 +115,7 @@ describe('backend API bootstrap', () => {
     '/api/practice-papers',
     '/api/practice-sections',
     '/api/uploads',
+    '/api/settings/payment',
   ];
 
   const mockCommonDependencies = () => {
@@ -137,6 +139,10 @@ describe('backend API bootstrap', () => {
         return router;
       });
     });
+
+    jest.doMock('../controllers/paymentWebhookController', () => jest.fn((_req, res) => {
+      res.status(200).json({ received: true });
+    }));
 
     jest.doMock('mongoose', () => ({
       connect: mongooseConnect,

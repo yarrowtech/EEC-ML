@@ -151,6 +151,8 @@ describe('logger middleware', () => {
         body: {
           username: 'alice',
           password: 'super-secret',
+          keySecret: 'razorpay-secret',
+          webhookSecret: 'webhook-secret',
           nested: {
             apiKey: 'key',
             notes: 'a'.repeat(510),
@@ -174,6 +176,8 @@ describe('logger middleware', () => {
           body: {
             username: 'alice',
             password: '[redacted]',
+            keySecret: '[redacted]',
+            webhookSecret: '[redacted]',
             nested: {
               apiKey: '[redacted]',
               notes: `${'a'.repeat(500)}...[truncated]`,

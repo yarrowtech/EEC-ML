@@ -23,6 +23,16 @@ const buildTokenScope = () => {
 
 const normalizeUrl = (url) => String(url || '').trim();
 
+const withStudentAuthorization = (fetchOptions) => {
+  const headers = new Headers(fetchOptions?.headers || {});
+  const storage = getStorage();
+  const token = storage?.getItem('token') || '';
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return { ...fetchOptions, headers };
+};
+
 const buildCacheKey = (url) => `student-api-cache:${buildTokenScope()}:${normalizeUrl(url)}`;
 
 const readEntry = (key) => {
@@ -87,7 +97,7 @@ export const fetchCachedJson = async (url, options = {}) => {
     }
   }
 
-  const response = await fetch(normalizedUrl, fetchOptions);
+  const response = await fetch(normalizedUrl, withStudentAuthorization(fetchOptions));
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {
@@ -103,4 +113,3 @@ export const fetchCachedJson = async (url, options = {}) => {
   writeEntry(key, payload, ttlMs);
   return { data: payload, fromCache: false };
 };
-

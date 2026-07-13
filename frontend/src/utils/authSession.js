@@ -1,5 +1,14 @@
 export const AUTH_NOTICE_KEY = 'auth_notice';
 
+const resetBrowserBranding = () => {
+  document.title = 'Electronic Educare';
+  const favicon = document.querySelector("link[rel~='icon']");
+  if (favicon) {
+    favicon.removeAttribute('type');
+    favicon.setAttribute('href', '/logo_new.png');
+  }
+};
+
 export const AUTH_NOTICE = Object.freeze({
   EXPIRED: 'expired',
   LOGGED_OUT: 'logged_out',
@@ -8,10 +17,12 @@ export const AUTH_NOTICE = Object.freeze({
 export const clearAuthData = ({ clearAllLocalStorage = false } = {}) => {
   if (clearAllLocalStorage) {
     localStorage.clear();
+    resetBrowserBranding();
     return;
   }
   localStorage.removeItem('token');
   localStorage.removeItem('userType');
+  resetBrowserBranding();
 };
 
 export const parseJwtPayload = (token) => {

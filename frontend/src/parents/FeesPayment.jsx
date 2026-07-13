@@ -155,14 +155,13 @@ const FeesPayment = () => {
         throw new Error('Enter a valid amount');
       }
 
-      const orderRes = await fetch(`${API_BASE}/api/fees/parent/razorpay/order`, {
+      const orderRes = await fetch(`${API_BASE}/api/fees/${invoice._id}/pay`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          invoiceId: invoice._id,
           amount: paymentAmount,
         }),
       });
@@ -176,7 +175,7 @@ const FeesPayment = () => {
         throw new Error('Unable to load Razorpay');
       }
 
-      const razorpayKey = orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID;
+      const razorpayKey = orderData.keyId;
       if (!razorpayKey) {
         throw new Error('Razorpay key is missing');
       }
@@ -190,15 +189,13 @@ const FeesPayment = () => {
         order_id: orderData.order?.id,
         handler: async (response) => {
           try {
-            const verifyRes = await fetch(`${API_BASE}/api/fees/parent/razorpay/verify`, {
+            const verifyRes = await fetch(`${API_BASE}/api/fees/payments/razorpay/verify`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
-                invoiceId: invoice._id,
-                amount: paymentAmount,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
@@ -477,4 +474,3 @@ const FeesPayment = () => {
 };
 
 export default FeesPayment;
-

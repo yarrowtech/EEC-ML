@@ -8,7 +8,12 @@ module.exports = function validateTokenTenant(req, res, decoded) {
   }
 
   const tokenOrganizationId = decoded?.organizationId;
-  if (!tokenOrganizationId || String(tokenOrganizationId) !== String(req.organizationId)) {
+  const organizationMatches = tokenOrganizationId
+    && String(tokenOrganizationId) === String(req.organizationId);
+  const schoolMatches = decoded?.schoolId
+    && req.organization?.schoolId
+    && String(decoded.schoolId) === String(req.organization.schoolId);
+  if (!organizationMatches && !schoolMatches) {
     res.status(403).json({ error: 'This account does not belong to this organization' });
     return false;
   }

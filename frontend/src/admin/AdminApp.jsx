@@ -28,6 +28,7 @@ import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import Support from './pages/Support';
 import NoticeManagement from './pages/NoticeManagement';
 import AdminSettings from './pages/AdminSettings';
+import PaymentGatewaySettings from './pages/PaymentGatewaySettings';
 import StudentPromotion from './pages/StudentPromotion';
 import ReportCardManagement from './pages/ReportCardManagement';
 import HolidayList from './pages/HolidayList';
@@ -265,12 +266,13 @@ const AdminApp = () => {
       'Holiday List',
       'HR',
       'Support',
+      'Settings',
     ],
     []
   );
 
   const menuItems = useMemo(() => {
-    if (isSuperAdmin) return ADMIN_MENU_ITEMS;
+    if (isSuperAdmin) return ADMIN_MENU_ITEMS.filter((item) => item.scope !== 'school');
     const filteredMenuItems = ADMIN_MENU_ITEMS.filter(
       (item) =>
         item.scope !== 'super' &&
@@ -361,6 +363,7 @@ const AdminApp = () => {
           <Route path="notices" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
+          <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />
 
           {/* 404 catch-all — redirect unknown /admin/* paths to dashboard */}

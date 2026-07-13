@@ -77,3 +77,15 @@ server {
 ```
 
 Use a wildcard TLS certificate and set Express `TRUST_PROXY` to match the trusted Nginx hop. Never accept a client-provided organization ID as authority; hostname resolution and the signed token are the authorities.
+
+## Render free instance keep-alive
+
+The backend sends a health request every 10 minutes. On Render it automatically targets `RENDER_EXTERNAL_URL`; elsewhere set `KEEP_ALIVE_URL` explicitly.
+
+```env
+KEEP_ALIVE_ENABLED=true
+KEEP_ALIVE_INTERVAL_MS=600000
+# KEEP_ALIVE_URL=https://your-service.onrender.com/health
+```
+
+Set `KEEP_ALIVE_ENABLED=false` to disable it. The timer is unreferenced so it does not block graceful process shutdown.

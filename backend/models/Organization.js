@@ -20,6 +20,21 @@ const organizationSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'suspended'], default: 'active', index: true },
     settings: { type: mongoose.Schema.Types.Mixed, default: {} },
     subscription: { type: mongoose.Schema.Types.Mixed, default: {} },
+    paymentGateway: {
+      provider: { type: String, enum: ['razorpay'], default: 'razorpay' },
+      enabled: { type: Boolean, default: false },
+      mode: { type: String, enum: ['test', 'live'], default: 'test' },
+      razorpay: {
+        keyId: { type: String, trim: true, default: '' },
+        // Encrypted AES-256-GCM envelopes. Explicit selection prevents accidental leaks.
+        keySecret: { type: String, default: '', select: false },
+        webhookSecret: { type: String, default: '', select: false },
+        accountEmail: { type: String, trim: true, lowercase: true, default: '' },
+        accountName: { type: String, trim: true, default: '' },
+        connectedAt: { type: Date, default: null },
+        lastVerifiedAt: { type: Date, default: null },
+      },
+    },
     customDomains: [{ type: String, lowercase: true, trim: true }],
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null, index: true },
   },

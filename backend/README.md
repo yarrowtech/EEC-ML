@@ -1,5 +1,7 @@
 # Backend (Express API)
 
+See [multi-tenant Razorpay payments](../docs/multi-tenant-payments.md) for per-school payment setup, migration, webhooks, and key rotation.
+
 ## Setup
 
 1. Copy `.env.example` to `.env`

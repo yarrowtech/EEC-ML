@@ -26,10 +26,11 @@ const getPasswordStrength = (pwd) => {
 };
 
 const LoginForm = () => {
-  const { name: organizationName, logo, colors } = useTenant();
+  const { name: organizationName, logo, colors, refreshBranding } = useTenant();
   const [showPass, setShowPass] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [resetUserType, setResetUserType] = useState('');
+  const [resetTenantToken, setResetTenantToken] = useState('');
   const [rememberMeDaysLeft, setRememberMeDaysLeft] = useState(REMEMBER_ME_DAYS);
   const [formData, setFormData] = useState(() => {
     // Restore saved username if Remember Me was set
@@ -211,7 +212,8 @@ const LoginForm = () => {
         const resetRes = await fetch(`${API_BASE}${resetConfig.resetEndpoint}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...(resetTenantToken ? { Authorization: `Bearer ${resetTenantToken}` } : {}),
           },
           body: JSON.stringify({
             username: sanitizedUsername,
@@ -227,7 +229,8 @@ const LoginForm = () => {
         const loginRes = await fetch(`${API_BASE}${resetConfig.loginEndpoint}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...(resetTenantToken ? { Authorization: `Bearer ${resetTenantToken}` } : {}),
           },
           body: JSON.stringify({
             username: sanitizedUsername,
@@ -242,6 +245,7 @@ const LoginForm = () => {
         const loginData = await loginRes.json();
         localStorage.setItem('token', loginData.token);
         localStorage.setItem('userType', resetUserType);
+        await refreshBranding();
         toast.success('Login successful');
         navigate(resetConfig.redirect);
         return;
@@ -267,6 +271,7 @@ const LoginForm = () => {
       if (data?.requiresPasswordReset) {
         setResetMode(true);
         setResetUserType(data.userType);
+        setResetTenantToken(data.resetTenantToken || '');
         setFormData((prev) => ({
           ...prev,
           username: data.username || prev.username,
@@ -281,6 +286,7 @@ const LoginForm = () => {
 
       localStorage.setItem('token', data.token);
       localStorage.setItem('userType', data.userType);
+      await refreshBranding();
 
       // Persist Remember Me — store username + expiry
       if (formData.rememberMe) {

@@ -10,6 +10,8 @@
     "security:suite": "node scripts/productionSecurityAttackSuite.js",
     "tenant:migrate": "node scripts/migrateOrganizations.js",
     "tenant:migrate:apply": "node scripts/migrateOrganizations.js --apply",
+    "payments:migrate": "node scripts/migratePaymentGateways.js",
+    "payments:migrate:apply": "node scripts/migratePaymentGateways.js --apply",
     "push:keys": "node scripts/generateVapidKeys.js",
     "start": "node index.js",
     "dev": "nodemon index.js"

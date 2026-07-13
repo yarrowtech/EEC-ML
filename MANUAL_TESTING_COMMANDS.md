@@ -462,6 +462,19 @@ npm run test:coverage
 
 ---
 
+## Multi-tenant Razorpay checklist
+
+1. Set `PAYMENT_ENCRYPTION_KEY` to the output of `openssl rand -base64 32`, restart the backend, and run `cd backend && npm run payments:migrate` before `npm run payments:migrate:apply`.
+2. Sign in as a school administrator on the school's tenant domain. Open **Settings → Payment Gateway** and confirm that invalid Test/Live key combinations cannot be saved.
+3. Save valid Razorpay test credentials. Reload the page and confirm the Key ID remains visible while both secrets remain blank and cannot be recovered from API responses or logs.
+4. Use **Test Connection**, then pay one due invoice from both the student and parent portals. Confirm the checkout Key ID is the school's key, the invoice/receipt updates once, and a retry does not duplicate the payment.
+5. Send signed `payment.captured`, `payment.failed`, and `order.paid` test webhooks to `/api/payments/webhook`; repeat each delivery and confirm idempotency. Confirm an invalid signature returns 401.
+6. Configure two test organizations with different Razorpay accounts. Confirm each tenant's order uses its own Key ID and that cross-tenant invoice IDs return 403/404.
+7. As super admin, open **Organizations → Payment Status**. Confirm provider, enabled state, verification time, transaction totals, and subscription status are visible, but secrets are not.
+8. Disconnect the gateway and confirm online checkout is blocked, credentials are removed, and prior receipts/audit records remain.
+
+---
+
 ## Summary
 
 **Most Important Commands:**

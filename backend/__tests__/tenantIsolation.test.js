@@ -1,7 +1,12 @@
 const mongoose = require('../utils/registerTenantPlugin');
+const jwt = require('jsonwebtoken');
 const { runWithTenant } = require('../utils/tenantContext');
 const validateTokenTenant = require('../middleware/validateTokenTenant');
-const { createSlug, RESERVED_SLUGS } = require('../routes/organizationRoutes');
+const { readAuthenticatedTenantScope } = require('../utils/authTenantScope');
+const {
+  createSlug,
+  RESERVED_SLUGS,
+} = require('../routes/organizationRoutes');
 
 const runPreHook = (schema, operation, context, args = []) => new Promise((resolve, reject) => {
   schema.s.hooks.execPre(operation, context, args, (error) => (error ? reject(error) : resolve()));
@@ -76,8 +81,37 @@ describe('tenant isolation', () => {
     expect(status).toHaveBeenCalledWith(403);
   });
 
+  test('a signed legacy school token matches its resolved organization', () => {
+    const schoolId = new mongoose.Types.ObjectId();
+    const status = jest.fn().mockReturnThis();
+    const response = { status, json: jest.fn() };
+    const request = {
+      organizationId: tenantA,
+      organization: { _id: tenantA, schoolId },
+    };
+    expect(validateTokenTenant(request, response, { schoolId })).toBe(true);
+    expect(status).not.toHaveBeenCalled();
+  });
+
   test('organization slugs are normalized and reserved names are blocked', () => {
     expect(createSlug("St. Xavier's School")).toBe('xaviers');
     expect(RESERVED_SLUGS.has(createSlug('Admin'))).toBe(true);
+  });
+
+  test('school branding scope is accepted only from a signed login token', () => {
+    const previousSecret = process.env.JWT_SECRET;
+    process.env.JWT_SECRET = 'tenant-branding-test-secret';
+    const token = jwt.sign({ organizationId: tenantA, schoolId: tenantB }, process.env.JWT_SECRET);
+    const request = { get: jest.fn(() => `Bearer ${token}`) };
+    const invalidRequest = { get: jest.fn(() => 'Bearer not-a-valid-token') };
+
+    expect(readAuthenticatedTenantScope(request)).toEqual({
+      organizationId: String(tenantA),
+      schoolId: String(tenantB),
+    });
+    expect(readAuthenticatedTenantScope(invalidRequest)).toBeNull();
+
+    if (previousSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previousSecret;
   });
 });

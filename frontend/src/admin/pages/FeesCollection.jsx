@@ -387,7 +387,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         throw new Error('Unable to load Razorpay checkout');
       }
 
-      const razorpayKey = orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID;
+      const razorpayKey = orderData.keyId;
       if (!razorpayKey) {
         throw new Error('Razorpay key is missing');
       }

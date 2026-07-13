@@ -21,7 +21,8 @@ import {
   LifeBuoy,
   Bell,
   ArrowUpCircle,
-  CalendarDays
+  CalendarDays,
+  CreditCard
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -161,6 +162,17 @@ export const ADMIN_MENU_ITEMS = [
     icon: LifeBuoy,
     label: 'Support',
     path: '/admin/support'
+  },
+  {
+    icon: Settings,
+    label: 'Settings',
+    path: '/admin/settings',
+    scope: 'school',
+    hasSubmenu: true,
+    submenu: [
+      { icon: UserRound, label: 'Profile & School', path: '/admin/settings' },
+      { icon: CreditCard, label: 'Payment Gateway', path: '/admin/settings/payment-gateway' }
+    ]
   },
   {
     icon: Building2,

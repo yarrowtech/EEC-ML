@@ -1,5 +1,7 @@
 const Organization = require('../models/Organization');
 const { runWithTenant } = require('../utils/tenantContext');
+const { readAuthenticatedTenantScope } = require('../utils/authTenantScope');
+const { ensureOrganizationForSchool } = require('../services/organizationProvisioningService');
 
 const normalizeHostname = (hostname = '') => String(hostname)
   .trim()
@@ -32,8 +34,40 @@ const tenantResolver = async (req, res, next) => {
   const rootDomain = getRootDomain();
 
   if (isMainHostname(hostname, rootDomain)) {
-    req.isMainDomain = true;
-    return runWithTenant(null, next);
+    try {
+      const scope = readAuthenticatedTenantScope(req);
+      let organization = null;
+      if (scope?.organizationId) {
+        organization = await Organization.findOne({
+          _id: scope.organizationId,
+          status: 'active',
+        }).lean();
+      }
+      if (!organization && scope?.schoolId) {
+        organization = await Organization.findOne({
+          schoolId: scope.schoolId,
+          status: 'active',
+        }).lean();
+      }
+      if (!organization && scope?.schoolId) {
+        organization = await ensureOrganizationForSchool({
+          schoolId: scope.schoolId,
+          preferredOrganizationId: scope.organizationId,
+        });
+      }
+
+      if (organization) {
+        req.organization = organization;
+        req.organizationId = organization._id;
+        req.isMainDomain = false;
+        return runWithTenant(organization, next);
+      }
+
+      req.isMainDomain = true;
+      return runWithTenant(null, next);
+    } catch (error) {
+      return next(error);
+    }
   }
 
   const slug = resolveSlug(hostname, rootDomain);

@@ -21,7 +21,8 @@ const navLinks = [
   { to: '/super-admin/issues', label: 'Issues', icon: AlertTriangle },
   { to: '/super-admin/operations', label: 'Operations', icon: Activity },
   { to: '/super-admin/active-schools', label: 'Active Schools', icon: Building2 },
-  { to: '/super-admin/organizations', label: 'Organizations', icon: Building2 }
+  { to: '/super-admin/organizations', label: 'Organizations', icon: Building2 },
+  { to: '/super-admin/organizations/payment-status', label: 'Payment Status', icon: Activity }
 ];
 
 const SuperAdminLayout = ({ children, sidebarCollapsed, onToggleSidebar, insights, profile }) => {

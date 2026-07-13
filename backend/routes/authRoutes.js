@@ -20,6 +20,13 @@ const normalize = (value = '') => String(value).trim().toLowerCase();
 
 const signToken = (payload, expiresIn = JWT_EXPIRES_IN) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
 
+const signFirstLoginTenantToken = (account) => signToken({
+  purpose: 'first_login_reset',
+  organizationId: account.organizationId || null,
+  schoolId: account.schoolId || null,
+  campusId: account.campusId || null,
+}, '10m');
+
 const parseRememberMe = (value) => value === true || value === 'true' || value === 1 || value === '1';
 
 const runInBackground = (task) => {
@@ -43,7 +50,12 @@ const tryAdmin = async ({ admin, password, rememberMe }) => {
     }
   }
   if (admin.role === 'admin' && !admin.lastLoginAt) {
-    return { requiresPasswordReset: true, username: admin.username, userType: 'Admin' };
+    return {
+      requiresPasswordReset: true,
+      username: admin.username,
+      userType: 'Admin',
+      resetTenantToken: signFirstLoginTenantToken(admin),
+    };
   }
 
   runInBackground(() =>
@@ -78,7 +90,12 @@ const tryTeacher = async ({ user, password, rememberMe }) => {
     });
   }
   if (!user.lastLoginAt) {
-    return { requiresPasswordReset: true, username: user.username, userType: 'Teacher' };
+    return {
+      requiresPasswordReset: true,
+      username: user.username,
+      userType: 'Teacher',
+      resetTenantToken: signFirstLoginTenantToken(user),
+    };
   }
 
   runInBackground(() =>
@@ -104,7 +121,12 @@ const tryStudent = async ({ user, password, rememberMe }) => {
   }
   if (!user.campusId) return { errorStatus: 400, error: 'campusId is required for this account', userType: 'Student' };
   if (!user.lastLoginAt) {
-    return { requiresPasswordReset: true, username: user.username || user.studentCode, userType: 'Student' };
+    return {
+      requiresPasswordReset: true,
+      username: user.username || user.studentCode,
+      userType: 'Student',
+      resetTenantToken: signFirstLoginTenantToken(user),
+    };
   }
   if (!user.studentCode) {
     runInBackground(() =>
@@ -128,7 +150,12 @@ const tryParent = async ({ user, password, rememberMe }) => {
   if (!(await bcrypt.compare(password, user.password))) return null;
   if (!user.campusId) return { errorStatus: 400, error: 'campusId is required for this account', userType: 'Parent' };
   if (!user.lastLoginAt) {
-    return { requiresPasswordReset: true, username: user.username, userType: 'Parent' };
+    return {
+      requiresPasswordReset: true,
+      username: user.username,
+      userType: 'Parent',
+      resetTenantToken: signFirstLoginTenantToken(user),
+    };
   }
 
   const token = signToken({

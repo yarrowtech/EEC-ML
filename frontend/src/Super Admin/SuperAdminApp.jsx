@@ -11,6 +11,7 @@ import IDPass from './pages/IDPass';
 import ActiveSchools from './pages/ActiveSchools';
 import RequestDetails from './pages/RequestDetails';
 import Organizations from './pages/Organizations';
+import PaymentStatus from './pages/PaymentStatus';
 import {
   initialSchoolRequests
 } from './mockData';
@@ -1253,6 +1254,7 @@ const SuperAdminApp = () => {
           }
         />
         <Route path="organizations" element={<Organizations />} />
+        <Route path="organizations/payment-status" element={<PaymentStatus />} />
         <Route index element={<Navigate to="/super-admin/overview" replace />} />
         <Route path="*" element={<Navigate to="/super-admin/overview" replace />} />
       </Routes>

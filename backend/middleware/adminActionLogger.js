@@ -2,13 +2,23 @@ const { logger } = require('../utils/logger');
 
 const SENSITIVE_KEYS = new Set([
   'password',
-  'newPassword',
-  'currentPassword',
+  'newpassword',
+  'currentpassword',
   'token',
   'authorization',
   'secret',
-  'apiKey',
+  'apikey',
+  'keysecret',
+  'webhooksecret',
 ]);
+
+const isSensitiveKey = (key) => {
+  const normalized = String(key || '').toLowerCase();
+  return SENSITIVE_KEYS.has(normalized)
+    || normalized.endsWith('password')
+    || normalized.endsWith('secret')
+    || normalized.endsWith('token');
+};
 
 const sanitizeValue = (value, depth = 0) => {
   if (depth > 3) return '[truncated]';
@@ -21,7 +31,7 @@ const sanitizeValue = (value, depth = 0) => {
   if (!value || typeof value !== 'object') return value;
   const output = {};
   Object.entries(value).forEach(([key, val]) => {
-    if (SENSITIVE_KEYS.has(String(key))) {
+    if (isSensitiveKey(key)) {
       output[key] = '[redacted]';
       return;
     }

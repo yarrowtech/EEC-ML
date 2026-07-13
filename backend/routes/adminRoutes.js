@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
+const Organization = require('../models/Organization');
 const adminAuth = require('../middleware/adminAuth');
 const rateLimit = require('../middleware/rateLimit');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
@@ -455,6 +456,19 @@ router.put('/settings', adminAuth, async (req, res) => {
 
         await school.save();
         updatedSchool = school.toObject();
+
+        const schoolLogo = school.logo?.secure_url || school.logo?.url || '';
+        await Organization.findOneAndUpdate(
+          { schoolId: school._id },
+          {
+            $set: {
+              name: school.name,
+              logo: schoolLogo,
+              favicon: schoolLogo,
+            },
+          },
+          { runValidators: true }
+        );
       }
     }
 

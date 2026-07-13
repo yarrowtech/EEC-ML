@@ -3,10 +3,14 @@ const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const authParent = require('../middleware/authParent');
 const authStudent = require('../middleware/authStudent');
+const authAnyUser = require('../middleware/authAnyUser');
+const paymentGatewayResolver = require('../middleware/paymentGatewayResolver');
 
 const FeeStructure = require('../models/FeeStructure');
 const FeeInvoice = require('../models/FeeInvoice');
 const FeePayment = require('../models/FeePayment');
+const Payment = require('../models/Payment');
+const PaymentAudit = require('../models/PaymentAudit');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const ClassModel = require('../models/Class');
@@ -21,6 +25,7 @@ const {
   verifyRazorpaySignature,
   buildTransactionId,
 } = require('../utils/paymentGatewayService');
+const { capturePayment } = require('../services/paymentLifecycleService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 
@@ -925,7 +930,7 @@ router.get('/payments/:paymentId/receipt', adminAuth, async (req, res) => {
   }
 });
 
-router.post('/admin/razorpay/order', adminAuth, async (req, res) => {
+router.post('/admin/razorpay/order', adminAuth, paymentGatewayResolver, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -977,6 +982,7 @@ router.post('/admin/razorpay/order', adminAuth, async (req, res) => {
     const amountPaise = Math.round(paymentAmount * 100);
     const receipt = buildRazorpayReceipt('adminfee', invoiceId);
     const { order, keyId } = await createRazorpayOrder({
+      credentials: req.paymentGateway,
       amountPaise,
       receipt,
       notes: {
@@ -985,6 +991,23 @@ router.post('/admin/razorpay/order', adminAuth, async (req, res) => {
         source: 'admin',
         note: String(notes || '').trim().slice(0, 120),
       },
+    });
+
+    const payment = await Payment.create({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      studentId: refreshedInvoice.studentId,
+      feeId: refreshedInvoice._id,
+      amount: paymentAmount,
+      providerOrderId: order.id,
+      initiatedByType: 'admin',
+      initiatedById: req.admin?.id || null,
+    });
+    await PaymentAudit.create({
+      organizationId: req.paymentGateway.organizationId,
+      action: 'payment.order_created',
+      userId: req.admin?.id || null,
+      metadata: { paymentId: payment._id, feeId: refreshedInvoice._id, providerOrderId: order.id, amount: paymentAmount, actorType: 'admin' },
     });
 
     res.json({
@@ -1001,7 +1024,7 @@ router.post('/admin/razorpay/order', adminAuth, async (req, res) => {
   }
 });
 
-router.post('/admin/razorpay/verify', adminAuth, async (req, res) => {
+router.post('/admin/razorpay/verify', adminAuth, paymentGatewayResolver, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -1010,8 +1033,6 @@ router.post('/admin/razorpay/verify', adminAuth, async (req, res) => {
 
     const {
       invoiceId,
-      amount,
-      notes,
       razorpay_order_id: orderId,
       razorpay_payment_id: paymentId,
       razorpay_signature: signature,
@@ -1040,6 +1061,7 @@ router.post('/admin/razorpay/verify', adminAuth, async (req, res) => {
     await applyLateFeeToInvoiceIfEligible({ invoice, schoolId, structureCache: new Map() });
 
     const isValidSignature = verifyRazorpaySignature({
+      keySecret: req.paymentGateway.keySecret,
       orderId,
       paymentId,
       signature,
@@ -1048,65 +1070,28 @@ router.post('/admin/razorpay/verify', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
-    const existingPayment = await FeePayment.findOne({
+    const paymentIntent = await Payment.findOne({
+      organizationId: req.paymentGateway.organizationId,
       schoolId,
-      $or: [{ gatewayPaymentId: paymentId }, { gatewayOrderId: orderId }],
-    }).lean();
-
-    if (existingPayment) {
-      return res.json({
-        success: true,
-        message: 'Payment already verified',
-        payment: existingPayment,
-        invoice,
-      });
-    }
-
-    const paymentAmount = Number(amount);
-    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
-      return res.status(400).json({ error: 'Valid payment amount is required' });
-    }
-
-    const balance = Math.max(
-      0,
-      Number(invoice.totalAmount || 0) - Number(invoice.discountAmount || 0) - Number(invoice.paidAmount || 0)
-    );
-    if (paymentAmount > balance) {
-      return res.status(400).json({ error: 'Payment amount exceeds balance' });
-    }
-
-    invoice.paidAmount = Number(invoice.paidAmount || 0) + paymentAmount;
-    recomputeInvoiceStatus(invoice);
-    await invoice.save();
-
-    const payment = await FeePayment.create({
-      schoolId,
-      invoiceId: invoice._id,
-      studentId: invoice.studentId,
-      transactionId: buildTransactionId('ADM'),
-      amount: paymentAmount,
-      currency: 'INR',
-      method: 'razorpay',
-      notes: notes ? String(notes).trim() : undefined,
-      paidOn: new Date(),
-      initiatedByType: 'admin',
-      initiatedById: req.admin?.id || null,
-      gateway: 'razorpay',
-      gatewayOrderId: orderId,
-      gatewayPaymentId: paymentId,
-      gatewaySignature: signature,
-      gatewayStatus: 'captured',
-      metadata: {
-        source: 'admin_online',
-      },
+      feeId: invoice._id,
+      providerOrderId: orderId,
     });
+    if (!paymentIntent) return res.status(404).json({ error: 'Payment order not found' });
 
-    res.json({
+    const captured = await capturePayment({
+      payment: paymentIntent,
+      providerPaymentId: paymentId,
+      providerSignature: signature,
+      source: 'admin_callback',
+      userId: req.admin?.id || null,
+    });
+    return res.json({
       success: true,
       message: 'Payment verified and captured',
-      payment,
-      invoice,
+      payment: captured.receipt,
+      invoice: captured.invoice,
     });
+
   } catch (err) {
     res.status(400).json({ error: err.message || 'Unable to verify payment' });
   }
@@ -1736,7 +1721,7 @@ router.get('/parent/invoices', authParent, async (req, res) => {
   }
 });
 
-router.post('/parent/razorpay/order', authParent, async (req, res) => {
+router.post('/parent/razorpay/order', authParent, paymentGatewayResolver, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)
@@ -1792,12 +1777,30 @@ router.post('/parent/razorpay/order', authParent, async (req, res) => {
     const amountPaise = Math.round(paymentAmount * 100);
     const receipt = buildRazorpayReceipt('parentfee', invoiceId);
     const { order, keyId } = await createRazorpayOrder({
+      credentials: req.paymentGateway,
       amountPaise,
       receipt,
       notes: {
         invoiceId: String(invoiceId),
         studentId: String(refreshedInvoice.studentId),
       },
+    });
+
+    const payment = await Payment.create({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      studentId: refreshedInvoice.studentId,
+      feeId: refreshedInvoice._id,
+      amount: paymentAmount,
+      providerOrderId: order.id,
+      initiatedByType: 'parent',
+      initiatedById: parent._id,
+    });
+    await PaymentAudit.create({
+      organizationId: req.paymentGateway.organizationId,
+      action: 'payment.order_created',
+      userId: parent._id,
+      metadata: { paymentId: payment._id, feeId: refreshedInvoice._id, providerOrderId: order.id, amount: paymentAmount, actorType: 'parent' },
     });
 
     res.json({
@@ -1814,7 +1817,7 @@ router.post('/parent/razorpay/order', authParent, async (req, res) => {
   }
 });
 
-router.post('/parent/razorpay/verify', authParent, async (req, res) => {
+router.post('/parent/razorpay/verify', authParent, paymentGatewayResolver, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)
@@ -1831,7 +1834,6 @@ router.post('/parent/razorpay/verify', authParent, async (req, res) => {
 
     const {
       invoiceId,
-      amount,
       razorpay_order_id: orderId,
       razorpay_payment_id: paymentId,
       razorpay_signature: signature,
@@ -1858,6 +1860,7 @@ router.post('/parent/razorpay/verify', authParent, async (req, res) => {
     await applyLateFeeToInvoiceIfEligible({ invoice, schoolId, structureCache: new Map() });
 
     const isValidSignature = verifyRazorpaySignature({
+      keySecret: req.paymentGateway.keySecret,
       orderId,
       paymentId,
       signature,
@@ -1866,70 +1869,160 @@ router.post('/parent/razorpay/verify', authParent, async (req, res) => {
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
-    const existingPayment = await FeePayment.findOne({
+    const paymentIntent = await Payment.findOne({
+      organizationId: req.paymentGateway.organizationId,
       schoolId,
-      $or: [{ gatewayPaymentId: paymentId }, { gatewayOrderId: orderId }],
-    }).lean();
-
-    if (existingPayment) {
-      return res.json({
-        success: true,
-        message: 'Payment already verified',
-        payment: existingPayment,
-        invoice,
-      });
-    }
-
-    const paymentAmount = Number(amount);
-    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
-      return res.status(400).json({ error: 'Valid payment amount is required' });
-    }
-
-    const balance = Math.max(
-      0,
-      Number(invoice.totalAmount || 0) - Number(invoice.discountAmount || 0) - Number(invoice.paidAmount || 0)
-    );
-    if (paymentAmount > balance) {
-      return res.status(400).json({ error: 'Payment amount exceeds balance' });
-    }
-
-    invoice.paidAmount = Number(invoice.paidAmount || 0) + paymentAmount;
-    recomputeInvoiceStatus(invoice);
-    await invoice.save();
-
-    const payment = await FeePayment.create({
-      schoolId,
-      invoiceId: invoice._id,
-      studentId: invoice.studentId,
-      transactionId: buildTransactionId('PRT'),
-      amount: paymentAmount,
-      currency: 'INR',
-      method: 'razorpay',
-      paidOn: new Date(),
-      initiatedByType: 'parent',
-      initiatedById: parent._id,
-      gateway: 'razorpay',
-      gatewayOrderId: orderId,
-      gatewayPaymentId: paymentId,
-      gatewaySignature: signature,
-      gatewayStatus: 'captured',
-      metadata: {
-        source: 'parent_online',
-      },
+      feeId: invoice._id,
+      providerOrderId: orderId,
     });
+    if (!paymentIntent) return res.status(404).json({ error: 'Payment order not found' });
 
-    res.json({
+    const captured = await capturePayment({
+      payment: paymentIntent,
+      providerPaymentId: paymentId,
+      providerSignature: signature,
+      source: 'parent_callback',
+      userId: parent._id,
+    });
+    return res.json({
       success: true,
       message: 'Payment verified and captured',
-      payment,
-      invoice,
+      payment: captured.receipt,
+      invoice: captured.invoice,
     });
+
   } catch (err) {
     res.status(400).json({ error: err.message || 'Unable to verify payment' });
   }
 });
 
-// Student fees (view-only)
+const authorizeOnlinePayment = async ({ req, invoice, schoolId }) => {
+  const actorType = String(req.user?.userType || req.user?.type || '').toLowerCase();
+  if (actorType === 'student') {
+    return String(invoice.studentId) === String(req.user?.id)
+      ? { type: 'student', id: req.user.id }
+      : null;
+  }
+  if (actorType === 'parent') {
+    const parent = await ParentUser.findOne({ _id: req.user?.id, schoolId })
+      .select('childrenIds children schoolId campusId')
+      .lean();
+    if (!parent) return null;
+    const students = await resolveParentStudents({
+      parent,
+      schoolId,
+      campusId: parent.campusId || req.campusId || null,
+    });
+    return students.some((student) => String(student._id) === String(invoice.studentId))
+      ? { type: 'parent', id: parent._id }
+      : null;
+  }
+  if (actorType === 'admin') {
+    const allowed = await ensureInvoiceCampusAccess({ invoice, schoolId, campusId: req.campusId });
+    return allowed ? { type: 'admin', id: req.user?.id || null } : null;
+  }
+  return null;
+};
+
+// Tenant-neutral checkout URL used by both student and parent portals.
+router.post('/:id/pay', authAnyUser, paymentGatewayResolver, async (req, res) => {
+  try {
+    const feeId = req.params.id;
+    if (!mongoose.isValidObjectId(feeId)) return res.status(400).json({ error: 'Valid fee id is required' });
+    const schoolId = req.schoolId || req.paymentGateway.schoolId;
+    if (!schoolId || String(schoolId) !== String(req.paymentGateway.schoolId)) {
+      return res.status(403).json({ error: 'School does not belong to this organization' });
+    }
+    await applyLateFeesForFilter({ schoolId, filter: { _id: feeId } });
+    const invoice = await FeeInvoice.findOne({ _id: feeId, schoolId }).lean();
+    if (!invoice) return res.status(404).json({ error: 'Fee invoice not found' });
+    const actor = await authorizeOnlinePayment({ req, invoice, schoolId });
+    if (!actor) return res.status(403).json({ error: 'You cannot pay this fee invoice' });
+
+    const balance = Math.max(0, Number(invoice.totalAmount || 0)
+      - Number(invoice.discountAmount || 0) - Number(invoice.paidAmount || 0));
+    const amount = req.body?.amount === undefined ? balance : Number(req.body.amount);
+    if (!Number.isFinite(amount) || amount < 1 || amount > balance) {
+      return res.status(400).json({ error: 'Payment amount must be between INR 1 and the invoice balance' });
+    }
+    const amountPaise = Math.round(amount * 100);
+    const { order, keyId } = await createRazorpayOrder({
+      credentials: req.paymentGateway,
+      amountPaise,
+      receipt: buildRazorpayReceipt('fee', feeId),
+      notes: { feeId: String(feeId), studentId: String(invoice.studentId) },
+    });
+    const payment = await Payment.create({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      studentId: invoice.studentId,
+      feeId: invoice._id,
+      amount,
+      providerOrderId: order.id,
+      initiatedByType: actor.type,
+      initiatedById: actor.id,
+    });
+    await PaymentAudit.create({
+      organizationId: req.paymentGateway.organizationId,
+      action: 'payment.order_created',
+      userId: actor.id,
+      metadata: {
+        paymentId: payment._id,
+        feeId: invoice._id,
+        providerOrderId: order.id,
+        amount,
+        actorType: actor.type,
+      },
+    });
+    return res.status(201).json({
+      orderId: order.id,
+      keyId,
+      amount: order.amount,
+      amountRupees: amount,
+      currency: order.currency || 'INR',
+      order,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({ error: error.message || 'Unable to create payment order' });
+  }
+});
+
+router.post('/payments/razorpay/verify', authAnyUser, paymentGatewayResolver, async (req, res) => {
+  try {
+    const {
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      razorpay_signature: signature,
+    } = req.body || {};
+    if (!orderId || !paymentId || !signature) {
+      return res.status(400).json({ error: 'Missing Razorpay payment details' });
+    }
+    if (!verifyRazorpaySignature({ keySecret: req.paymentGateway.keySecret, orderId, paymentId, signature })) {
+      return res.status(400).json({ error: 'Invalid payment signature' });
+    }
+    const payment = await Payment.findOne({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId: req.schoolId || req.paymentGateway.schoolId,
+      providerOrderId: orderId,
+    });
+    if (!payment) return res.status(404).json({ error: 'Payment order not found' });
+    const invoice = await FeeInvoice.findOne({ _id: payment.feeId, schoolId: payment.schoolId }).lean();
+    const actor = invoice ? await authorizeOnlinePayment({ req, invoice, schoolId: payment.schoolId }) : null;
+    if (!actor) return res.status(403).json({ error: 'You cannot verify this payment' });
+    const captured = await capturePayment({
+      payment,
+      providerPaymentId: paymentId,
+      providerSignature: signature,
+      source: `${actor.type}_callback`,
+      userId: actor.id,
+    });
+    return res.json({ success: true, payment: captured.receipt, invoice: captured.invoice });
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({ error: error.message || 'Unable to verify payment' });
+  }
+});
+
+// Student fees
 router.get('/student/invoices', authStudent, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
