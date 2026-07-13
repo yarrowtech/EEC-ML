@@ -1,5 +1,19 @@
 # Detailed Backend API File Map
 
+## URL: http://localhost:5173/super-admin/organizations
+
+Organization lifecycle and tenant branding are implemented by `backend/routes/organizationRoutes.js` and `backend/models/Organization.js`. Access requires main-domain super-admin authentication through `backend/middleware/adminAuth.js`.
+
+Endpoints:
+- `POST /api/super-admin/organizations`
+- `GET /api/super-admin/organizations`
+- `GET /api/super-admin/organizations/stats`
+- `PATCH /api/super-admin/organizations/:id`
+
+The public tenant branding endpoint is `GET /api/tenant`.
+
+---
+
 ## URL: http://localhost:5173/school-registration
 
 1. Entry server + route mount

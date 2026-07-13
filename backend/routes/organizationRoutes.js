@@ -39,6 +39,13 @@ const createSlug = (name = '') => {
   return (meaningfulWords.length ? meaningfulWords : words).join('-').slice(0, 63);
 };
 
+const normalizeCustomDomain = (value = '') => String(value).trim().toLowerCase().replace(/\.$/, '');
+const isValidHostname = (value) => (
+  value.length <= 253
+  && value.includes('.')
+  && value.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))
+);
+
 const ensureSuperAdmin = (req, res, next) => {
   if (!req.isSuperAdmin) {
     return res.status(403).json({ error: 'Super admin access required' });
@@ -160,8 +167,27 @@ router.patch('/super-admin/organizations/:id', adminAuth, ensureSuperAdmin, asyn
         .filter((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key))
         .map((key) => [key, req.body[key]])
     );
-    if (update.customDomains) {
-      update.customDomains = [...new Set(update.customDomains.map((value) => String(value).trim().toLowerCase()))];
+    if (Object.prototype.hasOwnProperty.call(update, 'customDomains')) {
+      if (!Array.isArray(update.customDomains)) {
+        return res.status(400).json({ error: 'customDomains must be an array' });
+      }
+      update.customDomains = [...new Set(update.customDomains.map(normalizeCustomDomain).filter(Boolean))];
+      const rootDomain = String(process.env.ROOT_DOMAIN || process.env.MAIN_DOMAIN || 'electroniceducare.com')
+        .trim()
+        .toLowerCase();
+      if (update.customDomains.some((domain) => !isValidHostname(domain) || domain === rootDomain || domain === `www.${rootDomain}`)) {
+        return res.status(400).json({ error: 'One or more custom domains are invalid or reserved' });
+      }
+      if (update.customDomains.length) {
+        const collision = await Organization.findOne({
+          _id: { $ne: req.params.id },
+          $or: [
+            { domain: { $in: update.customDomains } },
+            { customDomains: { $in: update.customDomains } },
+          ],
+        }).select('_id').lean();
+        if (collision) return res.status(409).json({ error: 'A custom domain is already in use' });
+      }
     }
     const organization = await Organization.findByIdAndUpdate(
       req.params.id,

@@ -193,23 +193,24 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
 
   try {
     const normalizedUsername = normalize(username);
+    const platformScope = req.organizationId ? {} : { organizationId: null };
     const [admin, teacher, principal, student, parent, staff] = await Promise.all([
-      Admin.findOne({ username })
+      Admin.findOne({ username, ...platformScope })
         .select('_id username password role status organizationId schoolId campusId campusName campusType lastLoginAt')
         .lean(),
-      TeacherUser.findOne({ $or: [{ username }, { employeeCode: username }] })
+      TeacherUser.findOne({ $or: [{ username }, { employeeCode: username }], ...platformScope })
         .select('_id username employeeCode password organizationId schoolId campusId lastLoginAt')
         .lean(),
-      Principal.findOne({ $or: [{ username: normalizedUsername }, { email: normalizedUsername }] })
+      Principal.findOne({ $or: [{ username: normalizedUsername }, { email: normalizedUsername }], ...platformScope })
         .select('_id username email password organizationId schoolId campusId campusName campusType lastLoginAt')
         .lean(),
-      StudentUser.findOne({ $or: [{ username }, { studentCode: username }] })
+      StudentUser.findOne({ $or: [{ username }, { studentCode: username }], ...platformScope })
         .select('_id username studentCode password organizationId schoolId campusId lastLoginAt isArchived')
         .lean(),
-      ParentUser.findOne({ username })
+      ParentUser.findOne({ username, ...platformScope })
         .select('_id username password organizationId schoolId campusId lastLoginAt')
         .lean(),
-      StaffUser.findOne({ username })
+      StaffUser.findOne({ username, ...platformScope })
         .select('_id username password organizationId schoolId campusId')
         .lean(),
     ]);

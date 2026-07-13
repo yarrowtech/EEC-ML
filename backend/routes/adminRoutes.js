@@ -125,7 +125,10 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
-    const admin = await Admin.findOne({ username });
+    const admin = await Admin.findOne({
+      username,
+      ...(req.organizationId ? {} : { organizationId: null }),
+    });
     if (!admin || !(await bcrypt.compare(password, admin.password))) {
       logAuthEvent(req, {
         action: 'login',
@@ -233,7 +236,10 @@ router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 10 })
     if (!isStrongPassword(newPassword)) {
       return res.status(400).json({ error: passwordPolicyMessage });
     }
-    const admin = await Admin.findOne({ username: String(username).trim() });
+    const admin = await Admin.findOne({
+      username: String(username).trim(),
+      ...(req.organizationId ? {} : { organizationId: null }),
+    });
     if (!admin || admin.role !== 'admin') {
       return res.status(404).json({ error: 'Admin not found' });
     }

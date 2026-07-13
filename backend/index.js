@@ -20,6 +20,8 @@ try {
 const requestLogger = require('./middleware/requestLogger');
 const tokenReplayTelemetry = require('./middleware/tokenReplayTelemetry');
 const tenantResolver = require('./middleware/tenantResolver');
+const { getRootDomain, isMainHostname, normalizeHostname, resolveSlug } = tenantResolver;
+const { runWithTenant } = require('./utils/tenantContext');
 const adminActionLogger = require('./middleware/adminActionLogger');
 const rateLimit = require('./middleware/rateLimit');
 const { logSecurityEvent } = require('./utils/securityEventLogger');
@@ -89,6 +91,7 @@ const StudentUser = require('./models/StudentUser');
 const TeacherUser = require('./models/TeacherUser');
 const Principal = require('./models/Principal');
 const Admin = require('./models/Admin');
+const Organization = require('./models/Organization');
 const { isStrongPassword } = require('./utils/passwordPolicy');
 const principalDashboardRoutes = require('./routes/principalDashboardRoutes');
 const { getPresenceSnapshot, markUserOnline, markUserOffline } = require('./utils/chatPresence');
@@ -309,6 +312,11 @@ const writeHeavyApiLimiter = createApiLimiter('api:write-heavy', {
   max: Number(process.env.RATE_LIMIT_WRITE_HEAVY_MAX || 180),
 });
 
+const requireOrganizationDomain = (req, res, next) => {
+  if (req.organizationId) return next();
+  return res.status(404).json({ error: 'Organization domain required' });
+};
+
 app.use('/api', generalApiLimiter);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -384,14 +392,14 @@ app.use('/api/admin/users', writeHeavyApiLimiter, adminActionLogger, adminUserMa
 app.use('/api/promotion', writeHeavyApiLimiter, promotionRoutes);
 app.use('/api/admin/auth', authApiLimiter, adminActionLogger, adminAuthRoutes);
 app.use('/api/admin/feedback', adminActionLogger, adminFeedbackRoutes);
-app.use('/api/teacher/auth', authApiLimiter, teacherAuthRoutes);
-app.use('/api/teacher/dashboard', teacherDashboardRoutes);
-app.use('/api/staff/auth', authApiLimiter, staffAuthRoutes);
-app.use('/api/student/auth', authApiLimiter, studentAuthRoutes);
-app.use('/api/parent/auth', authApiLimiter, parentAuthRoutes);
-app.use('/api/principal/auth', authApiLimiter, principalAuthRoutes);
+app.use('/api/teacher/auth', requireOrganizationDomain, authApiLimiter, teacherAuthRoutes);
+app.use('/api/teacher/dashboard', requireOrganizationDomain, teacherDashboardRoutes);
+app.use('/api/staff/auth', requireOrganizationDomain, authApiLimiter, staffAuthRoutes);
+app.use('/api/student/auth', requireOrganizationDomain, authApiLimiter, studentAuthRoutes);
+app.use('/api/parent/auth', requireOrganizationDomain, authApiLimiter, parentAuthRoutes);
+app.use('/api/principal/auth', requireOrganizationDomain, authApiLimiter, principalAuthRoutes);
 app.use('/api/auth', authApiLimiter, unifiedAuthRoutes);
-app.use('/api/principal', principalDashboardRoutes);
+app.use('/api/principal', requireOrganizationDomain, principalDashboardRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/student/materials', studentMaterialRoutes);
 app.use('/api/student', require('./routes/student'));
@@ -418,7 +426,6 @@ app.use('/api/timetable', writeHeavyApiLimiter, timetableRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/super-admin', writeHeavyApiLimiter, adminActionLogger, superAdminRoutes);
-app.use('/api', organizationRoutes);
 app.use('/api/support', writeHeavyApiLimiter, adminActionLogger, supportRoutes);
 app.use('/api/issues', writeHeavyApiLimiter, adminActionLogger, issueRoutes);
 app.use('/api/teacher-allocations', writeHeavyApiLimiter, teacherAllocationRoutes);
@@ -436,6 +443,7 @@ app.use('/api/practice-papers', writeHeavyApiLimiter, practicePaperRoutes);
 app.use('/api/practice-sections', writeHeavyApiLimiter, practiceSectionRoutes);
 
 app.use("/api/uploads", uploadApiLimiter, uploadRoutes);
+app.use('/api', organizationRoutes);
 
 
 app.use((err, req, res, _next) => {
@@ -458,10 +466,10 @@ app.use((err, req, res, _next) => {
     traceId: req?.traceId || undefined,
     method: req?.method,
     path: req?.originalUrl,
-    statusCode: err?.status || 500,
+    statusCode: err?.statusCode || err?.status || 500,
     err,
   }, 'Unhandled API error');
-  res.status(err.status || 500).json({ message: err.message || "Server error" });
+  res.status(err.statusCode || err.status || 500).json({ message: err.message || "Server error" });
 });
 
 const PORT = process.env.PORT || 5000;
@@ -477,20 +485,40 @@ const io = new SocketServer(httpServer, {
 app.set('io', io);
 
 // Socket.io auth middleware
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token || socket.handshake.query?.token;
   if (!token) return next(new Error('Authentication required'));
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     if (!decoded.campusId) return next(new Error('campusId required'));
+    const rawHost = socket.handshake.headers.host || '';
+    const hostname = normalizeHostname(rawHost.replace(/:\d+$/, ''));
+    const rootDomain = getRootDomain();
+    let organization = null;
+
+    if (!isMainHostname(hostname, rootDomain)) {
+      const slug = resolveSlug(hostname, rootDomain);
+      organization = await Organization.findOne(
+        slug ? { slug, status: 'active' } : { customDomains: hostname, status: 'active' }
+      ).lean();
+      if (!organization) return next(new Error('Organization not found'));
+      if (!decoded.organizationId || String(decoded.organizationId) !== String(organization._id)) {
+        return next(new Error('Organization mismatch'));
+      }
+    } else if (decoded.organizationId) {
+      return next(new Error('Organization domain required'));
+    }
+
     socket.user = decoded;
-    next();
+    socket.organization = organization;
+    return runWithTenant(organization, next);
   } catch {
-    next(new Error('Invalid token'));
+    return next(new Error('Invalid token'));
   }
 });
 
 io.on('connection', (socket) => {
+  socket.use((_event, next) => runWithTenant(socket.organization, next));
   const user = socket.user;
   const userId = user.id?.toString();
 

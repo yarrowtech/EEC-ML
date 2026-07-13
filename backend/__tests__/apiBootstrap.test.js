@@ -59,6 +59,7 @@ describe('backend API bootstrap', () => {
     '../routes/practiceSectionRoutes',
     '../routes/student',
     '../routes/principalDashboardRoutes',
+    '../routes/organizationRoutes',
   ];
 
   const apiPrefixes = [
@@ -140,6 +141,25 @@ describe('backend API bootstrap', () => {
     jest.doMock('mongoose', () => ({
       connect: mongooseConnect,
       isValidObjectId: jest.fn(() => true),
+      plugin: jest.fn(),
+    }));
+
+    const mockedTenantResolver = Object.assign(
+      jest.fn((req, _res, next) => {
+        req.isMainDomain = false;
+        req.organizationId = '507f1f77bcf86cd799439011';
+        next();
+      }),
+      {
+        getRootDomain: jest.fn(() => 'electroniceducare.com'),
+        isMainHostname: jest.fn(() => true),
+        normalizeHostname: jest.fn((value) => value),
+        resolveSlug: jest.fn(() => null),
+      }
+    );
+    jest.doMock('../middleware/tenantResolver', () => mockedTenantResolver);
+    jest.doMock('../utils/tenantContext', () => ({
+      runWithTenant: jest.fn((_organization, callback) => callback()),
     }));
 
     jest.doMock('http', () => {
@@ -214,6 +234,10 @@ describe('backend API bootstrap', () => {
         updateMany: jest.fn(() => Promise.resolve()),
       }));
     });
+
+    jest.doMock('../models/Organization', () => ({
+      findOne: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve(null)) })),
+    }));
 
     jest.doMock('../utils/chatPresence', () => ({
       getPresenceSnapshot: jest.fn(() => ({ online: false, lastSeen: null })),

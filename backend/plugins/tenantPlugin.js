@@ -6,6 +6,7 @@ const QUERY_OPERATIONS = [
   'countDocuments',
   'deleteMany',
   'deleteOne',
+  'distinct',
   'find',
   'findOne',
   'findOneAndDelete',
@@ -94,13 +95,43 @@ module.exports = function tenantPlugin(schema) {
     this.organizationId = context.organizationId;
   });
 
-  schema.pre('insertMany', function tenantInsertManyScope(_next, documents) {
+  schema.pre('insertMany', function tenantInsertManyScope(next, documents) {
     const context = getTenantContext();
-    if (!context?.organizationId || !Array.isArray(documents)) return;
-    documents.forEach((document) => {
-      assertMatchingTenant(document.organizationId, context.organizationId);
-      document.organizationId = context.organizationId;
-    });
+    if (!context?.organizationId || !Array.isArray(documents)) return next();
+    try {
+      documents.forEach((document) => {
+        assertMatchingTenant(document.organizationId, context.organizationId);
+        document.organizationId = context.organizationId;
+      });
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  schema.pre('bulkWrite', function tenantBulkWriteScope(next, operations) {
+    const context = getTenantContext();
+    if (!context?.organizationId || !Array.isArray(operations)) return next();
+    try {
+      operations.forEach((operation) => {
+        const [operationName, payload] = Object.entries(operation)[0] || [];
+        if (!payload) return;
+        if (operationName === 'insertOne') {
+          assertMatchingTenant(payload.document?.organizationId, context.organizationId);
+          payload.document.organizationId = context.organizationId;
+          return;
+        }
+        if (payload.filter) {
+          assertMatchingTenant(payload.filter.organizationId, context.organizationId);
+          payload.filter.organizationId = context.organizationId;
+        }
+        if (payload.update) enforceUpdateTenant(payload.update, context.organizationId);
+        if (payload.replacement) enforceUpdateTenant(payload.replacement, context.organizationId, true);
+      });
+      return next();
+    } catch (error) {
+      return next(error);
+    }
   });
 };
 

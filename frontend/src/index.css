@@ -372,3 +372,8 @@ button:focus-visible {
     transform: translateY(0) scale(1);
   }
 }
+/* Tenant branding variables are populated by TenantProvider at runtime. */
+:root {
+  --tenant-primary: #2563eb;
+  --tenant-secondary: #0f172a;
+}

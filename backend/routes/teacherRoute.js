@@ -156,7 +156,6 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
         action: 'login',
         outcome: 'failure',
         userType: 'teacher',
-        organizationId: user.organizationId || req.organizationId || null,
         identifier: username,
         reason: 'Invalid credentials',
         statusCode: 401,

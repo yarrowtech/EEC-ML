@@ -8,6 +8,8 @@
     "test:coverage": "jest --coverage",
     "swagger:gen": "node swagger.js",
     "security:suite": "node scripts/productionSecurityAttackSuite.js",
+    "tenant:migrate": "node scripts/migrateOrganizations.js",
+    "tenant:migrate:apply": "node scripts/migrateOrganizations.js --apply",
     "push:keys": "node scripts/generateVapidKeys.js",
     "start": "node index.js",
     "dev": "nodemon index.js"

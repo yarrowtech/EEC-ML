@@ -3,8 +3,9 @@ import { ArrowRight, ChartNoAxesCombined, Eye, EyeOff, Lock, MessagesSquare, Not
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AUTH_NOTICE, consumeAuthNotice } from '../utils/authSession';
+import { useTenant } from '../context/TenantContext';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 const REMEMBER_ME_KEY   = 'eec_remember_me';
 const REMEMBER_ME_DAYS  = 30;
@@ -25,6 +26,7 @@ const getPasswordStrength = (pwd) => {
 };
 
 const LoginForm = () => {
+  const { name: organizationName, logo, colors } = useTenant();
   const [showPass, setShowPass] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [resetUserType, setResetUserType] = useState('');
@@ -329,7 +331,7 @@ const LoginForm = () => {
       {/* ── LEFT PANEL ── */}
       <div
         className="hidden lg:flex lg:w-[44%] relative flex-col justify-between overflow-hidden p-12 xl:p-16"
-        style={{ background: 'linear-gradient(160deg,#92400e 0%,#b45309 30%,#d97706 60%,#f59e0b 100%)' }}
+        style={{ background: `linear-gradient(160deg, ${colors.secondary} 0%, ${colors.primary} 100%)` }}
       >
         {/* Subtle grid texture */}
         <div
@@ -348,11 +350,11 @@ const LoginForm = () => {
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-sm flex items-center justify-center overflow-hidden">
-            <img src="/logo_new.png" alt="EEC" className="w-8 h-8 object-contain" />
+            <img src={logo || '/logo_new.png'} alt="" className="w-8 h-8 object-contain" />
           </div>
           <div>
-            <div className="text-base font-black text-white leading-none">EEC</div>
-            <div className="text-xs text-amber-200/70 font-medium leading-none mt-0.5">Electronic Educare</div>
+            <div className="text-base font-black text-white leading-none">{organizationName}</div>
+            <div className="text-xs text-white/70 font-medium leading-none mt-0.5">Electronic Educare</div>
           </div>
         </div>
 
@@ -392,7 +394,7 @@ const LoginForm = () => {
 
         {/* Bottom */}
         <div className="relative z-10 flex items-center justify-between">
-          <p className="text-xs text-amber-200/40">© {new Date().getFullYear()} EEC · All rights reserved</p>
+          <p className="text-xs text-white/50">© {new Date().getFullYear()} {organizationName} · All rights reserved</p>
           <div className="flex gap-1.5 items-center">
             <div className="w-6 h-1.5 rounded-full bg-white/50" />
             <div className="w-1.5 h-1.5 rounded-full bg-white/25" />
@@ -424,9 +426,9 @@ const LoginForm = () => {
           {/* Mobile logo */}
           <div className="flex items-center justify-center gap-3 mb-8 lg:hidden">
             <div className="w-9 h-9 rounded-xl overflow-hidden bg-amber-500 flex items-center justify-center shadow-md">
-              <img src="/logo_new.png" alt="EEC" className="w-7 h-7 object-contain" />
+              <img src={logo || '/logo_new.png'} alt="" className="w-7 h-7 object-contain" />
             </div>
-            <span className="text-base font-black text-gray-900">Electronic Educare</span>
+            <span className="text-base font-black text-gray-900">{organizationName}</span>
           </div>
 
           {/* Card wrapper */}

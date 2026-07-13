@@ -14,8 +14,8 @@ const organizationSchema = new mongoose.Schema(
     domain: { type: String, required: true, unique: true, lowercase: true, trim: true },
     logo: { type: String, default: '' },
     favicon: { type: String, default: '' },
-    primaryColor: { type: String, default: '#2563eb' },
-    secondaryColor: { type: String, default: '#0f172a' },
+    primaryColor: { type: String, default: '#2563eb', match: /^#[0-9a-f]{6}$/i },
+    secondaryColor: { type: String, default: '#0f172a', match: /^#[0-9a-f]{6}$/i },
     theme: { type: String, enum: ['light', 'dark', 'system'], default: 'light' },
     status: { type: String, enum: ['active', 'suspended'], default: 'active', index: true },
     settings: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -26,6 +26,6 @@ const organizationSchema = new mongoose.Schema(
   { timestamps: true, skipTenantScope: true }
 );
 
-organizationSchema.index({ customDomains: 1 }, { sparse: true });
+organizationSchema.index({ customDomains: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Organization', organizationSchema);
