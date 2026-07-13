@@ -10,7 +10,7 @@ const hashPasswordIfNeeded = async (password) => {
 };
 
 const adminSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
+  username: { type: String, required: true },
   password: { type: String, required: true },
   name: String,
   email: String,
@@ -23,6 +23,8 @@ const adminSchema = new mongoose.Schema({
   campusType: { type: String, default: null },
   lastLoginAt: { type: Date, default: null },
 });
+
+adminSchema.index({ organizationId: 1, username: 1 }, { unique: true });
 
 adminSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

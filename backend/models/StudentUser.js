@@ -146,13 +146,13 @@ const attendanceSchema = new mongoose.Schema({
 });
 
 const studentUserSchema = new mongoose.Schema({
-  username: { type: String, unique: true, required: true },
+  username: { type: String, required: true },
   password: { type: String, required: true },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
   campusId: { type: String, default: null },
   campusName: { type: String, default: null },
   campusType: { type: String, default: null },
-  studentCode: { type: String, unique: true, sparse: true },
+  studentCode: { type: String },
   initialPassword: { type: String, default: "" },
   name: String,
   grade: String,
@@ -232,6 +232,12 @@ const studentUserSchema = new mongoose.Schema({
     certificateUrl: { type: String }
   }],
 }, { timestamps: true });
+
+studentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+studentUserSchema.index(
+  { organizationId: 1, studentCode: 1 },
+  { unique: true, partialFilterExpression: { studentCode: { $type: 'string' } } }
+);
 
 studentUserSchema.pre('save', async function (next) {
   if (this.isModified('password')) {

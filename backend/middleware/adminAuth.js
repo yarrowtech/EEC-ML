@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { logSecurityEvent } = require('../utils/securityEventLogger');
+const validateTokenTenant = require('./validateTokenTenant');
 
 const extractSchoolId = (req) => {
   const headerId = req.headers['x-school-id'] || req.headers['x-schoolid'];
@@ -31,6 +32,7 @@ const adminAuth = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!validateTokenTenant(req, res, decoded)) return;
     if (decoded.type !== 'admin') {
       logAuthEvent(req, {
         action: 'auth.middleware_validate',

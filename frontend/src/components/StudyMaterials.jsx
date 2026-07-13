@@ -35,13 +35,6 @@ const StudyMaterials = () => {
 
   const token = localStorage.getItem('token');
 
-  useEffect(() => {
-    const debounceTimer = setTimeout(() => {
-      fetchMaterials();
-    }, 300);
-    return () => clearTimeout(debounceTimer);
-  }, [fetchMaterials]);
-
   const fetchMaterials = useCallback(async () => {
     try {
       setLoading(true);
@@ -76,6 +69,13 @@ const StudyMaterials = () => {
       setLoading(false);
     }
   }, [searchQuery, selectedSubject, token, STUDY_MATERIALS_ENDPOINT]);
+
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      fetchMaterials();
+    }, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [fetchMaterials]);
 
   const getFileIcon = (type) => {
     if (type?.startsWith('image/')) return ImageIcon;
@@ -156,7 +156,7 @@ const StudyMaterials = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600 mb-3" />
+                <Loader className="mx-auto h-8 w-8 animate-spin text-indigo-600 mb-3" />
                 <p className="text-sm text-slate-500">Loading study materials...</p>
               </div>
             </div>

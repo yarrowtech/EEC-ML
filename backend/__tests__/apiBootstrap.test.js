@@ -9,6 +9,7 @@ describe('backend API bootstrap', () => {
 
   const routeModules = [
     '../routes/adminRoutes',
+    '../routes/adminFeedbackRoutes',
     '../routes/teacherRoute',
     '../routes/teacherDashboardRoutes',
     '../routes/staffRoutes',
@@ -46,10 +47,16 @@ describe('backend API bootstrap', () => {
     '../routes/excuseLetterRoutes',
     '../routes/nifStudentRoutes',
     '../routes/lessonPlanRoutes',
+    '../routes/aiTutorRoutes',
     '../routes/promotionRoutes',
     '../routes/holidayRoutes',
     '../routes/departmentRoutes',
     '../routes/chatRoutes',
+    '../routes/achievementRoutes',
+    '../routes/teachingMaterialRoutes',
+    '../routes/studentMaterialRoutes',
+    '../routes/practicePaperRoutes',
+    '../routes/practiceSectionRoutes',
     '../routes/student',
     '../routes/principalDashboardRoutes',
   ];
@@ -58,6 +65,7 @@ describe('backend API bootstrap', () => {
     '/api/admin/users',
     '/api/promotion',
     '/api/admin/auth',
+    '/api/admin/feedback',
     '/api/teacher/auth',
     '/api/teacher/dashboard',
     '/api/staff/auth',
@@ -95,9 +103,15 @@ describe('backend API bootstrap', () => {
     '/api/excuse-letters',
     '/api/nif',
     '/api/lesson-plans',
+    '/api/ai-tutor',
     '/api/holidays',
     '/api/departments',
     '/api/chat',
+    '/api/achievements',
+    '/api/teaching-materials',
+    '/api/student/materials',
+    '/api/practice-papers',
+    '/api/practice-sections',
     '/api/uploads',
   ];
 
@@ -222,8 +236,14 @@ describe('backend API bootstrap', () => {
     jest.doMock('../utils/logger', () => ({
       bindConsoleToLogger: jest.fn(),
       logger: {
+        child: jest.fn(() => ({
+          info: jest.fn(),
+          error: loggerError,
+          log: jest.fn(),
+        })),
         info: jest.fn(),
         error: loggerError,
+        log: jest.fn(),
       },
     }));
 

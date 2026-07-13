@@ -1,58 +1,88 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Search, Filter, Loader, AlertCircle, Play,
-  CheckCircle, Clock, Award, Zap, TrendingUp, FileText
+  BookOpen, Search, Loader, Play, NotebookPen,
+  CheckCircle, Clock, Award, Zap, FileText, Home, ArrowUpRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PracticeTestInterface from './PracticeTestInterface';
+import { saveLearningActivity } from '../utils/learningContinuity';
+
+// Joins subject → chapter → topic into a single meta line, skipping blanks.
+const paperContextLine = (item) => {
+  const subject = item.subjectName || item.subject || '';
+  const chapter = item.chapterTitle || item.chapter || '';
+  const topic = item.topicTitle || item.topic || (Array.isArray(item.topics) ? item.topics[0] : '') || '';
+  return [subject, chapter, topic].map((v) => String(v).trim()).filter(Boolean);
+};
+
+const ContextBadges = ({ item }) => {
+  const parts = paperContextLine(item);
+  if (parts.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {parts.map((part, idx) => (
+        <React.Fragment key={`${part}-${idx}`}>
+          {idx > 0 && <span className="text-gray-300">›</span>}
+          <span className={`text-xs px-2 py-0.5 rounded-full ${
+            idx === 0 ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'bg-gray-100 text-gray-600'
+          }`}>
+            {part}
+          </span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
 
 const PracticePapersPortal = () => {
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
   const token = localStorage.getItem('token');
+  const navigate = useNavigate();
 
   // State
   const [papers, setPapers] = useState([]);
-  const [sections, setSections] = useState([]);
+  const [homework, setHomework] = useState([]);
+  const [homeworkLoading, setHomeworkLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [paperTypeFilter, setPaperTypeFilter] = useState('all');
   const [difficultyFilter, setDifficultyFilter] = useState('all');
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [takingTest, setTakingTest] = useState(false);
-  const [viewMode, setViewMode] = useState('grid'); // grid or sections
 
   const authHeaders = useMemo(() => ({
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
   }), [token]);
 
-  // Fetch sections
+  // Fetch homework (assignments given by teachers to solve at home)
   useEffect(() => {
-    const fetchSections = async () => {
+    const fetchHomework = async () => {
+      setHomeworkLoading(true);
       try {
-        const response = await fetch(`${API_BASE}/api/practice-sections/student/sections`, {
+        const response = await fetch(`${API_BASE}/api/assignment/student/assignments`, {
           headers: authHeaders
         });
-
         if (response.ok) {
           const data = await response.json();
-          setSections(data.sections || []);
+          setHomework(Array.isArray(data) ? data : []);
         }
       } catch (err) {
-        console.error('Error fetching sections:', err);
+        console.error('Error fetching homework:', err);
+      } finally {
+        setHomeworkLoading(false);
       }
     };
 
-    fetchSections();
+    fetchHomework();
   }, [API_BASE, authHeaders]);
 
-  // Fetch papers
+  // Fetch class work (practice papers published from what was taught in class)
   useEffect(() => {
     const fetchPapers = async () => {
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        if (paperTypeFilter !== 'all') params.append('paperType', paperTypeFilter);
         if (searchQuery) params.append('search', searchQuery);
 
         const response = await fetch(`${API_BASE}/api/practice-papers/student/papers?${params}`, {
@@ -73,21 +103,33 @@ const PracticePapersPortal = () => {
 
     const debounceTimer = setTimeout(fetchPapers, 300);
     return () => clearTimeout(debounceTimer);
-  }, [API_BASE, authHeaders, paperTypeFilter, searchQuery]);
+  }, [API_BASE, authHeaders, searchQuery]);
 
-  // Get unique paper types
-  const paperTypes = useMemo(() => {
-    const types = new Set(papers.map(p => p.paperType));
-    return Array.from(types).sort();
-  }, [papers]);
-
-  // Filter papers
+  // Filter class work by difficulty + search; homework by search only
   const filteredPapers = useMemo(() => {
     return papers.filter(p => {
       if (difficultyFilter !== 'all' && p.difficulty !== difficultyFilter) return false;
       return true;
     });
   }, [papers, difficultyFilter]);
+
+  const filteredHomework = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return homework;
+    return homework.filter((hw) =>
+      [hw.title, hw.subject, hw.chapterTitle, hw.topicTitle, hw.topic]
+        .some((v) => String(v || '').toLowerCase().includes(q))
+    );
+  }, [homework, searchQuery]);
+
+  const openPaper = (paper) => {
+    setSelectedPaper(paper);
+    saveLearningActivity({
+      path: '/student/practice-papers',
+      label: 'Class Work',
+      detail: paper.title,
+    });
+  };
 
   // If taking test
   if (takingTest && selectedPaper) {
@@ -122,9 +164,10 @@ const PracticePapersPortal = () => {
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
                   <h1 className="text-3xl font-bold mb-2">{selectedPaper.title}</h1>
+                  <div className="mb-2">
+                    <ContextBadges item={selectedPaper} />
+                  </div>
                   <div className="flex flex-wrap items-center gap-3 text-gray-600">
-                    <span className="text-sm">{selectedPaper.subjectName}</span>
-                    <span className="text-sm">•</span>
                     <span className="text-sm font-medium">Questions: {selectedPaper.totalQuestions}</span>
                     <span className="text-sm">•</span>
                     <span className="text-sm font-medium">Total Marks: {selectedPaper.totalMarks}</span>
@@ -232,7 +275,7 @@ const PracticePapersPortal = () => {
     );
   }
 
-  // Main list view
+  // Main list view — Class Work (done in class) + Home Work (to solve at home)
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8">
       <div className="max-w-7xl mx-auto">
@@ -240,41 +283,27 @@ const PracticePapersPortal = () => {
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
             <Zap className="w-8 h-8" />
-            Practice Papers
+            Practice
           </h1>
-          <p className="text-gray-600">Test your knowledge with practice papers and mock tests</p>
+          <p className="text-gray-600">Class work from today's lessons, and homework to solve at home</p>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search papers..."
+                placeholder="Search by title, subject, chapter or topic..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            {/* Paper Type Filter */}
-            <select
-              value={paperTypeFilter}
-              onChange={(e) => setPaperTypeFilter(e.target.value)}
-              className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Types</option>
-              {paperTypes.map(type => (
-                <option key={type} value={type}>
-                  {type.replace('_', ' ').toUpperCase()}
-                </option>
-              ))}
-            </select>
-
-            {/* Difficulty Filter */}
+            {/* Difficulty Filter (class work only) */}
             <select
               value={difficultyFilter}
               onChange={(e) => setDifficultyFilter(e.target.value)}
@@ -288,107 +317,203 @@ const PracticePapersPortal = () => {
           </div>
         </div>
 
-        {/* Loading State */}
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader className="w-8 h-8 animate-spin text-blue-600" />
+        {/* ── Class Work ── */}
+        <section className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
+              <NotebookPen className="w-4.5 h-4.5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 leading-tight">Class Work</h2>
+              <p className="text-xs text-gray-500">Practice what your teacher covered in class</p>
+            </div>
+            {!loading && (
+              <span className="ml-auto text-xs font-semibold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">
+                {filteredPapers.length}
+              </span>
+            )}
           </div>
-        ) : filteredPapers.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600 mb-4">No practice papers found</p>
-            <p className="text-sm text-gray-500">
-              Your teachers have not assigned any practice papers yet. Check back soon!
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredPapers.map(paper => (
-              <div
-                key={paper._id}
-                onClick={() => setSelectedPaper(paper)}
-                className="bg-white rounded-lg shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-transparent hover:border-blue-200"
-              >
-                {/* Card Header */}
-                <div className="p-4 sm:p-5 border-b">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="text-lg font-semibold line-clamp-2 flex-1">{paper.title}</h3>
-                    <span className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
-                      paper.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
-                      paper.difficulty === 'hard' ? 'bg-red-100 text-red-700' :
-                      'bg-amber-100 text-amber-700'
-                    }`}>
-                      {paper.difficulty}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600">{paper.subjectName}</p>
-                </div>
 
-                {/* Card Content */}
-                <div className="p-4 sm:p-5 space-y-3">
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="flex items-center gap-1 text-gray-600">
-                      <FileText className="w-4 h-4" />
-                      <span>{paper.totalQuestions} Q</span>
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <Loader className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : filteredPapers.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+              <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-600 font-medium">No class work yet</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Papers appear here after your teacher publishes the day's lesson.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredPapers.map(paper => (
+                <div
+                  key={paper._id}
+                  onClick={() => openPaper(paper)}
+                  className="bg-white rounded-lg shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-transparent hover:border-blue-200"
+                >
+                  {/* Card Header */}
+                  <div className="p-4 sm:p-5 border-b">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h3 className="text-lg font-semibold line-clamp-2 flex-1">{paper.title}</h3>
+                      <span className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
+                        paper.difficulty === 'easy' ? 'bg-green-100 text-green-700' :
+                        paper.difficulty === 'hard' ? 'bg-red-100 text-red-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {paper.difficulty}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1 text-gray-600">
-                      <Award className="w-4 h-4" />
-                      <span>{paper.totalMarks} marks</span>
-                    </div>
-                    {paper.duration > 0 && (
+                    <ContextBadges item={paper} />
+                  </div>
+
+                  {/* Card Content */}
+                  <div className="p-4 sm:p-5 space-y-3">
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="flex items-center gap-1 text-gray-600">
-                        <Clock className="w-4 h-4" />
-                        <span>{paper.duration} min</span>
+                        <FileText className="w-4 h-4" />
+                        <span>{paper.totalQuestions} Q</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-gray-600">
+                        <Award className="w-4 h-4" />
+                        <span>{paper.totalMarks} marks</span>
+                      </div>
+                      {paper.duration > 0 && (
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Clock className="w-4 h-4" />
+                          <span>{paper.duration} min</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1 text-gray-600">
+                        <span className="text-xs">Pass: {paper.passingPercentage}%</span>
+                      </div>
+                    </div>
+
+                    {/* Class Stats */}
+                    {paper.totalAttempts > 0 && (
+                      <div className="pt-2 border-t text-xs text-gray-600">
+                        <p>{paper.passRate}% pass rate • Avg: {paper.averageScore}%</p>
                       </div>
                     )}
-                    <div className="flex items-center gap-1 text-gray-600">
-                      <span className="text-xs">Pass: {paper.passingPercentage}%</span>
-                    </div>
                   </div>
 
-                  {/* Tags */}
-                  {paper.tags && paper.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {paper.tags.slice(0, 2).map((tag, idx) => (
-                        <span key={idx} className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
-                          {tag}
-                        </span>
-                      ))}
-                      {paper.tags.length > 2 && (
-                        <span className="text-xs text-gray-500">+{paper.tags.length - 2}</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Class Stats */}
-                  {paper.totalAttempts > 0 && (
-                    <div className="pt-2 border-t text-xs text-gray-600">
-                      <p>{paper.passRate}% pass rate • Avg: {paper.averageScore}%</p>
-                    </div>
-                  )}
+                  {/* Card Footer */}
+                  <div className="px-4 sm:px-5 py-3 bg-gray-50 border-t flex items-center justify-between">
+                    <span className="text-xs text-gray-600">
+                      {new Date(paper.createdAt).toLocaleDateString()}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openPaper(paper);
+                      }}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
+                    >
+                      <Play className="w-3 h-3" />
+                      Start
+                    </button>
+                  </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </section>
 
-                {/* Card Footer */}
-                <div className="px-4 sm:px-5 py-3 bg-gray-50 border-t flex items-center justify-between">
-                  <span className="text-xs text-gray-600">
-                    {new Date(paper.createdAt).toLocaleDateString()}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedPaper(paper);
-                    }}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
-                  >
-                    <Play className="w-3 h-3" />
-                    Start
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* ── Home Work ── */}
+        <section>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center">
+              <Home className="w-4.5 h-4.5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 leading-tight">Home Work</h2>
+              <p className="text-xs text-gray-500">Assignments your teacher gave you to solve at home</p>
+            </div>
+            {!homeworkLoading && (
+              <span className="ml-auto text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
+                {filteredHomework.length}
+              </span>
+            )}
           </div>
-        )}
+
+          {homeworkLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader className="w-8 h-8 animate-spin text-emerald-600" />
+            </div>
+          ) : filteredHomework.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+              <BookOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-600 font-medium">No homework right now</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Assignments from your teachers will show up here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredHomework.map((hw) => {
+                const due = hw.dueDate ? new Date(hw.dueDate) : null;
+                const submitted = hw.submissionStatus && hw.submissionStatus !== 'not_submitted';
+                const overdue = !submitted && due && due < new Date();
+                return (
+                  <div
+                    key={hw._id}
+                    onClick={() => {
+                      saveLearningActivity({ path: '/student/assignments', label: 'Home Work', detail: hw.title });
+                      navigate('/student/assignments');
+                    }}
+                    className="bg-white rounded-lg shadow hover:shadow-lg transition cursor-pointer overflow-hidden border border-transparent hover:border-emerald-200"
+                  >
+                    <div className="p-4 sm:p-5 border-b">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="text-lg font-semibold line-clamp-2 flex-1">{hw.title}</h3>
+                        {submitted ? (
+                          <span className="text-xs px-2 py-1 rounded-full whitespace-nowrap bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" /> Done
+                          </span>
+                        ) : (
+                          <span className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
+                            overdue ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {overdue ? 'Overdue' : 'To do'}
+                          </span>
+                        )}
+                      </div>
+                      <ContextBadges item={hw} />
+                    </div>
+
+                    <div className="p-4 sm:p-5 space-y-2 text-sm text-gray-600">
+                      {hw.description && <p className="line-clamp-2">{hw.description}</p>}
+                      <div className="flex items-center gap-4 text-xs">
+                        {due && (
+                          <span className={`flex items-center gap-1 ${overdue ? 'text-red-600 font-semibold' : ''}`}>
+                            <Clock className="w-3.5 h-3.5" />
+                            Due {due.toLocaleDateString()}
+                          </span>
+                        )}
+                        {Number(hw.marks) > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Award className="w-3.5 h-3.5" /> {hw.marks} marks
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="px-4 sm:px-5 py-3 bg-gray-50 border-t flex items-center justify-between">
+                      <span className="text-xs text-gray-600">{hw.teacherId?.name || hw.teacherName || ''}</span>
+                      <span className="px-3 py-1 text-sm bg-emerald-600 text-white rounded flex items-center gap-1">
+                        {submitted ? 'Review' : 'Solve'}
+                        <ArrowUpRight className="w-3 h-3" />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

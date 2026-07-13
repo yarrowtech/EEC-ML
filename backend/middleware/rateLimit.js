@@ -25,11 +25,16 @@ const rateLimit = ({
   onLimit,
   useForwardedFor = true,
   keyGenerator,
+  skip,
   skipSuccessfulRequests = false,
   skipFailedRequests = false,
   requestWasSuccessful = (_req, res) => res.statusCode < 400,
 } = {}) => {
   return (req, res, next) => {
+    if (typeof skip === 'function' && skip(req, res)) {
+      return next();
+    }
+
     const key = getKey(req, { useForwardedFor, keyGenerator });
     const now = Date.now();
     const entry = buckets.get(key) || { count: 0, start: now };
@@ -41,6 +46,11 @@ const rateLimit = ({
 
     entry.count += 1;
     buckets.set(key, entry);
+
+    const resetAt = Math.ceil((entry.start + windowMs) / 1000);
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - entry.count));
+    res.setHeader('X-RateLimit-Reset', resetAt);
 
     if (entry.count > max) {
       logSecurityEvent(req, {

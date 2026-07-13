@@ -83,7 +83,11 @@
       "Bash(awk -F: '{print $1}')",
       "Bash(awk -F: '$1<2560 || $1>3075')",
       "Bash(awk -F: '$1>2770 && $1<2830')",
-      "Bash(awk 'NR>=3095 && NR<=3110{print NR\": \"$0}' src/components/AITutorHomeScreen.jsx)"
+      "Bash(awk 'NR>=3095 && NR<=3110{print NR\": \"$0}' src/components/AITutorHomeScreen.jsx)",
+      "Read(//home/meow/**)",
+      "Bash(awk -F: '$1>2900 && $1<3010')",
+      "Bash(/home/meow/.venvs/uiverify/bin/python /home/meow/eec_verify/err_capture.py)",
+      "Bash(awk \"/function useStudentCurriculum/,/^}/\" AITutorHomeScreen.jsx)"
     ]
   }
 }

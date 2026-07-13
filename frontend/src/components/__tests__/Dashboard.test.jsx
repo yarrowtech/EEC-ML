@@ -94,9 +94,9 @@ jest.mock('../ExcuseLetter', () => {
   return () => React.createElement('div', { 'data-testid': 'excuse-letter-view' });
 });
 
-jest.mock('../AILearningDashboard', () => {
+jest.mock('../LearningHub', () => {
   const React = require('react');
-  return () => React.createElement('div', { 'data-testid': 'ai-learning-dashboard' });
+  return () => React.createElement('div', { 'data-testid': 'learning-hub-view' });
 });
 
 jest.mock('../AcademicAlcove', () => {
@@ -132,11 +132,6 @@ jest.mock('../MobileBottomNav', () => {
     latestMobileNavProps = props;
     return React.createElement('div', { 'data-testid': 'mobile-bottom-nav' });
   };
-});
-
-jest.mock('../AdventureTryouts', () => {
-  const React = require('react');
-  return () => React.createElement('div', { 'data-testid': 'adventure-tryouts-view' });
 });
 
 jest.mock('../HolidayListView', () => {

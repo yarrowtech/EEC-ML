@@ -188,6 +188,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
         type: 'admin',
         role: admin.role || 'admin',
         username: admin.username,
+        organizationId: admin.organizationId || req.organizationId || null,
         schoolId: admin.schoolId || null,
         campusId: admin.campusId || null,
         campusName: admin.campusName || null,

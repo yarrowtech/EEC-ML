@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const validateTokenTenant = require('./validateTokenTenant');
 
 const principalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -9,6 +10,7 @@ const principalAuth = (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!validateTokenTenant(req, res, decoded)) return;
     if (decoded.type !== 'principal') {
       return res.status(403).json({ error: 'Access denied' });
     }

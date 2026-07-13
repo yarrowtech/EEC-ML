@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const validateTokenTenant = require('./validateTokenTenant');
 
 module.exports = function (req, res, next) {
   const authHeader = req.headers.authorization;
@@ -9,6 +10,7 @@ module.exports = function (req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!validateTokenTenant(req, res, decoded)) return;
     const tokenType = String(decoded.userType || decoded.type || '').toLowerCase();
     if (tokenType !== 'staff') {
       return res.status(403).json({ error: 'Forbidden - not a staff token' });

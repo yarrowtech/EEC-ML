@@ -51,6 +51,10 @@ import {
   Plus,
   Minus,
   ChevronLeft,
+  ChevronDown,
+  Copy,
+  Check,
+  RotateCw,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -75,6 +79,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fetchCachedJson } from '@/utils/studentApiCache';
+import { useStudentDashboard } from './StudentDashboardContext';
+import { saveLearningActivity } from '../utils/learningContinuity';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
@@ -90,8 +96,70 @@ const CHIP_MODES = {
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
 const STREAM_TOKEN_DELAY_MS = 18;
+const GENERATED_STUDY_MEMORY_KEY = 'aiTutorGeneratedStudyMemory:v1';
+const MAX_GENERATED_STUDY_ITEMS = 8;
 
 const splitStreamTokens = (text) => String(text || '').match(/\S+\s*/g) || [];
+
+const GENERATED_MODE_META = {
+  quiz: { label: 'Quiz', icon: Target },
+  flashcards: { label: 'Flashcards', icon: Layers3 },
+  mind_map: { label: 'Mind map', icon: Network },
+  notes: { label: 'Notes', icon: NotebookPen },
+  explain: { label: 'Explanation', icon: Lightbulb },
+  homework_help: { label: 'Homework help', icon: MessageCircleQuestion },
+};
+
+const getGeneratedModeMeta = (mode) => GENERATED_MODE_META[mode] || { label: 'Tutor answer', icon: Bot };
+
+const loadGeneratedStudyMemory = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GENERATED_STUDY_MEMORY_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_GENERATED_STUDY_ITEMS) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveGeneratedStudyMemory = (items) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(GENERATED_STUDY_MEMORY_KEY, JSON.stringify(items));
+  } catch {
+    // Storage can fail in private browsing or when quota is full.
+  }
+};
+
+const buildGeneratedStudyItem = ({ mode, subject, topic, prompt, content }) => {
+  const meta = getGeneratedModeMeta(mode);
+  const cleanedPrompt = String(prompt || '').trim();
+  const cleanedTopic = String(topic || '').trim();
+  const cleanedSubject = String(subject || '').trim();
+  const titleBase = cleanedTopic || cleanedPrompt || meta.label;
+  return {
+    id: `generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    mode,
+    typeLabel: meta.label,
+    title: `${meta.label}: ${titleBase}`.slice(0, 90),
+    subject: cleanedSubject,
+    topic: cleanedTopic,
+    prompt: cleanedPrompt,
+    content: String(content || '').trim(),
+    generatedAt: new Date().toISOString(),
+  };
+};
+
+const formatGeneratedTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Saved';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
 
 const renderInlineTutorText = (text, keyPrefix) => {
   const parts = String(text || '').split(URL_PATTERN);
@@ -225,18 +293,31 @@ function parseQuiz(text) {
 function parseFlashcards(text) {
   const cards = [];
   let q = null, a = null;
-  for (const line of (text || '').split('\n')) {
-    const t = line.trim();
-    const qMatch = t.match(/^Q:\s*(.+)/i);
-    const aMatch = t.match(/^A:\s*(.+)/i);
+  const push = () => {
+    if (q !== null && a !== null) cards.push({ q: q.trim(), a: a.trim() });
+    q = null; a = null;
+  };
+  for (const raw of (text || '').split('\n')) {
+    // Normalise: strip bullets, markdown bold, and "1." / "Card 2:" prefixes.
+    const t = raw.trim()
+      .replace(/\*\*/g, '')
+      .replace(/^[-*>•]\s*/, '')
+      .replace(/^(?:card\s*)?\d+\s*[:.)-]\s*/i, '');
+    if (!t) continue;
+    const qMatch = t.match(/^(?:q(?:uestion)?|front)\s*\d*\s*[:.)\-–]\s*(.+)/i);
+    const aMatch = t.match(/^(?:a(?:nswer)?|back)\s*\d*\s*[:.)\-–]\s*(.+)/i);
     if (qMatch) {
-      if (q !== null && a !== null) cards.push({ q, a });
+      push();
       q = qMatch[1]; a = null;
     } else if (aMatch && q !== null) {
-      a = aMatch[1];
+      a = a === null ? aMatch[1] : `${a} ${aMatch[1]}`;
+    } else if (a !== null) {
+      a += ` ${t}`; // multi-line answer continuation
+    } else if (q !== null) {
+      q += ` ${t}`; // multi-line question continuation
     }
   }
-  if (q !== null && a !== null) cards.push({ q, a });
+  push();
   return cards;
 }
 
@@ -376,20 +457,39 @@ function QuizUI({ text }) {
 // Flashcard UI
 // ---------------------------------------------------------------------------
 
+const cardSlide = {
+  enter: (dir) => ({ x: dir * 240, opacity: 0, rotate: dir * 3 }),
+  center: { x: 0, opacity: 1, rotate: 0 },
+  exit: (dir) => ({ x: dir * -240, opacity: 0, rotate: dir * -3 }),
+};
+
 function FlashcardUI({ text }) {
   const cards = useMemo(() => parseFlashcards(text), [text]);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [dir, setDir] = useState(0);
   const [known, setKnown] = useState({});
 
-  const goTo = useCallback((next) => { setIdx(next); setFlipped(false); }, []);
+  const goTo = useCallback((next) => {
+    setIdx((current) => {
+      const clamped = Math.max(0, Math.min(cards.length - 1, next));
+      if (clamped !== current) {
+        setDir(clamped > current ? 1 : -1);
+        setFlipped(false);
+      }
+      return clamped;
+    });
+  }, [cards.length]);
 
   useEffect(() => {
     if (!cards.length) return;
     const onKey = (e) => {
-      if (e.key === 'ArrowRight') goTo(Math.min(cards.length - 1, idx + 1));
-      else if (e.key === 'ArrowLeft') goTo(Math.max(0, idx - 1));
-      else if (e.key === ' ') { e.preventDefault(); setFlipped(f => !f); }
+      // Never hijack keys while the student is typing somewhere.
+      const el = e.target;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      if (e.key === 'ArrowRight') goTo(idx + 1);
+      else if (e.key === 'ArrowLeft') goTo(idx - 1);
+      else if (e.key === ' ') { e.preventDefault(); setFlipped((f) => !f); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -399,13 +499,19 @@ function FlashcardUI({ text }) {
 
   const card = cards[idx];
   const knownCount = Object.values(known).filter(Boolean).length;
+  const rateCard = (gotIt) => {
+    setKnown((k) => ({ ...k, [idx]: gotIt }));
+    goTo(idx + 1);
+  };
 
   return (
     <div className="w-full space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-fuchsia-500">Card {idx + 1} / {cards.length}</span>
-        <span className="text-[11px] font-medium text-emerald-600">{knownCount} / {cards.length} known</span>
+        <span className="text-xs font-bold text-[#3F7D6E]">Card {idx + 1} / {cards.length}</span>
+        <span className="text-[11px] font-medium text-[#78827B]">
+          <span className="font-bold text-[#3F7D6E]">{knownCount}</span> / {cards.length} known
+        </span>
       </div>
 
       {/* Progress dots — clickable */}
@@ -414,60 +520,88 @@ function FlashcardUI({ text }) {
           <button
             key={i}
             onClick={() => goTo(i)}
+            aria-label={`Go to card ${i + 1}`}
             className={cn(
               'h-1.5 rounded-full transition-all duration-300',
-              i === idx ? 'w-8 bg-fuchsia-500' : known[i] ? 'w-5 bg-emerald-400' : 'w-4 bg-slate-200'
+              i === idx ? 'w-8 bg-[#3F7D6E]' : known[i] ? 'w-5 bg-[#8fbcae]' : 'w-4 bg-[#E7E3D9]'
             )}
           />
         ))}
       </div>
 
-      {/* 3-D flip card */}
-      <div
-        className="relative h-52 cursor-pointer select-none"
-        style={{ perspective: '1400px' }}
-        onClick={() => setFlipped(f => !f)}
-      >
-        <Motion.div
-          animate={{ rotateY: flipped ? 180 : 0 }}
-          transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-          style={{ transformStyle: 'preserve-3d', position: 'relative', width: '100%', height: '100%' }}
-        >
-          {/* Front — Question */}
-          <div
-            style={{ backfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 via-violet-50 to-purple-50 p-6 text-center shadow-md"
-          >
-            <span className="rounded-full bg-fuchsia-100 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-600">
-              Question
-            </span>
-            <p className="text-sm font-semibold leading-relaxed text-slate-800">{card.q}</p>
-            <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
-              <span>Tap or press</span>
-              <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] shadow-sm">Space</kbd>
-              <span>to reveal</span>
-            </p>
-          </div>
+      {/* Deck — swipe left/right, tap to flip */}
+      <div className="relative h-56 select-none" style={{ perspective: '1400px' }}>
+        {/* Stacked cards behind, hinting at the deck */}
+        {idx < cards.length - 1 && (
+          <div className="absolute inset-x-3 bottom-0 top-2 rotate-[1.6deg] rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4]" />
+        )}
+        {idx < cards.length - 2 && (
+          <div className="absolute inset-x-5 bottom-0 top-4 -rotate-[1.2deg] rounded-2xl border border-[#E7E3D9] bg-[#F4F1EA]" />
+        )}
 
-          {/* Back — Answer */}
-          <div
-            style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-teal-100 bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-6 text-center shadow-md"
+        <AnimatePresence initial={false} custom={dir} mode="popLayout">
+          <Motion.div
+            key={idx}
+            custom={dir}
+            variants={cardSlide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.26, ease: 'easeOut' }}
+            drag={cards.length > 1 ? 'x' : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.55}
+            onDragEnd={(_, info) => {
+              if (info.offset.x < -70 || info.velocity.x < -450) goTo(idx + 1);
+              else if (info.offset.x > 70 || info.velocity.x > 450) goTo(idx - 1);
+            }}
+            onTap={() => setFlipped((f) => !f)}
+            whileDrag={{ scale: 1.02 }}
+            className="absolute inset-0 cursor-pointer"
           >
-            <span className="rounded-full bg-emerald-100 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
-              Answer
-            </span>
-            <p className="text-sm font-semibold leading-relaxed text-slate-800">{card.a}</p>
-          </div>
-        </Motion.div>
+            <Motion.div
+              animate={{ rotateY: flipped ? 180 : 0 }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+              style={{ transformStyle: 'preserve-3d', position: 'relative', width: '100%', height: '100%' }}
+            >
+              {/* Front — Question */}
+              <div
+                style={{ backfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}
+                className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#E7E3D9] bg-white p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.45)]"
+              >
+                <span className="rounded-full bg-[#E9F0EB] px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#3F7D6E]">
+                  Question
+                </span>
+                <p className="font-[Nunito] text-base font-bold leading-relaxed text-[#26332E]">{card.q}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#a3aaa2]">
+                  <RotateCw className="size-3" />
+                  <span>Tap to flip · swipe to browse</span>
+                </p>
+              </div>
+
+              {/* Back — Answer */}
+              <div
+                style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}
+                className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-[#3F7D6E] p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.6)]"
+              >
+                <span className="rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#DCEAE3]">
+                  Answer
+                </span>
+                <p className="font-[Nunito] text-base font-bold leading-relaxed text-white">{card.a}</p>
+                <p className="mt-1 text-[11px] text-white/50">Tap to see the question again</p>
+              </div>
+            </Motion.div>
+          </Motion.div>
+        </AnimatePresence>
       </div>
 
       {/* Controls */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => goTo(Math.max(0, idx - 1))}
+          onClick={() => goTo(idx - 1)}
           disabled={idx === 0}
-          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          aria-label="Previous card"
+          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#E9F0EB] disabled:opacity-40"
         >
           <ChevronLeft className="size-3.5" /> Prev
         </button>
@@ -483,14 +617,14 @@ function FlashcardUI({ text }) {
               className="flex flex-1 gap-2"
             >
               <button
-                onClick={() => { setKnown(k => ({ ...k, [idx]: false })); goTo(Math.min(cards.length - 1, idx + 1)); }}
-                className="flex-1 rounded-xl bg-rose-50 py-1.5 text-xs font-bold text-rose-500 border border-rose-100 hover:bg-rose-100 transition-colors"
+                onClick={() => rateCard(false)}
+                className="flex-1 rounded-xl border border-[#eedbc9] bg-[#F4E9DE] py-1.5 text-xs font-bold text-[#C07A4C] transition-colors hover:bg-[#eeddcb]"
               >
                 ✗ Still learning
               </button>
               <button
-                onClick={() => { setKnown(k => ({ ...k, [idx]: true })); goTo(Math.min(cards.length - 1, idx + 1)); }}
-                className="flex-1 rounded-xl bg-emerald-50 py-1.5 text-xs font-bold text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-colors"
+                onClick={() => rateCard(true)}
+                className="flex-1 rounded-xl border border-[#cfe0d8] bg-[#E9F0EB] py-1.5 text-xs font-bold text-[#2E5C50] transition-colors hover:bg-[#dcebe2]"
               >
                 ✓ Got it!
               </button>
@@ -501,15 +635,16 @@ function FlashcardUI({ text }) {
         </AnimatePresence>
 
         <button
-          onClick={() => goTo(Math.min(cards.length - 1, idx + 1))}
+          onClick={() => goTo(idx + 1)}
           disabled={idx === cards.length - 1}
-          className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          aria-label="Next card"
+          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#E9F0EB] disabled:opacity-40"
         >
           Next <ChevronRight className="size-3.5" />
         </button>
       </div>
 
-      <p className="text-center text-[10px] text-slate-400">← → to navigate · Space to flip</p>
+      <p className="text-center text-[10px] text-[#a3aaa2]">← → to navigate · Space or tap to flip · drag the card to swipe</p>
     </div>
   );
 }
@@ -1299,10 +1434,10 @@ function NotesUI({ text }) {
 // ---------------------------------------------------------------------------
 
 function parseHomeworkHelp(text) {
-  if (!text) return { content: '', question: null };
+  if (!text) return { content: '', question: null, tail: '' };
   const trimmed = text.trim();
   const lastQ = trimmed.lastIndexOf('?');
-  if (lastQ === -1) return { content: trimmed, question: null };
+  if (lastQ === -1) return { content: trimmed, question: null, tail: '' };
 
   // Walk back to find start of the sentence containing the last '?'
   const before = trimmed.slice(0, lastQ);
@@ -1317,85 +1452,77 @@ function parseHomeworkHelp(text) {
   return {
     content: trimmed.slice(0, sentenceStart).trim(),
     question: trimmed.slice(sentenceStart, lastQ + 1).trim(),
+    // Anything after the guiding question — usually a short encouragement.
+    tail: trimmed.slice(lastQ + 1).trim(),
   };
 }
 
 function HomeworkHelpUI({ text }) {
-  const { content, question } = useMemo(() => parseHomeworkHelp(text), [text]);
+  const { content, question, tail } = useMemo(() => parseHomeworkHelp(text), [text]);
 
   if (!question) return <TutorMessageContent text={text} />;
 
   return (
-    <div className="w-full">
-      <Motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm"
-      >
-        {/* Mentor header */}
-        <div className="flex items-center gap-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-400 px-4 py-2.5">
-          <Motion.span
-            animate={{ rotate: [0, -8, 8, 0] }}
-            transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 2 }}
-            className="flex size-7 items-center justify-center rounded-full bg-white/25 text-base backdrop-blur-sm"
-          >
-            🦉
-          </Motion.span>
-          <div className="leading-tight">
-            <p className="text-[13px] font-bold text-white">Let's figure it out together</p>
-            <p className="text-[10px] font-medium text-white/80">I'll guide you — you find the answer</p>
-          </div>
-        </div>
+    <Motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="w-full overflow-hidden rounded-2xl rounded-bl-sm border border-[#eedbc9] bg-white shadow-sm"
+    >
+      {/* Coach strip — slim, quiet */}
+      <div className="flex items-center gap-2 border-b border-[#F4E9DE] bg-[#FBF7F2] px-4 py-2">
+        <span className="flex size-6 items-center justify-center rounded-lg bg-[#F4E9DE] text-[13px]">🦉</span>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#C07A4C]">Homework coach</p>
+        <p className="ml-auto hidden text-[11px] text-[#a3aaa2] sm:block">I guide — you solve</p>
+      </div>
 
-        <div className="space-y-3 px-4 py-3.5">
-          {/* Hint / context */}
-          {content && (
-            <Motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.15 }}
-              className="text-[13px] leading-relaxed text-slate-600"
-            >
-              {content}
-            </Motion.p>
-          )}
-
-          {/* The guiding question — the hero */}
-          <Motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 22, delay: content ? 0.28 : 0.1 }}
-            className="relative rounded-xl border-l-[3px] border-amber-400 bg-amber-50 px-3.5 py-3"
-          >
-            <span className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-500">
-              <Lightbulb className="size-3" /> Your turn
-            </span>
-            <p className="text-[15px] font-semibold leading-relaxed text-slate-800">{question}</p>
-          </Motion.div>
-
-          {/* Nudge toward the input */}
+      <div className="space-y-3 px-4 py-3.5">
+        {/* Hint / working — rendered with structure (steps, bold, line breaks) */}
+        {content && (
           <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: content ? 0.5 : 0.3 }}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-amber-600"
+            transition={{ delay: 0.12 }}
+            className="text-[13px] leading-relaxed text-slate-600"
           >
-            <span className="flex gap-1">
-              {[0, 0.18, 0.36].map((delay) => (
-                <Motion.span
-                  key={delay}
-                  animate={{ y: [0, -3, 0] }}
-                  transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1.4, delay }}
-                  className="size-1.5 rounded-full bg-amber-300"
-                />
-              ))}
-            </span>
-            Type your answer below to keep going
+            <TutorMessageContent text={content} />
           </Motion.div>
-        </div>
-      </Motion.div>
-    </div>
+        )}
+
+        {/* The guiding question — the hero */}
+        <Motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 22, delay: content ? 0.25 : 0.1 }}
+          className="rounded-xl border-l-[3px] border-[#C07A4C] bg-[#F4E9DE]/60 px-3.5 py-3"
+        >
+          <span className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#C07A4C]">
+            <Lightbulb className="size-3" /> Your turn
+          </span>
+          <p className="font-[Nunito] text-[15px] font-bold leading-relaxed text-[#26332E]">{question}</p>
+        </Motion.div>
+
+        {/* Nudge toward the input (+ any encouragement the tutor added) */}
+        <Motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: content ? 0.45 : 0.25 }}
+          className="flex items-center gap-1.5 text-[11px] font-medium text-[#C07A4C]"
+        >
+          <span className="flex gap-1">
+            {[0, 0.18, 0.36].map((delay) => (
+              <Motion.span
+                key={delay}
+                animate={{ y: [0, -3, 0] }}
+                transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 1.4, delay }}
+                className="size-1.5 rounded-full bg-[#dcb18e]"
+              />
+            ))}
+          </span>
+          {tail || 'Type your answer below to keep going'}
+        </Motion.div>
+      </div>
+    </Motion.div>
   );
 }
 
@@ -1896,6 +2023,31 @@ const STARTER_PROMPTS = [
   { mode: 'Homework Help', text: 'Help me solve this step by step', icon: MessageCircleQuestion },
 ];
 
+// Contextual next-move suggestions shown under the tutor's latest reply.
+const FOLLOW_UP_SETS = {
+  quiz: [
+    { label: 'Explain the answers', text: 'Explain the answers to that quiz', chip: "Explain Like I'm 10" },
+    { label: 'Make it harder', text: 'Give me a harder quiz on this', chip: 'Create Quiz' },
+    { label: 'Flashcards', text: 'Turn this into flashcards', chip: 'Flashcards' },
+  ],
+  flashcards: [
+    { label: 'Quiz me', text: 'Quiz me on these cards', chip: 'Create Quiz' },
+    { label: 'Explain a card', text: 'Explain the hardest card simply', chip: "Explain Like I'm 10" },
+    { label: 'More cards', text: 'Make a few more flashcards', chip: 'Flashcards' },
+  ],
+  homework_help: [
+    { label: 'Next step', text: 'What is the next step?', chip: 'Homework Help' },
+    { label: "I'm stuck", text: "I'm stuck — give me a hint", chip: 'Homework Help' },
+    { label: 'Why does that work?', text: 'Explain why that works', chip: "Explain Like I'm 10" },
+  ],
+};
+const DEFAULT_FOLLOW_UPS = [
+  { label: 'Simpler, please', text: 'Explain that more simply', chip: "Explain Like I'm 10" },
+  { label: 'Give an example', text: 'Give me an example', chip: 'Give Example' },
+  { label: 'Quiz me on this', text: 'Quiz me on this', chip: 'Create Quiz' },
+];
+const followUpsFor = (mode) => FOLLOW_UP_SETS[mode] || DEFAULT_FOLLOW_UPS;
+
 const SMART_INSIGHTS = [
   { label: 'Strongest Subject', value: 'English', detail: '91% mastery', icon: Trophy, color: 'text-emerald-600 bg-emerald-100', trend: [30, 48, 44, 64, 72, 88] },
   { label: 'Weakest Subject', value: 'Science', detail: 'Focus: Motion', icon: TrendingDown, color: 'text-rose-600 bg-rose-100', trend: [70, 64, 60, 52, 49, 43] },
@@ -2081,16 +2233,16 @@ const todayLabel = () =>
 
 // A quiet paper card — the one surface shape used across the page.
 function Panel({ children, className, as: Tag = 'div', ...rest }) {
-  return (
-    <Tag
-      className={cn(
+  return React.createElement(
+    Tag,
+    {
+      className: cn(
         'rounded-[22px] border border-[#E7E3D9] bg-white shadow-[0_1px_2px_rgba(38,51,46,0.04),0_10px_30px_-24px_rgba(38,51,46,0.5)]',
         className
-      )}
-      {...rest}
-    >
-      {children}
-    </Tag>
+      ),
+      ...rest,
+    },
+    children
   );
 }
 
@@ -2585,7 +2737,9 @@ function useStudentCurriculum() {
   return { subjects, status };
 }
 
-function AiTutorPanel() {
+function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
+  const { profile } = useStudentDashboard();
+  const studentFirstName = String(profile?.name || '').trim().split(/\s+/)[0] || 'there';
   const { subjects, status: curriculumStatus } = useStudentCurriculum();
   const [subjectKey, setSubjectKey] = useState('');
   const [topicTitle, setTopicTitle] = useState('');
@@ -2598,7 +2752,17 @@ function AiTutorPanel() {
   const attachmentInputRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const composerRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const [listening, setListening] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [showJump, setShowJump] = useState(false);
   const activeChipMeta = COMPANION_CHIPS.find((c) => c.label === activeChip) || COMPANION_CHIPS[0];
+  const lastMessage = messages[messages.length - 1];
+  const showFollowUps = !sending && lastMessage?.role === 'assistant'
+    && !lastMessage.error && !lastMessage.thinking && !lastMessage.streaming;
+  const supportsVoice = typeof window !== 'undefined'
+    && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
   const applyStarter = (starter) => {
     setActiveChip(starter.mode);
     setQuestion(starter.text);
@@ -2609,6 +2773,41 @@ function AiTutorPanel() {
     streamTimersRef.current = [];
     setMessages([]);
   };
+  const scrollMessagesToBottom = () => {
+    const node = messagesScrollRef.current;
+    if (node) node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+  };
+  const onMessagesScroll = () => {
+    const node = messagesScrollRef.current;
+    if (!node) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    setShowJump(distanceFromBottom > 120);
+  };
+  const copyMessage = (msg) => {
+    navigator.clipboard?.writeText(msg.text || '').then(() => {
+      setCopiedId(msg.id);
+      setTimeout(() => setCopiedId((id) => (id === msg.id ? null : id)), 1600);
+    }).catch(() => {});
+  };
+  const toggleVoice = () => {
+    if (!supportsVoice) return;
+    if (listening) { recognitionRef.current?.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onresult = (event) => {
+      const transcript = Array.from(event.results).map((r) => r[0].transcript).join('');
+      setQuestion(transcript);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    setListening(true);
+    rec.start();
+  };
+  useEffect(() => () => { try { recognitionRef.current?.stop(); } catch { /* noop */ } }, []);
   const streamTimersRef = useRef([]);
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
   const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
@@ -2723,15 +2922,23 @@ function AiTutorPanel() {
     pushNextToken();
   }), []);
 
-  const handleSend = async () => {
-    const mode = CHIP_MODES[activeChip];
+  const handleSend = async (opts = {}) => {
+    const chipLabel = (typeof opts?.chip === 'string' && opts.chip) || activeChip;
+    const mode = CHIP_MODES[chipLabel];
+    const outgoing = (typeof opts?.text === 'string' ? opts.text : question).trim();
     if (!mode) {
-      setMessages((prev) => [...prev, { role: 'assistant', error: true, text: `${activeChip} isn't available yet.` }]);
+      setMessages((prev) => [...prev, { role: 'assistant', error: true, text: `${chipLabel} isn't available yet.` }]);
       return;
     }
-    if (!question.trim() && !topicTitle) return;
+    if (!outgoing && !topicTitle) return;
 
-    const userLabel = [activeChip, topicTitle, question.trim()].filter(Boolean).join(' — ');
+    const userLabel = [chipLabel, topicTitle, outgoing].filter(Boolean).join(' — ');
+    const activeSubject = subjects.find((s) => s.key === subjectKey);
+    saveLearningActivity({
+      path: '/student/learning',
+      label: 'AI Tutor',
+      detail: [activeSubject?.title, topicTitle].filter(Boolean).join(' · ') || chipLabel,
+    });
     const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const assistantId = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setMessages((prev) => [
@@ -2749,16 +2956,26 @@ function AiTutorPanel() {
           mode,
           subject: selectedSubject?.title || '',
           topic: topicTitle,
-          question: question.trim(),
+          question: outgoing,
           chapterTitle: chapterTitle || '',
         }),
       });
       const payload = await res.json();
       if (!res.ok) throw new Error(payload?.error || 'AI Tutor request failed');
-      await streamTutorMessage(assistantId, payload.data?.content || '', {
+      const generatedContent = payload.data?.content || '';
+      await streamTutorMessage(assistantId, generatedContent, {
         groundedInMaterial: payload.data?.groundedInMaterial,
         noMaterialFound: payload.data?.noMaterialFound,
       });
+      if (generatedContent.trim()) {
+        onGeneratedStudyItem(buildGeneratedStudyItem({
+          mode,
+          subject: selectedSubject?.title || '',
+          topic: topicTitle,
+          prompt: outgoing,
+          content: generatedContent,
+        }));
+      }
     } catch (err) {
       setMessages((prev) => prev.map((msg) => (
         msg.id === assistantId
@@ -2795,9 +3012,20 @@ function AiTutorPanel() {
           <div className="min-w-0 flex-1">
             <h3 className="font-[Nunito] text-base font-extrabold leading-tight text-[#26332E]">Study Tutor</h3>
             <p className="truncate text-xs text-[#78827B]">
-              {selectedSubject
-                ? <>Focused on <span className="font-semibold text-[#2E5C50]">{selectedSubject.title}{topicTitle ? ` · ${topicTitle}` : ''}</span></>
-                : 'Online · answers grounded in your teacher’s material'}
+              {sending ? (
+                <span className="inline-flex items-center gap-1 font-semibold text-[#3F7D6E]">
+                  Thinking
+                  {[0, 0.15, 0.3].map((d) => (
+                    <Motion.span key={d} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: d }} className="size-1 rounded-full bg-[#3F7D6E]" />
+                  ))}
+                </span>
+              ) : listening ? (
+                <span className="inline-flex items-center gap-1.5 font-semibold text-rose-500">
+                  <span className="size-1.5 animate-pulse rounded-full bg-rose-500" /> Listening…
+                </span>
+              ) : selectedSubject ? (
+                <>Focused on <span className="font-semibold text-[#2E5C50]">{selectedSubject.title}{topicTitle ? ` · ${topicTitle}` : ''}</span></>
+              ) : 'Online · answers grounded in your teacher’s material'}
             </p>
           </div>
 
@@ -2856,7 +3084,8 @@ function AiTutorPanel() {
         </div>
 
         {/* Messages */}
-        <div ref={messagesScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white px-4 py-4 sm:px-5">
+        <div className="relative min-h-0 flex-1">
+          <div ref={messagesScrollRef} onScroll={onMessagesScroll} className="absolute inset-0 overflow-y-auto overscroll-contain bg-white px-4 py-4 sm:px-5">
           {messages.length > 0 ? (
                 <div className="space-y-3">
                   <AnimatePresence initial={false}>
@@ -2874,7 +3103,7 @@ function AiTutorPanel() {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'homework_help'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -2903,9 +3132,7 @@ function AiTutorPanel() {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && msg.mode === 'homework_help')
-                                  ? 'rounded-2xl rounded-bl-sm border border-amber-100 bg-amber-50/50 px-4 py-3 shadow-sm'
-                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'homework_help'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
@@ -2938,21 +3165,60 @@ function AiTutorPanel() {
                               ) : msg.text
                             )}
                             {msg.role === 'assistant' && !msg.error && !msg.thinking && (
-                              <div className={cn(
-                                'mt-2 text-[11px] font-medium',
-                                msg.noMaterialFound ? 'text-amber-700' : 'text-[#3F7D6E]'
-                              )}>
-                                {msg.noMaterialFound
-                                  ? 'No matching uploaded material found'
-                                  : msg.groundedInMaterial
-                                    ? 'Grounded in your teacher\'s material'
-                                    : 'General answer from the tutor'}
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className={cn(
+                                  'text-[11px] font-medium',
+                                  msg.noMaterialFound ? 'text-amber-700' : 'text-[#3F7D6E]'
+                                )}>
+                                  {msg.noMaterialFound
+                                    ? 'No matching uploaded material found'
+                                    : msg.groundedInMaterial
+                                      ? 'Grounded in your teacher\'s material'
+                                      : 'General answer from the tutor'}
+                                </span>
+                                {!msg.streaming && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyMessage(msg)}
+                                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
+                                    aria-label="Copy answer"
+                                  >
+                                    {copiedId === msg.id
+                                      ? <><Check className="size-3 text-[#3F7D6E]" /> Copied</>
+                                      : <><Copy className="size-3" /> Copy</>}
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
                         </div>
                       </Motion.div>
                     ))}
+                  </AnimatePresence>
+                  <AnimatePresence>
+                    {showFollowUps && (
+                      <Motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3, delay: 0.15 }}
+                        className="flex flex-wrap items-center gap-2 pl-10"
+                      >
+                        <span className="w-full text-[11px] font-semibold uppercase tracking-wide text-[#a3aaa2]">Keep going</span>
+                        {followUpsFor(lastMessage.mode).map((f) => (
+                          <Motion.button
+                            key={f.label}
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => handleSend({ text: f.text, chip: f.chip })}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-medium text-[#2E5C50] transition-colors hover:border-[#3F7D6E] hover:bg-[#E9F0EB]"
+                          >
+                            <Sparkles className="size-3 text-[#3F7D6E]" />
+                            {f.label}
+                          </Motion.button>
+                        ))}
+                      </Motion.div>
+                    )}
                   </AnimatePresence>
                 </div>
               ) : (
@@ -2969,7 +3235,7 @@ function AiTutorPanel() {
                   >
                     <MessageCircleQuestion className="size-7" />
                   </Motion.div>
-                  <p className="font-[Nunito] text-lg font-extrabold text-[#26332E]">Ask me anything, {STUDENT.name}.</p>
+                  <p className="font-[Nunito] text-lg font-extrabold text-[#26332E]">Ask me anything, {studentFirstName}.</p>
                   <p className="mt-1 max-w-sm text-sm leading-relaxed text-[#78827B]">
                     Pick a subject up top for answers from your teacher’s material, or start with one of these:
                   </p>
@@ -2997,6 +3263,21 @@ function AiTutorPanel() {
                   </div>
                 </Motion.div>
               )}
+          </div>
+          <AnimatePresence>
+            {showJump && (
+              <Motion.button
+                initial={{ opacity: 0, scale: 0.8, y: 6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                onClick={scrollMessagesToBottom}
+                className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#3F7D6E] shadow-md hover:bg-[#E9F0EB]"
+                aria-label="Jump to latest message"
+              >
+                <ChevronDown className="size-5" />
+              </Motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Composer */}
@@ -3091,6 +3372,30 @@ function AiTutorPanel() {
               <TooltipContent>Attach notes or homework</TooltipContent>
             </Tooltip>
 
+            {supportsVoice && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Motion.button
+                    type="button"
+                    onClick={toggleVoice}
+                    animate={listening ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+                    transition={listening ? { duration: 1, repeat: Infinity } : { duration: 0.2 }}
+                    className={cn(
+                      'flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors',
+                      listening
+                        ? 'bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.15)]'
+                        : 'text-[#5c655f] hover:bg-[#E9F0EB] hover:text-[#26332E]'
+                    )}
+                    aria-label={listening ? 'Stop voice input' : 'Speak your question'}
+                    aria-pressed={listening}
+                  >
+                    <Mic className="size-5" />
+                  </Motion.button>
+                </TooltipTrigger>
+                <TooltipContent>{listening ? 'Listening… tap to stop' : 'Speak your question'}</TooltipContent>
+              </Tooltip>
+            )}
+
             <Textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
@@ -3100,7 +3405,7 @@ function AiTutorPanel() {
                   handleSend();
                 }
               }}
-              placeholder={`${activeChipMeta.label} — type your question…`}
+              placeholder={listening ? 'Listening…' : `${activeChipMeta.label} — type your question…`}
               rows={1}
               className="max-h-32 min-h-9 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
               style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
@@ -3905,10 +4210,68 @@ function TodayFocus({ onResume }) {
 }
 
 // Ways to study — one calm grid. (merges Quick Actions · Learning Modes)
-function WaysToStudy() {
+function WaysToStudy({ generatedItems = [], onClearGeneratedItems = () => {} }) {
   return (
     <Section>
       <SectionHeading eyebrow="Pick a way in" title="Ways to study" />
+      {generatedItems.length > 0 && (
+        <Motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4 rounded-2xl border border-[#D9E6DD] bg-[#F8FCF9] p-4"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-[#3F7D6E]">Saved from AI tutor</p>
+              <p className="text-sm font-semibold text-[#26332E]">Your latest generated quizzes, notes, and practice sets</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClearGeneratedItems}
+              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#78827B] transition-colors hover:bg-white hover:text-[#2E5C50]"
+            >
+              Clear saved
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {generatedItems.map((item) => {
+              const meta = getGeneratedModeMeta(item.mode);
+              const Icon = meta.icon;
+              return (
+                <Motion.article
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="min-w-0 rounded-xl border border-[#E7E3D9] bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#E9F0EB] text-[#3F7D6E]">
+                      <Icon className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold text-[#78827B]">
+                        <span className="shrink-0">{item.typeLabel || meta.label}</span>
+                        <span className="size-1 rounded-full bg-[#C9D2CB]" />
+                        <span className="truncate">{formatGeneratedTime(item.generatedAt)}</span>
+                      </div>
+                      <h3 className="mt-1 line-clamp-1 text-sm font-bold text-[#26332E]">{item.title}</h3>
+                      <p className="mt-1 line-clamp-2 text-xs leading-snug text-[#78827B]">
+                        {item.content || item.prompt || 'Generated study material'}
+                      </p>
+                      {(item.subject || item.topic) && (
+                        <p className="mt-2 truncate text-[11px] font-medium text-[#3F7D6E]">
+                          {[item.subject, item.topic].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Motion.article>
+              );
+            })}
+          </div>
+        </Motion.div>
+      )}
       <Motion.div
         variants={staggerContainer} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.1 }}
         className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
@@ -4192,6 +4555,21 @@ export default function AITutorHomeScreen({
   onAskAiTutor = () => {},
   onExploreSubject = () => {},
 }) {
+  const [generatedStudyItems, setGeneratedStudyItems] = useState(loadGeneratedStudyMemory);
+
+  const handleGeneratedStudyItem = useCallback((item) => {
+    setGeneratedStudyItems((prev) => {
+      const next = [item, ...prev].slice(0, MAX_GENERATED_STUDY_ITEMS);
+      saveGeneratedStudyMemory(next);
+      return next;
+    });
+  }, []);
+
+  const clearGeneratedStudyItems = useCallback(() => {
+    setGeneratedStudyItems([]);
+    saveGeneratedStudyMemory([]);
+  }, []);
+
   return (
     <TooltipProvider delayDuration={150}>
       <div className="w-full bg-[#F4F1EA] font-[Inter,system-ui,sans-serif] text-[#26332E]">
@@ -4202,8 +4580,11 @@ export default function AITutorHomeScreen({
             onAskAiTutor={onAskAiTutor}
           />
           <TodayFocus onResume={onStartLearning} />
-          <WaysToStudy />
-          <AiTutorPanel />
+          <WaysToStudy
+            generatedItems={generatedStudyItems}
+            onClearGeneratedItems={clearGeneratedStudyItems}
+          />
+          <AiTutorPanel onGeneratedStudyItem={handleGeneratedStudyItem} />
           <ContinueLearningCalm />
           <SubjectExplorer onExploreSubject={onExploreSubject} />
           <ProgressPanel />
@@ -4215,3 +4596,5 @@ export default function AITutorHomeScreen({
     </TooltipProvider>
   );
 }
+
+export { AiTutorPanel };

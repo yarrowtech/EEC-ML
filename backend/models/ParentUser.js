@@ -145,7 +145,7 @@ const hashPasswordIfNeeded = async (password) => {
 };
 
 const parentUserSchema = new mongoose.Schema({
-  username: { type: String, unique: true, required: true },
+  username: { type: String, required: true },
   password: { type: String, required: true },
   initialPassword: { type: String, default: "" },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
@@ -176,6 +176,8 @@ const parentUserSchema = new mongoose.Schema({
   children: [String],
   grade: [String],
 }, { timestamps: true });
+
+parentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
 
 parentUserSchema.pre('save', async function (next) {
   if (this.isModified('password')) {

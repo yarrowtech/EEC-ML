@@ -6,6 +6,7 @@ const https = require('https');
 const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
+require('./utils/registerTenantPlugin');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const { Server: SocketServer } = require('socket.io');
@@ -18,8 +19,11 @@ try {
 }
 const requestLogger = require('./middleware/requestLogger');
 const tokenReplayTelemetry = require('./middleware/tokenReplayTelemetry');
+const tenantResolver = require('./middleware/tenantResolver');
 const adminActionLogger = require('./middleware/adminActionLogger');
+const rateLimit = require('./middleware/rateLimit');
 const { logSecurityEvent } = require('./utils/securityEventLogger');
+const { getClientIp } = require('./utils/request');
 let swaggerDocument;
 
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -78,6 +82,7 @@ const teachingMaterialRoutes = require('./routes/teachingMaterialRoutes');
 const studentMaterialRoutes = require('./routes/studentMaterialRoutes');
 const practicePaperRoutes = require('./routes/practicePaperRoutes');
 const practiceSectionRoutes = require('./routes/practiceSectionRoutes');
+const organizationRoutes = require('./routes/organizationRoutes');
 const ChatThread = require('./models/ChatThread');
 const ChatMessage = require('./models/ChatMessage');
 const StudentUser = require('./models/StudentUser');
@@ -254,8 +259,60 @@ app.use(
 );
 app.use(requestLogger);
 app.use(tokenReplayTelemetry);
+
+const decodeBearerPayload = (req) => {
+  const authHeader = req?.headers?.authorization;
+  if (!authHeader || !String(authHeader).startsWith('Bearer ')) return {};
+  const token = String(authHeader).slice('Bearer '.length).trim();
+  if (!token) return {};
+  const decoded = jwt.decode(token);
+  return decoded && typeof decoded === 'object' ? decoded : {};
+};
+
+const rateLimitIdentity = (req, bucket) => {
+  const payload = decodeBearerPayload(req);
+  const userId = payload.id || payload.sub || payload.userId || payload._id;
+  if (userId) {
+    const userType = payload.userType || payload.type || payload.role || 'user';
+    const schoolId = payload.schoolId || 'global';
+    const campusId = payload.campusId || 'main';
+    return `${bucket}:user:${schoolId}:${campusId}:${userType}:${userId}`;
+  }
+  return `${bucket}:ip:${getClientIp(req) || req.ip || 'unknown'}`;
+};
+
+const createApiLimiter = (bucket, { windowMs, max }) => rateLimit({
+  windowMs,
+  max,
+  skip: (req) => req.method === 'OPTIONS',
+  keyGenerator: (req) => rateLimitIdentity(req, bucket),
+});
+
+const generalApiLimiter = createApiLimiter('api:general', {
+  windowMs: Number(process.env.RATE_LIMIT_GENERAL_WINDOW_MS || 15 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_GENERAL_MAX || 1200),
+});
+const authApiLimiter = createApiLimiter('api:auth', {
+  windowMs: Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS || 15 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_AUTH_MAX || 80),
+});
+const aiApiLimiter = createApiLimiter('api:ai', {
+  windowMs: Number(process.env.RATE_LIMIT_AI_WINDOW_MS || 10 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_AI_MAX || 40),
+});
+const uploadApiLimiter = createApiLimiter('api:upload', {
+  windowMs: Number(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS || 15 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_UPLOAD_MAX || 60),
+});
+const writeHeavyApiLimiter = createApiLimiter('api:write-heavy', {
+  windowMs: Number(process.env.RATE_LIMIT_WRITE_HEAVY_WINDOW_MS || 15 * 60 * 1000),
+  max: Number(process.env.RATE_LIMIT_WRITE_HEAVY_MAX || 180),
+});
+
+app.use('/api', generalApiLimiter);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(tenantResolver);
 
 try {
   swaggerDocument = require('./swagger-output.json');
@@ -323,19 +380,20 @@ app.get("/health", (req, res) => {
 });
 
 // Auth & core routes (unchanged)
-app.use('/api/admin/users', adminActionLogger, adminUserManagementRoutes);
-app.use('/api/promotion', promotionRoutes);
-app.use('/api/admin/auth', adminActionLogger, adminAuthRoutes);
+app.use('/api/admin/users', writeHeavyApiLimiter, adminActionLogger, adminUserManagementRoutes);
+app.use('/api/promotion', writeHeavyApiLimiter, promotionRoutes);
+app.use('/api/admin/auth', authApiLimiter, adminActionLogger, adminAuthRoutes);
 app.use('/api/admin/feedback', adminActionLogger, adminFeedbackRoutes);
-app.use('/api/teacher/auth', teacherAuthRoutes);
+app.use('/api/teacher/auth', authApiLimiter, teacherAuthRoutes);
 app.use('/api/teacher/dashboard', teacherDashboardRoutes);
-app.use('/api/staff/auth', staffAuthRoutes);
-app.use('/api/student/auth', studentAuthRoutes);
-app.use('/api/parent/auth', parentAuthRoutes);
-app.use('/api/principal/auth', principalAuthRoutes);
-app.use('/api/auth', unifiedAuthRoutes);
+app.use('/api/staff/auth', authApiLimiter, staffAuthRoutes);
+app.use('/api/student/auth', authApiLimiter, studentAuthRoutes);
+app.use('/api/parent/auth', authApiLimiter, parentAuthRoutes);
+app.use('/api/principal/auth', authApiLimiter, principalAuthRoutes);
+app.use('/api/auth', authApiLimiter, unifiedAuthRoutes);
 app.use('/api/principal', principalDashboardRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/student/materials', studentMaterialRoutes);
 app.use('/api/student', require('./routes/student'));
 app.use('/api/subject', subjectRouter);
 app.use('/api/exam', examRouter);
@@ -343,41 +401,41 @@ app.use('/api/assignment', assignmentRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/behaviour', behaviourRouter);
 app.use('/api/progress', progressRouter);
-app.use('/api/ai-learning', aiLearningRouter);
-app.use('/api/student-ai-learning', studentAILearningRouter);
+app.use('/api/ai-learning', aiApiLimiter, aiLearningRouter);
+app.use('/api/student-ai-learning', aiApiLimiter, studentAILearningRouter);
 app.use('/api/alcove', alcoveRouter);
 app.use('/api/meeting', meetingRouter);
 app.use('/api/observations', studentObservationRouter);
 
 
 
-app.use('/api/schools', adminActionLogger, schoolRoutes);
-app.use('/api/school-registration', schoolRegistrationRoutes);
-app.use('/api/academic', academicRoutes);
+app.use('/api/schools', writeHeavyApiLimiter, adminActionLogger, schoolRoutes);
+app.use('/api/school-registration', authApiLimiter, schoolRegistrationRoutes);
+app.use('/api/academic', writeHeavyApiLimiter, academicRoutes);
 app.use('/api/fees', feeRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/timetable', timetableRoutes);
+app.use('/api/reports', writeHeavyApiLimiter, reportRoutes);
+app.use('/api/timetable', writeHeavyApiLimiter, timetableRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
-app.use('/api/super-admin', adminActionLogger, superAdminRoutes);
-app.use('/api/support', adminActionLogger, supportRoutes);
-app.use('/api/issues', adminActionLogger, issueRoutes);
-app.use('/api/teacher-allocations', teacherAllocationRoutes);
+app.use('/api/super-admin', writeHeavyApiLimiter, adminActionLogger, superAdminRoutes);
+app.use('/api', organizationRoutes);
+app.use('/api/support', writeHeavyApiLimiter, adminActionLogger, supportRoutes);
+app.use('/api/issues', writeHeavyApiLimiter, adminActionLogger, issueRoutes);
+app.use('/api/teacher-allocations', writeHeavyApiLimiter, teacherAllocationRoutes);
 app.use('/api/practice', practiceRoutes);
 app.use('/api/excuse-letters', excuseLetterRoutes);
-app.use('/api/nif', nifStudentRoutes);
-app.use('/api/lesson-plans', lessonPlanRoutes);
-app.use('/api/ai-tutor', aiTutorRoutes);
+app.use('/api/nif', authApiLimiter, nifStudentRoutes);
+app.use('/api/lesson-plans', writeHeavyApiLimiter, lessonPlanRoutes);
+app.use('/api/ai-tutor', aiApiLimiter, aiTutorRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/achievements', achievementRoutes);
-app.use('/api/teaching-materials', teachingMaterialRoutes);
-app.use('/api/student/materials', studentMaterialRoutes);
-app.use('/api/practice-papers', practicePaperRoutes);
-app.use('/api/practice-sections', practiceSectionRoutes);
+app.use('/api/teaching-materials', uploadApiLimiter, teachingMaterialRoutes);
+app.use('/api/practice-papers', writeHeavyApiLimiter, practicePaperRoutes);
+app.use('/api/practice-sections', writeHeavyApiLimiter, practiceSectionRoutes);
 
-app.use("/api/uploads", uploadRoutes);
+app.use("/api/uploads", uploadApiLimiter, uploadRoutes);
 
 
 app.use((err, req, res, _next) => {

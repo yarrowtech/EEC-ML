@@ -10,8 +10,8 @@ const hashPasswordIfNeeded = async (password) => {
 };
 
 const principalSchema = new mongoose.Schema({
-  username: { type: String, unique: true, required: true },
-  email: { type: String, unique: true, required: true },
+  username: { type: String, required: true },
+  email: { type: String, required: true },
   password: { type: String, required: true },
   initialPassword: { type: String, default: '' },
   lastLoginAt: { type: Date, default: null },
@@ -28,6 +28,9 @@ principalSchema.pre('save', async function (next) {
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
+
+principalSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+principalSchema.index({ organizationId: 1, email: 1 }, { unique: true });
 
 
 principalSchema.pre('findOneAndUpdate', async function (next) {

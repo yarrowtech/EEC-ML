@@ -1,0 +1,61 @@
+API rate limits
+
+Global default: every `/api/*` route also inherits `api:general` at `1200 requests / 15 minutes`.
+
+Auth routes: `80 requests / 15 minutes`
+- `/api/admin/auth`
+- `/api/teacher/auth`
+- `/api/staff/auth`
+- `/api/student/auth`
+- `/api/parent/auth`
+- `/api/principal/auth`
+- `/api/auth`
+- `/api/school-registration`
+- `/api/nif`
+
+AI routes: `40 requests / 10 minutes`
+- `/api/ai-learning`
+- `/api/student-ai-learning`
+- `/api/ai-tutor`
+
+Upload and material routes: `60 requests / 15 minutes`
+- `/api/uploads`
+- `/api/teaching-materials`
+
+Heavy write/admin routes: `180 requests / 15 minutes`
+- `/api/admin/users`
+- `/api/promotion`
+- `/api/schools`
+- `/api/academic`
+- `/api/reports`
+- `/api/timetable`
+- `/api/super-admin`
+- `/api/support`
+- `/api/issues`
+- `/api/teacher-allocations`
+- `/api/lesson-plans`
+- `/api/practice-papers`
+- `/api/practice-sections`
+
+Other mounted API groups use only the global `/api` limit unless a stricter route limit is added later.
+- `/api/admin/feedback`
+- `/api/attendance`
+- `/api/student`
+- `/api/subject`
+- `/api/exam`
+- `/api/assignment`
+- `/api/feedback`
+- `/api/behaviour`
+- `/api/progress`
+- `/api/alcove`
+- `/api/meeting`
+- `/api/observations`
+- `/api/notifications`
+- `/api/audit-logs`
+- `/api/holidays`
+- `/api/departments`
+- `/api/chat`
+- `/api/achievements`
+- `/api/student/materials`
+- `/api/practice`
+- `/api/excuse-letters`

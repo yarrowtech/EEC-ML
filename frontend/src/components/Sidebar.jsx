@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
-  MessageCircle, MessageSquare, Brain, X, GraduationCap, BarChart3,
-  Heart, Star, Target, PanelLeft, ClipboardList,
+  MessageCircle, MessageSquare, Brain, X, BarChart3,
+  Heart, Star, Target, PanelLeft,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
@@ -12,18 +12,22 @@ import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 /* ── Menu definition ─────────────────────────────────────────── */
+// Views that all live inside the Learning hub — keeps the sidebar item lit on
+// legacy deep links like /student/smart-learning-courses/subject/... .
+const LEARNING_HUB_VIEWS = [
+  'learning', 'smart-learning', 'smart-learning-courses',
+  'smart-learning-courses-reference', 'smart-learning-tutor',
+  'study-materials', 'practice-papers',
+];
+
 const MENU_ITEMS = [
   {
     id: 'dashboard', name: 'Dashboard', icon: Home,
     iconColor: 'text-blue-600', iconBg: 'bg-blue-100',
   },
   {
-    id: 'smart-learning', name: 'Learning', icon: Brain,
+    id: 'learning', name: 'Learning', icon: Brain,
     iconColor: 'text-violet-600', iconBg: 'bg-violet-100',
-    children: [
-      { id: 'smart-learning-courses', name: 'Smart Subjects',  icon: GraduationCap },
-      { id: 'smart-learning-tutor',   name: 'AI Smart Learning',    icon: Brain },
-    ],
   },
   {
     id: 'academics', name: 'Academics', icon: BookOpen,
@@ -32,8 +36,6 @@ const MENU_ITEMS = [
       { id: 'assignments',                  name: 'Assignments',     icon: FileText  },
       { id: 'assignments-journal',          name: 'Journal',         icon: File      },
       { id: 'assignments-academic-alcove',  name: 'The Wall',        icon: Target    },
-      { id: 'study-materials',             name: 'Study Materials',  icon: BookOpen  },
-      { id: 'practice-papers',             name: 'Practice Papers',  icon: ClipboardList },
       { id: 'results',                      name: 'Results',         icon: BarChart3 },
     ],
   },
@@ -337,6 +339,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
               const isCommunicationItem = item.id === 'communication';
               const hasUnreadCommunication = isCommunicationItem && unreadChatCount > 0;
               const isActive   = activeView === item.id ||
+                (item.id === 'learning' && LEARNING_HUB_VIEWS.includes(activeView)) ||
                 (hasChildren && item.children?.some(c => c.id === activeView));
               const expanded   = openGroups[item.id] === undefined
                 ? (hasChildren && isActive)

@@ -16,7 +16,6 @@ const subMenus = {
       { id: 'assignments',                 name: 'Assignments',     icon: FileText,      color: 'bg-blue-500',   desc: 'Submit & track' },
       { id: 'assignments-journal',         name: 'Journal',         icon: File,          color: 'bg-green-500',  desc: 'My notes' },
       { id: 'assignments-academic-alcove', name: 'The Wall',        icon: Target,        color: 'bg-purple-500', desc: 'Deep focus' },
-      { id: 'study-materials',             name: 'Study Materials', icon: BookOpen,      color: 'bg-orange-500', desc: 'Resources' },
       { id: 'results',                     name: 'Results',         icon: BarChart3,     color: 'bg-indigo-500', desc: 'Grades' },
     ],
   },
@@ -36,11 +35,19 @@ const subMenus = {
 /* ─── Bottom-nav tab definitions ────────────────────────────────────────── */
 const navItems = [
   { id: 'dashboard', label: 'Home',      icon: Home,          path: '/student' },
+  { id: 'learning',  label: 'Learning',  icon: Brain,         path: '/student/learning' },
   { id: 'academics', label: 'Academics', icon: BookOpen,      subMenu: 'academics' },
   { id: 'schedule',  label: 'Schedule',  icon: Calendar,      subMenu: 'schedule' },
   { id: 'chat',      label: 'Messages',  icon: MessageCircle, path: '/student/chat' },
   { id: 'profile',   label: 'Profile',   icon: User,          path: '/student/profile' },
   { id: 'logout',    label: 'Logout',    icon: LogOut,        action: 'logout' },
+];
+
+// Every view served by the Learning hub — legacy ids keep deep links alive.
+const LEARNING_HUB_VIEWS = [
+  'learning', 'smart-learning', 'smart-learning-courses',
+  'smart-learning-courses-reference', 'smart-learning-tutor',
+  'study-materials', 'practice-papers',
 ];
 
 /* ─── Helper ─────────────────────────────────────────────────────────────── */
@@ -233,6 +240,8 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                 ? openMenu === item.subMenu || isViewInSubMenu(item.subMenu, activeView)
                 : item.id === 'dashboard'
                 ? activeView === 'dashboard' || activeView === 'home'
+                : item.id === 'learning'
+                ? LEARNING_HUB_VIEWS.includes(activeView)
                 : activeView === item.id;
 
               return (

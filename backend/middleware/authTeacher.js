@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const validateTokenTenant = require('./validateTokenTenant');
 
 module.exports = function (req, res, next) {
   const authHeader = req.headers.authorization;
@@ -8,6 +9,7 @@ module.exports = function (req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!validateTokenTenant(req, res, decoded)) return;
     if (decoded.type !== 'admin' && decoded.userType !== 'teacher') {
       return res.status(403).json({ error: 'Forbidden - not a teacher' });
     }

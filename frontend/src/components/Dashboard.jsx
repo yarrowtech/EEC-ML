@@ -15,14 +15,10 @@ import NoticeBoard from './NoticeBoard';
 import TeacherFeedback from './TeacherFeedback';
 import StudentChat from './StudentChat';
 import ExcuseLetter from './ExcuseLetter';
-import AILearningDashboard from './AILearningDashboard';
-import AILearningCoursesLanding from './AILearningCoursesLanding';
-import AILearningCoursesReference from './AILearningCoursesReference';
+import LearningHub from './LearningHub';
 import AcademicAlcove from './AcademicAlcove';
 import StudentWellbeing from './StudentWellbeing';
 import LessonPlanStatusView from './LessonPlanStatusView';
-import StudyMaterials from './StudyMaterials';
-import PracticePapersPortal from './PracticePapersPortal';
 import StudentExamsView from './StudentExamsView';
 import { StudentDashboardProvider } from './StudentDashboardContext';
 import MobileBottomNav from './MobileBottomNav';
@@ -106,10 +102,11 @@ const Dashboard = () => {
   const viewComponents = {
     dashboard: (props) => <DashboardHome {...props} setActiveView={setActiveView} />,
     home: (props) => <DashboardHome {...props} setActiveView={setActiveView} />,
-    'smart-learning': AILearningCoursesLanding,
-    'smart-learning-courses': AILearningCoursesLanding,
-    'smart-learning-courses-reference': AILearningCoursesReference,
-    'smart-learning-tutor': AILearningDashboard,
+    learning: LearningHub,
+    'smart-learning': LearningHub,
+    'smart-learning-courses': LearningHub,
+    'smart-learning-courses-reference': LearningHub,
+    'smart-learning-tutor': LearningHub,
     academics: (props) => <AssignmentView {...props} defaultType="school" />,
     attendance: AttendanceView,
     routine: RoutineView,
@@ -120,8 +117,8 @@ const Dashboard = () => {
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
     'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
     'assignments-academic-alcove': (props) => <AcademicAlcove {...props} />,
-    'study-materials': StudyMaterials,
-    'practice-papers': PracticePapersPortal,
+    'study-materials': LearningHub,
+    'practice-papers': LearningHub,
     courses: CoursesView,
     results: ResultsView,
     communication: StudentChat,

@@ -609,6 +609,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
         action: 'login',
         outcome: 'failure',
         userType: 'student',
+        organizationId: user.organizationId || req.organizationId || null,
         identifier,
         reason: 'Invalid credentials',
         statusCode: 401,
@@ -663,6 +664,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
       {
         id: user._id,
         userType: 'student',
+        organizationId: user.organizationId || req.organizationId || null,
         schoolId: user.schoolId || null,
         campusId: user.campusId || null,
       },

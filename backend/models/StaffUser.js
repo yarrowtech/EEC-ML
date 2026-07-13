@@ -10,13 +10,13 @@ const hashPasswordIfNeeded = async (password) => {
 };
 
 const staffUserSchema = new mongoose.Schema({
-  username: { type: String, unique: true, required: true },
+  username: { type: String, required: true },
   password: { type: String, required: true },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
   campusId: { type: String, default: null },
   campusName: { type: String, default: null },
   campusType: { type: String, default: null },
-  employeeCode: { type: String, unique: true, sparse: true },
+  employeeCode: { type: String },
   empId: Number,
   name: String,
   email: String,
@@ -33,6 +33,12 @@ const staffUserSchema = new mongoose.Schema({
   salary: Number,
   status: { type: String, enum: ['Active', 'On Leave', 'Inactive'], default: 'Active' },
 }, { timestamps: true });
+
+staffUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+staffUserSchema.index(
+  { organizationId: 1, employeeCode: 1 },
+  { unique: true, partialFilterExpression: { employeeCode: { $type: 'string' } } }
+);
 
 staffUserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

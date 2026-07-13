@@ -327,6 +327,22 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
 
 // ===== STUDENT ROUTES =====
 
+// StudentUser stores the class name in `grade` and the section name in
+// `section`; some records may also carry classId/sectionId. Papers are
+// matched on whichever identifiers the student actually has.
+const buildStudentPaperAccess = (student) => {
+  const conditions = [];
+  if (student.classId && student.sectionId) {
+    conditions.push({ classId: student.classId, sectionId: student.sectionId });
+  }
+  const className = String(student.className || student.grade || '').trim();
+  const sectionName = String(student.sectionName || student.section || '').trim();
+  if (className) {
+    conditions.push(sectionName ? { className, sectionName } : { className });
+  }
+  return conditions.length ? { $or: conditions } : null;
+};
+
 // LIST: Get available practice papers
 router.get('/student/papers', authStudent, async (req, res, next) => {
   try {
@@ -341,12 +357,10 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       });
     }
 
-    const classAccessFilter = {
-      $or: [
-        { classId: student.classId, sectionId: student.sectionId },
-        { className: student.className, sectionName: student.sectionName }
-      ]
-    };
+    const classAccessFilter = buildStudentPaperAccess(student);
+    if (!classAccessFilter) {
+      return res.json({ success: true, papers: [], total: 0, page: 1, limit: parseInt(limit), pages: 0 });
+    }
 
     const filters = {
       schoolId: req.schoolId,

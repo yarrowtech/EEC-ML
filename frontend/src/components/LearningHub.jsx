@@ -1,0 +1,187 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Bot, GraduationCap, ClipboardList, BookOpen, Play } from 'lucide-react';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { AiTutorPanel } from './AITutorHomeScreen';
+import AILearningCoursesLanding from './AILearningCoursesLanding';
+import PracticePapersPortal from './PracticePapersPortal';
+import StudyMaterials from './StudyMaterials';
+import {
+  saveLearningActivity,
+  getLearningActivity,
+  formatActivityAge,
+} from '../utils/learningContinuity';
+
+// One learning surface for students. Every tool the portal used to spread
+// across two sidebar groups lives behind exactly four verbs; each tab keeps
+// its canonical URL so old deep links (and the courses portal's internal
+// routing) continue to work.
+const TABS = [
+  {
+    key: 'tutor',
+    label: 'AI Tutor',
+    hint: 'Ask, quiz, review',
+    icon: Bot,
+    path: '/student/learning',
+    matches: ['learning', 'smart-learning', 'smart-learning-tutor'],
+  },
+  {
+    key: 'subjects',
+    label: 'Subjects',
+    hint: 'Chapters & topics',
+    icon: GraduationCap,
+    path: '/student/smart-learning-courses',
+    matches: ['smart-learning-courses', 'smart-learning-courses-reference'],
+  },
+  {
+    key: 'practice',
+    label: 'Practice',
+    hint: 'Papers & tests',
+    icon: ClipboardList,
+    path: '/student/practice-papers',
+    matches: ['practice-papers'],
+  },
+  {
+    key: 'materials',
+    label: 'Materials',
+    hint: 'From your teachers',
+    icon: BookOpen,
+    path: '/student/study-materials',
+    matches: ['study-materials'],
+  },
+];
+
+const viewSegmentFromPath = (pathname) => {
+  const match = String(pathname || '').match(/^\/(student|dashboard)\/([^/]+)/);
+  return match?.[2] || 'learning';
+};
+
+const prettifySlug = (raw) => {
+  const text = decodeURIComponent(String(raw || '')).replace(/[-_]+/g, ' ').trim();
+  return text.replace(/\b\w/g, (ch) => ch.toUpperCase());
+};
+
+// Human-readable detail for deep subject/topic URLs, e.g.
+// /student/smart-learning-courses/subject/physics/topic/motion → "Physics · Motion"
+const detailFromPath = (pathname) => {
+  const subject = pathname.match(/\/subject\/([^/]+)/)?.[1];
+  const topic = pathname.match(/\/topic\/([^/]+)/)?.[1];
+  return [subject, topic].filter(Boolean).map(prettifySlug).join(' · ');
+};
+
+const LearningHub = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeTab = useMemo(() => {
+    const segment = viewSegmentFromPath(location.pathname);
+    return TABS.find((tab) => tab.matches.includes(segment)) || TABS[0];
+  }, [location.pathname]);
+
+  // Snapshot the last activity once per mount so the card offers where the
+  // student left off previously, not the page they are currently on.
+  const [lastActivity] = useState(() => getLearningActivity());
+
+  useEffect(() => {
+    saveLearningActivity({
+      path: location.pathname,
+      label: activeTab.label,
+      detail: detailFromPath(location.pathname),
+    });
+  }, [location.pathname, activeTab.label]);
+
+  // Only offer Continue for a previous sitting (not the tab clicked a moment
+  // ago) — anything older than 5 minutes counts as "left the app".
+  const showContinue = Boolean(
+    lastActivity &&
+    lastActivity.path !== location.pathname &&
+    Date.now() - Number(lastActivity.at || 0) > 5 * 60 * 1000
+  );
+
+  return (
+    <div className="min-h-full w-full bg-[#F4F1EA] text-[#26332E]">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">One place to study</p>
+            <h1 className="font-[Nunito] text-2xl font-extrabold text-[#26332E] sm:text-3xl">Learning</h1>
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="Learning sections"
+            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-4"
+          >
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = tab.key === activeTab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => { if (!active) navigate(tab.path); }}
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                    active
+                      ? 'bg-[#3F7D6E] text-white shadow-sm'
+                      : 'text-[#5c655f] hover:bg-[#EFEDE5]'
+                  }`}
+                >
+                  <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                    active ? 'bg-white/15 text-white' : 'bg-[#E9F0EB] text-[#3F7D6E]'
+                  }`}>
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold leading-tight">{tab.label}</span>
+                    <span className={`block truncate text-[11px] ${active ? 'text-white/75' : 'text-[#78827B]'}`}>
+                      {tab.hint}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {showContinue && (
+          <button
+            type="button"
+            onClick={() => navigate(lastActivity.path)}
+            className="group flex w-full items-center gap-3 rounded-2xl border border-[#cfe0d8] bg-[#E9F0EB] px-4 py-3 text-left transition-colors hover:border-[#3F7D6E]"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#3F7D6E] text-white">
+              <Play className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#3F7D6E]">
+                Continue where you left off
+              </span>
+              <span className="block truncate text-sm font-semibold text-[#26332E]">
+                {lastActivity.label}
+                {lastActivity.detail ? ` — ${lastActivity.detail}` : ''}
+                <span className="ml-2 font-normal text-[#78827B]">{formatActivityAge(lastActivity.at)}</span>
+              </span>
+            </span>
+            <span className="rounded-xl bg-[#3F7D6E] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
+              Continue
+            </span>
+          </button>
+        )}
+
+        {activeTab.key === 'tutor' && (
+          <TooltipProvider delayDuration={150}>
+            <AiTutorPanel />
+          </TooltipProvider>
+        )}
+      </div>
+
+      {activeTab.key === 'subjects' && <AILearningCoursesLanding />}
+      {activeTab.key === 'practice' && <PracticePapersPortal />}
+      {activeTab.key === 'materials' && <StudyMaterials />}
+    </div>
+  );
+};
+
+export default LearningHub;

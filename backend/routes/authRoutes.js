@@ -54,6 +54,7 @@ const tryAdmin = async ({ admin, password, rememberMe }) => {
     id: admin._id,
     type: 'admin',
     username: admin.username,
+    organizationId: admin.organizationId || null,
     schoolId: admin.schoolId || null,
     campusId: admin.campusId || null,
     campusName: admin.campusName || null,
@@ -87,6 +88,7 @@ const tryTeacher = async ({ user, password, rememberMe }) => {
   const token = signToken({
     id: user._id,
     userType: 'teacher',
+    organizationId: user.organizationId || null,
     schoolId: user.schoolId || null,
     campusId: user.campusId || null,
   }, rememberMe ? '30d' : JWT_EXPIRES_IN);
@@ -113,6 +115,7 @@ const tryStudent = async ({ user, password, rememberMe }) => {
   const token = signToken({
     id: user._id,
     userType: 'student',
+    organizationId: user.organizationId || null,
     schoolId: user.schoolId || null,
     campusId: user.campusId || null,
   }, rememberMe ? '30d' : JWT_EXPIRES_IN);
@@ -131,6 +134,7 @@ const tryParent = async ({ user, password, rememberMe }) => {
   const token = signToken({
     id: user._id,
     userType: 'parent',
+    organizationId: user.organizationId || null,
     schoolId: user.schoolId || null,
     campusId: user.campusId || null,
   }, rememberMe ? '30d' : JWT_EXPIRES_IN);
@@ -149,6 +153,7 @@ const tryPrincipal = async ({ principal, password, rememberMe }) => {
     id: principal._id,
     type: 'principal',
     userType: 'principal',
+    organizationId: principal.organizationId || null,
     schoolId: principal.schoolId || null,
     campusId: principal.campusId || null,
     campusName: principal.campusName || null,
@@ -165,6 +170,7 @@ const tryStaff = async ({ user, password, rememberMe }) => {
   const token = signToken({
     id: user._id,
     type: 'staff',
+    organizationId: user.organizationId || null,
     schoolId: user.schoolId || null,
     campusId: user.campusId || null,
   }, rememberMe ? '30d' : JWT_EXPIRES_IN);
@@ -189,22 +195,22 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
     const normalizedUsername = normalize(username);
     const [admin, teacher, principal, student, parent, staff] = await Promise.all([
       Admin.findOne({ username })
-        .select('_id username password role status schoolId campusId campusName campusType lastLoginAt')
+        .select('_id username password role status organizationId schoolId campusId campusName campusType lastLoginAt')
         .lean(),
       TeacherUser.findOne({ $or: [{ username }, { employeeCode: username }] })
-        .select('_id username employeeCode password schoolId campusId lastLoginAt')
+        .select('_id username employeeCode password organizationId schoolId campusId lastLoginAt')
         .lean(),
       Principal.findOne({ $or: [{ username: normalizedUsername }, { email: normalizedUsername }] })
-        .select('_id username email password schoolId campusId campusName campusType lastLoginAt')
+        .select('_id username email password organizationId schoolId campusId campusName campusType lastLoginAt')
         .lean(),
       StudentUser.findOne({ $or: [{ username }, { studentCode: username }] })
-        .select('_id username studentCode password schoolId campusId lastLoginAt isArchived')
+        .select('_id username studentCode password organizationId schoolId campusId lastLoginAt isArchived')
         .lean(),
       ParentUser.findOne({ username })
-        .select('_id username password schoolId campusId lastLoginAt')
+        .select('_id username password organizationId schoolId campusId lastLoginAt')
         .lean(),
       StaffUser.findOne({ username })
-        .select('_id username password schoolId campusId')
+        .select('_id username password organizationId schoolId campusId')
         .lean(),
     ]);
 
