@@ -9,6 +9,7 @@ const { logBusinessEvent } = require('../utils/businessEventLogger');
 const { generatePassword } = require('../utils/generator');
 const { sendSchoolApprovalEmail } = require('../utils/mailer');
 const { recordPlatformAudit } = require('../utils/platformAudit');
+const { ensureOrganizationForSchool } = require('../services/organizationProvisioningService');
 
 const router = express.Router();
 
@@ -390,6 +391,24 @@ router.put('/registrations/:id/approve', adminAuth, ensureSuperAdmin, async (req
       });
     }
 
+    // Provision the tenant Organization now that the school is active, so its
+    // branded portal + payment gateway exist immediately instead of being
+    // created lazily on first login. Idempotent and best-effort.
+    let organizationProvisioned = false;
+    try {
+      const organization = await ensureOrganizationForSchool({ schoolId: school._id });
+      organizationProvisioned = Boolean(organization);
+    } catch (orgErr) {
+      logBusinessEvent(req, {
+        action: 'school_registration.org_provision',
+        outcome: 'failure',
+        entity: 'organization',
+        entityId: school._id,
+        reason: orgErr.message,
+        adminId: req.admin?.id || req.admin?._id,
+      });
+    }
+
     // Email the credentials to the school; failure is reported, not fatal.
     const notifiedEmail = String(contactEmail || school.officialEmail || school.contactEmail || '').trim();
     let emailSent = false;
@@ -422,6 +441,7 @@ router.put('/registrations/:id/approve', adminAuth, ensureSuperAdmin, async (req
       meta: {
         transition: 'pending_to_approved_active',
         adminsProvisioned: issuedCredentials.map((entry) => entry.username),
+        organizationProvisioned,
         emailSent,
         notifiedEmail: emailSent ? notifiedEmail : undefined,
       },
@@ -442,6 +462,7 @@ router.put('/registrations/:id/approve', adminAuth, ensureSuperAdmin, async (req
       message: 'School registration approved successfully',
       school,
       credentials: issuedCredentials,
+      organizationProvisioned,
       emailSent,
       notifiedEmail: notifiedEmail || null,
     });

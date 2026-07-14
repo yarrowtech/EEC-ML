@@ -4,7 +4,16 @@ const Organization = require('../models/Organization');
 const adminAuth = require('../middleware/adminAuth');
 const Payment = require('../models/Payment');
 const School = require('../models/School');
+const StudentUser = require('../models/StudentUser');
+const BillingSetting = require('../models/BillingSetting');
 const { readAuthenticatedTenantScope } = require('../utils/authTenantScope');
+const {
+  TIER_KEYS,
+  getOrCreateBillingSetting,
+  sanitizeBillingSetting,
+  computeMonthlyBill,
+} = require('../utils/billing');
+const { recordPlatformAudit } = require('../utils/platformAudit');
 
 const router = express.Router();
 
@@ -146,50 +155,10 @@ router.get('/tenant', async (req, res, next) => {
   }
 });
 
-router.post('/super-admin/organizations', adminAuth, ensureSuperAdmin, async (req, res, next) => {
-  try {
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
-    if (name.length < 2 || name.length > 160) {
-      return res.status(400).json({ error: 'name must contain between 2 and 160 characters' });
-    }
-
-    const slug = createSlug(req.body?.slug || name);
-    if (!slug || RESERVED_SLUGS.has(slug)) {
-      return res.status(400).json({ error: 'The generated organization slug is reserved or invalid' });
-    }
-
-    const rootDomain = String(process.env.ROOT_DOMAIN || process.env.MAIN_DOMAIN || 'electroniceducare.com')
-      .trim()
-      .toLowerCase();
-    const domain = `${slug}.${rootDomain}`;
-    const duplicate = await Organization.findOne({ $or: [{ slug }, { domain }] }).select('_id').lean();
-    if (duplicate) {
-      return res.status(409).json({ error: 'An organization with this slug or domain already exists' });
-    }
-
-    const organization = await Organization.create({
-      name,
-      slug,
-      domain,
-      logo: req.body?.logo || '',
-      favicon: req.body?.favicon || '',
-      primaryColor: req.body?.primaryColor || undefined,
-      secondaryColor: req.body?.secondaryColor || undefined,
-      settings: req.body?.settings || {},
-    });
-
-    return res.status(201).json({
-      organizationId: organization._id,
-      slug: organization.slug,
-      domain: organization.domain,
-    });
-  } catch (error) {
-    if (error?.code === 11000) {
-      return res.status(409).json({ error: 'Organization slug or domain already exists' });
-    }
-    return next(error);
-  }
-});
+// Note: organizations are provisioned automatically when a school registration
+// is approved (see routes/schoolRoutes.js -> ensureOrganizationForSchool), so
+// there is intentionally no manual "create organization" endpoint. This keeps
+// School the single source of truth and prevents orphan tenants.
 
 router.get('/super-admin/organizations', adminAuth, ensureSuperAdmin, async (req, res, next) => {
   try {
@@ -204,40 +173,134 @@ router.get('/super-admin/organizations', adminAuth, ensureSuperAdmin, async (req
 
 router.get('/super-admin/organizations/payment-status', adminAuth, ensureSuperAdmin, async (_req, res, next) => {
   try {
-    const [organizations, transactionCounts] = await Promise.all([
+    const [organizations, transactionCounts, billingSetting] = await Promise.all([
       Organization.find({}).sort({ name: 1 }).lean(),
       Payment.aggregate([
         { $group: { _id: '$organizationId', totalTransactions: { $sum: 1 }, capturedTransactions: {
           $sum: { $cond: [{ $eq: ['$status', 'captured'] }, 1, 0] },
         } } },
       ]),
+      getOrCreateBillingSetting(),
     ]);
     const schoolIds = organizations.map((item) => item.schoolId).filter(Boolean);
-    const schools = await School.find({ _id: { $in: schoolIds } })
-      .select('subscriptionStatus subscriptionPlan')
-      .lean();
+    const [schools, studentCounts] = await Promise.all([
+      School.find({ _id: { $in: schoolIds } })
+        .select('subscriptionStatus subscriptionPlan')
+        .lean(),
+      // Active students grouped per school for per-student billing.
+      StudentUser.aggregate([
+        { $match: { schoolId: { $in: schoolIds }, status: { $ne: 'Inactive' } } },
+        { $group: { _id: '$schoolId', count: { $sum: 1 } } },
+      ]),
+    ]);
     const schoolMap = new Map(schools.map((school) => [String(school._id), school]));
     const countMap = new Map(transactionCounts.map((item) => [String(item._id), item]));
-    return res.json({
-      organizations: organizations.map((organization) => {
-        const gateway = organization.paymentGateway || {};
-        const counts = countMap.get(String(organization._id)) || {};
-        const school = schoolMap.get(String(organization.schoolId)) || {};
-        return {
-          organizationId: organization._id,
-          name: organization.name,
-          domain: organization.domain,
-          paymentEnabled: Boolean(gateway.enabled),
-          provider: gateway.provider || 'razorpay',
-          mode: gateway.mode || 'test',
-          lastVerifiedAt: gateway.razorpay?.lastVerifiedAt || null,
-          totalTransactions: Number(counts.totalTransactions || 0),
-          capturedTransactions: Number(counts.capturedTransactions || 0),
-          subscriptionStatus: school.subscriptionStatus || organization.subscription?.status || 'unknown',
-          subscriptionPlan: school.subscriptionPlan || organization.subscription?.plan || 'unassigned',
-        };
-      }),
+    const studentMap = new Map(studentCounts.map((item) => [String(item._id), item.count]));
+
+    const pricing = sanitizeBillingSetting(billingSetting);
+    let totalMonthlyRevenue = 0;
+    let totalStudents = 0;
+
+    const rows = organizations.map((organization) => {
+      const gateway = organization.paymentGateway || {};
+      const counts = countMap.get(String(organization._id)) || {};
+      const school = schoolMap.get(String(organization.schoolId)) || {};
+      const studentCount = Number(studentMap.get(String(organization.schoolId)) || 0);
+      const bill = computeMonthlyBill(studentCount, billingSetting);
+      totalMonthlyRevenue += bill.monthlyBill;
+      totalStudents += studentCount;
+      return {
+        organizationId: organization._id,
+        name: organization.name,
+        domain: organization.domain,
+        paymentEnabled: Boolean(gateway.enabled),
+        provider: gateway.provider || 'razorpay',
+        mode: gateway.mode || 'test',
+        lastVerifiedAt: gateway.razorpay?.lastVerifiedAt || null,
+        totalTransactions: Number(counts.totalTransactions || 0),
+        capturedTransactions: Number(counts.capturedTransactions || 0),
+        subscriptionStatus: school.subscriptionStatus || organization.subscription?.status || 'unknown',
+        subscriptionPlan: school.subscriptionPlan || organization.subscription?.plan || 'unassigned',
+        studentCount,
+        tierKey: bill.tierKey,
+        tierLabel: bill.tierLabel,
+        pricePerStudent: bill.pricePerStudent,
+        monthlyBill: bill.monthlyBill,
+      };
     });
+
+    return res.json({
+      organizations: rows,
+      pricing,
+      totals: {
+        students: totalStudents,
+        monthlyRevenue: Math.round(totalMonthlyRevenue * 100) / 100,
+        currency: pricing.currency,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Per-student pricing tiers (super admin only)
+router.get('/super-admin/billing/pricing', adminAuth, ensureSuperAdmin, async (_req, res, next) => {
+  try {
+    const setting = await getOrCreateBillingSetting();
+    return res.json({ pricing: sanitizeBillingSetting(setting) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.put('/super-admin/billing/pricing', adminAuth, ensureSuperAdmin, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const update = {};
+
+    if (body.currency !== undefined) {
+      if (typeof body.currency !== 'string' || !body.currency.trim()) {
+        return res.status(400).json({ error: 'currency must be a non-empty string' });
+      }
+      update.currency = body.currency.trim().toUpperCase().slice(0, 8);
+    }
+
+    const tiers = body.tiers || {};
+    for (const key of TIER_KEYS) {
+      const tier = tiers[key];
+      if (tier === undefined) continue;
+      if (tier.pricePerStudent !== undefined) {
+        const price = Number(tier.pricePerStudent);
+        if (!Number.isFinite(price) || price < 0) {
+          return res.status(400).json({ error: `Invalid price for ${key}` });
+        }
+        update[`tiers.${key}.pricePerStudent`] = Math.round(price * 100) / 100;
+      }
+      if (tier.label !== undefined) {
+        if (typeof tier.label !== 'string' || tier.label.length > 80) {
+          return res.status(400).json({ error: `Invalid label for ${key}` });
+        }
+        update[`tiers.${key}.label`] = tier.label.trim();
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'No valid pricing fields provided' });
+    }
+
+    const setting = await BillingSetting.findOneAndUpdate(
+      { key: 'global' },
+      { $set: update, $setOnInsert: { key: 'global' } },
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+    ).lean();
+
+    await recordPlatformAudit(req, {
+      action: 'billing.pricing_update',
+      entity: 'billing_setting',
+      meta: { fields: Object.keys(update) },
+    });
+
+    return res.json({ pricing: sanitizeBillingSetting(setting) });
   } catch (error) {
     return next(error);
   }

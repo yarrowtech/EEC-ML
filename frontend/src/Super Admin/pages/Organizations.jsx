@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, Plus, RefreshCw, Save } from 'lucide-react';
+import { Building2, RefreshCw, Save, Info } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const authHeaders = () => ({
@@ -11,7 +11,6 @@ export default function Organizations() {
   const [organizations, setOrganizations] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, suspended: 0 });
   const [drafts, setDrafts] = useState({});
-  const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState('');
   const [error, setError] = useState('');
@@ -42,28 +41,6 @@ export default function Organizations() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const createOrganization = async (event) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    setSaving('create');
-    setError('');
-    try {
-      const response = await fetch(`${API_BASE}/api/super-admin/organizations`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || 'Unable to create organization');
-      setName('');
-      await load();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSaving('');
-    }
-  };
 
   const updateOrganization = async (organization, changes) => {
     setSaving(organization._id);
@@ -113,15 +90,13 @@ export default function Organizations() {
         ))}
       </div>
 
-      <form onSubmit={createOrganization} className="flex flex-col gap-3 border-b border-gray-200 pb-6 sm:flex-row sm:items-end">
-        <label className="flex-1 text-sm font-semibold text-gray-700">
-          School name
-          <input value={name} onChange={(event) => setName(event.target.value)} maxLength={160} className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 font-normal outline-none focus:border-amber-500" placeholder="St. Xavier's School" />
-        </label>
-        <button disabled={saving === 'create'} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">
-          <Plus size={16} /> Create organization
-        </button>
-      </form>
+      <div className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+        <Info size={16} className="mt-0.5 shrink-0" />
+        <p>
+          Organizations are created automatically when a school registration is approved. This page is for
+          managing existing tenants — assign a subscription plan, attach custom domains, or suspend/activate access.
+        </p>
+      </div>
 
       {error && <p className="border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
