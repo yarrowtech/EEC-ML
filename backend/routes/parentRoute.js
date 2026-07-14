@@ -366,7 +366,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Parent Login
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
   // #swagger.tags = ['Parents']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;
@@ -930,7 +930,7 @@ router.post('/complaints', authParent, async (req, res) => {
   }
 });
 
-router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, res) => {
+router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
   // #swagger.tags = ['Parents']
   const { username, newPassword } = req.body || {};
   try {

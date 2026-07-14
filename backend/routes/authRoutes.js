@@ -206,7 +206,12 @@ const tryStaff = async ({ user, password, rememberMe }) => {
   return { token, userType: 'Staff' };
 };
 
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, res) => {
+router.post('/login', rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: rateLimit.loginKeyGenerator,
+  skipSuccessfulRequests: true,
+}), async (req, res) => {
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;
   if (typeof rawUsername !== 'string' || typeof rawPassword !== 'string') {

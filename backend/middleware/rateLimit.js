@@ -112,4 +112,14 @@ const rateLimit = ({
   };
 };
 
+// Login/reset endpoints key on IP + route + username so unrelated accounts
+// (or roles, on the shared unified login endpoint) don't exhaust one
+// another's request budget just because they share an IP/NAT.
+rateLimit.loginKeyGenerator = (req) => {
+  const ip = getIpForLimit(req, true);
+  const routePath = `${req.baseUrl || ''}${req.path || req.originalUrl || ''}`;
+  const username = String(req?.body?.username || '').trim().toLowerCase();
+  return `${ip}:${routePath}:${username || 'anonymous'}`;
+};
+
 module.exports = rateLimit;

@@ -96,7 +96,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Login Staff
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
   // #swagger.tags = ['Staff']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;
