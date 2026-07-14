@@ -64,9 +64,10 @@ export const StudentDashboardProvider = ({ children }) => {
             headers,
           },
         }),
+        // Class teacher rarely changes mid-session — safe to serve from cache instead of
+        // forcing a network round-trip on every dashboard mount.
         fetchCachedJson(`${import.meta.env.VITE_API_URL}/api/student/auth/class-teacher`, {
           ttlMs: STUDENT_API_CACHE_TTL_MS,
-          forceRefresh: true,
           fetchOptions: {
             signal: controller.signal,
             headers,

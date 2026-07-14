@@ -96,7 +96,8 @@
       "Bash(curl -s \"http://localhost:5174/src/components/Dashboard.jsx\")",
       "Bash(pkill -f \"vite.*5174\")",
       "Bash(lsof -ti:5174)",
-      "Bash(xargs -r kill)"
+      "Bash(xargs -r kill)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/src/components/QuickStats.jsx)"
     ]
   }
 }

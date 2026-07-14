@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Trophy, Clock, TrendingUp, FileText, ChevronRight } from 'lucide-react';
+import { Trophy, Clock, FileText, Award } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { fetchCachedJson } from '../utils/studentApiCache';
 
@@ -74,18 +74,20 @@ const StatCard = ({ stat, theme, loading }) => {
 };
 
 const QuickStats = () => {
-  const { stats: dashboardStats, course, loading } = useStudentDashboard();
+  const { stats: dashboardStats, loading } = useStudentDashboard();
   const [assignmentSummary, setAssignmentSummary] = useState({ total: 0, pending: 0, evaluated: 0, loading: false });
+  const [examSummary, setExamSummary] = useState({ percentage: null, examName: '', loading: false });
 
+  // Fire immediately on mount (in parallel with the dashboard's own fetch) instead of
+  // waiting on `loading` — that previously made these two cards wait for the dashboard
+  // fetch to finish before even starting their own network calls.
   useEffect(() => {
-    const activeCourses = dashboardStats?.activeCourses ?? 0;
-    if (loading || activeCourses > 0) return;
+    const token = localStorage.getItem('token');
+    if (!token) { setAssignmentSummary({ total: 0, pending: 0, evaluated: 0, loading: false }); return; }
 
     const fetchAssignments = async () => {
       try {
         setAssignmentSummary(prev => ({ ...prev, loading: true }));
-        const token = localStorage.getItem('token');
-        if (!token) { setAssignmentSummary({ total: 0, pending: 0, evaluated: 0, loading: false }); return; }
         const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
         const { data } = await fetchCachedJson(`${API_BASE}/api/assignment/student/assignments`, {
           ttlMs: 5 * 60 * 1000,
@@ -103,61 +105,73 @@ const QuickStats = () => {
       }
     };
     fetchAssignments();
-  }, [dashboardStats, loading]);
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) { setExamSummary({ percentage: null, examName: '', loading: false }); return; }
+
+    const fetchLatestExam = async () => {
+      try {
+        setExamSummary(prev => ({ ...prev, loading: true }));
+        const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+        const { data } = await fetchCachedJson(`${API_BASE}/api/reports/report-cards/me`, {
+          ttlMs: 5 * 60 * 1000,
+          fetchOptions: { headers: { Authorization: `Bearer ${token}` } },
+        });
+        const totals = data?.reportCard?.totals || {};
+        const percentage = Number(totals.percentage);
+        setExamSummary({
+          percentage: Number.isFinite(percentage) ? percentage : null,
+          examName: data?.selectedExamGroupTitle || data?.reportCard?.term || '',
+          loading: false,
+        });
+      } catch {
+        setExamSummary({ percentage: null, examName: '', loading: false });
+      }
+    };
+    fetchLatestExam();
+  }, []);
 
   const stats = useMemo(() => {
-    if (!dashboardStats) {
-      return [
-        { title: 'Active Courses', value: loading ? '…' : '0', change: loading ? 'Loading…' : 'No course', icon: BookOpen },
-        { title: 'Achievements',   value: loading ? '…' : '0', change: loading ? 'Loading…' : 'Keep going!', icon: Trophy },
-        { title: 'Attendance',     value: loading ? '…' : '0%', change: loading ? 'Loading…' : '0/0 days', icon: Clock, progress: 0 },
-        { title: 'Overall Progress', value: loading ? '…' : '0%', change: loading ? 'Loading…' : 'Focus on class', icon: TrendingUp, progress: 0 },
-      ];
-    }
+    const attPct = dashboardStats?.attendancePercentage ?? 0;
+    const presentDays = dashboardStats?.presentDays ?? 0;
+    const totalClasses = dashboardStats?.totalClasses ?? 0;
+    const examPct = examSummary.percentage;
 
-    const attPct = dashboardStats.attendancePercentage ?? 0;
-    const attLabel = attPct >= 75 ? 'Good attendance' : attPct >= 50 ? 'Needs improvement' : 'Low attendance';
-
-    const base = [
-      {
-        title: 'Active Courses',
-        value: String(dashboardStats.activeCourses),
-        change: course ? course.name : 'No course assigned',
-        icon: BookOpen,
-      },
-      {
-        title: 'Achievements',
-        value: String(dashboardStats.achievements),
-        change: 'Keep learning!',
-        icon: Trophy,
-      },
+    return [
       {
         title: 'Attendance',
-        value: `${attPct}%`,
-        change: `${dashboardStats.presentDays}/${dashboardStats.totalClasses} days`,
+        value: loading ? '…' : `${attPct}%`,
+        change: loading ? 'Loading…' : `${presentDays}/${totalClasses} days`,
         icon: Clock,
         progress: attPct,
       },
       {
-        title: 'Overall Progress',
-        value: `${dashboardStats.overallProgress}%`,
-        change: attLabel,
-        icon: TrendingUp,
-        progress: dashboardStats.overallProgress ?? 0,
-      },
-    ];
-
-    if (dashboardStats.activeCourses === 0) {
-      base[0] = {
         title: 'Assignments',
         value: assignmentSummary.loading ? '…' : String(assignmentSummary.total),
-        change: assignmentSummary.loading ? 'Loading…' : assignmentSummary.total > 0 ? `Evaluated ${assignmentSummary.evaluated}` : 'No assignments',
+        change: assignmentSummary.loading
+          ? 'Loading…'
+          : assignmentSummary.total > 0 ? `${assignmentSummary.evaluated} evaluated` : 'No assignments',
         icon: FileText,
-      };
-    }
-
-    return base;
-  }, [dashboardStats, course, loading, assignmentSummary]);
+      },
+      {
+        title: 'Achievements',
+        value: loading ? '…' : String(dashboardStats?.achievements ?? 0),
+        change: 'Keep learning!',
+        icon: Trophy,
+      },
+      {
+        title: 'Latest Exam Score',
+        value: examSummary.loading ? '…' : examPct === null ? '—' : `${examPct}%`,
+        change: examSummary.loading
+          ? 'Loading…'
+          : examPct === null ? 'No exams yet' : (examSummary.examName || 'Latest exam'),
+        icon: Award,
+        progress: examPct === null ? undefined : examPct,
+      },
+    ];
+  }, [dashboardStats, loading, assignmentSummary, examSummary]);
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

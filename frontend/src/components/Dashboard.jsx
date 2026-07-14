@@ -170,10 +170,10 @@ const Dashboard = () => {
           />
           <main className={`flex-1 min-h-0 ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'p-0' : ''} w-full flex flex-col`}>
             <Motion.div
-              key={`${location.pathname}:${effectiveView}`}
-              initial={{ opacity: 0, y: 8 }}
+              key={location.pathname}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, ease: 'easeOut' }}
+              transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
               className="flex-1 min-h-0 w-full flex flex-col"
             >
               {renderContent()}

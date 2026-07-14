@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Award, AlertCircle, Calendar, Loader2, Trophy, Star, Medal, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { fetchCachedJson } from '../utils/studentApiCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -43,11 +44,10 @@ const AchievementCard = () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) { setAchievements([]); return; }
-        const res  = await fetch(`${API_BASE}/api/student/auth/achievements`, {
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        const { data } = await fetchCachedJson(`${API_BASE}/api/student/auth/achievements`, {
+          ttlMs: 5 * 60 * 1000,
+          fetchOptions: { headers: { Authorization: `Bearer ${token}` } },
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || 'Unable to load achievements');
         setAchievements(Array.isArray(data?.achievements) ? data.achievements : []);
       } catch (err) {
         setError(err.message || 'Unable to load achievements');
