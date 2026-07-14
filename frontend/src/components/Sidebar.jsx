@@ -87,7 +87,7 @@ const Tooltip = ({ label, sub, visible }) => (
 );
 
 /* ── Main Component ──────────────────────────────────────────── */
-const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
+const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   const navigate   = useNavigate();
   const [openGroups, setOpenGroups] = useState({});
   const [hoverId, setHoverId]       = useState(null);
@@ -129,7 +129,6 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
 
   const handleNavigation = (pageId) => {
     const path = pageId === 'dashboard' ? '/student' : `/student/${pageId}`;
-    onNavigateIntent?.(pageId === 'dashboard' ? 'dashboard' : pageId);
     navigate(path);
     if (typeof window !== 'undefined' && window.innerWidth < 1024) setIsOpen(false);
   };

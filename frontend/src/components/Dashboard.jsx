@@ -43,7 +43,6 @@ const Dashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [viewOverride, setViewOverride] = useState(null);
   const journalRef = useRef(null);
   const wasDesktopRef = useRef(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
@@ -55,12 +54,7 @@ const Dashboard = () => {
     navigate(canonicalPath, { replace: true });
   }, [location.pathname, navigate]);
 
-  const activeView = normalizeViewFromPath(location.pathname);
-  const effectiveView = viewOverride || activeView;
-
-  useEffect(() => {
-    setViewOverride(null);
-  }, [location.pathname]);
+  const effectiveView = normalizeViewFromPath(location.pathname);
 
   useEffect(() => {
     const syncSidebarForViewport = () => {
@@ -144,20 +138,19 @@ const Dashboard = () => {
     const Component = viewComponents[effectiveView];
 
     if (Component) {
-      return <Component key={`${location.pathname}:${effectiveView}`} setActiveView={setActiveView} />;
+      return <Component key={location.pathname} setActiveView={setActiveView} />;
     } else {
       return <DashboardHome key={`dashboard-fallback:${location.pathname}`} setActiveView={setActiveView} />;
     }
   };
 
   return (
-    <StudentDashboardProvider key={`student-provider:${location.pathname}`}>
-      <div key={`student-shell:${location.pathname}`} className="min-h-screen w-full bg-gray-50 flex relative overflow-hidden">
+    <StudentDashboardProvider>
+      <div className="min-h-screen w-full bg-gray-50 flex relative overflow-hidden">
         <Sidebar
           activeView={effectiveView}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          onNavigateIntent={setViewOverride}
         />
         <div
           className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
