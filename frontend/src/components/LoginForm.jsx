@@ -367,7 +367,7 @@ const LoginForm = () => {
         {/* Hero */}
         <div className="relative z-10 space-y-8">
           <div>
-            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-5">
+            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-2 mt-5">
               <div className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse" />
               <span className="text-xs font-semibold text-amber-100/90 tracking-wide">School Management Platform</span>
             </div>
@@ -382,7 +382,7 @@ const LoginForm = () => {
           </div>
 
           {/* Feature cards */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5 -mt-5 mb-2">
             {features.map(({ icon, label, desc }) => (
               <div
                 key={label}
@@ -399,7 +399,7 @@ const LoginForm = () => {
         </div>
 
         {/* Bottom */}
-        <div className="relative z-10 flex items-center justify-between">
+        <div className="relative z-10 flex items-center justify-between pt-4">
           <p className="text-xs text-white/50">© {new Date().getFullYear()} {organizationName} · All rights reserved</p>
           <div className="flex gap-1.5 items-center">
             <div className="w-6 h-1.5 rounded-full bg-white/50" />
