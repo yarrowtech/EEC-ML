@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { motion as Motion } from 'framer-motion';
 import { Bot, GraduationCap, ClipboardList, BookOpen, Play } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AiTutorPanel } from './AITutorHomeScreen';
@@ -171,15 +172,49 @@ const LearningHub = () => {
         )}
 
         {activeTab.key === 'tutor' && (
-          <TooltipProvider delayDuration={150}>
-            <AiTutorPanel />
-          </TooltipProvider>
+          <Motion.div
+            key="tutor"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <TooltipProvider delayDuration={150}>
+              <AiTutorPanel />
+            </TooltipProvider>
+          </Motion.div>
         )}
       </div>
 
-      {activeTab.key === 'subjects' && <AILearningCoursesLanding />}
-      {activeTab.key === 'practice' && <PracticePapersPortal />}
-      {activeTab.key === 'materials' && <StudyMaterials />}
+      {activeTab.key === 'subjects' && (
+        <Motion.div
+          key="subjects"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        >
+          <AILearningCoursesLanding />
+        </Motion.div>
+      )}
+      {activeTab.key === 'practice' && (
+        <Motion.div
+          key="practice"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        >
+          <PracticePapersPortal />
+        </Motion.div>
+      )}
+      {activeTab.key === 'materials' && (
+        <Motion.div
+          key="materials"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+        >
+          <StudyMaterials />
+        </Motion.div>
+      )}
     </div>
   );
 };

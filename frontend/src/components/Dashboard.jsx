@@ -25,6 +25,16 @@ import { StudentDashboardProvider } from './StudentDashboardContext';
 import MobileBottomNav from './MobileBottomNav';
 import HolidayListView from './HolidayListView';
 
+// All of these views render the same LearningHub component (it owns an
+// internal tab bar). Treat them as one logical page so switching tabs inside
+// it doesn't retrigger the page-level fade or remount the tab bar itself —
+// only LearningHub's own content area should transition.
+const LEARNING_HUB_VIEWS = [
+  'learning', 'smart-learning', 'smart-learning-courses',
+  'smart-learning-courses-reference', 'smart-learning-tutor',
+  'study-materials', 'practice-papers',
+];
+
 const normalizeViewFromPath = (pathname) => {
   if (
     pathname === '/student' ||
@@ -55,6 +65,10 @@ const Dashboard = () => {
   }, [location.pathname, navigate]);
 
   const effectiveView = normalizeViewFromPath(location.pathname);
+
+  // Fade/remount key for the content area: LearningHub tabs share one key so
+  // its own tab bar stays mounted while only its content swaps underneath.
+  const pageKey = LEARNING_HUB_VIEWS.includes(effectiveView) ? 'learning-hub' : location.pathname;
 
   useEffect(() => {
     const syncSidebarForViewport = () => {
@@ -138,7 +152,7 @@ const Dashboard = () => {
     const Component = viewComponents[effectiveView];
 
     if (Component) {
-      return <Component key={location.pathname} setActiveView={setActiveView} />;
+      return <Component key={pageKey} setActiveView={setActiveView} />;
     } else {
       return <DashboardHome key={`dashboard-fallback:${location.pathname}`} setActiveView={setActiveView} />;
     }
@@ -163,7 +177,7 @@ const Dashboard = () => {
           />
           <main className={`flex-1 min-h-0 ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'p-0' : ''} w-full flex flex-col`}>
             <Motion.div
-              key={location.pathname}
+              key={pageKey}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
