@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { motion as Motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import DashboardHome from './DashboardHome';
@@ -168,7 +169,15 @@ const Dashboard = () => {
             onOpenProfile={() => navigate('/student/profile')}
           />
           <main className={`flex-1 min-h-0 ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'p-0' : ''} w-full flex flex-col`}>
-            {renderContent()}
+            <Motion.div
+              key={`${location.pathname}:${effectiveView}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="flex-1 min-h-0 w-full flex flex-col"
+            >
+              {renderContent()}
+            </Motion.div>
             {effectiveView !== 'chat' && effectiveView !== 'excuse-letter' && effectiveView !== 'assignments-journal' && (
               <div className="h-16 sm:h-18 lg:hidden shrink-0" aria-hidden="true" />
             )}
