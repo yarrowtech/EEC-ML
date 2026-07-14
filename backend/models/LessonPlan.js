@@ -17,6 +17,7 @@ const lessonPlanSchema = new mongoose.Schema(
     duration: { type: String, default: '' },
     learningObjectives: [{ type: String, trim: true }],
     instructionalFlow: { type: mongoose.Schema.Types.Mixed, default: () => [] },
+    introduction: { type: String, default: '' },
     explanation: { type: String, default: '' },
     recap: { type: String, default: '' },
     materialsNeeded: [{ type: String, trim: true }],

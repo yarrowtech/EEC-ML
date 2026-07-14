@@ -846,6 +846,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     duration,
     learningObjectives,
     instructionalFlow,
+    introduction,
     explanation,
     recap,
     materialsNeeded,
@@ -910,6 +911,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
               description: normalizeString(item.description),
             }))
         : [],
+      introduction: normalizeString(introduction),
       explanation: normalizeString(explanation),
       recap: normalizeString(recap),
       materialsNeeded: Array.isArray(materialsNeeded)
@@ -2022,6 +2024,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         duration: chapterDuration || planDuration || '',
         learningObjectives,
         instructionalFlow,
+        introduction: normalizeString(plan?.introduction) || '',
         explanation: normalizeString(plan?.explanation) || '',
         recap: normalizeString(plan?.recap) || '',
       };
@@ -2035,6 +2038,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       instructionalFlow: Array.isArray(nextMeta.instructionalFlow) && nextMeta.instructionalFlow.length > 0
         ? nextMeta.instructionalFlow
         : (Array.isArray(currentMeta.instructionalFlow) ? currentMeta.instructionalFlow : []),
+      introduction: nextMeta.introduction || currentMeta.introduction || '',
       explanation: nextMeta.explanation || currentMeta.explanation || '',
       recap: nextMeta.recap || currentMeta.recap || '',
     });

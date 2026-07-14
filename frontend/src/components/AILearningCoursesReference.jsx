@@ -476,6 +476,7 @@ const AILearningCoursesReference = () => {
     }));
   }, [selectedChapterMeta]);
 
+  const chapterIntroduction = String(selectedChapterMeta.introduction || '').trim();
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
   const chapterRecap = String(selectedChapterMeta.recap || '').trim();
 
@@ -526,14 +527,15 @@ const AILearningCoursesReference = () => {
       setError('Fullscreen mode is not available on this device/browser.');
     }
   };
+  const introductionText = chapterIntroduction || readingContent.intro;
   const detailSections = useMemo(() => ([
-    { id: 'introduction', title: 'Introduction', text: readingContent.intro },
+    { id: 'introduction', title: 'Introduction', text: introductionText },
     ...readingContent.sections.map((section, index) => ({
       id: `section-${index + 1}`,
       title: section.title,
       text: section.text,
     })),
-  ]), [readingContent]);
+  ]), [readingContent, introductionText]);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
@@ -659,7 +661,7 @@ const AILearningCoursesReference = () => {
       y += 7;
 
       addHeading('Reading Mode Content');
-      addParagraph(readingContent.intro);
+      addParagraph(introductionText);
       readingContent.sections.forEach((section, index) => {
         addHeading(`${index + 1}. ${section.title}`);
         addParagraph(section.text);
@@ -804,7 +806,7 @@ const AILearningCoursesReference = () => {
                   className="mb-12 scroll-mt-24"
                 >
                   <h2 className="mb-6 text-3xl italic text-black">Understanding the Landscape</h2>
-                  <p className="mb-6">{readingContent.intro}</p>
+                  <p className="mb-6">{introductionText}</p>
                 </section>
 
                 <div className="my-12">

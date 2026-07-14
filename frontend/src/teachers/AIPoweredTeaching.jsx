@@ -64,14 +64,18 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
   const chapterTitle = String(source.title || plan?.title || 'Untitled Chapter').trim() || 'Untitled Chapter';
   const lessonDate = source.lessonDate || (plan?.date ? new Date(plan.date).toISOString().slice(0, 10) : '');
   const status = plan?.status === 'published' && plan?.isDraft === false ? 'published' : 'draft';
+  const planId = toIdString(plan?._id);
 
   return enrichChapter({
     ...source,
-    id: toIdString(source.id || `${toIdString(plan?._id) || 'plan'}-${index}`),
+    // Each published plan holds exactly one chapter, and the planner always stamps its
+    // chapter id as the literal 'chapter-1' — so the plan's own _id is the only value
+    // that's actually unique per chapter. Falling back to source.id would collide across
+    // every published chapter and make the sidebar unable to tell them apart.
+    id: planId || toIdString(source.id) || `chapter-${index}`,
     introductionText: source.introductionText || plan?.introductionText || '',
     learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
-    publishedPlanId: status === 'published' ? toIdString(plan?._id) : null,
-    publishedChapterTitle: status === 'published' ? chapterTitle : '',
+    publishedPlanId: status === 'published' ? planId : null,
     title: chapterTitle,
     lessonDate,
     status,
@@ -696,6 +700,8 @@ const AIPoweredTeaching = () => {
         ? chapter.instructionalFlow
         : DEFAULT_INSTRUCTIONAL_FLOW
       ).map(p => ({ id: p.id, phase: p.phase, duration: p.duration, description: p.description })),
+      // Introduction hook from the Introduction tab
+      introduction: stripHtml(chapter.introductionText) || '',
       // Step-by-step explanation and quick recap from Content tab
       explanation: stripHtml(chapter.explanation) || '',
       recap: stripHtml(chapter.recap) || '',
@@ -735,11 +741,10 @@ const AIPoweredTeaching = () => {
       setPublishProgress(100);
 
       // If it was a new chapter, update its state with the new plan ID
-      const newPlanId = data?.plan?._id || data?.data?._id;
+      const newPlanId = data?.data?._id;
       updateChapter(chapterId, (ch) => ({
         ...ch,
         publishedPlanId: isUpdate ? ch.publishedPlanId : newPlanId,
-        publishedChapterTitle: chapterTitle,
         status: 'published',
         isDraft: false,
       }));
