@@ -291,6 +291,42 @@ const run = async () => {
 
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
+
+  await cleanupTestSchools();
+};
+
+/**
+ * Remove the school registrations this suite created so they don't pollute
+ * the Super Admin portal. Best-effort: skipped without MONGODB_URL, and any
+ * failure is logged but never fails the run. Matches only the suite's own
+ * naming (@example.org emails / "Security Suite School" names).
+ */
+const cleanupTestSchools = async () => {
+  if (process.env.SKIP_SECURITY_SUITE_CLEANUP === '1') {
+    console.warn('Skipping test-school cleanup (SKIP_SECURITY_SUITE_CLEANUP=1).');
+    return;
+  }
+  if (!process.env.MONGODB_URL) {
+    console.warn('Skipping test-school cleanup: MONGODB_URL not set. Run scripts/cleanupSecuritySuiteSchools.js --apply manually.');
+    return;
+  }
+  try {
+    require('dotenv').config();
+    const mongoose = require('mongoose');
+    const School = require('../models/School');
+    await mongoose.connect(process.env.MONGODB_URL);
+    const result = await School.deleteMany({
+      $or: [
+        { name: /^Security Suite School/i },
+        { officialEmail: /@example\.org$/i },
+        { contactEmail: /@example\.org$/i },
+      ],
+    });
+    console.warn(`Cleaned up ${result.deletedCount} security-suite test school(s).`);
+    await mongoose.disconnect();
+  } catch (err) {
+    console.warn('Test-school cleanup failed (safe to ignore):', err.message);
+  }
 };
 
 run().catch((err) => {
