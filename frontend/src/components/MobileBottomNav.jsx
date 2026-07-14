@@ -274,12 +274,12 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                   >
                     {item.label}
                   </span>
-                  <span
+                  {/* <span
                     className={`h-1 w-1 rounded-full bg-amber-500 transition-opacity duration-200 ${
                       isActive ? 'opacity-100' : 'opacity-0'
                     }`}
                     aria-hidden="true"
-                  />
+                  /> */}
                 </button>
               );
             })}

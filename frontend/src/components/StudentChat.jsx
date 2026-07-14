@@ -722,25 +722,27 @@ const ChatMessage = ({
           {links.map((url) => (
             <MessageLinkPreview key={url} url={url} isMine={isMine} theme={t} />
           ))}
-          <div className="whitespace-pre-wrap leading-relaxed break-words flex justify-between items-end">
-            {textParts.map((part, index) => (
-              part.type === 'link' ? (
-                <a
-                  key={`${part.href}-${index}`}
-                  href={part.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline break-all"
-                  style={{ color: isMine ? 'rgba(255,255,255,0.96)' : t.color }}
-                >
-                  {part.label}
-                </a>
-              ) : (
-                <React.Fragment key={`text-${index}`}>{part.value}</React.Fragment>
-              )
-            ))}
+          <div className="flex flex-wrap justify-between items-end gap-x-2">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap leading-relaxed break-words">
+              {textParts.map((part, index) => (
+                part.type === 'link' ? (
+                  <a
+                    key={`${part.href}-${index}`}
+                    href={part.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline break-all"
+                    style={{ color: isMine ? 'rgba(255,255,255,0.96)' : t.color }}
+                  >
+                    {part.label}
+                  </a>
+                ) : (
+                  <React.Fragment key={`text-${index}`}>{part.value}</React.Fragment>
+                )
+              ))}
+            </span>
             <span
-              className={`inline-flex items-center gap-1 ml-2 text-[11px] whitespace-nowrap align-baseline ${!isMine ? 'text-gray-400' : ''}`}
+              className={`inline-flex items-center gap-1 ml-2 text-[11px] whitespace-nowrap align-baseline shrink-0 ${!isMine ? 'text-gray-400' : ''}`}
               style={isMine ? { color: 'rgba(255,255,255,0.75)' } : {}}
             >
               {msg?.isEdited && <span>(edited)</span>}
@@ -1820,7 +1822,7 @@ const StudentChat = () => {
                 <div
                   ref={messagesContainerRef}
                   onScroll={handleMessagesScroll}
-                  className="relative flex-1 min-h-0 overflow-y-auto px-4 py-4"
+                  className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
                   style={wallpaperStyle}
                 >
                   <div className="flex justify-center mb-3">
