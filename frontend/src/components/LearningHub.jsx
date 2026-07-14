@@ -125,12 +125,12 @@ const LearningHub = () => {
                   onClick={() => { if (!active) navigate(tab.path); }}
                   className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors ${
                     active
-                      ? 'bg-[#3F7D6E] text-white shadow-sm'
+                      ? 'bg-[#B45309] text-white shadow-sm'
                       : 'text-[#5c655f] hover:bg-[#EFEDE5]'
                   }`}
                 >
                   <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                    active ? 'bg-white/15 text-white' : 'bg-[#E9F0EB] text-[#3F7D6E]'
+                    active ? 'bg-white/15 text-white' : 'bg-[#FEF3C7] text-[#B45309]'
                   }`}>
                     <Icon className="size-4" />
                   </span>
@@ -150,13 +150,13 @@ const LearningHub = () => {
           <button
             type="button"
             onClick={() => navigate(lastActivity.path)}
-            className="group flex w-full items-center gap-3 rounded-2xl border border-[#cfe0d8] bg-[#E9F0EB] px-4 py-3 text-left transition-colors hover:border-[#3F7D6E]"
+            className="group flex w-full items-center gap-3 rounded-2xl border border-[#FDE68A] bg-[#FEF3C7] px-4 py-3 text-left transition-colors hover:border-[#B45309]"
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#3F7D6E] text-white">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#B45309] text-white">
               <Play className="size-4" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#3F7D6E]">
+              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#B45309]">
                 Continue where you left off
               </span>
               <span className="block truncate text-sm font-semibold text-[#26332E]">
@@ -165,7 +165,7 @@ const LearningHub = () => {
                 <span className="ml-2 font-normal text-[#78827B]">{formatActivityAge(lastActivity.at)}</span>
               </span>
             </span>
-            <span className="rounded-xl bg-[#3F7D6E] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
+            <span className="rounded-xl bg-[#B45309] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
               Continue
             </span>
           </button>

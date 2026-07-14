@@ -508,9 +508,9 @@ function FlashcardUI({ text }) {
     <div className="w-full space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-[#3F7D6E]">Card {idx + 1} / {cards.length}</span>
+        <span className="text-xs font-bold text-[#B45309]">Card {idx + 1} / {cards.length}</span>
         <span className="text-[11px] font-medium text-[#78827B]">
-          <span className="font-bold text-[#3F7D6E]">{knownCount}</span> / {cards.length} known
+          <span className="font-bold text-[#B45309]">{knownCount}</span> / {cards.length} known
         </span>
       </div>
 
@@ -523,7 +523,7 @@ function FlashcardUI({ text }) {
             aria-label={`Go to card ${i + 1}`}
             className={cn(
               'h-1.5 rounded-full transition-all duration-300',
-              i === idx ? 'w-8 bg-[#3F7D6E]' : known[i] ? 'w-5 bg-[#8fbcae]' : 'w-4 bg-[#E7E3D9]'
+              i === idx ? 'w-8 bg-[#B45309]' : known[i] ? 'w-5 bg-[#8fbcae]' : 'w-4 bg-[#E7E3D9]'
             )}
           />
         ))}
@@ -569,7 +569,7 @@ function FlashcardUI({ text }) {
                 style={{ backfaceVisibility: 'hidden', position: 'absolute', inset: 0 }}
                 className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[#E7E3D9] bg-white p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.45)]"
               >
-                <span className="rounded-full bg-[#E9F0EB] px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#3F7D6E]">
+                <span className="rounded-full bg-[#FEF3C7] px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#B45309]">
                   Question
                 </span>
                 <p className="font-[Nunito] text-base font-bold leading-relaxed text-[#26332E]">{card.q}</p>
@@ -582,9 +582,9 @@ function FlashcardUI({ text }) {
               {/* Back — Answer */}
               <div
                 style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0 }}
-                className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-[#3F7D6E] p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.6)]"
+                className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-[#B45309] p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.6)]"
               >
-                <span className="rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#DCEAE3]">
+                <span className="rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-[#FDE9BD]">
                   Answer
                 </span>
                 <p className="font-[Nunito] text-base font-bold leading-relaxed text-white">{card.a}</p>
@@ -601,7 +601,7 @@ function FlashcardUI({ text }) {
           onClick={() => goTo(idx - 1)}
           disabled={idx === 0}
           aria-label="Previous card"
-          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#E9F0EB] disabled:opacity-40"
+          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#FEF3C7] disabled:opacity-40"
         >
           <ChevronLeft className="size-3.5" /> Prev
         </button>
@@ -624,7 +624,7 @@ function FlashcardUI({ text }) {
               </button>
               <button
                 onClick={() => rateCard(true)}
-                className="flex-1 rounded-xl border border-[#cfe0d8] bg-[#E9F0EB] py-1.5 text-xs font-bold text-[#2E5C50] transition-colors hover:bg-[#dcebe2]"
+                className="flex-1 rounded-xl border border-[#FDE68A] bg-[#FEF3C7] py-1.5 text-xs font-bold text-[#92400E] transition-colors hover:bg-[#FDE9BD]"
               >
                 ✓ Got it!
               </button>
@@ -638,7 +638,7 @@ function FlashcardUI({ text }) {
           onClick={() => goTo(idx + 1)}
           disabled={idx === cards.length - 1}
           aria-label="Next card"
-          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#E9F0EB] disabled:opacity-40"
+          className="flex items-center gap-1 rounded-xl border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-semibold text-[#5c655f] transition-colors hover:bg-[#FEF3C7] disabled:opacity-40"
         >
           Next <ChevronRight className="size-3.5" />
         </button>
@@ -1196,7 +1196,7 @@ function NotesUI({ text }) {
 
   return (
     <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_48%,#ecfdf5_100%)] px-4 py-3">
+      <div className="border-b border-slate-100 bg-[linear-gradient(135deg,#f0f9ff_0%,#ffffff_48%,#FFFBEB_100%)] px-4 py-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white/80 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-sky-700">
@@ -1336,7 +1336,7 @@ function NotesUI({ text }) {
                   <div className={cn(
                     'space-y-2 rounded-lg px-3 py-2 text-sm leading-7 text-slate-700',
                     isMarked
-                      ? 'bg-[repeating-linear-gradient(to_bottom,#f0fdf4_0,#f0fdf4_27px,#dcfce7_28px)]'
+                      ? 'bg-[repeating-linear-gradient(to_bottom,#FFFBEB_0,#FFFBEB_27px,#FEF3C7_28px)]'
                       : 'bg-[repeating-linear-gradient(to_bottom,#ffffff_0,#ffffff_27px,#f1f5f9_28px)]'
                   )}>
                     {section.lines.map((line, lineIndex) => (
@@ -2212,7 +2212,7 @@ function AnimatedProgress({ value, className }) {
 
 // ---------------------------------------------------------------------------
 // Calm design tokens — "study desk, soft focus"
-// One sage-teal accent, warm clay reserved for streak/XP, warm-paper ground.
+// One amber accent, warm clay reserved for streak/XP, warm-paper ground.
 // ---------------------------------------------------------------------------
 const C = {
   paper: '#F4F1EA',
@@ -2221,9 +2221,9 @@ const C = {
   ink: '#26332E',
   muted: '#78827B',
   line: '#E7E3D9',
-  teal: '#3F7D6E',
-  tealDeep: '#2E5C50',
-  tealSoft: '#E9F0EB',
+  teal: '#B45309',
+  tealDeep: '#92400E',
+  tealSoft: '#FEF3C7',
   clay: '#C07A4C',
   claySoft: '#F4E9DE',
 };
@@ -2281,14 +2281,14 @@ function HeroBanner({ onStartLearning, onPracticeQuestions, onAskAiTutor }) {
             {getGreeting()}, {STUDENT.name}.
           </Motion.h1>
           <Motion.p variants={fadeInUp} className="mt-3 max-w-lg text-[15px] leading-relaxed text-[#5c655f]">
-            Three things on your desk today — wrap up <span className="font-semibold text-[#2E5C50]">Fractions</span>,
+            Three things on your desk today — wrap up <span className="font-semibold text-[#92400E]">Fractions</span>,
             take one quiz, and ask the tutor anything that stuck.
           </Motion.p>
 
           <Motion.div variants={fadeInUp} className="mt-6 flex flex-wrap gap-3">
             <Button
               onClick={onAskAiTutor}
-              className="h-11 gap-2 rounded-xl bg-[#3F7D6E] px-5 text-sm font-semibold text-white shadow-none hover:bg-[#356b5e]"
+              className="h-11 gap-2 rounded-xl bg-[#B45309] px-5 text-sm font-semibold text-white shadow-none hover:bg-[#A3610F]"
             >
               <Bot className="size-4" />
               Ask your tutor
@@ -2298,7 +2298,7 @@ function HeroBanner({ onStartLearning, onPracticeQuestions, onAskAiTutor }) {
               variant="outline"
               className="h-11 gap-2 rounded-xl border-[#E7E3D9] bg-white px-5 text-sm font-semibold text-[#26332E] hover:bg-[#F4F1EA] hover:text-[#26332E]"
             >
-              <BookOpen className="size-4 text-[#3F7D6E]" />
+              <BookOpen className="size-4 text-[#B45309]" />
               Resume lesson
             </Button>
             <Button
@@ -2339,7 +2339,7 @@ function SectionHeading({ eyebrow, title, action }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div>
-        {eyebrow && <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#3F7D6E]">{eyebrow}</p>}
+        {eyebrow && <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#B45309]">{eyebrow}</p>}
         <h2 className="font-[Nunito] text-xl font-extrabold text-[#26332E] sm:text-[1.6rem]">{title}</h2>
       </div>
       {action}
@@ -3003,7 +3003,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             <Motion.div
               animate={{ boxShadow: ['0 0 0 0 rgba(63,125,110,0.0)', '0 0 0 6px rgba(63,125,110,0.10)', '0 0 0 0 rgba(63,125,110,0.0)'] }}
               transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex size-11 items-center justify-center rounded-2xl bg-[#3F7D6E]"
+              className="flex size-11 items-center justify-center rounded-2xl bg-[#B45309]"
             >
               <Bot className="size-6 text-white" />
             </Motion.div>
@@ -3013,10 +3013,10 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             <h3 className="font-[Nunito] text-base font-extrabold leading-tight text-[#26332E]">Study Tutor</h3>
             <p className="truncate text-xs text-[#78827B]">
               {sending ? (
-                <span className="inline-flex items-center gap-1 font-semibold text-[#3F7D6E]">
+                <span className="inline-flex items-center gap-1 font-semibold text-[#B45309]">
                   Thinking
                   {[0, 0.15, 0.3].map((d) => (
-                    <Motion.span key={d} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: d }} className="size-1 rounded-full bg-[#3F7D6E]" />
+                    <Motion.span key={d} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: d }} className="size-1 rounded-full bg-[#B45309]" />
                   ))}
                 </span>
               ) : listening ? (
@@ -3024,7 +3024,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                   <span className="size-1.5 animate-pulse rounded-full bg-rose-500" /> Listening…
                 </span>
               ) : selectedSubject ? (
-                <>Focused on <span className="font-semibold text-[#2E5C50]">{selectedSubject.title}{topicTitle ? ` · ${topicTitle}` : ''}</span></>
+                <>Focused on <span className="font-semibold text-[#92400E]">{selectedSubject.title}{topicTitle ? ` · ${topicTitle}` : ''}</span></>
               ) : 'Online · answers grounded in your teacher’s material'}
             </p>
           </div>
@@ -3075,7 +3075,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                 variant="ghost"
                 size="sm"
                 onClick={clearConversation}
-                className="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-[#78827B] hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
+                className="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-[#78827B] hover:bg-[#FEF3C7] hover:text-[#92400E]"
               >
                 Clear
               </Button>
@@ -3117,7 +3117,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                 ? 'border-[#26332E] bg-[#26332E] text-white'
                                 : msg.error
                                   ? 'border-rose-200 bg-rose-100 text-rose-600'
-                                  : 'border-[#E7E3D9] bg-[#E9F0EB] text-[#3F7D6E]'
+                                  : 'border-[#E7E3D9] bg-[#FEF3C7] text-[#B45309]'
                             )}
                           >
                             {msg.role === 'user' ? 'You' : <Bot className="size-4" />}
@@ -3127,7 +3127,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                               'min-w-0 text-sm leading-relaxed',
                               msg.role === 'user' ? 'whitespace-pre-wrap break-words rounded-2xl px-4 py-3 shadow-sm' : '',
                               msg.role === 'user'
-                                ? 'rounded-br-sm bg-[#3F7D6E] text-white'
+                                ? 'rounded-br-sm bg-[#B45309] text-white'
                                 : msg.thinking
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
@@ -3146,7 +3146,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                       key={delay}
                                       animate={{ y: [0, -5, 0] }}
                                       transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut', delay }}
-                                      className="size-1.5 rounded-full bg-[#3F7D6E]"
+                                      className="size-1.5 rounded-full bg-[#B45309]"
                                     />
                                   ))}
                                 </span>
@@ -3159,7 +3159,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                     : <TutorResponseRenderer text={msg.text} mode={msg.mode} />
                                   }
                                   {msg.streaming && (
-                                    <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#3F7D6E] align-middle" />
+                                    <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#B45309] align-middle" />
                                   )}
                                 </>
                               ) : msg.text
@@ -3168,7 +3168,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                               <div className="mt-2 flex items-center gap-2">
                                 <span className={cn(
                                   'text-[11px] font-medium',
-                                  msg.noMaterialFound ? 'text-amber-700' : 'text-[#3F7D6E]'
+                                  msg.noMaterialFound ? 'text-amber-700' : 'text-[#B45309]'
                                 )}>
                                   {msg.noMaterialFound
                                     ? 'No matching uploaded material found'
@@ -3180,11 +3180,11 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   <button
                                     type="button"
                                     onClick={() => copyMessage(msg)}
-                                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
+                                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#FEF3C7] hover:text-[#92400E]"
                                     aria-label="Copy answer"
                                   >
                                     {copiedId === msg.id
-                                      ? <><Check className="size-3 text-[#3F7D6E]" /> Copied</>
+                                      ? <><Check className="size-3 text-[#B45309]" /> Copied</>
                                       : <><Copy className="size-3" /> Copy</>}
                                   </button>
                                 )}
@@ -3211,9 +3211,9 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                             whileHover={{ y: -1 }}
                             whileTap={{ scale: 0.97 }}
                             onClick={() => handleSend({ text: f.text, chip: f.chip })}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-medium text-[#2E5C50] transition-colors hover:border-[#3F7D6E] hover:bg-[#E9F0EB]"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#E7E3D9] bg-white px-3 py-1.5 text-xs font-medium text-[#92400E] transition-colors hover:border-[#B45309] hover:bg-[#FEF3C7]"
                           >
-                            <Sparkles className="size-3 text-[#3F7D6E]" />
+                            <Sparkles className="size-3 text-[#B45309]" />
                             {f.label}
                           </Motion.button>
                         ))}
@@ -3231,7 +3231,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                   <Motion.div
                     animate={{ y: [0, -6, 0] }}
                     transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                    className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-[#E9F0EB] text-[#3F7D6E]"
+                    className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-[#FEF3C7] text-[#B45309]"
                   >
                     <MessageCircleQuestion className="size-7" />
                   </Motion.div>
@@ -3248,13 +3248,13 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           whileHover={{ y: -2 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={() => applyStarter(starter)}
-                          className="flex items-center gap-2.5 rounded-xl border border-[#E7E3D9] bg-white px-3 py-2.5 text-left text-sm text-[#26332E] transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]"
+                          className="flex items-center gap-2.5 rounded-xl border border-[#E7E3D9] bg-white px-3 py-2.5 text-left text-sm text-[#26332E] transition-colors hover:border-[#F3DFAE] hover:bg-[#FBF9F4]"
                         >
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#E9F0EB] text-[#3F7D6E]">
+                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#FEF3C7] text-[#B45309]">
                             <Icon className="size-4" />
                           </span>
                           <span className="min-w-0">
-                            <span className="block text-[11px] font-semibold text-[#3F7D6E]">{starter.mode}</span>
+                            <span className="block text-[11px] font-semibold text-[#B45309]">{starter.mode}</span>
                             <span className="block truncate text-xs text-[#78827B]">{starter.text}</span>
                           </span>
                         </Motion.button>
@@ -3271,7 +3271,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.8 }}
                 onClick={scrollMessagesToBottom}
-                className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#3F7D6E] shadow-md hover:bg-[#E9F0EB]"
+                className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#B45309] shadow-md hover:bg-[#FEF3C7]"
                 aria-label="Jump to latest message"
               >
                 <ChevronDown className="size-5" />
@@ -3285,13 +3285,13 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
           {/* Action selector */}
           <div className="mb-2.5 flex min-w-0 items-center gap-2">
             <span className="hidden shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-[#78827B] sm:inline-flex">
-              <Sparkles className="size-3.5 text-[#3F7D6E]" /> Do
+              <Sparkles className="size-3.5 text-[#B45309]" /> Do
             </span>
             {canScrollChipsLeft && (
               <button
                 type="button"
                 onClick={() => scrollChips(-1)}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#FEF3C7] hover:text-[#26332E]"
                 aria-label="Scroll actions left"
               >
                 <ChevronLeft className="size-4" />
@@ -3313,11 +3313,11 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                     className={cn(
                       'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                       active
-                        ? 'border-[#3F7D6E] bg-[#3F7D6E] text-white shadow-sm'
-                        : 'border-[#E7E3D9] bg-white text-[#5c655f] hover:bg-[#E9F0EB]'
+                        ? 'border-[#B45309] bg-[#B45309] text-white shadow-sm'
+                        : 'border-[#E7E3D9] bg-white text-[#5c655f] hover:bg-[#FEF3C7]'
                     )}
                   >
-                    <Icon className={cn('size-3.5', active ? 'text-white' : 'text-[#3F7D6E]')} />
+                    <Icon className={cn('size-3.5', active ? 'text-white' : 'text-[#B45309]')} />
                     {chip.label}
                   </Motion.button>
                 );
@@ -3327,7 +3327,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               <button
                 type="button"
                 onClick={() => scrollChips(1)}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#FEF3C7] hover:text-[#26332E]"
                 aria-label="Scroll actions right"
               >
                 <ChevronRight className="size-4" />
@@ -3349,7 +3349,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                 animate={{ opacity: 1, y: 0, height: 'auto' }}
                 exit={{ opacity: 0, y: -6, height: 0 }}
                 transition={{ duration: 0.2 }}
-                className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#E9F0EB] px-3 py-1 text-xs font-medium text-[#2E5C50]"
+                className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FEF3C7] px-3 py-1 text-xs font-medium text-[#92400E]"
               >
                 <Paperclip className="size-3.5" />
                 <span className="max-w-[220px] truncate">{attachmentName}</span>
@@ -3357,14 +3357,14 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             )}
           </AnimatePresence>
 
-          <div ref={composerRef} className="flex items-end gap-2 rounded-2xl border border-[#E7E3D9] bg-white p-1.5 shadow-[0_8px_24px_-18px_rgba(38,51,46,0.6)] focus-within:border-[#3F7D6E]">
+          <div ref={composerRef} className="flex items-end gap-2 rounded-2xl border border-[#E7E3D9] bg-white p-1.5 shadow-[0_8px_24px_-18px_rgba(38,51,46,0.6)] focus-within:border-[#B45309]">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   size="icon"
                   variant="ghost"
                   onClick={openAttachmentPicker}
-                  className="size-9 shrink-0 rounded-xl text-[#5c655f] hover:bg-[#E9F0EB] hover:text-[#26332E]"
+                  className="size-9 shrink-0 rounded-xl text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]"
                 >
                   <Plus className="size-5" />
                 </Button>
@@ -3384,7 +3384,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                       'flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors',
                       listening
                         ? 'bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.15)]'
-                        : 'text-[#5c655f] hover:bg-[#E9F0EB] hover:text-[#26332E]'
+                        : 'text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]'
                     )}
                     aria-label={listening ? 'Stop voice input' : 'Speak your question'}
                     aria-pressed={listening}
@@ -3415,7 +3415,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               <Button
                 onClick={handleSend}
                 disabled={sending || (!question.trim() && !topicTitle)}
-                className="size-10 shrink-0 rounded-xl bg-[#3F7D6E] p-0 text-white hover:bg-[#356b5e] disabled:opacity-40"
+                className="size-10 shrink-0 rounded-xl bg-[#B45309] p-0 text-white hover:bg-[#A3610F] disabled:opacity-40"
                 aria-label={sending ? 'Sending' : 'Send message'}
               >
                 {sending
@@ -3817,9 +3817,9 @@ function SubjectCard({ subject, onExplore }) {
       whileHover={{ y: -6, scale: 1.02 }}
       className="h-full"
     >
-      <Card className="group h-full rounded-2xl border border-[#E7E3D9] bg-white p-0 shadow-[0_1px_2px_rgba(38,51,46,0.04)] transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]">
+      <Card className="group h-full rounded-2xl border border-[#E7E3D9] bg-white p-0 shadow-[0_1px_2px_rgba(38,51,46,0.04)] transition-colors hover:border-[#F3DFAE] hover:bg-[#FBF9F4]">
         <CardContent className="flex h-full flex-col gap-4 p-5">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E] transition-colors group-hover:bg-[#3F7D6E] group-hover:text-white">
+          <div className="flex size-12 items-center justify-center rounded-xl bg-[#FEF3C7] text-[#B45309] transition-colors group-hover:bg-[#B45309] group-hover:text-white">
             <Icon className="size-6" />
           </div>
           <div>
@@ -3831,13 +3831,13 @@ function SubjectCard({ subject, onExplore }) {
               <span>Progress</span>
               <span className="font-semibold text-[#26332E]">{subject.progress}%</span>
             </div>
-            <AnimatedProgress value={subject.progress} className="bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+            <AnimatedProgress value={subject.progress} className="bg-[#EFEDE5] [&>*]:bg-[#B45309]" />
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => onExplore?.(subject)}
-            className="mt-auto w-full gap-1.5 rounded-lg border-[#E7E3D9] text-[#2E5C50] hover:bg-[#E9F0EB] hover:text-[#2E5C50]"
+            className="mt-auto w-full gap-1.5 rounded-lg border-[#E7E3D9] text-[#92400E] hover:bg-[#FEF3C7] hover:text-[#92400E]"
           >
             Explore
             <ChevronRight className="size-3.5" />
@@ -4139,7 +4139,7 @@ function TodayFocus({ onResume }) {
         <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
           <div className="p-6 sm:p-7">
             <div className="flex items-center gap-2 text-xs font-semibold text-[#78827B]">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E9F0EB] px-2.5 py-1 text-[#2E5C50]">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FEF3C7] px-2.5 py-1 text-[#92400E]">
                 <Calculator className="size-3.5" /> Mathematics
               </span>
               <span>· Fractions and Decimals · lesson 7</span>
@@ -4157,7 +4157,7 @@ function TodayFocus({ onResume }) {
                       <span
                         className={cn(
                           'flex size-8 items-center justify-center rounded-full border text-[11px] font-bold',
-                          step.state === 'complete' && 'border-[#3F7D6E] bg-[#3F7D6E] text-white',
+                          step.state === 'complete' && 'border-[#B45309] bg-[#B45309] text-white',
                           step.state === 'active' && 'border-[#C07A4C] bg-[#F4E9DE] text-[#C07A4C]',
                           step.state === 'upcoming' && 'border-[#E7E3D9] bg-white text-[#a8afa8]'
                         )}
@@ -4168,7 +4168,7 @@ function TodayFocus({ onResume }) {
                     <TooltipContent>{step.title} — {step.subtitle}</TooltipContent>
                   </Tooltip>
                   {i < LEARNING_JOURNEY.length - 1 && (
-                    <span className={cn('h-px w-5', step.state === 'complete' ? 'bg-[#3F7D6E]' : 'bg-[#E7E3D9]')} />
+                    <span className={cn('h-px w-5', step.state === 'complete' ? 'bg-[#B45309]' : 'bg-[#E7E3D9]')} />
                   )}
                 </div>
               ))}
@@ -4176,7 +4176,7 @@ function TodayFocus({ onResume }) {
 
             <Button
               onClick={onResume}
-              className="mt-6 h-11 gap-2 rounded-xl bg-[#3F7D6E] px-5 text-sm font-semibold text-white hover:bg-[#356b5e]"
+              className="mt-6 h-11 gap-2 rounded-xl bg-[#B45309] px-5 text-sm font-semibold text-white hover:bg-[#A3610F]"
             >
               <Play className="size-4 fill-current" /> Start the quiz
             </Button>
@@ -4194,7 +4194,7 @@ function TodayFocus({ onResume }) {
                     i < 2 && 'border-b border-[#E7E3D9]'
                   )}
                 >
-                  <Icon className="size-4 text-[#3F7D6E]" />
+                  <Icon className="size-4 text-[#B45309]" />
                   <p className="mt-1 font-[Nunito] text-2xl font-extrabold text-[#26332E]">
                     <AnimatedCounter value={goal.value} suffix={goal.suffix} />
                   </p>
@@ -4218,17 +4218,17 @@ function WaysToStudy({ generatedItems = [], onClearGeneratedItems = () => {} }) 
         <Motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-4 rounded-2xl border border-[#D9E6DD] bg-[#F8FCF9] p-4"
+          className="mb-4 rounded-2xl border border-[#FDE9BD] bg-[#FFFDF7] p-4"
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-[#3F7D6E]">Saved from AI tutor</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[#B45309]">Saved from AI tutor</p>
               <p className="text-sm font-semibold text-[#26332E]">Your latest generated quizzes, notes, and practice sets</p>
             </div>
             <button
               type="button"
               onClick={onClearGeneratedItems}
-              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#78827B] transition-colors hover:bg-white hover:text-[#2E5C50]"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#78827B] transition-colors hover:bg-white hover:text-[#92400E]"
             >
               Clear saved
             </button>
@@ -4246,13 +4246,13 @@ function WaysToStudy({ generatedItems = [], onClearGeneratedItems = () => {} }) 
                   className="min-w-0 rounded-xl border border-[#E7E3D9] bg-white p-3 shadow-sm"
                 >
                   <div className="flex items-start gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#E9F0EB] text-[#3F7D6E]">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#FEF3C7] text-[#B45309]">
                       <Icon className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-[11px] font-semibold text-[#78827B]">
                         <span className="shrink-0">{item.typeLabel || meta.label}</span>
-                        <span className="size-1 rounded-full bg-[#C9D2CB]" />
+                        <span className="size-1 rounded-full bg-[#F3DFAE]" />
                         <span className="truncate">{formatGeneratedTime(item.generatedAt)}</span>
                       </div>
                       <h3 className="mt-1 line-clamp-1 text-sm font-bold text-[#26332E]">{item.title}</h3>
@@ -4260,7 +4260,7 @@ function WaysToStudy({ generatedItems = [], onClearGeneratedItems = () => {} }) 
                         {item.content || item.prompt || 'Generated study material'}
                       </p>
                       {(item.subject || item.topic) && (
-                        <p className="mt-2 truncate text-[11px] font-medium text-[#3F7D6E]">
+                        <p className="mt-2 truncate text-[11px] font-medium text-[#B45309]">
                           {[item.subject, item.topic].filter(Boolean).join(' · ')}
                         </p>
                       )}
@@ -4284,9 +4284,9 @@ function WaysToStudy({ generatedItems = [], onClearGeneratedItems = () => {} }) 
               variants={fadeInUp}
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.98 }}
-              className="group flex items-start gap-3 rounded-2xl border border-[#E7E3D9] bg-white p-4 text-left transition-colors hover:border-[#cfdbd4] hover:bg-[#FBF9F4]"
+              className="group flex items-start gap-3 rounded-2xl border border-[#E7E3D9] bg-white p-4 text-left transition-colors hover:border-[#F3DFAE] hover:bg-[#FBF9F4]"
             >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E] transition-colors group-hover:bg-[#3F7D6E] group-hover:text-white">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FEF3C7] text-[#B45309] transition-colors group-hover:bg-[#B45309] group-hover:text-white">
                 <Icon className="size-5" />
               </span>
               <span className="min-w-0">
@@ -4311,7 +4311,7 @@ function ContinueLearningCalm() {
           const Icon = item.icon;
           return (
             <Panel key={item.id} className="flex items-center gap-4 p-4">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E]">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#FEF3C7] text-[#B45309]">
                 <Icon className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
@@ -4320,9 +4320,9 @@ function ContinueLearningCalm() {
                   <span className="shrink-0 text-xs font-semibold text-[#78827B]">{item.progress}%</span>
                 </div>
                 <p className="truncate text-xs text-[#78827B]">{item.lesson}</p>
-                <AnimatedProgress value={item.progress} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+                <AnimatedProgress value={item.progress} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#B45309]" />
               </div>
-              <Button size="icon" variant="ghost" className="size-9 shrink-0 rounded-full text-[#3F7D6E] hover:bg-[#E9F0EB]">
+              <Button size="icon" variant="ghost" className="size-9 shrink-0 rounded-full text-[#B45309] hover:bg-[#FEF3C7]">
                 <PlayCircle className="size-5" />
               </Button>
             </Panel>
@@ -4347,7 +4347,7 @@ function ProgressPanel() {
               return (
                 <div key={insight.label}>
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#78827B]">
-                    <Icon className="size-3.5 text-[#3F7D6E]" /> {insight.label}
+                    <Icon className="size-3.5 text-[#B45309]" /> {insight.label}
                   </div>
                   <p className="mt-1 font-[Nunito] text-lg font-extrabold text-[#26332E]">
                     {typeof insight.value === 'number'
@@ -4367,7 +4367,7 @@ function ProgressPanel() {
             return (
               <Panel key={subject.name} className="p-4">
                 <div className="flex items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E9F0EB] text-[#3F7D6E]">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FEF3C7] text-[#B45309]">
                     <Icon className="size-5" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -4375,7 +4375,7 @@ function ProgressPanel() {
                       <p className="truncate text-sm font-bold text-[#26332E]">{subject.name}</p>
                       <span className="text-xs font-semibold text-[#78827B]">{subject.mastery} · {subject.score}%</span>
                     </div>
-                    <AnimatedProgress value={subject.completion} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+                    <AnimatedProgress value={subject.completion} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#B45309]" />
                   </div>
                   <span className="font-[Nunito] text-xl font-extrabold text-[#26332E]">{subject.completion}%</span>
                 </div>
@@ -4430,7 +4430,7 @@ function MomentumPanel() {
         <Panel className="p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">Today's missions</p>
-            <span className="text-xs font-semibold text-[#3F7D6E]">{done} / {missions.length} done</span>
+            <span className="text-xs font-semibold text-[#B45309]">{done} / {missions.length} done</span>
           </div>
           <div className="mt-4 grid gap-2">
             {missions.map((m) => (
@@ -4439,17 +4439,17 @@ function MomentumPanel() {
                 onClick={() => toggle(m.id)}
                 className={cn(
                   'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors',
-                  m.done ? 'border-[#cfe0d8] bg-[#E9F0EB]' : 'border-[#E7E3D9] bg-white hover:border-[#cfdbd4]'
+                  m.done ? 'border-[#FDE68A] bg-[#FEF3C7]' : 'border-[#E7E3D9] bg-white hover:border-[#F3DFAE]'
                 )}
               >
                 <span className={cn(
                   'flex size-7 items-center justify-center rounded-full',
-                  m.done ? 'bg-[#3F7D6E] text-white' : 'border border-[#E7E3D9] text-[#a8afa8]'
+                  m.done ? 'bg-[#B45309] text-white' : 'border border-[#E7E3D9] text-[#a8afa8]'
                 )}>
                   {m.done ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
                 </span>
                 <span className="flex-1">
-                  <span className={cn('block text-sm font-semibold', m.done ? 'text-[#2E5C50] line-through' : 'text-[#26332E]')}>{m.label}</span>
+                  <span className={cn('block text-sm font-semibold', m.done ? 'text-[#92400E] line-through' : 'text-[#26332E]')}>{m.label}</span>
                   <span className="text-xs text-[#78827B]">{m.progress}</span>
                 </span>
               </button>
@@ -4477,7 +4477,7 @@ function AchievementsPanel() {
                     <div className="flex cursor-default flex-col items-center gap-2">
                       <span className={cn(
                         'flex size-14 items-center justify-center rounded-2xl',
-                        badge.earned ? 'bg-[#E9F0EB] text-[#3F7D6E]' : 'border border-dashed border-[#E7E3D9] text-[#c3c9c2]'
+                        badge.earned ? 'bg-[#FEF3C7] text-[#B45309]' : 'border border-dashed border-[#E7E3D9] text-[#c3c9c2]'
                       )}>
                         {badge.earned ? <Icon className="size-6" /> : <LockKeyhole className="size-5" />}
                       </span>
@@ -4494,7 +4494,7 @@ function AchievementsPanel() {
               <span className="font-semibold text-[#26332E]">Next: Genius Thinker</span>
               <span className="text-xs text-[#78827B]">74 / 100 AI questions</span>
             </div>
-            <AnimatedProgress value={74} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#3F7D6E]" />
+            <AnimatedProgress value={74} className="mt-2 bg-[#EFEDE5] [&>*]:bg-[#B45309]" />
           </div>
         </Panel>
 
@@ -4508,12 +4508,12 @@ function AchievementsPanel() {
                   key={row.rank}
                   className={cn(
                     'flex items-center gap-3 rounded-xl px-3 py-2',
-                    me ? 'bg-[#E9F0EB]' : 'bg-transparent'
+                    me ? 'bg-[#FEF3C7]' : 'bg-transparent'
                   )}
                 >
                   <span className="w-5 text-sm font-bold text-[#78827B]">{row.rank}</span>
-                  <span className="flex size-8 items-center justify-center rounded-full bg-[#FBF9F4] text-[11px] font-bold text-[#3F7D6E]">{row.initials}</span>
-                  <span className={cn('flex-1 text-sm', me ? 'font-bold text-[#2E5C50]' : 'font-medium text-[#26332E]')}>
+                  <span className="flex size-8 items-center justify-center rounded-full bg-[#FBF9F4] text-[11px] font-bold text-[#B45309]">{row.initials}</span>
+                  <span className={cn('flex-1 text-sm', me ? 'font-bold text-[#92400E]' : 'font-medium text-[#26332E]')}>
                     {row.name}{me && ' · you'}
                   </span>
                   <span className="text-xs font-semibold text-[#78827B]">{row.xp.toLocaleString()} XP</span>

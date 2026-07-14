@@ -66,6 +66,12 @@ const Dashboard = () => {
 
   const effectiveView = normalizeViewFromPath(location.pathname);
 
+  // These views manage their own full-height internal layout (e.g. a sticky
+  // composer pinned to the bottom) instead of flowing/scrolling like a normal
+  // page, so they skip the trailing bottom-nav spacer and get flex-1/min-h-0
+  // treatment to receive a definite height from their ancestors.
+  const isFullscreenView = effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal';
+
   // Fade/remount key for the content area: LearningHub tabs share one key so
   // its own tab bar stays mounted while only its content swaps underneath.
   const pageKey = LEARNING_HUB_VIEWS.includes(effectiveView) ? 'learning-hub' : location.pathname;
@@ -168,24 +174,24 @@ const Dashboard = () => {
         />
         <div
           className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
-            } ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
+            } ${isFullscreenView ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
           <Header
             sidebarOpen={sidebarOpen}
             setSidebarOpen={setSidebarOpen}
             onOpenProfile={() => navigate('/student/profile')}
           />
-          <main className={`flex-1 min-h-0 ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'p-0' : ''} w-full flex flex-col`}>
+          <main className={`flex-1 min-h-0 ${isFullscreenView ? 'p-0' : ''} w-full flex flex-col`}>
             <Motion.div
               key={pageKey}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
-              className="flex-1 min-h-0 w-full flex flex-col"
+              className={`w-full flex flex-col ${isFullscreenView ? 'flex-1 min-h-0' : ''}`}
             >
               {renderContent()}
             </Motion.div>
-            {effectiveView !== 'chat' && effectiveView !== 'excuse-letter' && effectiveView !== 'assignments-journal' && (
+            {!isFullscreenView && (
               <div className="h-16 sm:h-18 lg:hidden shrink-0" aria-hidden="true" />
             )}
           </main>
