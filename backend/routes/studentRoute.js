@@ -1069,6 +1069,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         className: resolvedGrade,
         sectionName: resolvedSection,
         rollNumber: resolvedRoll,
+        academicYear: student.academicYear || '',
         profilePic: resolveProfilePhoto(student),
         avatar: resolveProfilePhoto(student),
         campusName: student.campusName || '',

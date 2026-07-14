@@ -52,6 +52,7 @@ const CourseProgress = () => {
 
   const displayClass   = profile?.className  || profile?.grade   || '';
   const displaySection = profile?.sectionName || profile?.section || '';
+  const displaySession = profile?.academicYear || profile?.session || '';
   const attPct  = typeof stats?.attendancePercentage === 'number' ? stats.attendancePercentage : null;
   const present = typeof stats?.presentDays  === 'number' ? stats.presentDays  : null;
   const total   = typeof stats?.totalClasses === 'number' ? stats.totalClasses : null;
@@ -89,18 +90,29 @@ const CourseProgress = () => {
     <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
 
       {/* Header bar */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
-            <Activity size={15} className="text-emerald-600" />
+      <div className="relative overflow-hidden bg-linear-to-br from-emerald-500 via-emerald-600 to-teal-600 px-5 py-4">
+        <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-8 left-10 h-20 w-20 rounded-full bg-white/8" />
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/25 border border-white/40 shadow-sm">
+              <Activity size={16} className="text-white" />
+            </div>
+            <h2 className="text-sm font-black text-white">Attendance Snapshot</h2>
           </div>
-          <h2 className="text-sm font-black text-slate-800">Attendance Snapshot</h2>
+          <div className="flex items-center justify-center gap-1">
+            {(displayClass || displaySection) && (
+              <span className="rounded-full bg-white/25 border border-white/40 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm text-center">
+                {displayClass ? `Class ${displayClass}` : ''}{displaySection ? ` · ${displaySection}` : ''}
+              </span>
+            )}
+            {displaySession && (
+              <span className="rounded-full bg-white/15 border border-white/30 px-2.5 py-0.5 text-[11px] font-semibold text-white/85 backdrop-blur-sm text-center">
+                Session {displaySession}
+              </span>
+            )}
+          </div>
         </div>
-        {(displayClass || displaySection) && (
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-            {displayClass ? `Class ${displayClass}` : ''}{displaySection ? ` · ${displaySection}` : ''}
-          </span>
-        )}
       </div>
 
       <div className="p-5 sm:p-6">

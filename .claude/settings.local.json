@@ -101,7 +101,9 @@
       "Bash(xxd)",
       "Bash(cp /tmp/orig_courseprogress.jsx ./src/components/__OrigCourseProgress.jsx)",
       "Bash(rm ./src/components/__OrigCourseProgress.jsx)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/src/components/CourseProgress.jsx)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/src/components/CourseProgress.jsx)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/src/components/AchievementCard.jsx)",
+      "Bash(node -e \"require\\('./routes/studentRoute.js'\\); console.log\\('OK'\\)\")"
     ]
   }
 }
