@@ -11,6 +11,7 @@ const School = require('../models/School');
 const rateLimit = require('../middleware/rateLimit');
 const { generateTeacherCode } = require('../utils/codeGenerator');
 const { logAuthEvent } = require('../utils/authEventLogger');
+const { resolveLoginPlatformScope } = require('../utils/authLoginScope');
 
 const router = express.Router();
 
@@ -220,7 +221,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10 }), async (req, r
 
   try {
     const normalizedUsername = normalize(username);
-    const platformScope = req.organizationId ? {} : { organizationId: null };
+    const platformScope = resolveLoginPlatformScope(req);
     const [admin, teacher, principal, student, parent, staff] = await Promise.all([
       Admin.findOne({ username, ...platformScope })
         .select('_id username password role status organizationId schoolId campusId campusName campusType lastLoginAt')

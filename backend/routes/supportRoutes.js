@@ -13,6 +13,7 @@ const Notification = require('../models/Notification');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logSecurityEvent } = require('../utils/securityEventLogger');
 const { logBusinessEvent } = require('../utils/businessEventLogger');
+const { recordPlatformAudit } = require('../utils/platformAudit');
 
 const router = express.Router();
 
@@ -436,6 +437,17 @@ router.patch('/requests/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
         return res.status(400).json({ error: passwordPolicyMessage });
       }
       const resetResult = await performPasswordReset(request, newPassword);
+      await recordPlatformAudit(req, {
+        action: 'support.password_reset',
+        entity: 'support_request',
+        entityId: request._id,
+        schoolId: request.schoolId,
+        meta: {
+          targetRole: request.targetRole || request.requestDetails?.role,
+          targetUserId: resetResult.userId || null,
+          success: resetResult.success,
+        },
+      });
       request.passwordReset = {
         performedAt: new Date(),
         performedBy: req.admin.id,

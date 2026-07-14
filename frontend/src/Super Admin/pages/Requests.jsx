@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search, XCircle, RefreshCw, Loader2, ChevronLeft, ChevronRight,
-  Clock, CheckCircle2, AlertCircle, Ban, School, MessageSquare, Key
+  Clock, CheckCircle2, AlertCircle, Ban, School, MessageSquare, Copy, ShieldCheck
 } from 'lucide-react';
 
 /* ─── helpers ─── */
@@ -21,48 +21,6 @@ const STATUS_META = {
 };
 
 const PAGE_SIZE = 8;
-const PASSWORD_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const PASSWORD_LOWER = 'abcdefghijkmnopqrstuvwxyz';
-const PASSWORD_DIGITS = '23456789';
-const PASSWORD_SYMBOLS = '!@$%&*';
-
-const randomFrom = (charset = '') => charset[Math.floor(Math.random() * charset.length)];
-
-const generateCredentialPassword = () => {
-  const pool = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_DIGITS}${PASSWORD_SYMBOLS}`;
-  let password = [
-    randomFrom(PASSWORD_UPPER),
-    randomFrom(PASSWORD_LOWER),
-    randomFrom(PASSWORD_DIGITS),
-    randomFrom(PASSWORD_SYMBOLS),
-  ].join('');
-  while (password.length < 12) {
-    password += randomFrom(pool);
-  }
-  return password
-    .split('')
-    .sort(() => Math.random() - 0.5)
-    .join('');
-};
-
-const buildSchoolInitials = (value = '') =>
-  String(value || '')
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.replace(/[^A-Za-z0-9]/g, ''))
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase())
-    .join('');
-
-const generateCredentialCode = (request, usedCodes = new Set()) => {
-  const initials = buildSchoolInitials(request?.schoolName || request?.name) || 'SCH';
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const suffix = Math.floor(1000 + Math.random() * 9000);
-    const candidate = `EEC-${initials}-${suffix}`;
-    if (!usedCodes.has(candidate)) return candidate;
-  }
-  return `EEC-${initials}-${String(Date.now()).slice(-4)}`;
-};
 
 /* ─── Stat chip ─── */
 const Stat = ({ icon, value, label, color }) => {
@@ -152,6 +110,81 @@ const Pagination = ({ page, totalPages, from, to, total, onPage }) => {
   );
 };
 
+/* ─── Issued credentials modal (shown once after approval) ─── */
+const IssuedCredentialsModal = ({ issued, onClose }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copyAll = async () => {
+    const text = issued.credentials
+      .map((entry) => `${entry.campusName} (${entry.campusType})\nUsername: ${entry.username}\nPassword: ${entry.password}`)
+      .join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Clipboard copy failed', error);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center px-4">
+      <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-emerald-100 text-emerald-600"><ShieldCheck size={20} /></div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">School approved — credentials issued</h3>
+            <p className="text-sm text-slate-500">{issued.schoolName}</p>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            These passwords are shown <strong>only once</strong> and are not stored anywhere in this portal.
+            {issued.emailSent
+              ? ` A copy has been emailed to ${issued.notifiedEmail || 'the school contact'}.`
+              : ' The credential email could not be sent — copy and share them securely now.'}
+          </div>
+
+          {issued.credentials.map((entry, index) => (
+            <div key={`${entry.username}-${index}`} className="rounded-xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-700 mb-2">
+                {entry.campusName} <span className="text-xs font-medium text-slate-400">({entry.campusType})</span>
+              </p>
+              <div className="grid sm:grid-cols-2 gap-2 text-sm font-mono">
+                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                  <span className="block text-[10px] font-sans font-semibold uppercase text-slate-400">Username</span>
+                  {entry.username}
+                </div>
+                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                  <span className="block text-[10px] font-sans font-semibold uppercase text-slate-400">Password</span>
+                  {entry.password}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button
+            onClick={copyAll}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <Copy size={15} />
+            {copied ? 'Copied!' : 'Copy all'}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+          >
+            Done — I've saved these
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── Main ─── */
 const Requests = ({
   requests,
@@ -160,8 +193,7 @@ const Requests = ({
   bulkDeleteLoading = false,
   error = null,
   onRefresh,
-  onDeleteAllPendingRequests,
-  onGenerateSchoolCredentials
+  onDeleteAllPendingRequests
 }) => {
   const [searchTerm, setSearchTerm]               = useState('');
   const [statusFilter, setStatusFilter]           = useState('all');
@@ -174,7 +206,8 @@ const Requests = ({
   const [approveTarget, setApproveTarget]         = useState(null);
   const [approveNote, setApproveNote]             = useState('');
   const [approveEmail, setApproveEmail]           = useState('');
-  const [approveCredentials, setApproveCredentials] = useState([]);
+  const [approveUsernames, setApproveUsernames]   = useState([]);
+  const [issuedCredentials, setIssuedCredentials] = useState(null);
 
   const pendingCount = useMemo(() => requests.filter((r) => r.status === 'pending').length, [requests]);
 
@@ -199,6 +232,14 @@ const Requests = ({
   useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [currentPage, totalPages]);
   useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter]);
 
+  const resolveCampuses = (r) => {
+    if (!r) return [];
+    if (Array.isArray(r.campusList) && r.campusList.length) return r.campusList;
+    if (Array.isArray(r.campuses) && r.campuses.length) return r.campuses;
+    if (r.campusName) return [{ name: r.campusName, campusType: 'Main' }];
+    return [{ name: r.schoolName || r.name || 'Main Campus', campusType: 'Main' }];
+  };
+
   const updateStatus = async (request, status) => {
     const requestId = typeof request === 'object' ? request?.id : request;
     if (!requestId) return;
@@ -210,22 +251,16 @@ const Requests = ({
 
     if (status === 'approved') {
       const campuses = resolveCampuses(currentRequest);
-      const usedCodes = new Set();
       setApproveTarget(currentRequest);
       setApproveNote('');
       setApproveEmail(currentRequest.contactEmail || currentRequest.officialEmail || '');
-      setApproveCredentials(
-        campuses.map((campus, index) => {
-          const code = generateCredentialCode(currentRequest, usedCodes);
-          usedCodes.add(code);
-          return {
-            campusName: campus?.name || `Campus ${index + 1}`,
-            campusType: campus?.campusType || 'Campus',
-            campusId: campus?.id || campus?._id || campus?.campusId || null,
-            code,
-            password: generateCredentialPassword(),
-          };
-        })
+      setApproveUsernames(
+        campuses.map((campus, index) => ({
+          campusName: campus?.name || `Campus ${index + 1}`,
+          campusType: campus?.campusType || 'Campus',
+          campusId: campus?.id || campus?._id || campus?.campusId || null,
+          username: ''
+        }))
       );
       setApproveModalOpen(true);
       return;
@@ -255,56 +290,37 @@ const Requests = ({
     }
   };
 
-  const resolveCampuses = (r) => {
-    if (!r) return [];
-    if (Array.isArray(r.campusList) && r.campusList.length) return r.campusList;
-    if (Array.isArray(r.campuses) && r.campuses.length) return r.campuses;
-    if (r.campusName) return [{ name: r.campusName, campusType: 'Main' }];
-    return [{ name: r.schoolName || r.name || 'Main Campus', campusType: 'Main' }];
-  };
-
   const closeApproveModal = () => {
     setApproveModalOpen(false);
     setApproveTarget(null);
     setApproveNote('');
     setApproveEmail('');
-    setApproveCredentials([]);
+    setApproveUsernames([]);
   };
 
-  const regenerateCredential = (index) => {
-    if (!approveTarget) return;
-    const usedCodes = new Set(
-      approveCredentials
-        .filter((_, idx) => idx !== index)
-        .map((item) => String(item.code || '').trim())
-        .filter(Boolean)
-    );
-    setApproveCredentials((prev) =>
-      prev.map((item, idx) =>
-        idx === index
-          ? { ...item, code: generateCredentialCode(approveTarget, usedCodes), password: generateCredentialPassword() }
-          : item
-      )
-    );
-  };
-
-  const approveWithCredentials = async () => {
+  const approveSchool = async () => {
     if (!approveTarget?.id) return;
-    const invalid = approveCredentials.some((entry) => !String(entry.code || '').trim() || !String(entry.password || '').trim());
-    if (invalid) {
-      setActionError('Please generate credentials for every campus before approval.');
-      return;
-    }
-
     const requestId = approveTarget.id;
+    const customUsernames = approveUsernames
+      .map((entry) => ({ ...entry, username: String(entry.username || '').trim() }))
+      .filter((entry) => entry.username);
+
     try {
       setActionError(null);
       setActiveAction(`${requestId}:approved`);
-      await onRequestAction(requestId, 'approved', approveNote, {
-        contactEmail: approveEmail,
-        approvalCredentials: approveCredentials,
+      const result = await onRequestAction(requestId, 'approved', approveNote, {
+        contactEmail: approveEmail || undefined,
+        credentials: customUsernames.length ? customUsernames : undefined
       });
       closeApproveModal();
+      if (Array.isArray(result?.credentials) && result.credentials.length) {
+        setIssuedCredentials({
+          schoolName: approveTarget.schoolName || approveTarget.name,
+          credentials: result.credentials,
+          emailSent: result.emailSent !== false,
+          notifiedEmail: result.notifiedEmail
+        });
+      }
     } catch (e) {
       setActionError(e?.message || 'Unable to approve this request');
     } finally {
@@ -460,7 +476,6 @@ const Requests = ({
                       const isApproved = request.status === 'approved';
                       const isRejected = request.status === 'rejected';
                       const busy       = Boolean(activeAction);
-                      const firstCampus = resolveCampuses(request)[0] || null;
 
                       return (
                         <tr key={request.id} className="hover:bg-slate-50/60 transition-colors">
@@ -532,17 +547,6 @@ const Requests = ({
                                   : <Ban className="w-3 h-3" />}
                                 Reject
                               </button>
-
-                              {/* Credentials */}
-                              <button
-                                onClick={() => onGenerateSchoolCredentials?.(request, firstCampus, 0)}
-                                disabled={busy || isRejected}
-                                title="Generate credentials"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              >
-                                <Key className="w-3 h-3" />
-                                Credentials
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -565,15 +569,21 @@ const Requests = ({
         </div>
       )}
 
+      {/* ── Approve modal ── */}
       {approveModalOpen && approveTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center px-4">
-          <div className="w-full max-w-3xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
+          <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800">Approve & Send Credentials</h3>
+              <h3 className="text-lg font-bold text-slate-800">Approve School</h3>
               <p className="text-sm text-slate-500 mt-1">{approveTarget.schoolName || approveTarget.name}</p>
             </div>
 
             <div className="px-6 py-5 space-y-4 max-h-[72vh] overflow-y-auto">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                An admin account is created for each campus with a <strong>secure password generated on the server</strong>.
+                Credentials are emailed to the school and shown to you once after approval.
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">School Email</label>
                 <input
@@ -597,56 +607,19 @@ const Requests = ({
               </div>
 
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Campus Credentials</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const usedCodes = new Set();
-                      setApproveCredentials((prev) => prev.map((entry) => {
-                        const code = generateCredentialCode(approveTarget, usedCodes);
-                        usedCodes.add(code);
-                        return {
-                          ...entry,
-                          code,
-                          password: generateCredentialPassword(),
-                        };
-                      }));
-                    }}
-                    className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100"
-                  >
-                    Regenerate all
-                  </button>
-                </div>
-
-                {approveCredentials.map((entry, index) => (
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Campus Admin Usernames</p>
+                {approveUsernames.map((entry, index) => (
                   <div key={`${entry.campusId || entry.campusName}-${index}`} className="rounded-xl border border-slate-200 p-3 space-y-2">
                     <p className="text-sm font-semibold text-slate-700">
                       {entry.campusName} <span className="text-xs font-medium text-slate-400">({entry.campusType})</span>
                     </p>
-                    <div className="grid md:grid-cols-[1fr_1fr_auto] gap-2">
-                      <input
-                        type="text"
-                        value={entry.code}
-                        onChange={(e) => setApproveCredentials((prev) => prev.map((item, idx) => idx === index ? { ...item, code: e.target.value } : item))}
-                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                        placeholder="Username"
-                      />
-                      <input
-                        type="text"
-                        value={entry.password}
-                        onChange={(e) => setApproveCredentials((prev) => prev.map((item, idx) => idx === index ? { ...item, password: e.target.value } : item))}
-                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-                        placeholder="Password"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => regenerateCredential(index)}
-                        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                      >
-                        Regenerate
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={entry.username}
+                      onChange={(e) => setApproveUsernames((prev) => prev.map((item, idx) => idx === index ? { ...item, username: e.target.value } : item))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+                      placeholder="Leave blank to auto-generate (e.g. EEC-DPS-1234)"
+                    />
                   </div>
                 ))}
               </div>
@@ -661,16 +634,21 @@ const Requests = ({
                 Cancel
               </button>
               <button
-                onClick={approveWithCredentials}
+                onClick={approveSchool}
                 disabled={activeAction === `${approveTarget.id}:approved`}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60"
               >
                 {activeAction === `${approveTarget.id}:approved` && <Loader2 className="w-4 h-4 animate-spin" />}
-                Approve & Send Email
+                Approve & Email Credentials
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Issued credentials (one-time display) ── */}
+      {issuedCredentials && (
+        <IssuedCredentialsModal issued={issuedCredentials} onClose={() => setIssuedCredentials(null)} />
       )}
     </div>
   );

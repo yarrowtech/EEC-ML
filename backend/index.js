@@ -248,18 +248,41 @@ if (TRUST_PROXY && TRUST_PROXY.trim().length > 0) {
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : null;
+const allowLanOrigins = process.env.NODE_ENV !== 'production'
+  && process.env.CORS_ALLOW_LAN === 'true';
+
+const isPrivateLanOrigin = (origin) => {
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname === '::1'
+      || /^10\./.test(hostname)
+      || /^192\.168\./.test(hostname)
+      || /^172\.(?:1[6-9]|2\d|3[01])\./.test(hostname)
+      || /^f[cd][0-9a-f]{2}:/i.test(hostname)
+      || /^fe80:/i.test(hostname);
+  } catch {
+    return false;
+  }
+};
+
+const isOriginAllowed = (origin) => (
+  !origin
+  || !allowedOrigins
+  || allowedOrigins.length === 0
+  || allowedOrigins.includes(origin)
+  || (allowLanOrigins && isPrivateLanOrigin(origin))
+);
+
+const corsOrigin = (origin, callback) => {
+  if (isOriginAllowed(origin)) return callback(null, true);
+  return callback(new Error('Not allowed by CORS'));
+};
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!allowedOrigins || allowedOrigins.length === 0) {
-        return callback(null, true);
-      }
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('Not allowed by CORS'));
-    },
+    origin: corsOrigin,
   })
 );
 app.use(requestLogger);
@@ -483,7 +506,7 @@ const httpServer = http.createServer(app);
 
 const io = new SocketServer(httpServer, {
   cors: {
-    origin: allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : '*',
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
   },
 });

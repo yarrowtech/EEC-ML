@@ -1,6 +1,25 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, CheckCircle2, AlertCircle, Clock, Mail, Phone, RefreshCw, Trash2 } from 'lucide-react';
+import { Building2, CheckCircle2, AlertCircle, Clock, Mail, Phone, RefreshCw, Trash2, Users, GraduationCap, School as SchoolIcon, UserCheck } from 'lucide-react';
+
+const API_BASE = import.meta.env.VITE_API_URL;
+
+const MetricCard = ({ icon, label, value, sub, color, loading }) => {
+  const Icon = icon;
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+      <div className={`p-2.5 rounded-xl ${color}`}><Icon className="w-5 h-5" /></div>
+      <div className="min-w-0">
+        {loading ? (
+          <div className="h-6 w-14 rounded bg-slate-100 animate-pulse" />
+        ) : (
+          <div className="text-xl font-bold text-slate-800">{value}</div>
+        )}
+        <div className="text-xs text-slate-500 truncate">{label}{sub ? <span className="text-slate-400"> • {sub}</span> : null}</div>
+      </div>
+    </div>
+  );
+};
 
 const formatDate = (value) =>
   new Date(value).toLocaleString('en-IN', {
@@ -33,6 +52,30 @@ const Overview = ({
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
   const [actionError, setActionError] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+
+  const fetchMetrics = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token || !API_BASE) {
+      setMetricsLoading(false);
+      return;
+    }
+    setMetricsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/super-admin/overview`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Unable to load platform metrics');
+      setMetrics(await response.json());
+    } catch (error) {
+      console.error('Failed to load platform metrics', error);
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
 
   const pendingRequests = requests.filter((request) => request.status === 'pending');
   const urgentIssues = issues.filter((issue) => issue.status !== 'resolved');
@@ -68,6 +111,41 @@ const Overview = ({
 
   return (
     <div className="space-y-6">
+      {/* Platform metrics (from /api/super-admin/overview) */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricCard
+          icon={SchoolIcon}
+          label="Schools"
+          sub={metrics ? `${metrics.schools?.active ?? 0} active` : null}
+          value={metrics?.schools?.total ?? '—'}
+          color="bg-violet-100 text-violet-600"
+          loading={metricsLoading}
+        />
+        <MetricCard
+          icon={GraduationCap}
+          label="Students"
+          value={metrics?.users?.students ?? '—'}
+          color="bg-sky-100 text-sky-600"
+          loading={metricsLoading}
+        />
+        <MetricCard
+          icon={Users}
+          label="Teachers"
+          sub={metrics ? `${metrics.users?.parents ?? 0} parents` : null}
+          value={metrics?.users?.teachers ?? '—'}
+          color="bg-emerald-100 text-emerald-600"
+          loading={metricsLoading}
+        />
+        <MetricCard
+          icon={UserCheck}
+          label="School admins"
+          sub={metrics ? `${metrics.schools?.registrations?.pending ?? 0} pending reg.` : null}
+          value={metrics?.admins?.schoolAdmins ?? '—'}
+          color="bg-amber-100 text-amber-600"
+          loading={metricsLoading}
+        />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">

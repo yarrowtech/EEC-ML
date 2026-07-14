@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { runWithTenant } = require('../utils/tenantContext');
 const validateTokenTenant = require('../middleware/validateTokenTenant');
 const { readAuthenticatedTenantScope } = require('../utils/authTenantScope');
+const { resolveLoginPlatformScope } = require('../utils/authLoginScope');
 const {
   createSlug,
   RESERVED_SLUGS,
@@ -113,5 +114,22 @@ describe('tenant isolation', () => {
 
     if (previousSecret === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = previousSecret;
+  });
+
+  test('shared-domain tenant login is enabled only for explicit local development', () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousSetting = process.env.ALLOW_SHARED_DOMAIN_TENANT_LOGIN;
+    process.env.NODE_ENV = 'development';
+    process.env.ALLOW_SHARED_DOMAIN_TENANT_LOGIN = 'true';
+    expect(resolveLoginPlatformScope({})).toEqual({});
+
+    process.env.NODE_ENV = 'production';
+    expect(resolveLoginPlatformScope({})).toEqual({ organizationId: null });
+    expect(resolveLoginPlatformScope({ organizationId: tenantA })).toEqual({});
+
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousSetting === undefined) delete process.env.ALLOW_SHARED_DOMAIN_TENANT_LOGIN;
+    else process.env.ALLOW_SHARED_DOMAIN_TENANT_LOGIN = previousSetting;
   });
 });

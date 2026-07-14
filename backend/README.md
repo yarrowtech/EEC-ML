@@ -9,6 +9,10 @@ See [multi-tenant Razorpay payments](../docs/multi-tenant-payments.md) for per-s
    - `MONGODB_URL`
    - `JWT_SECRET`
    - `CORS_ORIGINS`
+   - `CORS_ALLOW_LAN=true` for access from phones on the same private Wi-Fi
+     during development (ignored when `NODE_ENV=production`)
+   - `ALLOW_SHARED_DOMAIN_TENANT_LOGIN=true` to let tenant users authenticate
+     through localhost or a LAN IP during development (ignored in production)
    - `STUDENT_DATA_ENCRYPTION_KEY` (32-byte key, use `hex:<64-char-hex>` or `base64:<44-char-base64>`)
 
 ## Install

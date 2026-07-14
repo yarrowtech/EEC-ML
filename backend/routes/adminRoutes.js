@@ -14,6 +14,7 @@ const { sendSchoolApprovalEmail } = require('../utils/mailer');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { logSecurityEvent } = require('../utils/securityEventLogger');
 const { logBusinessEvent } = require('../utils/businessEventLogger');
+const { recordPlatformAudit } = require('../utils/platformAudit');
 
 const ensureSuperAdmin = (req, res, next) => {
   if (!req.isSuperAdmin) {
@@ -500,34 +501,18 @@ router.post('/school-admins', adminAuth, ensureSuperAdmin, async (req, res) => {
     if (!resolved) return;
 
     const normalizedAvatar = resolveAvatarValue(avatar);
-    const existing = await Admin.findOne({ username });
+    // Never overwrite an existing account: a colliding username must fail
+    // loudly instead of silently resetting another school's admin password.
+    const existing = await Admin.exists({ username });
     if (existing) {
-      existing.password = password;
-      existing.name = name;
-      existing.email = email || existing.email;
-      if (normalizedAvatar) {
-        existing.avatar = normalizedAvatar;
-      }
-      existing.schoolId = resolved;
-      existing.status = status || existing.status;
-      existing.role = 'admin';
-      // Regenerated credentials should trigger first-login password reset flow.
-      existing.lastLoginAt = null;
-      if (campusId !== undefined) {
-        existing.campusId = campusId;
-      }
-      if (campusName !== undefined) {
-        existing.campusName = campusName;
-      }
-      if (campusType !== undefined) {
-        existing.campusType = campusType;
-      }
-      await existing.save();
-      const updated = await Admin.findById(existing._id)
-        .select('-password')
-        .populate('schoolId', 'name code')
-        .lean();
-      return res.status(200).json(updated);
+      logSecurityEvent(req, {
+        action: 'security.admin_username_collision',
+        outcome: 'blocked',
+        severity: 'medium',
+        reason: 'Attempted to create a school admin with an existing username',
+        statusCode: 409,
+      });
+      return res.status(409).json({ error: `Username "${username}" is already in use` });
     }
 
     const admin = new Admin({
@@ -544,6 +529,13 @@ router.post('/school-admins', adminAuth, ensureSuperAdmin, async (req, res) => {
       campusType
     });
     await admin.save();
+    await recordPlatformAudit(req, {
+      action: 'school_admin.create',
+      entity: 'admin',
+      entityId: admin._id,
+      schoolId: resolved,
+      meta: { username: admin.username, campusName: campusName || null },
+    });
     const created = await Admin.findById(admin._id)
       .select('-password')
       .populate('schoolId', 'name code')
@@ -583,11 +575,19 @@ router.post('/school-admins/:id/reset-password', adminAuth, ensureSuperAdmin, as
       return res.status(404).json({ error: 'School admin not found' });
     }
 
-    const password = generatePassword();
+    const password = generatePassword(12);
     admin.password = password;
-    // Allow direct login with the reset password (do not trigger first-login reset flow).
-    admin.lastLoginAt = new Date();
+    // Temporary credential: force the password-change flow on first login.
+    admin.lastLoginAt = null;
     await admin.save();
+
+    await recordPlatformAudit(req, {
+      action: 'school_admin.password_reset',
+      entity: 'admin',
+      entityId: admin._id,
+      schoolId: admin.schoolId,
+      meta: { username: admin.username },
+    });
 
     return res.json({
       message: 'School admin password reset successfully',

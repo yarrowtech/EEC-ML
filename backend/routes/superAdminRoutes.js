@@ -14,6 +14,9 @@ const SuperAdminActivity = require('../models/SuperAdminActivity');
 const adminAuth = require('../middleware/adminAuth');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { deleteSchoolScopedData } = require('../utils/deleteSchoolCascade');
+const { recordPlatformAudit } = require('../utils/platformAudit');
+
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const router = express.Router();
 
@@ -175,7 +178,7 @@ router.get('/schools', adminAuth, ensureSuperAdmin, async (req, res) => {
       filter.registrationStatus = registrationStatus;
     }
     if (q && String(q).trim()) {
-      const query = String(q).trim();
+      const query = escapeRegex(String(q).trim());
       filter.$or = [
         { name: { $regex: query, $options: 'i' } },
         { code: { $regex: query, $options: 'i' } },
@@ -234,6 +237,12 @@ router.patch('/operations/compliance/:id', adminAuth, ensureSuperAdmin, async (r
       label: `Compliance ${String(status)}: ${updated.title}`,
       type: 'compliance',
       timestamp: new Date(),
+    });
+    await recordPlatformAudit(req, {
+      action: 'compliance.status_update',
+      entity: 'compliance_item',
+      entityId: id,
+      meta: { title: updated.title, status: String(status) },
     });
     return res.json({
       item: toOpsCompliance(updated),
@@ -298,6 +307,12 @@ router.post('/announcements/broadcast', adminAuth, ensureSuperAdmin, async (req,
       type: 'broadcast',
       timestamp: new Date(),
     });
+    await recordPlatformAudit(req, {
+      action: 'announcement.broadcast',
+      entity: 'announcement',
+      entityId: announcement._id,
+      meta: { title: safeTitle, audience: String(audience || 'All schools'), targetSchools: schools.length },
+    });
     return res.status(201).json({
       message: 'Announcement broadcast sent',
       targetSchools: schools.length,
@@ -355,10 +370,17 @@ router.patch('/schools/:id/status', adminAuth, ensureSuperAdmin, async (req, res
       update.suspensionReason = undefined;
     }
 
-    const school = await School.findByIdAndUpdate(id, update, { new: true });
+    const school = await School.findByIdAndUpdate(id, update, { new: true, runValidators: true });
     if (!school) {
       return res.status(404).json({ error: 'School not found' });
     }
+    await recordPlatformAudit(req, {
+      action: 'school.status_update',
+      entity: 'school',
+      entityId: school._id,
+      schoolId: school._id,
+      meta: { status, suspensionReason: update.suspensionReason },
+    });
     res.json(school);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -366,6 +388,21 @@ router.patch('/schools/:id/status', adminAuth, ensureSuperAdmin, async (req, res
 });
 
 // Update subscription (super admin only)
+const SUBSCRIPTION_FIELD_RULES = {
+  subscriptionPlan: (v) => ['trial', 'basic', 'premium', 'enterprise'].includes(v),
+  subscriptionStatus: (v) => ['active', 'suspended', 'expired', 'cancelled'].includes(v),
+  subscriptionStartDate: (v) => !Number.isNaN(Date.parse(v)),
+  subscriptionEndDate: (v) => !Number.isNaN(Date.parse(v)),
+  paymentStatus: (v) => ['pending', 'partial', 'completed', 'failed'].includes(v),
+  paymentAmount: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+  invoiceNumber: (v) => typeof v === 'string' && v.length <= 100,
+  commercialStatus: (v) => [
+    'pending_review', 'verified', 'contacted', 'negotiating',
+    'payment_pending', 'paid', 'active', 'suspended',
+  ].includes(v),
+  superAdminNotes: (v) => typeof v === 'string' && v.length <= 5000,
+};
+
 router.patch('/schools/:id/subscription', adminAuth, ensureSuperAdmin, async (req, res) => {
   // #swagger.tags = ['Super Admin']
   try {
@@ -375,28 +412,29 @@ router.patch('/schools/:id/subscription', adminAuth, ensureSuperAdmin, async (re
     }
 
     const update = {};
-    const fields = [
-      'subscriptionPlan',
-      'subscriptionStatus',
-      'subscriptionStartDate',
-      'subscriptionEndDate',
-      'paymentStatus',
-      'paymentAmount',
-      'invoiceNumber',
-      'commercialStatus',
-      'superAdminNotes',
-    ];
-
-    fields.forEach((field) => {
-      if (req.body?.[field] !== undefined) {
-        update[field] = req.body[field];
+    for (const [field, isValid] of Object.entries(SUBSCRIPTION_FIELD_RULES)) {
+      const value = req.body?.[field];
+      if (value === undefined) continue;
+      if (!isValid(value)) {
+        return res.status(400).json({ error: `Invalid value for ${field}` });
       }
-    });
+      update[field] = value;
+    }
+    if (Object.keys(update).length === 0) {
+      return res.status(400).json({ error: 'No valid subscription fields provided' });
+    }
 
-    const school = await School.findByIdAndUpdate(id, update, { new: true });
+    const school = await School.findByIdAndUpdate(id, update, { new: true, runValidators: true });
     if (!school) {
       return res.status(404).json({ error: 'School not found' });
     }
+    await recordPlatformAudit(req, {
+      action: 'school.subscription_update',
+      entity: 'school',
+      entityId: school._id,
+      schoolId: school._id,
+      meta: { fields: Object.keys(update) },
+    });
     res.json(school);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -419,6 +457,14 @@ router.delete('/schools/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
 
     const deletedCollections = await deleteSchoolScopedData(id);
     await School.deleteOne({ _id: id });
+
+    await recordPlatformAudit(req, {
+      action: 'school.delete',
+      entity: 'school',
+      entityId: id,
+      schoolId: id,
+      meta: { schoolName: school.name, deletedCollections },
+    });
 
     res.json({
       message: 'School and associated data deleted successfully',
@@ -453,6 +499,14 @@ router.post('/admins', adminAuth, ensureSuperAdmin, async (req, res) => {
       schoolId: resolved,
     });
     await admin.save();
+
+    await recordPlatformAudit(req, {
+      action: 'school_admin.create',
+      entity: 'admin',
+      entityId: admin._id,
+      schoolId: resolved,
+      meta: { username: admin.username },
+    });
 
     const created = await Admin.findById(admin._id)
       .select('-password')
@@ -525,6 +579,16 @@ router.patch('/admins/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
       .select('-password')
       .populate('schoolId', 'name code')
       .lean();
+    await recordPlatformAudit(req, {
+      action: 'school_admin.update',
+      entity: 'admin',
+      entityId: id,
+      schoolId: updated?.schoolId?._id || existing.schoolId,
+      meta: {
+        fields: Object.keys(update).filter((key) => key !== 'password'),
+        passwordChanged: update.password !== undefined,
+      },
+    });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -549,6 +613,13 @@ router.delete('/admins/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
     }
 
     await Admin.deleteOne({ _id: id });
+    await recordPlatformAudit(req, {
+      action: 'school_admin.delete',
+      entity: 'admin',
+      entityId: id,
+      schoolId: existing.schoolId,
+      meta: { username: existing.username },
+    });
     res.json({ message: 'Admin deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
