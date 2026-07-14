@@ -241,49 +241,15 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 } */
 
-/* Auto dark mode based on system preference */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not([data-theme="light"]) {
-    color-scheme: dark;
-    --accent: oklch(62.04% 0.1950 253.83);
-    --accent-foreground: oklch(99.11% 0 0);
-    --background: oklch(12.00% 0.0015 253.83);
-    --border: oklch(28.00% 0.0015 253.83);
-    --danger: oklch(59.40% 0.1973 24.63);
-    --danger-foreground: oklch(99.11% 0 0);
-    --default: oklch(27.40% 0.0015 253.83);
-    --default-foreground: oklch(99.11% 0 0);
-    --field-background: oklch(21.03% 0.0030 253.83);
-    --field-foreground: oklch(99.11% 0.0015 253.83);
-    --field-placeholder: oklch(70.50% 0.0030 253.83);
-    --foreground: oklch(99.11% 0.0015 253.83);
-    --muted: oklch(70.50% 0.0030 253.83);
-    --overlay: oklch(21.03% 0.0030 253.83);
-    --overlay-foreground: oklch(99.11% 0.0015 253.83);
-    --scrollbar: oklch(70.50% 0.0015 253.83);
-    --segment: oklch(39.64% 0.0015 253.83);
-    --segment-foreground: oklch(99.11% 0.0015 253.83);
-    --separator: oklch(25.00% 0.0015 253.83);
-    --surface: oklch(21.03% 0.0030 253.83);
-    --surface-foreground: oklch(99.11% 0.0015 253.83);
-    --surface-secondary: oklch(25.70% 0.0023 253.83);
-    --surface-secondary-foreground: oklch(99.11% 0.0015 253.83);
-    --surface-tertiary: oklch(27.21% 0.0023 253.83);
-    --surface-tertiary-foreground: oklch(99.11% 0.0015 253.83);
-    color: var(--foreground);
-    background-color: var(--background);
-  }
-}
-
-@media (prefers-color-scheme: light) {
-  :root:not(.dark):not([data-theme="dark"]) {
-    color: var(--foreground);
-    background-color: var(--background);
-  }
-  a:hover {
-    color: var(--accent);
-  }
-}
+/*
+ * Auto dark mode based on system preference is intentionally disabled:
+ * most components hardcode light-only backgrounds (bg-white, bg-gray-50, etc.)
+ * and there is no UI to opt out, so switching --foreground to white here made
+ * input/select/textarea text (which inherits color) invisible on those
+ * light backgrounds for any user with OS-level dark mode enabled.
+ * Dark mode can be re-enabled once components are audited to support it,
+ * driven by the .dark / [data-theme="dark"] classes instead of the media query.
+ */
 .error-state-card {
   background: radial-gradient(circle at top, rgba(252, 165, 165, 0.25), transparent 70%),
     radial-gradient(circle at bottom, rgba(254, 215, 170, 0.25), transparent 70%),
