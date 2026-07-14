@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { motion as Motion } from 'framer-motion';
 import {
   Users,
   Activity,
@@ -31,6 +32,7 @@ import {
   Library,
   Settings,
 } from 'lucide-react';
+import { Button } from '../components/ui/button';
 
 import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
 import ParentMeetings from './ParentMeetings';
@@ -62,6 +64,7 @@ import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const MotionNavLink = Motion(NavLink);
 
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
@@ -623,19 +626,19 @@ const TeacherPortal = () => {
               ? 'opacity-100 transform translate-x-0'
               : 'opacity-0 transform -translate-x-4 pointer-events-none absolute inset-0'
             }`}>
-            <div className="absolute inset-0 bg-linear-to-br from-yellow-600 via-yellow-600 to-yellow-500 opacity-90" />
+            <div className="absolute inset-0 bg-yellow-400 via-yellow-450 opacity-100" />
             <div className="relative p-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2.5">
                   <div className="relative">
                     <div className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
-                      <Users size={17} className="text-white" />
+                      <Users size={17} className="text-black" />
                     </div>
                     <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white animate-pulse" />
                   </div>
                   <div className="text-white">
-                    <div className="font-bold text-base leading-tight">Teacher Portal</div>
-                    <div className="text-white/80 text-[11px]">Academic Workspace</div>
+                    <div className="font-bold text-black text-base leading-tight">Teacher Portal</div>
+                    <div className="text-black/80 text-[11px]">Academic Workspace</div>
                   </div>
                 </div>
                 <button
@@ -688,33 +691,34 @@ const TeacherPortal = () => {
               const active = isItemActive(item.path);
               const Icon = item.icon;
               return (
-                <NavLink
+                <Button
                   key={item.path}
-                  to={item.path}
-                  title={sidebarCollapsed ? item.label : undefined}
-                  className={`group flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-2.5'} rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-200 ${
+                  asChild
+                  variant="ghost"
+                  className={`group relative !h-auto !w-full !justify-start !rounded-xl !px-3 !py-2.5 !text-xs !font-semibold ${sidebarCollapsed ? '!justify-center' : 'space-x-2.5'} ${
                     active
-                      ? 'bg-slate-950 text-white shadow-lg shadow-slate-200'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                      ? 'bg-linear-to-r from-amber-100 via-yellow-50 to-violet-50 text-amber-950 shadow-sm shadow-amber-100 ring-1 ring-amber-200/80'
+                      : 'text-slate-600 hover:bg-linear-to-r hover:from-amber-50 hover:via-yellow-50 hover:to-violet-50 hover:text-amber-950 hover:ring-1 hover:ring-amber-200/70'
                   }`}
                 >
-                  <Icon size={17} className="shrink-0" />
-                  {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-                </NavLink>
+                  <MotionNavLink
+                    to={item.path}
+                    title={sidebarCollapsed ? item.label : undefined}
+                    whileHover={{ x: sidebarCollapsed ? 0 : 3, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                    className="flex w-full items-center"
+                  >
+                    <span className="relative flex shrink-0 items-center justify-center">
+                      <span className="absolute inset-0 rounded-lg bg-violet-200/0 transition-colors duration-200 group-hover:bg-violet-200/50" />
+                      <Icon size={17} className="relative shrink-0 transition-transform duration-200 group-hover:scale-105" />
+                    </span>
+                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                  </MotionNavLink>
+                </Button>
               );
             })}
-          </div>
-
-          {!sidebarCollapsed && (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Architecture</p>
-              <div className="mt-2 space-y-1.5 text-[11px] text-slate-600">
-                <div className="flex items-center gap-1.5"><Users size={12} />Class context owns workflows</div>
-                <div className="flex items-center gap-1.5"><Brain size={12} />AI centralized in Teaching and AI Center</div>
-                <div className="flex items-center gap-1.5"><Library size={12} />Resources shared by reference</div>
-              </div>
-            </div>
-          )}
+          </div>        
         </nav>
 
         {/* ── Bottom: Logout ── */}
