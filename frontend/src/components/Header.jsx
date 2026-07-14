@@ -255,10 +255,10 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
 
           {/* Left: Sidebar toggle + Greeting */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap- 2 sm:gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="md:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
+              className="lg:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
               aria-label="Toggle sidebar"
             >
               <Menu size={20} className="text-gray-600" />
@@ -287,7 +287,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
           </div>
 
           {/* Center: Search */}
-          <div className="flex-1 max-w-lg mx-2">
+          <div className="flex-1 max-w-sm mx-2">
             <div className="relative">
               <div className="relative flex items-center">
                 <Search className="absolute left-3 text-gray-400 pointer-events-none" size={16} />
@@ -359,7 +359,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                     </span>
                   )}
                 </div>
-                <span className="text-xs font-medium text-gray-600 max-w-[120px] truncate">{studentData.schoolName}</span>
+                <span className="text-xs font-medium text-gray-600 max-w-auto truncate">{studentData.schoolName}</span>
               </div>
             )}
 

@@ -515,17 +515,17 @@ const ProfileUpdate = () => {
 
   return (
     <div
-      className="md:min-h-screen bg-gray-50 md:bg-linear-to-br md:from-slate-50 md:via-amber-50/30 md:to-orange-50/50 overflow-x-hidden"
+      className="lg:min-h-screen bg-gray-50 lg:bg-linear-to-br lg:from-slate-50 lg:via-amber-50/30 lg:to-orange-50/50 overflow-x-hidden"
       style={{ scrollbarGutter: 'stable' }}
     >
 
       <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" />
 
       {/* ══════════════════════════════════════════════════════
-          MOBILE  (md:hidden)
+          MOBILE  (lg:hidden)
       ══════════════════════════════════════════════════════ */}
       <div
-        className="md:hidden overflow-x-hidden"
+        className="lg:hidden overflow-x-hidden"
         style={{ touchAction: 'pan-y' }}
         onTouchStart={handleMobileTouchStart}
         onTouchMove={handleMobileTouchMove}
@@ -708,9 +708,9 @@ const ProfileUpdate = () => {
       </div>
 
       {/* ══════════════════════════════════════════════════════
-          DESKTOP  (hidden md:block)
+          DESKTOP  (hidden lg:block)
       ══════════════════════════════════════════════════════ */}
-      <div className="hidden md:block">
+      <div className="hidden lg:block">
         <main className="max-w-6xl mx-auto px-6 lg:px-8 py-10">
           <div className="bg-white rounded-3xl shadow-xl overflow-hidden ring-1 ring-black/5">
 

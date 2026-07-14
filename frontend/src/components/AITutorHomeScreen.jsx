@@ -2996,7 +2996,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   return (
     <Section>
       <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <Panel className="flex h-[min(760px,82vh)] flex-col overflow-hidden p-0">
+      <Panel className="flex h-[min(760px,calc(82vh-4.5rem))] flex-col overflow-hidden p-0 lg:h-[min(760px,82vh)]">
         {/* Header — tutor identity, context, controls */}
         <div className="flex flex-wrap items-center gap-3 border-b border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
           <div className="relative">

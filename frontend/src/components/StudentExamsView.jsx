@@ -242,7 +242,7 @@ const StudentExamsView = () => {
   };
 
   return (
-    <div className="space-y-4 p-4 pb-24 md:pb-6">
+    <div className="space-y-4 p-4">
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 md:p-5">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">

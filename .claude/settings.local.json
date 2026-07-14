@@ -87,7 +87,12 @@
       "Read(//home/meow/**)",
       "Bash(awk -F: '$1>2900 && $1<3010')",
       "Bash(/home/meow/.venvs/uiverify/bin/python /home/meow/eec_verify/err_capture.py)",
-      "Bash(awk \"/function useStudentCurriculum/,/^}/\" AITutorHomeScreen.jsx)"
+      "Bash(awk \"/function useStudentCurriculum/,/^}/\" AITutorHomeScreen.jsx)",
+      "Bash(python3 -)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/student)",
+      "Bash(curl -s http://localhost:5174/src/components/MobileBottomNav.jsx)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

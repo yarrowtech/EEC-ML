@@ -69,7 +69,7 @@ const ThemeCustomizer = ({ onThemeChange }) => {
     <>
       {/* Theme Customizer Panel */}
       {isOpen && (
-        <div className="fixed right-0 top-0 w-80 h-full bg-white shadow-2xl border-l border-yellow-100 flex flex-col z-50">
+        <div className="fixed right-0 top-0 w-full max-w-xs sm:w-80 sm:max-w-none h-full bg-white shadow-2xl border-l border-yellow-100 flex flex-col z-50">
           {/* Header */}
           <div className="p-4 border-b border-yellow-100">
             <div className="flex items-center justify-between">
@@ -221,12 +221,12 @@ const ThemeCustomizer = ({ onThemeChange }) => {
             {/* Navbar Color */}
             <div>
               <h3 className="text-sm font-medium text-gray-900 mb-3">Navbar Color</h3>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-5 sm:grid-cols-7 gap-2">
                 {navbarColors.map((color, index) => (
                   <button
                     key={index}
                     onClick={() => handleNavbarColorChange(color)}
-                    className={`w-8 h-8 rounded-lg transition-all hover:scale-110 relative ${
+                    className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg transition-all hover:scale-110 relative ${
                       navbarColor === color 
                         ? 'ring-2 ring-yellow-500 ring-offset-2' 
                         : ''

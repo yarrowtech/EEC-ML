@@ -720,7 +720,7 @@ const RoutineView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-24 sm:p-6 space-y-4">
+      <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-4 sm:p-6 space-y-4">
         <div className="h-28 bg-white rounded-2xl shadow-sm animate-pulse" />
         <div className="h-52 bg-white rounded-2xl shadow-sm animate-pulse" />
       </div>
@@ -728,7 +728,7 @@ const RoutineView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-24 sm:p-6 space-y-6">
+    <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-4 sm:p-6 space-y-6">
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>

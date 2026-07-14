@@ -461,7 +461,7 @@ const AttendanceView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-3 pb-24 sm:p-6 sm:pb-6">
+    <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-3 sm:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* ─── Header ─── */}
@@ -639,13 +639,13 @@ const AttendanceView = () => {
               </div>
 
               {/* Calendar grid */}
-              <div className="p-4">
-                <div className="mb-2 grid grid-cols-7 gap-1">
+              <div className="p-2 sm:p-4">
+                <div className="mb-2 grid grid-cols-7 gap-1 sm:gap-1.5">
                   {daysOfWeek.map((day) => (
                     <div key={day} className="py-1 text-center text-xs font-semibold text-slate-400">{day}</div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
                   {calendarDays.map((day) => (
                     <button key={day.key} type="button"
                       onClick={() => {

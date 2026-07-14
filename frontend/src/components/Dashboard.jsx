@@ -45,7 +45,7 @@ const Dashboard = () => {
   const [viewOverride, setViewOverride] = useState(null);
   const journalRef = useRef(null);
   const wasDesktopRef = useRef(
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : false
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
   );
 
   useEffect(() => {
@@ -64,7 +64,7 @@ const Dashboard = () => {
   useEffect(() => {
     const syncSidebarForViewport = () => {
       if (typeof window === 'undefined') return;
-      const isDesktop = window.innerWidth >= 768;
+      const isDesktop = window.innerWidth >= 1024;
 
       // Set initial state by viewport after login/mount.
       if (!wasDesktopRef.current && !isDesktop) {
@@ -170,7 +170,7 @@ const Dashboard = () => {
           <main className={`flex-1 min-h-0 ${(effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal') ? 'p-0' : ''} w-full flex flex-col`}>
             {renderContent()}
             {effectiveView !== 'chat' && effectiveView !== 'excuse-letter' && effectiveView !== 'assignments-journal' && (
-              <div className="h-16 md:hidden shrink-0" aria-hidden="true" />
+              <div className="h-16 sm:h-18 lg:hidden shrink-0" aria-hidden="true" />
             )}
           </main>
         </div>

@@ -688,7 +688,7 @@ const TeacherFeedback = () => {
                                     key={star}
                                     type="button"
                                     title={STAR_LABELS[star]}
-                                    className="focus:outline-none transition-transform active:scale-90 hover:scale-110 p-0.5"
+                                    className="focus:outline-none transition-transform active:scale-90 hover:scale-110 p-1.5"
                                     onMouseEnter={() => handleRatingHover(category.id, star)}
                                     onMouseLeave={() => handleRatingLeave(category.id)}
                                     onClick={() => handleRatingChange(category.id, star)}

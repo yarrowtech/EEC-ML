@@ -131,7 +131,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
     const path = pageId === 'dashboard' ? '/student' : `/student/${pageId}`;
     onNavigateIntent?.(pageId === 'dashboard' ? 'dashboard' : pageId);
     navigate(path);
-    if (typeof window !== 'undefined' && window.innerWidth < 768) setIsOpen(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) setIsOpen(false);
   };
 
   const handleLogout = () => setShowLogoutConfirm(true);
@@ -143,7 +143,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
   /* Close sidebar on outside click (mobile) */
   useEffect(() => {
     const handler = (e) => {
-      if (window.innerWidth < 768 && isOpen && !e.target.closest('.sidebar')) setIsOpen(false);
+      if (window.innerWidth < 1024 && isOpen && !e.target.closest('.sidebar')) setIsOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -225,16 +225,16 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
       {/* ── Mobile backdrop ── */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* ── Sidebar shell ── */}
       <div
-        className={`sidebar fixed md:relative h-screen bg-white shadow-xl z-50 flex flex-col border-r border-slate-200 transition-all duration-300 ease-in-out overflow-hidden select-none
+        className={`sidebar fixed lg:relative h-screen bg-white shadow-xl z-50 flex flex-col border-r border-slate-200 transition-all duration-300 ease-in-out overflow-hidden select-none
           ${isOpen ? 'w-64' : 'w-16'}
-          ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
 
@@ -271,7 +271,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
                 {/* Mobile close */}
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="md:hidden flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 transition-colors border border-white/30"
+                  className="lg:hidden flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 hover:bg-white/30 transition-colors border border-white/30"
                 >
                   <X size={14} className="text-white" />
                 </button>
@@ -279,7 +279,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
                 {/* Desktop collapse toggle */}
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 hover:bg-white/35 transition-colors border border-white/30"
+                  className="hidden lg:flex h-7 w-7 items-center justify-center rounded-lg bg-white/20 hover:bg-white/35 transition-colors border border-white/30"
                   title="Collapse sidebar"
                 >
                   <ChevronLeft size={14} className="text-white" />
@@ -317,7 +317,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
               {/* Expand toggle */}
               <button
                 onClick={() => setIsOpen(true)}
-                className="hidden md:flex h-6 w-6 items-center justify-center rounded-lg bg-white/20 hover:bg-white/35 transition-colors border border-white/30"
+                className="hidden lg:flex h-6 w-6 items-center justify-center rounded-lg bg-white/20 hover:bg-white/35 transition-colors border border-white/30"
                 title="Expand sidebar"
               >
                 <ChevronRight size={12} className="text-white" />
@@ -464,7 +464,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen, onNavigateIntent }) => {
         {/* ════════════════════════════════
             FOOTER
         ════════════════════════════════ */}
-        <div className={`shrink-0 border-t border-slate-100 mb-16 md:mb-0 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
+        <div className={`shrink-0 border-t border-slate-100 mb-16 lg:mb-0 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
 
           {/* Profile strip (expanded only) */}
           {!collapsed && (

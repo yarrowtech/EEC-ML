@@ -203,7 +203,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
           </div>
 
           {chapters.length > 0 && (
-            <div className="min-w-[280px]">
+            <div className="w-full sm:min-w-[280px] sm:w-auto">
               <div className="flex items-end justify-between mb-2">
                 <div>
                   <p className="text-sm font-semibold text-slate-600">Chapters</p>

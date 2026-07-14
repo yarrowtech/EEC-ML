@@ -1177,7 +1177,7 @@ const StudentChat = () => {
   }, [decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
 
   useEffect(() => {
-    const check = () => setIsMobileView(window.innerWidth < 768);
+    const check = () => setIsMobileView(window.innerWidth < 1024);
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -1512,11 +1512,11 @@ const StudentChat = () => {
         <TeacherModal teacher={teacherModal} onClose={() => setTeacherModal(null)} />
       )}
 
-      <div className="h-[100dvh] md:h-full flex bg-gray-50 overflow-hidden">
+      <div className="h-[100dvh] lg:h-full flex bg-gray-50 overflow-hidden">
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         {showSidebar && (
-          <div className="w-full md:w-[320px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full relative">
+          <div className="w-full lg:w-[320px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full relative">
 
             {/* Header */}
             <div className="px-4 py-4 border-b border-gray-100">
@@ -1903,7 +1903,7 @@ const StudentChat = () => {
                 </div>
 
                 {/* Input */}
-                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] md:py-3 flex-shrink-0 sticky bottom-0 z-20">
+                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
                   <div className="flex items-end gap-2">
                     <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5">
                       <textarea

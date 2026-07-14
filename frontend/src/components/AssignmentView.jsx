@@ -473,7 +473,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                 style={{ background: "#ffffff" }}
               >
                 {/* Scrollable writing area */}
-                <div className="flex-1 overflow-y-auto px-6 sm:px-10 lg:px-20 py-8 sm:py-12 pb-24 md:pb-12 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto px-6 sm:px-10 lg:px-20 py-8 sm:py-12 pb-24 lg:pb-12 custom-scrollbar">
                   <div className="max-w-3xl mx-auto space-y-6">
 
                     {/* Date + decoration dots */}
