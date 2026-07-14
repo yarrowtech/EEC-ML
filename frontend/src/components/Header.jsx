@@ -287,7 +287,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
           </div>
 
           {/* Center: Search */}
-          <div className="flex-1 max-w-sm mx-2">
+          <div className="flex-1 max-w-lg mx-2">
             <div className="relative">
               <div className="relative flex items-center">
                 <Search className="absolute left-3 text-gray-400 pointer-events-none" size={16} />

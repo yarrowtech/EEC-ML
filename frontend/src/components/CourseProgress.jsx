@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, ClipboardList, Target, TrendingUp } from 'lucide-react';
+import { Activity, ClipboardList, CalendarX } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
 
 /* SVG circular progress ring */
@@ -29,27 +29,33 @@ const attBadge  = (pct) => pct >= 75
   ? 'bg-amber-50 text-amber-700 border-amber-200'
   : 'bg-red-50 text-red-600 border-red-200';
 
-const SnapItem = ({ icon: Icon, label, value, color }) => (
-  <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
-    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color}`}>
-      <Icon size={16} className="text-white" />
+const SnapItem = ({ icon, label, value, gradient }) => {
+  const Icon = icon;
+  return (
+    <div className={`relative overflow-hidden rounded-xl bg-linear-to-br ${gradient} p-3.5 shadow-sm`}>
+      <div className="pointer-events-none absolute -right-3 -top-3 h-14 w-14 rounded-full bg-white/10" />
+      <div className="relative z-10 flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
+          <Icon size={16} className="text-white" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/75">{label}</p>
+          <p className="text-lg font-black text-white leading-tight">{value}</p>
+        </div>
+      </div>
     </div>
-    <div className="min-w-0">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-base font-black text-slate-800 leading-tight">{value}</p>
-    </div>
-  </div>
-);
+  );
+};
 
 const CourseProgress = () => {
   const { stats, profile, loading, error } = useStudentDashboard();
 
   const displayClass   = profile?.className  || profile?.grade   || '';
   const displaySection = profile?.sectionName || profile?.section || '';
-  const attPct   = typeof stats?.attendancePercentage === 'number' ? stats.attendancePercentage : null;
-  const present  = typeof stats?.presentDays  === 'number' ? stats.presentDays  : null;
-  const total    = typeof stats?.totalClasses === 'number' ? stats.totalClasses : null;
-  const progress = typeof stats?.overallProgress === 'number' ? stats.overallProgress : null;
+  const attPct  = typeof stats?.attendancePercentage === 'number' ? stats.attendancePercentage : null;
+  const present = typeof stats?.presentDays  === 'number' ? stats.presentDays  : null;
+  const total   = typeof stats?.totalClasses === 'number' ? stats.totalClasses : null;
+  const absent  = present !== null && total !== null ? Math.max(0, total - present) : null;
 
   if (loading) {
     return (
@@ -62,8 +68,8 @@ const CourseProgress = () => {
             <div className="h-3 w-24 rounded bg-slate-200" />
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {[0,1,2].map(i => <div key={i} className="h-14 rounded-xl bg-slate-100" />)}
+        <div className="grid grid-cols-2 gap-3">
+          {[0,1].map(i => <div key={i} className="h-16 rounded-xl bg-slate-100" />)}
         </div>
       </div>
     );
@@ -97,76 +103,53 @@ const CourseProgress = () => {
         )}
       </div>
 
-      <div className="p-5">
+      <div className="p-5 sm:p-6">
         {/* ── Attendance ring + details ── */}
-        <div className="flex items-center gap-5 mb-5">
+        <div className="flex items-center gap-5 sm:gap-6">
           <div className="relative shrink-0">
-            <Ring pct={attPct ?? 0} size={96} stroke={9} color={ringColor} />
+            <Ring pct={attPct ?? 0} size={104} stroke={10} color={ringColor} />
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xl font-black text-slate-800 leading-none">
+              <span className="text-2xl font-black text-slate-800 leading-none">
                 {attPct !== null ? `${attPct}%` : '—'}
               </span>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">
+              <span className={`mt-1.5 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${attPct !== null ? attBadge(attPct) : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                 {attPct !== null ? attLabel(attPct) : 'N/A'}
               </span>
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 space-y-2.5">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-semibold text-slate-500">Attendance</span>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${attPct !== null ? attBadge(attPct) : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                  {attPct !== null ? attLabel(attPct) : 'N/A'}
-                </span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${attPct ?? 0}%`, backgroundColor: ringColor }}
-                />
-              </div>
-              {present !== null && total !== null && (
-                <p className="mt-1 text-[11px] text-slate-400">{present} present out of {total} classes</p>
-              )}
-            </div>
-
-            {progress !== null && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-slate-500">Overall Progress</span>
-                  <span className="text-xs font-bold text-violet-600">{progress}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-linear-to-r from-violet-400 to-purple-500 transition-all duration-700"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">This term</p>
+            {present !== null && total !== null ? (
+              <p className="mt-1 text-sm text-slate-600">
+                Present <span className="font-black text-slate-800">{present}</span> out of{' '}
+                <span className="font-black text-slate-800">{total}</span> classes
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-slate-400">No attendance recorded yet</p>
             )}
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${attPct ?? 0}%`, backgroundColor: ringColor }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* ── Snapshot tiles ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <SnapItem
-            icon={Activity}
-            label="Attendance"
-            value={attPct !== null ? `${attPct}%` : '—'}
-            color="bg-emerald-500"
-          />
+        {/* ── Present / Absent breakdown ── */}
+        <div className="mt-5 grid grid-cols-2 gap-3">
           <SnapItem
             icon={ClipboardList}
             label="Present Days"
             value={present !== null ? present : '—'}
-            color="bg-blue-500"
+            gradient="from-emerald-500 to-teal-600"
           />
           <SnapItem
-            icon={Target}
-            label="Progress"
-            value={progress !== null ? `${progress}%` : '—'}
-            color="bg-violet-500"
+            icon={CalendarX}
+            label="Absent Days"
+            value={absent !== null ? absent : '—'}
+            gradient="from-rose-500 to-red-600"
           />
         </div>
       </div>
