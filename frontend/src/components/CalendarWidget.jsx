@@ -168,20 +168,22 @@ const CalendarWidget = () => {
     <div className="bg-white rounded-3xl border border-purple-100 shadow-sm shadow-purple-100/50 overflow-hidden max-w-4xl mx-auto">
 
       {/* ── Header ── */}
-      <div className="px-5 pt-5 pb-4 border-b border-purple-50">
-        <div className="flex items-center justify-between">
+      <div className="relative overflow-hidden bg-linear-to-br from-purple-500 via-purple-600 to-violet-700 px-5 pt-5 pb-4">
+        <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-8 left-10 h-20 w-20 rounded-full bg-white/8" />
+        <div className="relative z-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-purple-600 flex items-center justify-center shadow-md shadow-purple-200">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/25 border border-white/40 shadow-sm">
               <CalendarDays className="w-4.5 h-4.5 text-white" size={18} />
             </div>
             <div>
-              <h2 className="text-sm font-black text-gray-900 leading-none">Holiday Calendar</h2>
-              <p className="text-[11px] text-gray-400 mt-0.5 leading-none">School holidays & breaks</p>
+              <h2 className="text-sm font-black text-white leading-none">Holiday Calendar</h2>
+              <p className="text-[11px] text-white/70 mt-0.5 leading-none">School holidays & breaks</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {lastSynced && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-purple-600 bg-purple-50 border border-purple-100 px-2.5 py-1 rounded-full">
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-white bg-white/20 border border-white/35 px-2.5 py-1 rounded-full backdrop-blur-sm">
                 <Sparkles size={10} />
                 Synced {lastSynced.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
               </span>
@@ -189,7 +191,7 @@ const CalendarWidget = () => {
             <button
               type="button"
               onClick={goToToday}
-              className="text-[11px] font-bold text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-100 px-3 py-1.5 rounded-full transition-colors"
+              className="text-[11px] font-bold text-purple-700 bg-white hover:bg-white/90 px-3 py-1.5 rounded-full transition-colors shadow-sm"
             >
               Today
             </button>
@@ -197,7 +199,7 @@ const CalendarWidget = () => {
         </div>
 
         {error && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-2xl px-3.5 py-2.5">
+          <div className="relative z-10 mt-3 flex items-center gap-2 text-xs text-red-600 bg-white/95 rounded-2xl px-3.5 py-2.5 shadow-sm">
             <AlertCircle size={13} className="shrink-0" />
             {error}
           </div>

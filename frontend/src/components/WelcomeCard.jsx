@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { motion as Motion } from 'framer-motion';
 import {
   Sun, Moon, Cloud, Lightbulb, Target, Star, Zap, Heart, Trophy,
   BookOpen, Rocket, Play, Pause, ChevronLeft, ChevronRight,
-  Hash, MapPin, GraduationCap, Sparkles,
+  Hash, MapPin, GraduationCap, Sparkles, Brain,
 } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
 
@@ -100,6 +101,29 @@ const WelcomeCard = () => {
       <div className="pointer-events-none absolute bottom-6 right-24 h-20 w-20 rounded-full bg-white/[0.07]" />
       <div className="pointer-events-none absolute top-1/2 right-10 h-32 w-px -translate-y-1/2 bg-white/20" />
 
+      {/* Floating brain watermarks — smart-learning motif */}
+      <Motion.div
+        className="pointer-events-none absolute -right-8 -top-6 text-white/10"
+        animate={{ y: [0, -14, 0], rotate: [-4, 4, -4] }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <Brain size={168} strokeWidth={1} />
+      </Motion.div>
+      <Motion.div
+        className="pointer-events-none absolute right-20 bottom-2 hidden text-white/10 sm:block"
+        animate={{ y: [0, 10, 0], rotate: [3, -3, 3] }}
+        transition={{ duration: 8.5, repeat: Infinity, ease: 'easeInOut', delay: 1.2 }}
+      >
+        <Brain size={64} strokeWidth={1} />
+      </Motion.div>
+      <Motion.div
+        className="pointer-events-none absolute left-8 bottom-6 hidden text-white/8 md:block"
+        animate={{ y: [0, -8, 0], rotate: [-3, 3, -3] }}
+        transition={{ duration: 9.5, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
+      >
+        <Brain size={44} strokeWidth={1} />
+      </Motion.div>
+
       <div className="relative z-10 p-5 sm:p-6">
 
         {/* ── Top row ── */}
@@ -118,7 +142,10 @@ const WelcomeCard = () => {
                 <span className="text-2xl font-black text-white">{initials.toUpperCase()}</span>
               </div>
             )}
-            <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-400 shadow" />
+            <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-emerald-400 shadow" />
+            </span>
           </div>
 
           {/* Greeting + name */}
