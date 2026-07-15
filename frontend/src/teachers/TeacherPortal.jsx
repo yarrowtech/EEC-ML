@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
 import {
@@ -68,23 +68,23 @@ const MotionNavLink = Motion(NavLink);
 
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
-  { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
+  { icon: Users, label: 'Classes & Work', path: `${PORTAL_BASE}/classes` },
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
   { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
-  { icon: Library, label: 'Resource Library', path: `${PORTAL_BASE}/resource-library` },
-  { icon: Brain, label: 'AI Center', path: `${PORTAL_BASE}/ai-center` },
-  { icon: Settings, label: 'Settings', path: `${PORTAL_BASE}/settings` },
+  { icon: Library, label: 'Teaching Resources', path: `${PORTAL_BASE}/resource-library` },
+  { icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-center` },
+  { icon: Settings, label: 'Profile & Work', path: `${PORTAL_BASE}/settings` },
 ];
 
 const classTabs = [
   { icon: Home, label: 'Overview', path: '' },
   { icon: Users, label: 'Students', path: 'students' },
-  { icon: BookOpen, label: 'Teaching Workspace', path: 'teaching' },
+  { icon: BookOpen, label: 'Teaching', path: 'teaching' },
   { icon: FileText, label: 'Assignments', path: 'assignments' },
   { icon: GraduationCap, label: 'Assessments', path: 'assessments' },
-  { icon: MessageSquare, label: 'Communication', path: 'communication' },
-  { icon: BarChart3, label: 'Reports & Analytics', path: 'reports' },
+  { icon: MessageSquare, label: 'Chat & Meetings', path: 'communication' },
+  { icon: BarChart3, label: 'Reports', path: 'reports' },
 ];
 
 const studentsLinks = [
@@ -201,18 +201,45 @@ const ClassesHub = () => {
     loadClasses();
   }, []);
 
-  const classes = allocations.map((item, index) => {
-    const className = item?.classId?.name || item?.className || 'Class';
-    const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
-    const subjectName = item?.subjectId?.name || item?.subjectName || item?.subject || 'Assigned subject';
-    const classId = item?.classId?._id || item?.classId?.id || `${className}-${sectionName}`.toLowerCase().replace(/\s+/g, '-');
-    return {
-      id: String(classId || `class-${index + 1}`),
-      title: `${className} ${sectionName}`,
-      subject: subjectName,
-      role: item?.isClassTeacher ? 'Class teacher' : 'Subject teacher',
-    };
-  });
+  const classes = useMemo(() => {
+    const grouped = new Map();
+
+    allocations.forEach((item, index) => {
+      const className = item?.classId?.name || item?.className || 'Class';
+      const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
+      const key = `${String(className).trim().toLowerCase()}::${String(sectionName).trim().toLowerCase()}`;
+      const subjectName = item?.subjectId?.name || item?.subjectName || item?.subject || 'Assigned subject';
+      const classId = item?.classId?._id || item?.classId?.id || `${className}-${sectionName}`.toLowerCase().replace(/\s+/g, '-');
+
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          id: String(classId || `class-${index + 1}`),
+          title: `${className} ${sectionName}`.trim(),
+          subjects: [],
+          isClassTeacher: false,
+        });
+      }
+
+      const entry = grouped.get(key);
+      if (subjectName && !entry.subjects.includes(subjectName)) {
+        entry.subjects.push(subjectName);
+      }
+      if (item?.isClassTeacher) {
+        entry.isClassTeacher = true;
+      }
+    });
+
+    return Array.from(grouped.values()).map((item) => ({
+      ...item,
+      subject:
+        item.subjects.length === 0
+          ? 'Assigned subject'
+          : item.subjects.length === 1
+            ? item.subjects[0]
+            : `${item.subjects.slice(0, 2).join(', ')}${item.subjects.length > 2 ? ` +${item.subjects.length - 2}` : ''}`,
+      role: item.isClassTeacher ? 'Class teacher' : 'Subject teacher',
+    }));
+  }, [allocations]);
 
   return (
     <div className="space-y-5">
@@ -220,7 +247,7 @@ const ClassesHub = () => {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Class-centric workspace</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">Classes</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Teaching, attendance, student records, assignments, assessments, communication, and reports now live inside the selected class.
+          Choose a class-section first. Everything inside this area is scoped to that class context: students, teaching, assignments, assessments, communication, and reports.
         </p>
       </div>
 
@@ -229,8 +256,8 @@ const ClassesHub = () => {
       ) : classes.length === 0 ? (
         <PlaceholderModule
           icon={Users}
-          title="No assigned classes found"
-          description="Use Current Class to continue working with existing tools while allocations are synced."
+          title="No assigned class-section found"
+          description="Your class allocations are not available yet. Use Current Class to continue working with the class-scoped tools."
           actions={[{ label: 'Open Current Class', to: buildClassPath('current') }]}
         />
       ) : (
@@ -271,6 +298,17 @@ const ClassWorkspace = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal / Classes</p>
             <h1 className="mt-2 text-2xl font-semibold capitalize text-slate-950">{classDisplayName(classId)}</h1>
             <p className="mt-1 text-sm text-slate-500">One class context for students, teaching, assignments, assessments, communication, and reporting.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                Class-scoped workspace
+              </span>
+              <NavLink
+                to="/teacher/classes"
+                className="inline-flex rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+              >
+                Switch class
+              </NavLink>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {classTabs.map((tab) => {
@@ -300,8 +338,45 @@ const ClassWorkspace = () => {
   );
 };
 
+class TeacherPortalErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-const TeacherPortal = () => {
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-100 p-6">
+          <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center">
+            <div className="w-full rounded-2xl border border-red-100 bg-white p-8 shadow-sm">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+                <AlertTriangle size={26} />
+              </div>
+              <h1 className="text-center text-xl font-semibold text-slate-950">Teacher portal failed to render</h1>
+              <p className="mt-2 text-center text-sm text-slate-500">
+                A page-level component crashed. Reloading the portal should recover if the backend is healthy.
+              </p>
+              <div className="mt-6 flex justify-center">
+                <Button type="button" onClick={() => window.location.reload()}>
+                  Reload portal
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -340,10 +415,10 @@ const TeacherPortal = () => {
     const active = portalNavigation.find((item) => isItemActive(item.path));
     if (active) return active.label;
     if (location.pathname.includes('/students')) return 'Students';
-    if (location.pathname.includes('/teaching')) return 'Teaching Workspace';
+    if (location.pathname.includes('/teaching')) return 'Teaching';
     if (location.pathname.includes('/assessments')) return 'Assessments';
-    if (location.pathname.includes('/communication')) return 'Communication';
-    if (location.pathname.includes('/reports')) return 'Reports & Analytics';
+    if (location.pathname.includes('/communication')) return 'Chat & Meetings';
+    if (location.pathname.includes('/reports')) return 'Reports';
     return 'Teacher Portal';
   }, [isItemActive, location.pathname]);
 
@@ -1098,5 +1173,11 @@ const TeacherPortal = () => {
     </>
   );
 };
+
+const TeacherPortal = () => (
+  <TeacherPortalErrorBoundary>
+    <TeacherPortalShell />
+  </TeacherPortalErrorBoundary>
+);
 
 export default TeacherPortal;

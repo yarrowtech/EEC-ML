@@ -9,7 +9,6 @@ const AuthSessionManager = () => {
   const navigate = useNavigate();
   const [showWarning, setShowWarning] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
-  const [refreshFailed, setRefreshFailed] = useState(false);
 
   useEffect(() => {
     const runExpiryCheck = () => {
@@ -75,25 +74,7 @@ const AuthSessionManager = () => {
   };
 
   const handleStayLoggedIn = async () => {
-    // Attempt token refresh via backend; fall back to graceful dismiss if not supported
-    const token = localStorage.getItem('token');
-    if (!token) { handleLogoutNow(); return; }
-    try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/refresh`,
-        { method: 'POST', headers: { authorization: `Bearer ${token}` } }
-      );
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data?.token) {
-          localStorage.setItem('token', data.token);
-          setShowWarning(false);
-          return;
-        }
-      }
-    } catch { /* refresh not supported */ }
-    // Refresh endpoint not available — show inline notice instead of blocking alert
-    setRefreshFailed(true);
+    setShowWarning(false);
   };
 
   const handleLogoutNow = () => {
@@ -130,18 +111,12 @@ const AuthSessionManager = () => {
           </div>
         </div>
 
-        {refreshFailed && (
-          <p className="mt-2 text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5 leading-snug">
-            Session extension unavailable. Please save your work — you'll be prompted to log in again when it expires.
-          </p>
-        )}
-
         <div className="mt-3 flex gap-2">
           <button
             onClick={handleStayLoggedIn}
             className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
           >
-            Extend session
+            Dismiss
           </button>
           <button
             onClick={handleLogoutNow}

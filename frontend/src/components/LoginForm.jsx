@@ -399,9 +399,7 @@ const LoginForm = () => {
         </div>
 
         {/* Bottom */}
-        <div className="relative z-10 flex items-center justify-between pt-4">
-          <p className="text-xs text-white/50">© {new Date().getFullYear()} {organizationName} · All rights reserved</p>
-          <div className="flex gap-1.5 items-center">
+        <div className="relative z-10 flex items-center justify-between pt-4">          <div className="flex gap-1.5 items-center">
             <div className="w-6 h-1.5 rounded-full bg-white/50" />
             <div className="w-1.5 h-1.5 rounded-full bg-white/25" />
             <div className="w-1.5 h-1.5 rounded-full bg-white/25" />

@@ -37,6 +37,85 @@ const extractId = (value) => {
   return null;
 };
 
+const normalizeScopeText = (value) => String(value || '').trim().toLowerCase();
+
+const buildTeacherScope = async ({ schoolId, campusId = null, teacherId }) => {
+  if (!schoolId || !teacherId) return [];
+
+  const allocationFilter = {
+    schoolId,
+    teacherId,
+  };
+  if (campusId) {
+    allocationFilter.$or = [
+      { campusId },
+      { campusId: null },
+      { campusId: { $exists: false } },
+    ];
+  }
+
+  const allocations = await TeacherAllocation.find(allocationFilter)
+    .populate('classId', 'name')
+    .populate('sectionId', 'name')
+    .lean();
+
+  const scopeMap = new Map();
+  const addScope = (className, sectionName = '') => {
+    const normalizedClass = normalizeScopeText(className);
+    const normalizedSection = normalizeScopeText(sectionName);
+    if (!normalizedClass) return;
+    const key = `${normalizedClass}::${normalizedSection}`;
+    if (!scopeMap.has(key)) {
+      scopeMap.set(key, {
+        className: normalizedClass,
+        sectionName: normalizedSection,
+      });
+    }
+  };
+
+  allocations.forEach((allocation) => {
+    addScope(allocation?.classId?.name, allocation?.sectionId?.name);
+  });
+
+  if (!scopeMap.size) {
+    const timetableFilter = {
+      schoolId,
+      'entries.teacherId': teacherId,
+    };
+    if (campusId) {
+      timetableFilter.campusId = campusId;
+    }
+
+    const timetables = await Timetable.find(timetableFilter)
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .lean();
+
+    timetables.forEach((timetable) => {
+      const className = timetable?.classId?.name || '';
+      const sectionName = timetable?.sectionId?.name || '';
+      (timetable.entries || []).forEach((entry) => {
+        if (String(entry?.teacherId || '') !== String(teacherId)) return;
+        addScope(className, sectionName);
+      });
+    });
+  }
+
+  return Array.from(scopeMap.values());
+};
+
+const studentIsWithinScope = (student, scope = []) => {
+  if (!Array.isArray(scope) || scope.length === 0) return false;
+  const studentClass = normalizeScopeText(student?.grade || student?.className || '');
+  const studentSection = normalizeScopeText(student?.section || student?.sectionName || '');
+  return scope.some((item) => {
+    if (studentClass !== normalizeScopeText(item?.className || '')) return false;
+    const scopeSection = normalizeScopeText(item?.sectionName || '');
+    if (!scopeSection) return true;
+    return studentSection === scopeSection;
+  });
+};
+
 const startOfDay = (value) => {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
@@ -201,13 +280,12 @@ router.get('/', authTeacher, async (req, res) => {
     if (campusId) {
       studentFilter.campusId = campusId;
     }
-    if (campusId) {
-      studentFilter.campusId = campusId;
-    }
+    const scope = await buildTeacherScope({ schoolId, campusId, teacherId });
     const students = await StudentUser.find(studentFilter)
       .select('name grade section attendance')
       .lean();
-    const studentIds = students.map((student) => student._id);
+    const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope));
+    const studentIds = scopedStudents.map((student) => student._id);
 
     const today = new Date();
     const todayStart = startOfDay(today);
@@ -215,7 +293,7 @@ router.get('/', authTeacher, async (req, res) => {
     let attendanceMarked = 0;
     let attendancePresent = 0;
 
-    students.forEach((student) => {
+    scopedStudents.forEach((student) => {
       const todays = (student.attendance || []).filter((entry) => {
         const entryDate = new Date(entry.date);
         return entryDate >= todayStart && entryDate <= todayEnd;
@@ -264,7 +342,7 @@ router.get('/', authTeacher, async (req, res) => {
         .lean()
       : [];
     const assignmentMap = new Map(assignments.map((a) => [String(a._id), a]));
-    const studentMap = new Map(students.map((s) => [String(s._id), s]));
+    const studentMap = new Map(scopedStudents.map((s) => [String(s._id), s]));
 
     submissionItems.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
     const recentActivities = submissionItems.slice(0, 5).map((item, idx) => {
@@ -522,6 +600,16 @@ router.get('/students', authTeacher, async (req, res) => {
       return res.status(400).json({ error: 'teacherId is required' });
     }
 
+    const scope = await buildTeacherScope({ schoolId, campusId, teacherId });
+    if (!scope.length) {
+      return res.json({
+        students: [],
+        teacher: null,
+        classes: [],
+        sections: [],
+      });
+    }
+
     // Get teacher details to understand their assigned classes
     const teacher = await TeacherUser.findById(teacherId)
       .select('name className class grade sectionName section assignedClasses assignedSections classes sections')
@@ -539,45 +627,39 @@ router.get('/students', authTeacher, async (req, res) => {
       .sort({ grade: 1, section: 1, rollNumber: 1 })
       .lean();
 
-    // Fetch all classes and sections for filtering options
-    const classFilter = { schoolId };
-    if (campusId) {
-      classFilter.campusId = campusId;
-    }
-
-    const [classes, sections] = await Promise.all([
-      ClassModel.find(classFilter).select('name').lean(),
-      Section.find(classFilter).select('name classId').lean(),
-    ]);
-
     // Format students with their class-section labels
-    const formattedStudents = students.map(student => {
-      const className = student.className || student.grade || '';
-      const sectionName = student.sectionName || student.section || '';
-      const classLabel = sectionName ? `${className}-${sectionName}` : className;
+    const formattedStudents = students
+      .filter((student) => studentIsWithinScope(student, scope))
+      .map((student) => {
+        const className = student.className || student.grade || '';
+        const sectionName = student.sectionName || student.section || '';
+        const classLabel = sectionName ? `${className}-${sectionName}` : className;
 
-      return {
-        _id: student._id,
-        name: student.name,
-        username: student.username,
-        rollNumber: student.rollNumber,
-        grade: student.grade,
-        section: student.section,
-        className: student.className,
-        sectionName: student.sectionName,
-        classLabel,
-        campusId: student.campusId,
-        campusName: student.campusName,
-        profilePic: student.profilePic,
-        attendance: student.attendance || []
-      };
-    });
+        return {
+          _id: student._id,
+          name: student.name,
+          username: student.username,
+          rollNumber: student.rollNumber,
+          grade: student.grade,
+          section: student.section,
+          className: student.className,
+          sectionName: student.sectionName,
+          classLabel,
+          campusId: student.campusId,
+          campusName: student.campusName,
+          profilePic: student.profilePic,
+          attendance: student.attendance || [],
+        };
+      });
+
+    const classOptions = [...new Set(formattedStudents.map((student) => student.grade || student.className).filter(Boolean))];
+    const sectionOptions = [...new Set(formattedStudents.map((student) => student.section || student.sectionName).filter(Boolean))];
 
     res.json({
       students: formattedStudents,
       teacher: teacher || null,
-      classes: classes.map(c => c.name),
-      sections: sections.map(s => ({ name: s.name, classId: s.classId }))
+      classes: classOptions,
+      sections: sectionOptions,
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load students' });
@@ -610,11 +692,21 @@ router.post('/attendance', authTeacher, async (req, res) => {
     const endOfDay = new Date(attendanceDate);
     endOfDay.setHours(23, 59, 59, 999);
 
+    const scope = await buildTeacherScope({ schoolId, campusId: req.campusId || req.user?.campusId || null, teacherId });
+    if (!scope.length) {
+      return res.status(403).json({ error: 'Attendance access denied. You are not allocated to any class/section.' });
+    }
+
     // Update attendance for each student
     const updates = [];
     for (const [studentId, status] of Object.entries(attendanceData)) {
       if (!mongoose.isValidObjectId(studentId)) continue;
       if (!['present', 'absent'].includes(status)) continue;
+
+      const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('grade section className sectionName campusId').lean();
+      if (!student || !studentIsWithinScope(student, scope)) {
+        return res.status(403).json({ error: 'One or more students are outside your assigned scope' });
+      }
 
       updates.push(
         StudentUser.findByIdAndUpdate(
@@ -1232,7 +1324,7 @@ router.get('/routine', authTeacher, async (req, res) => {
       timetableFilter.campusId = campusId;
     }
 
-    const timetables = await Timetable.find(timetableFilter)
+    let timetables = await Timetable.find(timetableFilter)
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('entries.subjectId', 'name')
@@ -1240,12 +1332,15 @@ router.get('/routine', authTeacher, async (req, res) => {
 
     // Fallback for legacy records that may not have campusId set
     if (campusId && (!Array.isArray(timetables) || timetables.length === 0)) {
+      const baseFilter = {
+        schoolId,
+        'entries.teacherId': teacherId,
+      };
       timetables = await Timetable.find(baseFilter)
         .populate('classId', 'name')
         .populate('sectionId', 'name')
         .populate('entries.subjectId', 'name')
         .lean();
-      routineSource = 'school-fallback';
     }
 
     const schedule = {};

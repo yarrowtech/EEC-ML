@@ -41,12 +41,12 @@ jest.mock('../../utils/authSession', () => ({
   logoutAndRedirect: jest.fn(),
 }));
 
-const renderPortal = (initialEntry = '/teacher/dashboard') =>
-  render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <Routes>
-        <Route path="/teacher/*" element={<TeacherPortal />} />
-      </Routes>
+  const renderPortal = (initialEntry = '/teacher/dashboard') =>
+    render(
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/teacher/*" element={<TeacherPortal />} />
+        </Routes>
     </MemoryRouter>
   );
 
@@ -84,11 +84,9 @@ describe('TeacherPortal', () => {
   });
 
   test('opens student section and navigates to analytics page', async () => {
-    renderPortal('/teacher/dashboard');
+    renderPortal('/teacher/classes/current/students');
 
-    const studentSectionButton = await screen.findByRole('button', { name: /Student Management/i });
-    await userEvent.click(studentSectionButton);
-    const analyticsLink = await screen.findByText('Student Analytics');
+    const analyticsLink = await screen.findByRole('link', { name: /Student Analytics/i });
     await userEvent.click(analyticsLink);
 
     const analyticsMentions = await screen.findAllByText('Student Analytics');

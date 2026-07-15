@@ -12,6 +12,11 @@ const isAdminPortalPath = (req) => {
   return url.startsWith('/api/admin') || url.startsWith('/api/super-admin');
 };
 
+const isAuthRoute = (req) => {
+  const url = String(req?.originalUrl || '');
+  return url.includes('/auth/');
+};
+
 const isAdminUserType = (userType) => {
   const normalized = String(userType || '').toLowerCase();
   return normalized === 'admin' || normalized === 'super_admin' || normalized === 'superadmin';
@@ -31,7 +36,7 @@ const logAuthEvent = (req, payload = {}) => {
     ...extra
   } = payload;
 
-  if (!isAdminPortalPath(req) && !isAdminUserType(userType)) {
+  if (!isAdminPortalPath(req) && !isAuthRoute(req) && !isAdminUserType(userType)) {
     return;
   }
 

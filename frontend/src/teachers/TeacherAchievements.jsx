@@ -82,7 +82,7 @@ const TeacherAchievements = () => {
     const fetchAllocations = async () => {
       setLoadingAllocations(true);
       try {
-        const { data } = await axios.get(`${API_BASE_URL}/teacher/dashboard/allocations`, { headers });
+        const { data } = await axios.get(`${API_BASE_URL}/api/teacher/dashboard/allocations`, { headers });
         const list = Array.isArray(data) ? data : [];
         const classTeacherOnly = list
           .filter((item) => item?.isClassTeacher === true)

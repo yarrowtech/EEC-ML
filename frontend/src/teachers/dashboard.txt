@@ -16,7 +16,7 @@ Quick Actions:
 - Open Classes (/teacher/classes)
 - Class Attendance (/teacher/classes/current/students/attendance)
 - Assignments (/teacher/classes/current/assignments)
-- Teaching Workspace (/teacher/classes/current/teaching)
+- Teaching (/teacher/classes/current/teaching)
 - Assessments (/teacher/classes/current/assessments)
 - AI Center (/teacher/ai-center)
 

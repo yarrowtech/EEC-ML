@@ -18,16 +18,13 @@ import {
   Clock,
   Eye,
   FileText,
-  GraduationCap,
   MessageSquare,
-  NotebookPen,
   PanelRightOpen,
   Sparkles,
   TimerReset,
   TrendingDown,
   TrendingUp,
   Users,
-  WandSparkles,
   X,
   Zap,
 } from 'lucide-react';
@@ -184,7 +181,7 @@ const TeacherDashboard = () => {
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [activeTimeframe, setActiveTimeframe] = useState('weekly');
-  const [utilityOpen, setUtilityOpen] = useState(true);
+  const [utilityOpen, setUtilityOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(new Date()), 1000);
@@ -341,27 +338,18 @@ const TeacherDashboard = () => {
 
   const workflowGroups = [
     {
-      title: 'Teaching',
+      title: 'Core actions',
       items: [
-        { title: 'Open Classes', description: 'Jump into roster, timetable, and class context.', icon: Users, path: '/teacher/classes' },
-        { title: 'Teaching Workspace', description: 'Continue lesson materials, notes, and resources.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
-        { title: 'Create Lesson Plan', description: 'Plan the next class with guided AI support.', icon: NotebookPen, path: '/teacher/classes/current/teaching/lesson-plans' },
-      ],
-    },
-    {
-      title: 'Evaluation',
-      items: [
-        { title: 'Attendance', description: 'Mark today quickly and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
+        { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
+        { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
         { title: 'Assignments', description: 'Review submissions and pending work.', icon: FileText, path: '/teacher/classes/current/assignments' },
-        { title: 'Assessments', description: 'Open exams, results, and evaluations.', icon: GraduationCap, path: '/teacher/classes/current/assessments' },
       ],
     },
     {
-      title: 'AI Tools',
+      title: 'Support',
       items: [
-        { title: 'AI Center', description: 'Ask for class insights and teaching support.', icon: Sparkles, path: '/teacher/ai-center' },
-        { title: 'Generate Worksheet', description: 'Create differentiated practice in minutes.', icon: WandSparkles, path: '/teacher/classes/current/teaching/practice-questions' },
-        { title: 'Generate Quiz', description: 'Draft checks for understanding from topics.', icon: Zap, path: '/teacher/classes/current/teaching/ai-assistant' },
+        { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
+        { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/ai-center' },
       ],
     },
   ];
@@ -504,7 +492,7 @@ const TeacherDashboard = () => {
               <div className="space-y-4">
                 <CardShell>
                   <SectionHeader icon={Zap} title="Workflow Actions" subtitle="Grouped by how teachers actually move through the day." action={<Link to="/teacher/classes" className="text-sm font-semibold text-slate-700 hover:text-slate-950">View modules</Link>} />
-                  <div className="grid gap-4 p-5 lg:grid-cols-3">
+                  <div className="grid gap-4 p-5 lg:grid-cols-2">
                     {workflowGroups.map((group) => (
                       <div key={group.title}>
                         <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">{group.title}</h3>
@@ -571,11 +559,6 @@ const TeacherDashboard = () => {
                   <CardShell>
                     <SectionHeader icon={Bell} title="Recent Activity" subtitle="Interactive timeline of relevant classroom updates." action={<Badge tone="neutral">{recentActivities.length} updates</Badge>} />
                     <div className="p-5">
-                      <div className="mb-4 flex flex-wrap gap-2">
-                        {['All', 'Attendance', 'Assignments', 'Reports'].map((filter) => (
-                          <button key={filter} type="button" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-950">{filter}</button>
-                        ))}
-                      </div>
                       {recentActivities.length === 0 ? <EmptyState icon={Bell} title="No recent activity" description="Attendance, assignments, reports, and meetings will appear here." /> : (
                         <div className="space-y-1">
                           {recentActivities.slice(0, 6).map((activity, index) => <ActivityItem key={activity.id || index} activity={activity} index={index} total={Math.min(recentActivities.length, 6)} />)}
