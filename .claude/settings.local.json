@@ -110,7 +110,13 @@
       "Bash(rm -f /tmp/AITutorHomeScreen.jsx.bak)",
       "Bash(grep -n \"^const \\\\|^function \\\\|=> {$\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AILearningCoursesLanding.jsx\")",
       "Bash(rm -f /tmp/orig_aitutor.jsx)",
-      "Bash(grep -n \"placeholder={listening ? 'Listening…' : \\\\`\\\\${activeChipMeta.label}\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")"
+      "Bash(grep -n \"placeholder={listening ? 'Listening…' : \\\\`\\\\${activeChipMeta.label}\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")",
+      "Bash(awk 'NR==2764,NR==3638' \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")",
+      "Bash(sed -i '2764,3638{s/#F59E0B/#FBBF24/g; s/#D97706/#F59E0B/g; s/#B45309/#D97706/g}' AITutorHomeScreen.jsx)",
+      "Bash(awk 'NR==2764,NR==3638' AITutorHomeScreen.jsx)",
+      "Bash(awk 'NR==2764,NR==3638{print NR\": \"$0}' \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")",
+      "Bash(awk -F: '$1 >= 2764 && $1 <= 3638')",
+      "Bash(node -e \"require\\('./models/TutorConversation.js'\\); console.log\\('Model OK'\\)\")"
     ],
     "additionalDirectories": [
       "/tmp"

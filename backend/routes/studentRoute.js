@@ -8,6 +8,7 @@ const Timetable = require('../models/Timetable');
 const ExamResult = require('../models/ExamResult');
 const Exam = require('../models/Exam');
 const StudentJournalEntry = require('../models/StudentJournalEntry');
+const TutorConversation = require('../models/TutorConversation');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
@@ -1281,6 +1282,143 @@ router.delete('/journal/:id', authStudent, async (req, res) => {
       err,
       targetType: 'journal_entry',
       targetId: req.params.id,
+    });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// AI Tutor Chat History - List conversations (most recent first)
+router.get('/tutor-conversations', authStudent, async (req, res) => {
+  // #swagger.tags = ['AI Tutor']
+  try {
+    if (!req.schoolId) {
+      return res.status(400).json({ error: 'schoolId is required' });
+    }
+    const conversations = await TutorConversation.find({
+      studentId: req.user.id,
+      schoolId: req.schoolId,
+    })
+      .sort({ updatedAt: -1 })
+      .limit(50)
+      .lean();
+    res.json({ conversations });
+    logStudentPortalEvent(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.fetch',
+      outcome: 'success',
+      statusCode: 200,
+      targetType: 'student',
+      targetId: req.user?.id,
+      resultCount: conversations.length,
+    });
+  } catch (err) {
+    logStudentPortalError(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.fetch',
+      statusCode: 400,
+      err,
+      targetType: 'student',
+      targetId: req.user?.id,
+    });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// AI Tutor Chat History - Upsert a conversation by its client-generated id
+router.put('/tutor-conversations/:clientId', authStudent, async (req, res) => {
+  // #swagger.tags = ['AI Tutor']
+  try {
+    if (!req.schoolId) {
+      return res.status(400).json({ error: 'schoolId is required' });
+    }
+    const clientId = String(req.params.clientId || '').trim();
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+    const { title, subjectTitle, topicTitle, messages } = req.body || {};
+    const cleanMessages = (Array.isArray(messages) ? messages : [])
+      .filter((m) => m && m.id && m.role && String(m.text || '').trim())
+      .map((m) => ({
+        id: String(m.id),
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        text: String(m.text || ''),
+        error: Boolean(m.error),
+      }));
+    if (cleanMessages.length === 0) {
+      return res.status(400).json({ error: 'messages must include at least one non-empty message' });
+    }
+
+    const conversation = await TutorConversation.findOneAndUpdate(
+      {
+        clientId,
+        studentId: req.user.id,
+        schoolId: req.schoolId,
+      },
+      {
+        $set: {
+          campusId: req.campusId,
+          title: String(title || '').trim() || 'New chat',
+          subjectTitle: String(subjectTitle || ''),
+          topicTitle: String(topicTitle || ''),
+          messages: cleanMessages,
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    res.json({ conversation });
+    logStudentPortalEvent(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.upsert',
+      outcome: 'success',
+      statusCode: 200,
+      targetType: 'tutor_conversation',
+      targetId: conversation._id,
+    });
+  } catch (err) {
+    logStudentPortalError(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.upsert',
+      statusCode: 400,
+      err,
+      targetType: 'student',
+      targetId: req.user?.id,
+    });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// AI Tutor Chat History - Delete a conversation
+router.delete('/tutor-conversations/:clientId', authStudent, async (req, res) => {
+  // #swagger.tags = ['AI Tutor']
+  try {
+    if (!req.schoolId) {
+      return res.status(400).json({ error: 'schoolId is required' });
+    }
+    const conversation = await TutorConversation.findOneAndDelete({
+      clientId: String(req.params.clientId || '').trim(),
+      studentId: req.user.id,
+      schoolId: req.schoolId,
+    });
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    res.json({ message: 'Conversation deleted' });
+    logStudentPortalEvent(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.delete',
+      outcome: 'success',
+      statusCode: 200,
+      targetType: 'tutor_conversation',
+      targetId: req.params.clientId,
+    });
+  } catch (err) {
+    logStudentPortalError(req, {
+      feature: 'ai_tutor',
+      action: 'tutor_conversations.delete',
+      statusCode: 400,
+      err,
+      targetType: 'student',
+      targetId: req.user?.id,
     });
     res.status(400).json({ error: err.message });
   }

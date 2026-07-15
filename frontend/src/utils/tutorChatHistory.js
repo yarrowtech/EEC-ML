@@ -1,20 +1,13 @@
-// Persists AI Tutor conversations locally so a student can revisit past chats
-// (ChatGPT-style history list). Scoped per logged-in student via a token
-// fingerprint so a shared/lab device doesn't mix one student's chats into
-// another's history list.
-const STORAGE_PREFIX = 'eec_tutor_chat_history_v1';
-const MAX_CONVERSATIONS = 30;
+// Persists AI Tutor conversations to the student's account on the backend so
+// chat history follows them across devices — localStorage is per-browser and
+// can't do that, which is exactly the bug this file used to have.
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const MAX_TITLE_LENGTH = 60;
 
-const buildStorageKey = () => {
-  try {
-    const token = localStorage.getItem('token') || '';
-    const scope = token ? `${token.slice(0, 8)}:${token.slice(-8)}` : 'anon';
-    return `${STORAGE_PREFIX}:${scope}`;
-  } catch {
-    return `${STORAGE_PREFIX}:anon`;
-  }
-};
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+});
 
 export const createConversationId = () =>
   `tutor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -26,48 +19,70 @@ export const deriveConversationTitle = (messages) => {
   return text.length > MAX_TITLE_LENGTH ? `${text.slice(0, MAX_TITLE_LENGTH)}…` : text;
 };
 
-export const listTutorConversations = () => {
+const normalizeConversation = (raw) => ({
+  id: String(raw?.clientId || raw?._id || ''),
+  title: raw?.title || 'New chat',
+  subjectTitle: raw?.subjectTitle || '',
+  topicTitle: raw?.topicTitle || '',
+  messages: Array.isArray(raw?.messages) ? raw.messages : [],
+  updatedAt: raw?.updatedAt ? new Date(raw.updatedAt).getTime() : Date.now(),
+});
+
+export const listTutorConversations = async () => {
   try {
-    const parsed = JSON.parse(localStorage.getItem(buildStorageKey()));
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((c) => c && c.id && Array.isArray(c.messages) && c.messages.length > 0)
-      .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+    const token = localStorage.getItem('token');
+    if (!token) return [];
+    const res = await fetch(`${API_BASE}/api/student/auth/tutor-conversations`, { headers: authHeaders() });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return (Array.isArray(data?.conversations) ? data.conversations : [])
+      .map(normalizeConversation)
+      .filter((c) => c.id && c.messages.length > 0);
   } catch {
     return [];
   }
 };
 
-export const saveTutorConversation = ({ id, messages, subjectTitle = '', topicTitle = '' }) => {
-  if (!id || !Array.isArray(messages) || messages.length === 0) return;
+export const saveTutorConversation = async ({ id, messages, subjectTitle = '', topicTitle = '' }) => {
+  if (!id || !Array.isArray(messages) || messages.length === 0) return null;
   try {
     // Strip transient streaming/thinking flags — only persist settled messages.
     const cleanMessages = messages
       .filter((m) => m && !m.thinking && String(m.text || '').trim())
       .map((m) => ({ id: m.id, role: m.role, text: m.text, error: m.error || undefined }));
-    if (cleanMessages.length === 0) return;
+    if (cleanMessages.length === 0) return null;
 
-    const existing = listTutorConversations().filter((c) => c.id !== id);
-    existing.unshift({
-      id,
-      title: deriveConversationTitle(cleanMessages),
-      subjectTitle,
-      topicTitle,
-      messages: cleanMessages,
-      updatedAt: Date.now(),
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    const res = await fetch(`${API_BASE}/api/student/auth/tutor-conversations/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        title: deriveConversationTitle(cleanMessages),
+        subjectTitle,
+        topicTitle,
+        messages: cleanMessages,
+      }),
     });
-    localStorage.setItem(buildStorageKey(), JSON.stringify(existing.slice(0, MAX_CONVERSATIONS)));
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return data?.conversation ? normalizeConversation(data.conversation) : null;
   } catch {
-    // storage unavailable (private mode / quota) — history is best-effort
+    // network hiccup — history save is best-effort, must not disrupt the chat
+    return null;
   }
 };
 
-export const deleteTutorConversation = (id) => {
+export const deleteTutorConversation = async (id) => {
   try {
-    const remaining = listTutorConversations().filter((c) => c.id !== id);
-    localStorage.setItem(buildStorageKey(), JSON.stringify(remaining));
+    const token = localStorage.getItem('token');
+    if (!token || !id) return;
+    await fetch(`${API_BASE}/api/student/auth/tutor-conversations/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
   } catch {
-    // ignore
+    // ignore — best-effort
   }
 };
 

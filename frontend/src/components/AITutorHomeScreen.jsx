@@ -2783,6 +2783,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savedConversations, setSavedConversations] = useState([]);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const conversationIdRef = useRef(null);
   const historyPanelRef = useRef(null);
   const activeChipMeta = COMPANION_CHIPS.find((c) => c.label === activeChip) || COMPANION_CHIPS[0];
@@ -2844,10 +2845,13 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     // next message doesn't overwrite it.
     conversationIdRef.current = null;
   };
-  const openHistory = () => {
-    setSavedConversations(listTutorConversations());
+  const openHistory = async () => {
     setShowAllHistory(false);
     setHistoryOpen(true);
+    setHistoryLoading(true);
+    const conversations = await listTutorConversations();
+    setSavedConversations(conversations);
+    setHistoryLoading(false);
   };
   const loadConversation = (conversation) => {
     streamTimersRef.current.forEach((id) => clearTimeout(id));
@@ -2856,11 +2860,11 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     setMessages(conversation.messages);
     setHistoryOpen(false);
   };
-  const removeConversation = (e, id) => {
+  const removeConversation = async (e, id) => {
     e.stopPropagation();
-    deleteTutorConversation(id);
+    setSavedConversations((prev) => prev.filter((c) => c.id !== id));
     if (conversationIdRef.current === id) conversationIdRef.current = null;
-    setSavedConversations(listTutorConversations());
+    await deleteTutorConversation(id);
   };
 
   // Close the history panel on outside click.
@@ -2936,9 +2940,13 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     return options;
   }, [selectedSubject]);
 
-  // Keep the current conversation saved to history as it grows, so nothing is
-  // lost on refresh/navigation and it shows up in the history list live.
+  // Keep the current conversation saved to the student's account as each
+  // exchange settles, so it follows them across devices and nothing is lost
+  // on refresh/navigation. Gated on `sending` so a streaming reply (which
+  // updates `messages` on every token) doesn't fire a network write per word —
+  // it saves once, right after the response finishes.
   useEffect(() => {
+    if (sending) return;
     const hasRealMessage = messages.some((m) => !m.thinking && String(m.text || '').trim());
     if (!hasRealMessage) return;
     if (!conversationIdRef.current) conversationIdRef.current = createConversationId();
@@ -2948,7 +2956,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
       subjectTitle: selectedSubject?.title || '',
       topicTitle,
     });
-  }, [messages, selectedSubject, topicTitle]);
+  }, [messages, sending, selectedSubject, topicTitle]);
 
   const openAttachmentPicker = () => {
     attachmentInputRef.current?.click();
@@ -3221,7 +3229,12 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                       </button>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
-                      {savedConversations.length === 0 ? (
+                      {historyLoading ? (
+                        <div className="px-4 py-8 text-center">
+                          <RotateCw className="mx-auto mb-2 size-5 animate-spin text-[#a3aaa2]" />
+                          <p className="text-xs text-[#78827B]">Loading your chats…</p>
+                        </div>
+                      ) : savedConversations.length === 0 ? (
                         <div className="px-4 py-8 text-center">
                           <History className="mx-auto mb-2 size-6 text-[#a3aaa2]" />
                           <p className="text-xs text-[#78827B]">No saved chats yet — start a conversation and it'll show up here.</p>
