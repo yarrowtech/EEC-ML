@@ -2026,6 +2026,9 @@ const COMPANION_CHIPS = [
   { label: 'Homework Help', icon: MessageCircleQuestion },
 ];
 
+// Chat history panel shows this many conversations before a "See more" toggle.
+const HISTORY_PREVIEW_COUNT = 5;
+
 // Rotating typewriter examples shown in the composer placeholder while it's
 // empty — gives students a sense of what they can ask without cluttering the UI.
 const COMPOSER_PLACEHOLDER_EXAMPLES = [
@@ -2779,6 +2782,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const [showJump, setShowJump] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savedConversations, setSavedConversations] = useState([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const conversationIdRef = useRef(null);
   const historyPanelRef = useRef(null);
   const activeChipMeta = COMPANION_CHIPS.find((c) => c.label === activeChip) || COMPANION_CHIPS[0];
@@ -2842,6 +2846,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   };
   const openHistory = () => {
     setSavedConversations(listTutorConversations());
+    setShowAllHistory(false);
     setHistoryOpen(true);
   };
   const loadConversation = (conversation) => {
@@ -3113,7 +3118,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             <Motion.div
               animate={{ boxShadow: ['0 0 0 0 rgba(63,125,110,0.0)', '0 0 0 6px rgba(63,125,110,0.10)', '0 0 0 0 rgba(63,125,110,0.0)'] }}
               transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex size-11 items-center justify-center rounded-2xl bg-[#F59E0B]"
+              className="flex size-11 items-center justify-center rounded-full bg-[#F59E0B]"
             >
               <Bot className="size-6 text-white" />
             </Motion.div>
@@ -3222,35 +3227,46 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           <p className="text-xs text-[#78827B]">No saved chats yet — start a conversation and it'll show up here.</p>
                         </div>
                       ) : (
-                        <ul className="divide-y divide-[#F4F1EA]">
-                          {savedConversations.map((conversation) => (
-                            <li key={conversation.id} className="group relative">
-                              <button
-                                type="button"
-                                onClick={() => loadConversation(conversation)}
-                                className={`flex w-full items-start gap-2 px-4 py-3 pr-9 text-left transition-colors hover:bg-[#FEF3C7]/60 ${
-                                  conversation.id === conversationIdRef.current ? 'bg-[#FEF3C7]/50' : ''
-                                }`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-semibold text-[#26332E]">{conversation.title}</p>
-                                  <p className="mt-0.5 truncate text-[11px] text-[#78827B]">
-                                    {[conversation.subjectTitle, conversation.topicTitle].filter(Boolean).join(' · ') || 'General'}
-                                    {' · '}{formatConversationAge(conversation.updatedAt)}
-                                  </p>
-                                </div>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => removeConversation(e, conversation.id)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#a3aaa2] opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
-                                aria-label="Delete conversation"
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
+                        <>
+                          <ul className="divide-y divide-[#F4F1EA]">
+                            {(showAllHistory ? savedConversations : savedConversations.slice(0, HISTORY_PREVIEW_COUNT)).map((conversation) => (
+                              <li key={conversation.id} className="group relative">
+                                <button
+                                  type="button"
+                                  onClick={() => loadConversation(conversation)}
+                                  className={`flex w-full items-start gap-2 px-4 py-3 pr-9 text-left transition-colors hover:bg-[#FEF3C7]/60 ${
+                                    conversation.id === conversationIdRef.current ? 'bg-[#FEF3C7]/50' : ''
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold text-[#26332E]">{conversation.title}</p>
+                                    <p className="mt-0.5 truncate text-[11px] text-[#78827B]">
+                                      {[conversation.subjectTitle, conversation.topicTitle].filter(Boolean).join(' · ') || 'General'}
+                                      {' · '}{formatConversationAge(conversation.updatedAt)}
+                                    </p>
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => removeConversation(e, conversation.id)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#a3aaa2] opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
+                                  aria-label="Delete conversation"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                          {!showAllHistory && savedConversations.length > HISTORY_PREVIEW_COUNT && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllHistory(true)}
+                              className="w-full border-t border-[#F4F1EA] px-4 py-2.5 text-center text-xs font-semibold text-[#F59E0B] hover:bg-[#FEF3C7]/60"
+                            >
+                              See more ({savedConversations.length - HISTORY_PREVIEW_COUNT} more)
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </Motion.div>
