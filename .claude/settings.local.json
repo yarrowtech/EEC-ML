@@ -107,7 +107,9 @@
       "Bash(cp AITutorHomeScreen.jsx /tmp/AITutorHomeScreen.jsx.bak)",
       "Bash(sed -i -e 's/#3F7D6E/#B45309/g' -e 's/#2E5C50/#92400E/g' -e 's/#356b5e/#A3610F/g' -e 's/#E9F0EB/#FEF3C7/g' -e 's/#DCEAE3/#FDE9BD/g' -e 's/#dcebe2/#FDE9BD/g' -e 's/#D9E6DD/#FDE9BD/g' -e 's/#cfdbd4/#F3DFAE/g' -e 's/#C9D2CB/#F3DFAE/g' -e 's/#cfe0d8/#FDE68A/g' -e 's/#F8FCF9/#FFFDF7/g' -e 's/#f0fdf4/#FFFBEB/g' -e 's/#dcfce7/#FEF3C7/g' -e 's/#ecfdf5/#FFFBEB/g' AITutorHomeScreen.jsx)",
       "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components\" *)",
-      "Bash(rm -f /tmp/AITutorHomeScreen.jsx.bak)"
+      "Bash(rm -f /tmp/AITutorHomeScreen.jsx.bak)",
+      "Bash(grep -n \"^const \\\\|^function \\\\|=> {$\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AILearningCoursesLanding.jsx\")",
+      "Bash(rm -f /tmp/orig_aitutor.jsx)"
     ],
     "additionalDirectories": [
       "/tmp"

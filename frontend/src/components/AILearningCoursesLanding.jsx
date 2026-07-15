@@ -188,14 +188,16 @@ const SubjectTopicsView = ({ subject, onBack }) => {
         <ArrowLeft size={16} /> Back to Subjects
       </button>
 
-      <section className="rounded-[2rem] border border-[#e8dfbf] bg-[#f7f3e2] p-6 sm:p-8">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <section className="relative overflow-hidden rounded-[2rem] bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 p-5 shadow-lg shadow-amber-300/40 sm:p-8">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-12 -left-8 h-36 w-36 rounded-full bg-white/10" />
+        <div className="relative z-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
-            <span className="inline-flex rounded-full bg-[#ead79b] px-4 py-1 text-sm font-bold text-slate-700">
+            <span className="inline-flex rounded-full border border-white/40 bg-white/25 px-4 py-1 text-sm font-bold text-white backdrop-blur-sm">
               {chapters.length > 0 ? 'PUBLISHED CHAPTERS' : 'COMING SOON'}
             </span>
-            <h1 className="mt-3 text-4xl sm:text-5xl font-black text-[#0f1b3a]">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
-            <p className="mt-2 text-xl text-slate-600">
+            <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl lg:text-5xl">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
+            <p className="mt-2 text-base text-white/85 sm:text-xl">
               {chapters.length > 0
                 ? 'All chapters published by your teacher are listed here with their topics and subtopics.'
                 : 'Your teacher will publish lesson content here soon. Stay tuned!'}
@@ -206,24 +208,24 @@ const SubjectTopicsView = ({ subject, onBack }) => {
             <div className="w-full sm:min-w-[280px] sm:w-auto">
               <div className="flex items-end justify-between mb-2">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600">Chapters</p>
-                  <p className="text-3xl font-black text-[#e0b92c]">{completedChapterCount}/{chapters.length}</p>
+                  <p className="text-sm font-semibold text-white/80">Chapters</p>
+                  <p className="text-3xl font-black text-white">{completedChapterCount}/{chapters.length}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-slate-600">Completion</p>
-                  <p className="text-3xl font-black text-[#172447]">{progress}%</p>
+                  <p className="text-sm font-semibold text-white/80">Completion</p>
+                  <p className="text-3xl font-black text-white">{progress}%</p>
                 </div>
               </div>
-              <div className="mt-4 h-5 w-full overflow-hidden rounded-full bg-white/60 border-2 border-[#ead79b] shadow-inner">
+              <div className="mt-4 h-5 w-full overflow-hidden rounded-full border-2 border-white/40 bg-white/25 shadow-inner">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#e0b92c] to-[#d4a520] transition-all duration-500 ease-out relative overflow-hidden"
+                  className="h-full rounded-full bg-white transition-all duration-500 ease-out relative overflow-hidden"
                   style={{ width: `${progress}%` }}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-200/50 to-transparent animate-shimmer"></div>
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-600">
+                <p className="text-sm font-medium text-white/85">
                   {progress === 0 ? 'Start your journey!' : progress === 100 ? 'Complete!' : 'Keep going!'}
                 </p>
                 {progress > 0 && (
@@ -232,7 +234,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                       <div
                         key={i}
                         className={`w-2 h-2 rounded-full ${
-                          i < Math.floor(progress / 20) ? 'bg-[#e0b92c]' : 'bg-slate-300'
+                          i < Math.floor(progress / 20) ? 'bg-white' : 'bg-white/30'
                         }`}
                       />
                     ))}
@@ -245,7 +247,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                     const topicSlug = encodeURIComponent(String(nextIncompleteTopic.title || '').trim());
                     navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
                   }}
-                  className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#e0b92c] to-[#d4a520] px-6 py-3 font-bold text-white hover:from-[#d4a520] hover:to-[#c99a1e] transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  className="mt-4 w-full rounded-xl bg-white px-6 py-3 font-bold text-amber-700 hover:bg-white/90 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
                 >
                   Continue Learning: {nextIncompleteTopic.title}
                 </button>
@@ -266,7 +268,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
       `}</style>
 
       <section>
-        <h2 className="mb-4 text-4xl font-black text-[#0f1b3a]">
+        <h2 className="mb-4 text-2xl font-black text-slate-900 sm:text-3xl lg:text-4xl">
           {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
         </h2>
 
@@ -310,9 +312,9 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                 };
 
                 // Determine border and other styling
-                let borderColor = 'border-[#e8dfbf]';
-                let iconBg = 'bg-[#fef9e7]';
-                let iconColor = 'text-[#d4a520]';
+                let borderColor = 'border-amber-200';
+                let iconBg = 'bg-amber-50';
+                let iconColor = 'text-amber-600';
                 let statusBadge = null;
                 let progressBarBg = 'bg-slate-200';
                 let progressBarFill = 'bg-slate-400';
@@ -363,7 +365,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <h3 className="text-xl sm:text-2xl font-black text-[#111d3f]">{chapter.title}</h3>
+                            <h3 className="text-xl sm:text-2xl font-black text-slate-900">{chapter.title}</h3>
                             {statusBadge}
                           </div>
                           <div className="flex items-center gap-3 flex-wrap">
@@ -407,7 +409,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                               ? 'bg-green-500 text-white hover:bg-green-600'
                               : isInProgress
                               ? 'bg-amber-500 text-white hover:bg-amber-600'
-                              : 'bg-[#e2bf3e] text-[#101a35] hover:bg-[#d9b734]'
+                              : 'bg-amber-400 text-white hover:bg-amber-500'
                           } ${firstTopic ? 'hover:shadow-lg hover:scale-105' : ''}`}
                         >
                           <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
@@ -435,7 +437,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                                 <div key={topic.title} className="rounded-2xl border border-slate-200 bg-white p-4">
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
-                                      <p className="text-lg font-black text-[#111d3f]">{topic.title}</p>
+                                      <p className="text-lg font-black text-slate-900">{topic.title}</p>
                                       <p className="text-sm font-medium text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p>
                                     </div>
                                     <button
@@ -443,7 +445,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                                         const topicSlug = encodeURIComponent(String(topic.title || '').trim());
                                         navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
                                       }}
-                                      className="rounded-full bg-[#e2bf3e] px-5 py-2 text-sm font-black text-[#101a35] transition hover:bg-[#d9b734]"
+                                      className="rounded-full bg-amber-400 px-5 py-2 text-sm font-black text-white transition hover:bg-amber-500"
                                     >
                                       Open Topic
                                     </button>
@@ -689,7 +691,7 @@ const AILearningCoursesLanding = () => {
         ) : (
           <>
             <div className="mb-8 flex flex-col gap-2">
-              <h1 className="text-3xl sm:text-4xl font-black tracking-tight">Your Subjects</h1>
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight">Your Subjects</h1>
               <p className="text-sm sm:text-base text-slate-600">Showing only subjects assigned to your class timetable.</p>
             </div>
 
@@ -713,17 +715,17 @@ const AILearningCoursesLanding = () => {
                 <p className="mt-1 text-sm text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {assignedSubjects.map((subject, index) => {
                   const style = CARD_STYLES[index % CARD_STYLES.length];
                   const Icon = style.icon;
                   return (
-                    <div key={subject.key} className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-[#e7c555]/50 hover:shadow-xl">
-                      <div className={`relative flex h-40 flex-col justify-end overflow-hidden bg-gradient-to-br p-6 ${style.grad}`}>
+                    <div key={subject.key} className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-amber-300/70 hover:shadow-xl">
+                      <div className={`relative flex h-32 flex-col justify-end overflow-hidden bg-gradient-to-br p-4 sm:h-40 sm:p-6 lg:h-44 ${style.grad}`}>
                         <Icon className="absolute -bottom-4 -right-4 size-20 rotate-12 text-white/20 transition-transform group-hover:rotate-0" />
-                        <h3 className="text-2xl font-black text-white">{subject.title}</h3>
+                        <h3 className="text-xl font-black text-white sm:text-2xl">{subject.title}</h3>
                       </div>
-                      <div className="flex flex-col gap-4 p-6">
+                      <div className="flex flex-col gap-4 p-4 sm:p-6">
                         <div className="flex flex-wrap gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>{subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}</span>
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>{subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}</span>
@@ -746,7 +748,7 @@ const AILearningCoursesLanding = () => {
                           }}
                           className={`flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold transition-all duration-200 ease-out ${
                             subject.hasLessonPlans
-                              ? 'bg-[#e7c555] text-slate-900 hover:bg-[#e7c555]/90 group-hover:scale-[1.01] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.99] cursor-pointer'
+                              ? 'bg-amber-500 text-white hover:bg-amber-600 group-hover:scale-[1.01] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.99] cursor-pointer'
                               : 'bg-slate-200 text-slate-500 cursor-not-allowed'
                           }`}
                           disabled={!subject.hasLessonPlans}

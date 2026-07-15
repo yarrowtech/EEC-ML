@@ -111,7 +111,7 @@ const LearningHub = () => {
           <div
             role="tablist"
             aria-label="Learning sections"
-            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-4"
+            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-4 sm:gap-3 sm:p-2.5 lg:gap-4 lg:p-3"
           >
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -123,20 +123,20 @@ const LearningHub = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => { if (!active) navigate(tab.path); }}
-                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all sm:gap-3 sm:px-3.5 sm:py-3 lg:px-4 lg:py-3.5 ${
                     active
-                      ? 'bg-[#B45309] text-white shadow-sm'
+                      ? 'bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 text-white shadow-md shadow-amber-200/60'
                       : 'text-[#5c655f] hover:bg-[#EFEDE5]'
                   }`}
                 >
-                  <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                    active ? 'bg-white/15 text-white' : 'bg-[#FEF3C7] text-[#B45309]'
+                  <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-9 lg:size-10 ${
+                    active ? 'bg-white/20' : 'bg-[#FEF3C7] text-[#F59E0B]'
                   }`}>
-                    <Icon className="size-4" />
+                    <Icon className="size-4 sm:size-4.5 lg:size-5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-sm font-bold leading-tight">{tab.label}</span>
-                    <span className={`block truncate text-[11px] ${active ? 'text-white/75' : 'text-[#78827B]'}`}>
+                    <span className="block text-sm font-bold leading-tight lg:text-base">{tab.label}</span>
+                    <span className={`block truncate text-[11px] sm:text-xs ${active ? 'text-white/80' : 'text-[#78827B]'}`}>
                       {tab.hint}
                     </span>
                   </span>
@@ -150,13 +150,13 @@ const LearningHub = () => {
           <button
             type="button"
             onClick={() => navigate(lastActivity.path)}
-            className="group flex w-full items-center gap-3 rounded-2xl border border-[#FDE68A] bg-[#FEF3C7] px-4 py-3 text-left transition-colors hover:border-[#B45309]"
+            className="group flex w-full items-center gap-3 rounded-2xl border border-[#FDE68A] bg-[#FEF3C7] px-4 py-3 text-left transition-colors hover:border-[#F59E0B]"
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#B45309] text-white">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#F59E0B] text-white">
               <Play className="size-4" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#B45309]">
+              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#F59E0B]">
                 Continue where you left off
               </span>
               <span className="block truncate text-sm font-semibold text-[#26332E]">
@@ -165,7 +165,7 @@ const LearningHub = () => {
                 <span className="ml-2 font-normal text-[#78827B]">{formatActivityAge(lastActivity.at)}</span>
               </span>
             </span>
-            <span className="rounded-xl bg-[#B45309] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
+            <span className="rounded-xl bg-[#F59E0B] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
               Continue
             </span>
           </button>
