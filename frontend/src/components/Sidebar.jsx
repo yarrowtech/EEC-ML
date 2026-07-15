@@ -351,8 +351,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                   if (collapsed) {
                     handleNavigation(item.children[0].id);
                   } else {
-                    // Navigate to parent item and toggle submenu
-                    handleNavigation(item.id);
+                    // Just expand/collapse the submenu — navigation happens when a child is clicked
                     setOpenGroups(prev => ({ ...prev, [item.id]: !expanded }));
                   }
                 } else {

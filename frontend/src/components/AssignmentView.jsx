@@ -250,8 +250,8 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               {/* Left: Brand */}
               <div className="flex items-center gap-3">
                 <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center shadow-md"
-                  style={{ background: "#3d5a45" }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
+                  style={{ background: "#f5a627" }}
                 >
                   <BookOpen className="h-4.5 w-4.5 text-white" />
                 </div>
@@ -283,7 +283,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                 )}
                 <div
                   className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold border ${autosaveLabel === "Saved"
-                    ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+                    ? "text-white bg-yellow-500/80 border-white"
                     : autosaveLabel.includes("Saving")
                       ? "text-amber-700 bg-amber-50 border-amber-100"
                       : "text-red-600 bg-red-50 border-red-100"
