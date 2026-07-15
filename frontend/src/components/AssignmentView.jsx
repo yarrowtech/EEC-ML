@@ -200,9 +200,14 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
       {/* Header (non-journal) */}
       {assignmentType !== "journal" && (
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Assignments</h1>
-            <p className="mt-1 text-sm text-gray-500">Manage your assignments and submissions</p>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-200/60">
+              <BookOpen className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">Assignments</h1>
+              <p className="mt-0.5 text-sm text-slate-500">Manage your assignments and submissions</p>
+            </div>
           </div>
           {/* <PointsBadge /> */}
         </div>
@@ -210,10 +215,10 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
 
       {/* Type Tabs (non-journal) */}
       {assignmentType !== "journal" && (
-        <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+        <div className="flex gap-1.5 overflow-x-auto rounded-2xl bg-white p-1.5 shadow-sm border border-slate-100">
           {typeTabs.filter(t => t.key !== 'tryout' && t.key !== 'flashcard' && t.key !== 'lab').map((t) => (
             <button key={t.key} onClick={() => { setAssignmentType(t.key); }}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${assignmentType === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${assignmentType === t.key ? "bg-linear-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200/60" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                 }`}>
               <t.icon className="h-4 w-4" /> {t.label}
             </button>

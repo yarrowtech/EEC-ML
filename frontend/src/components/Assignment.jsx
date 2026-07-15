@@ -1188,23 +1188,23 @@ const closeDetail = () => {
     return (
       <>
         {/* Controls */}
-        <div className="flex flex-col gap-3 mb-4">
+        <div className="flex flex-col gap-3 mb-5">
           <div className="flex gap-2">
             {/* Search */}
             <div className="relative flex-1">
-              <SearchIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <SearchIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 value={schoolSearch}
                 onChange={(e) => setSchoolSearch(e.target.value)}
                 placeholder="Search assignments..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                className="w-full pl-10 pr-3 py-2.5 rounded-2xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 outline-none text-sm transition-all"
               />
             </div>
             {/* Sort */}
             <select
               value={schoolSort}
               onChange={(e) => setSchoolSort(e.target.value)}
-              className="shrink-0 px-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+              className="shrink-0 px-3 py-2.5 rounded-2xl border border-slate-200 bg-white shadow-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 outline-none text-sm"
             >
               <option value="due_asc">Due ↑</option>
               <option value="due_desc">Due ↓</option>
@@ -1215,19 +1215,19 @@ const closeDetail = () => {
           {/* Filter chips — horizontal scroll on mobile */}
           <div className="flex overflow-x-auto gap-2 pb-0.5 scrollbar-hide">
             {[
-              { key: 'all', label: 'All' },
-              { key: 'pending', label: 'To Submit' },
-              { key: 'submitted', label: 'Submitted' },
-              { key: 'completed', label: 'Completed' },
-              { key: 'overdue', label: 'Overdue' },
-            ].map(({ key, label }) => (
+              { key: 'all', label: 'All', activeClass: 'bg-slate-800 border-slate-800' },
+              { key: 'pending', label: 'To Submit', activeClass: 'bg-amber-500 border-amber-500' },
+              { key: 'submitted', label: 'Submitted', activeClass: 'bg-sky-500 border-sky-500' },
+              { key: 'completed', label: 'Completed', activeClass: 'bg-emerald-500 border-emerald-500' },
+              { key: 'overdue', label: 'Overdue', activeClass: 'bg-rose-500 border-rose-500' },
+            ].map(({ key, label, activeClass }) => (
               <button
                 key={key}
                 onClick={() => setFilter(key)}
-                className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold border transition-all ${
                   filter === key
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    ? `${activeClass} text-white shadow-md`
+                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                 }`}
               >
                 {label}
@@ -1237,86 +1237,45 @@ const closeDetail = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          <div className="bg-white p-3 md:p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Total</p>
-                <p className="text-2xl font-bold text-gray-900">{assignmentSummary.total}</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-5">
+          {[
+            { label: 'Total', value: assignmentSummary.total, icon: FileText, grad: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-200/60' },
+            { label: 'To Submit', value: assignmentSummary.toSubmit, icon: Clock, grad: 'from-amber-400 to-orange-500', shadow: 'shadow-amber-200/60' },
+            { label: 'Submitted', value: assignmentSummary.submitted + assignmentSummary.submittedLate, icon: Upload, grad: 'from-sky-400 to-blue-500', shadow: 'shadow-sky-200/60', sub: assignmentSummary.submittedLate > 0 ? `${assignmentSummary.submittedLate} late` : '' },
+            { label: 'Completed', value: assignmentSummary.completed, icon: CheckCircle, grad: 'from-emerald-400 to-teal-600', shadow: 'shadow-emerald-200/60' },
+            { label: 'Overdue', value: assignmentSummary.overdue, icon: AlertCircle, grad: 'from-rose-500 to-red-600', shadow: 'shadow-rose-200/60' },
+          ].map((stat) => {
+            const StatIcon = stat.icon;
+            return (
+              <div
+                key={stat.label}
+                className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${stat.grad} p-3 shadow-lg ${stat.shadow} transition-transform hover:-translate-y-0.5 md:p-4`}
+              >
+                <div className="pointer-events-none absolute -right-3 -top-3 h-14 w-14 rounded-full bg-white/10" />
+                <div className="relative z-10 flex items-start justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold text-white/80">{stat.label}</p>
+                    <p className="mt-0.5 text-2xl font-black text-white">{stat.value}</p>
+                    {stat.sub && <p className="mt-1 text-[10px] font-semibold text-white/70">{stat.sub}</p>}
+                  </div>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
+                    <StatIcon className="h-4 w-4 text-white" />
+                  </div>
+                </div>
               </div>
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <FileText className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-500">To Submit</p>
-                <p className="text-2xl font-bold text-slate-700">
-                  {assignmentSummary.toSubmit}
-                </p>
-              </div>
-              <div className="p-2 bg-slate-100 rounded-lg">
-                <Clock className="w-5 h-5 text-slate-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Submitted</p>
-                <p className="text-2xl font-bold text-sky-600">
-                  {assignmentSummary.submitted + assignmentSummary.submittedLate}
-                </p>
-              </div>
-              <div className="p-2 bg-sky-50 rounded-lg">
-                <Upload className="w-5 h-5 text-sky-600" />
-              </div>
-            </div>
-            {assignmentSummary.submittedLate > 0 && (
-              <p className="mt-2 text-[11px] font-medium text-amber-600">
-                {assignmentSummary.submittedLate} late
-              </p>
-            )}
-          </div>
-          <div className="bg-white p-3 md:p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Completed</p>
-                <p className="text-2xl font-bold text-emerald-600">
-                  {assignmentSummary.completed}
-                </p>
-              </div>
-              <div className="p-2 bg-emerald-50 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-5 rounded-xl shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-500">Overdue</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {assignmentSummary.overdue}
-                </p>
-              </div>
-              <div className="p-2 bg-red-50 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-              </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         {/* Assignments Grid */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <Clock className="w-10 h-10 text-blue-400 animate-spin" />
-            <p className="text-gray-400 text-sm">Loading assignments...</p>
+            <Clock className="w-10 h-10 text-indigo-400 animate-spin" />
+            <p className="text-slate-400 text-sm">Loading assignments...</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
               {filteredAssignments.map((assignment) => {
                 const days = getDaysRemaining(assignment.dueDate);
                 const daysText = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`;
@@ -1327,26 +1286,26 @@ const closeDetail = () => {
                   <div
                     key={assignment.id}
                     onClick={() => openDetail(assignment)}
-                    className={`bg-white rounded-2xl border border-gray-100 border-l-4 ${presentation.cardAccentClass} shadow-sm active:scale-[0.99] hover:shadow-md transition-all cursor-pointer overflow-hidden`}
+                    className={`group bg-white rounded-3xl border border-slate-100 border-l-4 ${presentation.cardAccentClass} shadow-sm active:scale-[0.99] hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 cursor-pointer overflow-hidden`}
                   >
-                    <div className="p-4">
+                    <div className="p-4 sm:p-5">
                       {/* Title row */}
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 leading-snug flex-1">{assignment.title}</h3>
-                        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${presentation.badgeClass}`}>
+                      <div className="flex items-start justify-between gap-2 mb-2.5">
+                        <h3 className="text-sm font-bold text-slate-900 line-clamp-2 leading-snug flex-1">{assignment.title}</h3>
+                        <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold border ${presentation.badgeClass}`}>
                           {assignment.statusLabel || assignment.status}
                         </span>
                       </div>
 
                       {/* Course + Teacher */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mb-2.5">
                         {assignment.course && (
-                          <span className="inline-flex items-center gap-1 text-xs text-indigo-600 font-medium bg-indigo-50 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-full">
                             <Book className="w-3 h-3" />{assignment.course}
                           </span>
                         )}
                         {assignment.teacherName && (
-                          <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-400">
                             <User className="w-3 h-3" />{assignment.teacherName}
                           </span>
                         )}
@@ -1354,31 +1313,32 @@ const closeDetail = () => {
 
                       {/* Description */}
                       {assignment.description && (
-                        <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-3">{assignment.description}</p>
+                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">{assignment.description}</p>
                       )}
 
                       {/* Footer row */}
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-50">
+                      <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-50">
                         <div className="flex items-center gap-2">
                           {assignment.dueDate && (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${daysColor}`}>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold ${daysColor}`}>
                               <Calendar className="w-3 h-3" />{daysText}
                             </span>
                           )}
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${requiresPdf ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                            {requiresPdf ? '📎 PDF' : '📝 Text'}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${requiresPdf ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                            {requiresPdf ? <Paperclip className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                            {requiresPdf ? 'PDF' : 'Text'}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           {assignment.maxMarks && (
-                            <span className="text-[11px] text-gray-400 font-medium">{assignment.maxMarks}mk</span>
+                            <span className="text-[11px] text-slate-400 font-semibold">{assignment.maxMarks}mk</span>
                           )}
                           {assignment.attachments?.length > 0 && (
-                            <span className="text-[11px] text-blue-500 flex items-center gap-0.5">
+                            <span className="text-[11px] text-indigo-500 flex items-center gap-0.5">
                               <Paperclip className="w-3 h-3" />{assignment.attachments.length}
                             </span>
                           )}
-                          <ChevronRight className="w-4 h-4 text-gray-300" />
+                          <ChevronRight className="w-4 h-4 text-slate-300 transition-transform group-hover:translate-x-0.5" />
                         </div>
                       </div>
                     </div>
@@ -1389,11 +1349,11 @@ const closeDetail = () => {
 
             {filteredAssignments.length === 0 && (
               <div className="flex flex-col items-center py-16 gap-3 text-center">
-                <div className="p-4 bg-gray-50 rounded-2xl">
-                  <FileText className="w-10 h-10 text-gray-200" />
+                <div className="p-4 bg-linear-to-br from-indigo-50 to-purple-50 rounded-2xl">
+                  <FileText className="w-10 h-10 text-indigo-300" />
                 </div>
-                <p className="font-medium text-gray-500">No assignments found</p>
-                <p className="text-sm text-gray-400">
+                <p className="font-bold text-slate-600">No assignments found</p>
+                <p className="text-sm text-slate-400">
                   {filter === 'submitted'
                     ? 'No submitted assignments match this search right now.'
                     : filter === 'completed'
@@ -1426,12 +1386,13 @@ const closeDetail = () => {
 
           return (
             <div
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+              className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4"
               style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
               onClick={closeDetail}
             >
               <div
-                className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto"
+                className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto overscroll-contain"
+                style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
                 onClick={e => e.stopPropagation()}
               >
                 {/* Drag handle (mobile) */}
