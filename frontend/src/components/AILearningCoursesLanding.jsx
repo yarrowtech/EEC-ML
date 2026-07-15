@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, BookOpen, ChevronDown, ChevronUp, FlaskConical, Globe, GraduationCap, Info, Sparkles } from 'lucide-react';
+import {
+  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronUp,
+  FlaskConical, Globe, Info, Sparkles, Users, CalendarDays,
+  Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
+} from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 import AILearningTryoutSection from './AILearningTryoutSection';
@@ -11,27 +15,59 @@ const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-
 const CARD_STYLES = [
   {
     grad: 'from-blue-400 to-indigo-600',
+    glow: 'hover:shadow-blue-300/50',
     chipA: 'bg-blue-100 text-blue-700',
     chipB: 'bg-green-100 text-green-700',
-    icon: GraduationCap,
+    icon: Calculator,
   },
   {
     grad: 'from-emerald-400 to-teal-600',
+    glow: 'hover:shadow-emerald-300/50',
     chipA: 'bg-teal-100 text-teal-700',
     chipB: 'bg-purple-100 text-purple-700',
     icon: FlaskConical,
   },
   {
     grad: 'from-orange-400 to-pink-600',
+    glow: 'hover:shadow-orange-300/50',
     chipA: 'bg-orange-100 text-orange-700',
     chipB: 'bg-yellow-100 text-yellow-700',
-    icon: BookOpen,
+    icon: Languages,
   },
   {
     grad: 'from-cyan-500 to-blue-700',
+    glow: 'hover:shadow-cyan-300/50',
     chipA: 'bg-cyan-100 text-cyan-700',
     chipB: 'bg-indigo-100 text-indigo-700',
     icon: Globe,
+  },
+  {
+    grad: 'from-amber-400 to-orange-600',
+    glow: 'hover:shadow-amber-300/50',
+    chipA: 'bg-amber-100 text-amber-700',
+    chipB: 'bg-rose-100 text-rose-700',
+    icon: Landmark,
+  },
+  {
+    grad: 'from-lime-400 to-emerald-600',
+    glow: 'hover:shadow-lime-300/50',
+    chipA: 'bg-lime-100 text-lime-700',
+    chipB: 'bg-teal-100 text-teal-700',
+    icon: Leaf,
+  },
+  {
+    grad: 'from-fuchsia-400 to-purple-600',
+    glow: 'hover:shadow-fuchsia-300/50',
+    chipA: 'bg-fuchsia-100 text-fuchsia-700',
+    chipB: 'bg-indigo-100 text-indigo-700',
+    icon: Palette,
+  },
+  {
+    grad: 'from-rose-400 to-red-600',
+    glow: 'hover:shadow-rose-300/50',
+    chipA: 'bg-rose-100 text-rose-700',
+    chipB: 'bg-orange-100 text-orange-700',
+    icon: Music2,
   },
 ];
 
@@ -703,14 +739,23 @@ const AILearningCoursesLanding = () => {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-72 rounded-xl bg-white animate-pulse" />
+                  <div key={i} className="overflow-hidden rounded-3xl bg-white shadow-sm">
+                    <div className="h-32 animate-pulse bg-slate-200 sm:h-40 lg:h-44" />
+                    <div className="space-y-3 p-4 sm:p-6">
+                      <div className="h-4 w-2/3 animate-pulse rounded-full bg-slate-100" />
+                      <div className="h-3 w-full animate-pulse rounded-full bg-slate-100" />
+                      <div className="h-10 w-full animate-pulse rounded-xl bg-slate-100" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : assignedSubjects.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
-                <Sparkles className="mx-auto mb-3 text-slate-300" size={32} />
+              <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center">
+                <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-linear-to-br from-amber-100 to-orange-100">
+                  <Sparkles className="text-amber-500" size={28} />
+                </div>
                 <p className="text-lg font-bold text-slate-800">No real smart-learning data found</p>
                 <p className="mt-1 text-sm text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
               </div>
@@ -720,22 +765,39 @@ const AILearningCoursesLanding = () => {
                   const style = CARD_STYLES[index % CARD_STYLES.length];
                   const Icon = style.icon;
                   return (
-                    <div key={subject.key} className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-amber-300/70 hover:shadow-xl">
-                      <div className={`relative flex h-32 flex-col justify-end overflow-hidden bg-gradient-to-br p-4 sm:h-40 sm:p-6 lg:h-44 ${style.grad}`}>
-                        <Icon className="absolute -bottom-4 -right-4 size-20 rotate-12 text-white/20 transition-transform group-hover:rotate-0" />
-                        <h3 className="text-xl font-black text-white sm:text-2xl">{subject.title}</h3>
+                    <div
+                      key={subject.key}
+                      className={`group flex flex-col overflow-hidden rounded-3xl bg-white shadow-lg shadow-slate-200/60 ring-1 ring-slate-100 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl ${style.glow}`}
+                    >
+                      <div className={`relative flex h-32 flex-col justify-end overflow-hidden bg-linear-to-br p-4 sm:h-40 sm:p-6 lg:h-44 ${style.grad}`}>
+                        {/* Decorative texture */}
+                        <div className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-white/10" />
+                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(white_1.5px,transparent_1.5px)] bg-size-[16px_16px] opacity-[0.07]" />
+                        <Icon className="absolute -bottom-5 -right-5 size-24 rotate-12 text-white/20 transition-transform duration-500 group-hover:rotate-0 group-hover:scale-110" />
+
+                        {/* Floating icon badge */}
+                        <div className="absolute left-4 top-4 flex size-10 items-center justify-center rounded-2xl bg-white/20 shadow-sm backdrop-blur-md ring-1 ring-white/30 sm:left-6 sm:top-6">
+                          <Icon className="size-5 text-white" />
+                        </div>
+
+                        <h3 className="relative text-xl font-black leading-tight text-white drop-shadow-sm sm:text-2xl">{subject.title}</h3>
                       </div>
-                      <div className="flex flex-col gap-4 p-4 sm:p-6">
+                      <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
                         <div className="flex flex-wrap gap-2">
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>{subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}</span>
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>{subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}</span>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>
+                            <Users size={12} /> {subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>
+                            <CalendarDays size={12} /> {subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}
+                          </span>
                           {subject.hasLessonPlans && (
-                            <span className="rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                              <Layers size={12} />
                               {(subject.chapters?.length || subject.topics.length)} {(subject.chapters?.length || 0) > 0 ? 'Chapter' : 'Topic'}{(subject.chapters?.length || subject.topics.length) > 1 ? 's' : ''}
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-slate-600 line-clamp-2">
+                        <p className="flex-1 text-sm text-slate-600 line-clamp-2">
                           {subject.hasLessonPlans
                             ? 'Assigned in your timetable. Start this subject quest now.'
                             : 'Assigned in your timetable. Lesson plans coming soon from your teacher.'}
@@ -746,14 +808,19 @@ const AILearningCoursesLanding = () => {
                               navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}`);
                             }
                           }}
-                          className={`flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold transition-all duration-200 ease-out ${
+                          className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-bold transition-all duration-200 ease-out ${
                             subject.hasLessonPlans
-                              ? 'bg-amber-500 text-white hover:bg-amber-600 group-hover:scale-[1.01] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.99] cursor-pointer'
-                              : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                              ? 'bg-amber-500 text-white shadow-md shadow-amber-300/40 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-300/50 active:scale-[0.98] cursor-pointer'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                           }`}
                           disabled={!subject.hasLessonPlans}
                         >
-                          {subject.hasLessonPlans ? 'Start Learning' : 'Coming Soon'}
+                          {subject.hasLessonPlans ? (
+                            <>
+                              Start Learning
+                              <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
+                            </>
+                          ) : 'Coming Soon'}
                         </button>
                       </div>
                     </div>
