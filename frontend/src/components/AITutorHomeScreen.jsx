@@ -2026,6 +2026,17 @@ const COMPANION_CHIPS = [
   { label: 'Homework Help', icon: MessageCircleQuestion },
 ];
 
+// Rotating typewriter examples shown in the composer placeholder while it's
+// empty — gives students a sense of what they can ask without cluttering the UI.
+const COMPOSER_PLACEHOLDER_EXAMPLES = [
+  "Explain photosynthesis like I'm 10…",
+  'Quiz me on fractions…',
+  "Help me with today's homework…",
+  'Summarize this chapter in 5 points…',
+  'Make flashcards for the water cycle…',
+  "What's the difference between mitosis and meiosis?",
+];
+
 const STARTER_PROMPTS = [
   { mode: "Explain Like I'm 10", text: 'Explain this topic in simple words', icon: Lightbulb },
   { mode: 'Create Quiz', text: 'Make me a 5-question quiz', icon: Target },
@@ -2776,6 +2787,44 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     && !lastMessage.error && !lastMessage.thinking && !lastMessage.streaming;
   const supportsVoice = typeof window !== 'undefined'
     && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [typedPlaceholder, setTypedPlaceholder] = useState('');
+
+  // Typewriter effect: cycles through example questions in the composer
+  // placeholder while it's empty, typing/deleting one character at a time.
+  useEffect(() => {
+    if (question || listening) return undefined;
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let deleting = false;
+    let timeoutId;
+
+    const tick = () => {
+      const phrase = COMPOSER_PLACEHOLDER_EXAMPLES[phraseIndex];
+      if (!deleting) {
+        charIndex += 1;
+        setTypedPlaceholder(`${phrase.slice(0, charIndex)}▎`);
+        if (charIndex === phrase.length) {
+          deleting = true;
+          setTypedPlaceholder(phrase);
+          timeoutId = setTimeout(tick, 1500);
+          return;
+        }
+        timeoutId = setTimeout(tick, 45);
+      } else {
+        charIndex -= 1;
+        setTypedPlaceholder(`${phrase.slice(0, charIndex)}▎`);
+        if (charIndex === 0) {
+          deleting = false;
+          phraseIndex = (phraseIndex + 1) % COMPOSER_PLACEHOLDER_EXAMPLES.length;
+          timeoutId = setTimeout(tick, 400);
+          return;
+        }
+        timeoutId = setTimeout(tick, 22);
+      }
+    };
+    timeoutId = setTimeout(tick, 45);
+    return () => clearTimeout(timeoutId);
+  }, [question, listening]);
 
   const applyStarter = (starter) => {
     setActiveChip(starter.mode);
@@ -3543,7 +3592,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                   handleSend();
                 }
               }}
-              placeholder={listening ? 'Listening…' : `${activeChipMeta.label} — type your question…`}
+              placeholder={listening ? 'Listening…' : (typedPlaceholder || `${activeChipMeta.label} — type your question…`)}
               rows={1}
               className="max-h-32 min-h-9 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
               style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}

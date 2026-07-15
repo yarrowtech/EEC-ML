@@ -109,7 +109,8 @@
       "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components\" *)",
       "Bash(rm -f /tmp/AITutorHomeScreen.jsx.bak)",
       "Bash(grep -n \"^const \\\\|^function \\\\|=> {$\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AILearningCoursesLanding.jsx\")",
-      "Bash(rm -f /tmp/orig_aitutor.jsx)"
+      "Bash(rm -f /tmp/orig_aitutor.jsx)",
+      "Bash(grep -n \"placeholder={listening ? 'Listening…' : \\\\`\\\\${activeChipMeta.label}\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")"
     ],
     "additionalDirectories": [
       "/tmp"
