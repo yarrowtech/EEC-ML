@@ -116,7 +116,8 @@
       "Bash(awk 'NR==2764,NR==3638' AITutorHomeScreen.jsx)",
       "Bash(awk 'NR==2764,NR==3638{print NR\": \"$0}' \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AITutorHomeScreen.jsx\")",
       "Bash(awk -F: '$1 >= 2764 && $1 <= 3638')",
-      "Bash(node -e \"require\\('./models/TutorConversation.js'\\); console.log\\('Model OK'\\)\")"
+      "Bash(node -e \"require\\('./models/TutorConversation.js'\\); console.log\\('Model OK'\\)\")",
+      "Bash(grep -n \"navigate\\(\\\\`\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/components/AILearningPracticePaperPage.jsx\")"
     ],
     "additionalDirectories": [
       "/tmp"

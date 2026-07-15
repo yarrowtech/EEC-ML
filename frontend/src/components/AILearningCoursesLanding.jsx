@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronUp,
+  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, CheckCircle2, Play,
   FlaskConical, Globe, Info, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
 } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 import AILearningTryoutSection from './AILearningTryoutSection';
+import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
@@ -19,6 +20,7 @@ const CARD_STYLES = [
     chipA: 'bg-blue-100 text-blue-700',
     chipB: 'bg-green-100 text-green-700',
     icon: Calculator,
+    solid: 'bg-blue-500', solidHover: 'hover:bg-blue-600', accentText: 'text-blue-600', accentBg: 'bg-blue-50', ring: 'ring-blue-200', border: 'border-blue-200',
   },
   {
     grad: 'from-emerald-400 to-teal-600',
@@ -26,6 +28,7 @@ const CARD_STYLES = [
     chipA: 'bg-teal-100 text-teal-700',
     chipB: 'bg-purple-100 text-purple-700',
     icon: FlaskConical,
+    solid: 'bg-emerald-500', solidHover: 'hover:bg-emerald-600', accentText: 'text-emerald-600', accentBg: 'bg-emerald-50', ring: 'ring-emerald-200', border: 'border-emerald-200',
   },
   {
     grad: 'from-orange-400 to-pink-600',
@@ -33,6 +36,7 @@ const CARD_STYLES = [
     chipA: 'bg-orange-100 text-orange-700',
     chipB: 'bg-yellow-100 text-yellow-700',
     icon: Languages,
+    solid: 'bg-orange-500', solidHover: 'hover:bg-orange-600', accentText: 'text-orange-600', accentBg: 'bg-orange-50', ring: 'ring-orange-200', border: 'border-orange-200',
   },
   {
     grad: 'from-cyan-500 to-blue-700',
@@ -40,6 +44,7 @@ const CARD_STYLES = [
     chipA: 'bg-cyan-100 text-cyan-700',
     chipB: 'bg-indigo-100 text-indigo-700',
     icon: Globe,
+    solid: 'bg-cyan-500', solidHover: 'hover:bg-cyan-600', accentText: 'text-cyan-600', accentBg: 'bg-cyan-50', ring: 'ring-cyan-200', border: 'border-cyan-200',
   },
   {
     grad: 'from-amber-400 to-orange-600',
@@ -47,6 +52,7 @@ const CARD_STYLES = [
     chipA: 'bg-amber-100 text-amber-700',
     chipB: 'bg-rose-100 text-rose-700',
     icon: Landmark,
+    solid: 'bg-amber-500', solidHover: 'hover:bg-amber-600', accentText: 'text-amber-600', accentBg: 'bg-amber-50', ring: 'ring-amber-200', border: 'border-amber-200',
   },
   {
     grad: 'from-lime-400 to-emerald-600',
@@ -54,6 +60,7 @@ const CARD_STYLES = [
     chipA: 'bg-lime-100 text-lime-700',
     chipB: 'bg-teal-100 text-teal-700',
     icon: Leaf,
+    solid: 'bg-lime-600', solidHover: 'hover:bg-lime-700', accentText: 'text-lime-700', accentBg: 'bg-lime-50', ring: 'ring-lime-200', border: 'border-lime-200',
   },
   {
     grad: 'from-fuchsia-400 to-purple-600',
@@ -61,6 +68,7 @@ const CARD_STYLES = [
     chipA: 'bg-fuchsia-100 text-fuchsia-700',
     chipB: 'bg-indigo-100 text-indigo-700',
     icon: Palette,
+    solid: 'bg-fuchsia-500', solidHover: 'hover:bg-fuchsia-600', accentText: 'text-fuchsia-600', accentBg: 'bg-fuchsia-50', ring: 'ring-fuchsia-200', border: 'border-fuchsia-200',
   },
   {
     grad: 'from-rose-400 to-red-600',
@@ -68,12 +76,16 @@ const CARD_STYLES = [
     chipA: 'bg-rose-100 text-rose-700',
     chipB: 'bg-orange-100 text-orange-700',
     icon: Music2,
+    solid: 'bg-rose-500', solidHover: 'hover:bg-rose-600', accentText: 'text-rose-600', accentBg: 'bg-rose-50', ring: 'ring-rose-200', border: 'border-rose-200',
   },
 ];
 
+const DEFAULT_STYLE = CARD_STYLES[4]; // amber — fallback while a subject's grid position is still resolving
+
 const normalize = (value) => String(value || '').trim().toLowerCase();
 
-const SubjectTopicsView = ({ subject, onBack }) => {
+const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
+  const SubjectIcon = style.icon;
   const navigate = useNavigate();
   const [openChapterIndex, setOpenChapterIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
@@ -191,7 +203,12 @@ const SubjectTopicsView = ({ subject, onBack }) => {
   useEffect(() => {
     if (!isProgressLoaded) return;
     const storageKey = `smart-learning-progress-${subject.key}`;
-    localStorage.setItem(storageKey, JSON.stringify(normalizedCompletedSubtopics));
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(normalizedCompletedSubtopics));
+    } catch {
+      // Storage full/unavailable (private mode, quota exceeded) — progress
+      // tracking is best-effort and must not crash the page.
+    }
   }, [isProgressLoaded, normalizedCompletedSubtopics, subject.key]);
 
   const toggleSubtopicCompletion = (topicTitle, subtopic) => {
@@ -224,12 +241,19 @@ const SubjectTopicsView = ({ subject, onBack }) => {
         <ArrowLeft size={16} /> Back to Subjects
       </button>
 
-      <section className="relative overflow-hidden rounded-[2rem] bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 p-5 shadow-lg shadow-amber-300/40 sm:p-8">
+      <section className={`relative overflow-hidden rounded-[2rem] bg-linear-to-br ${style.grad} p-5 shadow-lg sm:p-8`}>
+        {/* Decorative vector graphics */}
         <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-12 -left-8 h-36 w-36 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(white_1.5px,transparent_1.5px)] bg-size-[18px_18px] opacity-[0.06]" />
+        <SubjectIcon className="pointer-events-none absolute -bottom-8 -right-6 size-40 rotate-12 text-white/15 sm:size-56" />
+        <Sparkles className="pointer-events-none absolute right-16 top-8 size-6 text-white/30 sm:right-24" />
+        <Sparkles className="pointer-events-none absolute right-40 top-20 size-4 text-white/20 sm:right-60" />
+
         <div className="relative z-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
-            <span className="inline-flex rounded-full border border-white/40 bg-white/25 px-4 py-1 text-sm font-bold text-white backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/25 px-4 py-1 text-sm font-bold text-white backdrop-blur-sm">
+              <SubjectIcon size={14} />
               {chapters.length > 0 ? 'PUBLISHED CHAPTERS' : 'COMING SOON'}
             </span>
             <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl lg:text-5xl">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
@@ -257,7 +281,7 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                   className="h-full rounded-full bg-white transition-all duration-500 ease-out relative overflow-hidden"
                   style={{ width: `${progress}%` }}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-200/50 to-transparent animate-shimmer"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-shimmer"></div>
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between">
@@ -280,10 +304,10 @@ const SubjectTopicsView = ({ subject, onBack }) => {
               {nextIncompleteTopic && progress > 0 && progress < 100 && (
                 <button
                   onClick={() => {
-                    const topicSlug = encodeURIComponent(String(nextIncompleteTopic.title || '').trim());
-                    navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
+                    const topicSlug = slugifyForUrl(String(nextIncompleteTopic.title || '').trim());
+                    navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
                   }}
-                  className="mt-4 w-full rounded-xl bg-white px-6 py-3 font-bold text-amber-700 hover:bg-white/90 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  className={`mt-4 w-full rounded-xl bg-white px-6 py-3 font-bold ${style.accentText} hover:bg-white/90 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2`}
                 >
                   Continue Learning: {nextIncompleteTopic.title}
                 </button>
@@ -308,8 +332,8 @@ const SubjectTopicsView = ({ subject, onBack }) => {
           {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
         </h2>
 
-        <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white">
-          <div className="space-y-4 bg-slate-50 p-4 sm:p-6">
+        <div className="">
+          <div className="space-y-4 p-4 sm:p-6">
             {chapters.length === 0 ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center">
                 <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
@@ -328,7 +352,8 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                 </div>
               </div>
             ) : (
-              chapters.map((chapter, index) => {
+              <div className="space-y-5">
+                {chapters.map((chapter, index) => {
                 const isOpen = openChapterIndex === index;
                 const chapterTopics = chapter.topics || [];
                 const chapterTotals = chapterTopics.reduce((acc, topic) => {
@@ -342,196 +367,186 @@ const SubjectTopicsView = ({ subject, onBack }) => {
                 const isFullyCompleted = chapterPercentage === 100 && chapterTotals.total > 0;
                 const isInProgress = chapterPercentage > 0 && chapterPercentage < 100;
                 const firstTopic = chapterTopics[0];
-                const greenIntensity = chapterPercentage / 100;
-                const bgColorStyle = {
-                  backgroundColor: `rgba(220, 252, 231, ${greenIntensity * 0.8})` // green-100 with varying opacity
-                };
 
-                // Determine border and other styling
-                let borderColor = 'border-amber-200';
-                let iconBg = 'bg-amber-50';
-                let iconColor = 'text-amber-600';
+                // Determine accent + status styling
+                let accentBar = style.solid;
+                let badgeBg = style.accentBg;
+                let badgeText = style.accentText;
                 let statusBadge = null;
-                let progressBarBg = 'bg-slate-200';
-                let progressBarFill = 'bg-slate-400';
+                let progressFill = style.solid;
 
-                if (chapterPercentage >= 80) {
-                  borderColor = 'border-green-300';
-                  iconBg = 'bg-green-100';
-                  iconColor = 'text-green-600';
-                  progressBarBg = 'bg-green-200';
-                  progressBarFill = 'bg-green-500';
-                  if (isFullyCompleted) {
-                    statusBadge = <span className="text-xs font-bold text-green-700 bg-green-200/80 px-3 py-1 rounded-full whitespace-nowrap">Completed</span>;
-                  } else {
-                    statusBadge = <span className="text-xs font-bold text-green-700 bg-green-200/80 px-3 py-1 rounded-full whitespace-nowrap">Almost Done</span>;
-                  }
+                if (isFullyCompleted) {
+                  accentBar = 'bg-green-500';
+                  badgeBg = 'bg-green-100';
+                  badgeText = 'text-green-600';
+                  progressFill = 'bg-green-500';
+                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-full whitespace-nowrap">Completed</span>;
                 } else if (chapterPercentage >= 50) {
-                  borderColor = 'border-emerald-200';
-                  iconBg = 'bg-emerald-100';
-                  iconColor = 'text-emerald-600';
-                  statusBadge = <span className="text-xs font-bold text-emerald-700 bg-emerald-200/80 px-3 py-1 rounded-full whitespace-nowrap">In Progress</span>;
-                  progressBarBg = 'bg-emerald-200';
-                  progressBarFill = 'bg-emerald-500';
+                  accentBar = 'bg-emerald-500';
+                  progressFill = 'bg-emerald-500';
+                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full whitespace-nowrap">Almost Done</span>;
                 } else if (isInProgress) {
-                  borderColor = 'border-lime-200';
-                  iconBg = 'bg-lime-100';
-                  iconColor = 'text-lime-600';
-                  statusBadge = <span className="text-xs font-bold text-lime-700 bg-lime-200/80 px-3 py-1 rounded-full whitespace-nowrap">In Progress</span>;
-                  progressBarBg = 'bg-lime-200';
-                  progressBarFill = 'bg-lime-500';
+                  accentBar = 'bg-amber-500';
+                  progressFill = 'bg-amber-500';
+                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full whitespace-nowrap">In Progress</span>;
                 }
 
                 return (
                   <div
                     key={`${chapter.id || chapter.title}-${index}`}
-                    className={`rounded-3xl border-2 ${borderColor} shadow-sm transition-all hover:shadow-md`}
-                    style={bgColorStyle}
+                    className="relative flex overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 transition-all duration-300 hover:shadow-lg"
                   >
-                    <div className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <span className={`flex h-14 w-14 items-center justify-center rounded-full flex-shrink-0 ${iconBg} ${iconColor}`}>
-                          {isFullyCompleted ? (
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
-                          ) : (
-                            <BookOpen size={24} />
-                          )}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <h3 className="text-xl sm:text-2xl font-black text-slate-900">{chapter.title}</h3>
-                            {statusBadge}
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <p className="text-sm font-medium text-slate-600">
-                              {chapterTopics.length} topic{chapterTopics.length === 1 ? '' : 's'} · {chapterTotals.completed}/{chapterTotals.total} subtopics
-                            </p>
-                            {chapterTotals.total > 0 && (
-                              <>
-                                <div className={`h-2 w-24 sm:w-32 overflow-hidden rounded-full ${progressBarBg}`}>
-                                  <div
-                                    className={`h-full transition-all duration-500 ${progressBarFill}`}
-                                    style={{ width: `${chapterPercentage}%` }}
-                                  />
-                                </div>
-                                <span className="text-sm font-bold text-slate-700">{chapterPercentage}%</span>
-                              </>
+                    {/* Colored accent strip */}
+                    <span className={`w-1.5 shrink-0 sm:w-2 ${accentBar}`} />
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          {/* Chapter number / completed badge */}
+                          <span className={`relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-black ${badgeBg} ${badgeText}`}>
+                            {isFullyCompleted ? (
+                              <CheckCircle2 size={26} strokeWidth={2.2} />
+                            ) : (
+                              String(index + 1).padStart(2, '0')
                             )}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                              <h3 className="text-lg sm:text-xl font-black text-slate-900 truncate">{chapter.title}</h3>
+                              {statusBadge}
+                            </div>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <p className="text-sm font-medium text-slate-500">
+                                {chapterTopics.length} topic{chapterTopics.length === 1 ? '' : 's'} · {chapterTotals.completed}/{chapterTotals.total} subtopics
+                              </p>
+                              {chapterTotals.total > 0 && (
+                                <>
+                                  <div className="h-1.5 w-20 sm:w-28 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-500 ${progressFill}`}
+                                      style={{ width: `${chapterPercentage}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-500">{chapterPercentage}%</span>
+                                </>
+                              )}
+                            </div>
                           </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:gap-3 sm:self-auto">
+                          {/* <button
+                            onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
+                            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                            aria-label="Toggle info"
+                          >
+                            <Info size={18} />
+                          </button> */}
+                          <button
+                            onClick={() => {
+                              if (!firstTopic) return;
+                              const topicSlug = slugifyForUrl(String(firstTopic.title || '').trim());
+                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
+                            }}
+                            disabled={!firstTopic}
+                            className={`group/btn relative flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 overflow-hidden shadow-sm sm:px-6 sm:py-3 sm:text-base ${
+                              !firstTopic
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                : isFullyCompleted
+                                ? 'bg-green-500 text-white hover:bg-green-600'
+                                : isInProgress
+                                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                : `${style.solid} text-white ${style.solidHover}`
+                            } ${firstTopic ? 'hover:shadow-md hover:-translate-y-0.5' : ''}`}
+                          >
+                            {firstTopic && <Play size={14} className="relative z-10 fill-current" />}
+                            <span className="relative z-10 whitespace-nowrap">
+                              {!firstTopic ? 'No Topics' : isInProgress ? 'Continue' : isFullyCompleted ? 'Learn' : 'Start Learning'}
+                            </span>
+                            <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 ease-in-out"></div>
+                          </button>
+                          {/* <button
+                            onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
+                            className={`rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all duration-300 ${isOpen ? 'rotate-180' : ''}`}
+                            aria-label="Toggle chapter topics"
+                          >
+                            <ChevronDown size={18} />
+                          </button> */}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <button
-                          onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
-                          className="rounded-full p-2 text-slate-400 hover:bg-white/80 hover:text-slate-600 transition-colors"
-                          aria-label="Toggle info"
-                        >
-                          <Info size={20} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (!firstTopic) return;
-                            const topicSlug = encodeURIComponent(String(firstTopic.title || '').trim());
-                            navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
-                          }}
-                          disabled={!firstTopic}
-                          className={`group/btn relative rounded-full px-8 py-3 text-base font-black transition-all duration-300 overflow-hidden shadow-md ${
-                            !firstTopic
-                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                              : isFullyCompleted
-                              ? 'bg-green-500 text-white hover:bg-green-600'
-                              : isInProgress
-                              ? 'bg-amber-500 text-white hover:bg-amber-600'
-                              : 'bg-amber-400 text-white hover:bg-amber-500'
-                          } ${firstTopic ? 'hover:shadow-lg hover:scale-105' : ''}`}
-                        >
-                          <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
-                            {!firstTopic ? 'No Topics' : isInProgress ? 'Continue' : isFullyCompleted ? 'Learn' : 'Start Learning'}
-                          </span>
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 ease-in-out"></div>
-                        </button>
-                        <button
-                          onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
-                          className="rounded-full p-2 text-slate-400 hover:bg-white/80 hover:text-slate-600 transition-colors"
-                          aria-label="Toggle chapter topics"
-                        >
-                          {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {isOpen && (
-                      <div className="border-t border-slate-200/50 bg-white/80 backdrop-blur-sm px-6 sm:px-8 pb-5 pt-4">
-                        {chapterTopics.length > 0 ? (
-                          <div className="space-y-4">
-                            {chapterTopics.map((topic) => {
-                              const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
-                              return (
-                                <div key={topic.title} className="rounded-2xl border border-slate-200 bg-white p-4">
-                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                      <p className="text-lg font-black text-slate-900">{topic.title}</p>
-                                      <p className="text-sm font-medium text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p>
+                      {isOpen && (
+                        <div className="border-t border-slate-100 bg-slate-50/60 px-5 pb-5 pt-4 sm:px-6">
+                          {chapterTopics.length > 0 ? (
+                            <div className="space-y-3 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5">
+                              {chapterTopics.map((topic) => {
+                                const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
+                                return (
+                                  <div key={topic.title} className="relative rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                    <span className={`absolute -left-5.25 top-6 h-2.5 w-2.5 rounded-full ring-4 ring-white sm:-left-6.25 ${style.solid}`} />
+                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                      <div className="min-w-0">
+                                        <p className="text-base font-black text-slate-900 truncate">{topic.title}</p>
+                                        <p className="text-xs font-medium text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          const topicSlug = slugifyForUrl(String(topic.title || '').trim());
+                                          navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
+                                        }}
+                                        className={`shrink-0 rounded-full ${style.solid} px-4 py-2 text-xs font-bold text-white transition ${style.solidHover} sm:text-sm`}
+                                      >
+                                        Open Topic
+                                      </button>
                                     </div>
-                                    <button
-                                      onClick={() => {
-                                        const topicSlug = encodeURIComponent(String(topic.title || '').trim());
-                                        navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}/topic/${topicSlug}`);
-                                      }}
-                                      className="rounded-full bg-amber-400 px-5 py-2 text-sm font-black text-white transition hover:bg-amber-500"
-                                    >
-                                      Open Topic
-                                    </button>
+                                    {topic.subtopics && topic.subtopics.length > 0 ? (
+                                      <div className="mt-4 space-y-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Click to mark as complete</p>
+                                        {topic.subtopics.map((subtopic, idx) => {
+                                          const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
+                                          return (
+                                            <button
+                                              key={`${subtopic}-${idx}`}
+                                              onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
+                                              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all hover:shadow-sm ${
+                                                isSubtopicCompleted
+                                                  ? 'bg-green-50 border border-green-200'
+                                                  : 'bg-slate-50 border border-slate-200 hover:border-slate-300'
+                                              }`}
+                                            >
+                                              <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                                                isSubtopicCompleted ? 'bg-green-500' : 'bg-white border-2 border-slate-300'
+                                              }`}>
+                                                {isSubtopicCompleted && (
+                                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                  </svg>
+                                                )}
+                                              </div>
+                                              <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-green-700 line-through' : 'text-slate-700'}`}>
+                                                {subtopic}
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="mt-3 text-sm text-slate-500 italic">No subtopics available</p>
+                                    )}
                                   </div>
-                                  {topic.subtopics && topic.subtopics.length > 0 ? (
-                                    <div className="mt-4 space-y-2">
-                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Click to mark as complete</p>
-                                      {topic.subtopics.map((subtopic, idx) => {
-                                        const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
-                                        return (
-                                          <button
-                                            key={`${subtopic}-${idx}`}
-                                            onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:shadow-md ${
-                                              isSubtopicCompleted
-                                                ? 'bg-green-100 border-2 border-green-300'
-                                                : 'bg-slate-50 border-2 border-slate-200 hover:border-slate-300'
-                                            }`}
-                                          >
-                                            <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${
-                                              isSubtopicCompleted ? 'bg-green-500' : 'bg-white border-2 border-slate-300'
-                                            }`}>
-                                              {isSubtopicCompleted && (
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                  <polyline points="20 6 9 17 4 12"></polyline>
-                                                </svg>
-                                              )}
-                                            </div>
-                                            <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-green-700 line-through' : 'text-slate-700'}`}>
-                                              {subtopic}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <p className="mt-3 text-sm text-slate-500 italic">No subtopics available</p>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-slate-500 italic">No subtopics available</p>
-                        )}
-                      </div>
-                    )}
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-500 italic">No subtopics available</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
-              })
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -550,9 +565,9 @@ const AILearningCoursesLanding = () => {
 
   // Parse URL params manually
   const urlMatch = location.pathname.match(/\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/]+)(?:\/topic\/([^/]+))?(?:\/assessment\/([^/]+))?/);
-  const subjectKey = urlMatch?.[1] ? decodeURIComponent(urlMatch[1]) : null;
-  const topicSlug = urlMatch?.[2] ? decodeURIComponent(urlMatch[2]) : null;
-  const assessmentSlug = urlMatch?.[3] ? decodeURIComponent(urlMatch[3]) : null;
+  const subjectKey = urlMatch?.[1] ? deslugifyFromUrl(urlMatch[1]) : null;
+  const topicSlug = urlMatch?.[2] ? deslugifyFromUrl(urlMatch[2]) : null;
+  const assessmentSlug = urlMatch?.[3] ? deslugifyFromUrl(urlMatch[3]) : null;
 
   useEffect(() => {
     const fetchAssignedSubjects = async () => {
@@ -698,7 +713,7 @@ const AILearningCoursesLanding = () => {
 
     // If accessing a topic but subject has no topics, redirect to subject page
     if (topicSlug && selectedSubject && (!selectedSubject.topics || selectedSubject.topics.length === 0)) {
-      navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subjectKey)}`, { replace: true });
+      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectKey)}`, { replace: true });
     }
   }, [topicSlug, subjectKey, selectedSubject, loading, navigate]);
 
@@ -723,6 +738,7 @@ const AILearningCoursesLanding = () => {
           <SubjectTopicsView
             subject={selectedSubject}
             onBack={() => navigate('/student/smart-learning-courses')}
+            style={CARD_STYLES[Math.max(0, assignedSubjects.findIndex((s) => s.key === selectedSubject.key)) % CARD_STYLES.length]}
           />
         ) : (
           <>
@@ -805,7 +821,7 @@ const AILearningCoursesLanding = () => {
                         <button
                           onClick={() => {
                             if (subject.hasLessonPlans) {
-                              navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subject.key)}`);
+                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}`);
                             }
                           }}
                           className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-bold transition-all duration-200 ease-out ${

@@ -79,6 +79,10 @@ const LearningHub = () => {
     return TABS.find((tab) => tab.matches.includes(segment)) || TABS[0];
   }, [location.pathname]);
 
+  // A topic reader is a focused, full-bleed experience with its own header —
+  // the "One place to study" title and tab bar above it would just be clutter.
+  const isReadingTopic = activeTab.key === 'subjects' && /\/topic\//.test(location.pathname);
+
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
   const [lastActivity] = useState(() => getLearningActivity());
@@ -101,6 +105,7 @@ const LearningHub = () => {
 
   return (
     <div className="min-h-full w-full bg-[#F4F1EA] text-[#26332E]">
+      {!isReadingTopic && (
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-4">
           <div>
@@ -184,6 +189,7 @@ const LearningHub = () => {
           </Motion.div>
         )}
       </div>
+      )}
 
       {activeTab.key === 'subjects' && (
         <Motion.div

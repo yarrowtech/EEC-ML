@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Upload } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
@@ -211,8 +212,8 @@ const AILearningTryoutSection = () => {
   const location = useLocation();
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
-  const subjectSlug = subjectMatch?.[1] ? decodeURIComponent(subjectMatch[1]) : 'subject';
-  const topicSlug = topicMatch?.[1] ? decodeURIComponent(topicMatch[1]) : 'topic';
+  const subjectSlug = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'subject';
+  const topicSlug = topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [subjects, setSubjects] = useState([]);
@@ -256,7 +257,7 @@ const AILearningTryoutSection = () => {
       <div className="mx-auto w-full max-w-[950px]">
         <button
           type="button"
-          onClick={() => navigate(`/student/smart-learning-courses/subject/${encodeURIComponent(subjectSlug)}/topic/${encodeURIComponent(topicSlug)}`)}
+          onClick={() => navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectSlug)}/topic/${slugifyForUrl(topicSlug)}`)}
           className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           <ArrowLeft size={16} />

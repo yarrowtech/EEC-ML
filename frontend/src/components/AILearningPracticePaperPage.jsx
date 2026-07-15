@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, FileText } from 'lucide-react';
+import { deslugifyFromUrl } from '../utils/urlSlug';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -16,8 +17,8 @@ const AILearningPracticePaperPage = () => {
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
 
-  const topic = topicMatch?.[1] ? decodeURIComponent(topicMatch[1]) : '';
-  const subject = subjectMatch?.[1] ? decodeURIComponent(subjectMatch[1]) : '';
+  const topic = topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : '';
+  const subject = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : '';
 
   useEffect(() => {
     const load = async () => {
