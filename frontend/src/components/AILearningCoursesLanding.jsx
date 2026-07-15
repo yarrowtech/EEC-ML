@@ -415,26 +415,26 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                               <h3 className="text-lg sm:text-xl font-black text-slate-900 truncate">{chapter.title}</h3>
                               {statusBadge}
                             </div>
-                            <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
                               <p className="text-sm font-medium text-slate-500">
                                 {chapterTopics.length} topic{chapterTopics.length === 1 ? '' : 's'} · {chapterTotals.completed}/{chapterTotals.total} subtopics
                               </p>
                               {chapterTotals.total > 0 && (
-                                <>
-                                  <div className="h-1.5 w-20 sm:w-28 overflow-hidden rounded-full bg-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-1.5 w-full sm:w-28 overflow-hidden rounded-full bg-slate-100">
                                     <div
                                       className={`h-full rounded-full transition-all duration-500 ${progressFill}`}
                                       style={{ width: `${chapterPercentage}%` }}
                                     />
                                   </div>
                                   <span className="text-xs font-bold text-slate-500">{chapterPercentage}%</span>
-                                </>
+                                </div>
                               )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 self-end sm:gap-3 sm:self-auto">
+                        <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start sm:gap-3 sm:self-auto">
                           {/* <button
                             onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
                             className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
@@ -449,7 +449,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                               navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
                             }}
                             disabled={!firstTopic}
-                            className={`group/btn relative flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 overflow-hidden shadow-sm sm:px-6 sm:py-3 sm:text-base ${
+                            className={`group/btn relative flex w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 overflow-hidden shadow-sm sm:w-auto sm:px-6 sm:py-3 sm:text-base ${
                               !firstTopic
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                 : isFullyCompleted
