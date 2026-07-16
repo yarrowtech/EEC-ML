@@ -493,6 +493,7 @@ const ClassesHub = () => {
             <NavLink
               key={item.id}
               to={buildClassPath(item.id)}
+              state={{ className: item.title }}
               className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-200 hover:shadow-lg hover:shadow-slate-200/70"
             >
               <div className="flex items-center justify-between gap-3">
@@ -515,7 +516,53 @@ const ClassesHub = () => {
 
 const ClassWorkspace = () => {
   const { classId = 'current' } = useParams();
+  const location = useLocation();
+  const [resolvedClassName, setResolvedClassName] = useState(
+    () => location.state?.className || classDisplayName(classId)
+  );
   const basePath = buildClassPath(classId);
+
+  useEffect(() => {
+    const navigatedClassName = location.state?.className;
+    if (navigatedClassName) {
+      setResolvedClassName(navigatedClassName);
+    }
+
+    if (!classId || classId === 'current') return undefined;
+
+    let cancelled = false;
+    const loadClassName = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const response = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json().catch(() => []);
+        if (cancelled || !Array.isArray(data)) return;
+
+        const allocation = data.find((item) => {
+          const allocationClassId = item?.classId?._id || item?.classId?.id || item?.classId;
+          return String(allocationClassId || '') === String(classId);
+        });
+        if (!allocation) return;
+
+        const className = allocation?.classId?.name || allocation?.className;
+        const sectionName = allocation?.sectionId?.name || allocation?.sectionName;
+        if (className && !cancelled) {
+          setResolvedClassName(`${className}${sectionName ? ` ${sectionName}` : ''}`.trim());
+        }
+      } catch {
+        // Keep the name passed during navigation or the route fallback.
+      }
+    };
+
+    loadClassName();
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, location.state?.className]);
 
   return (
     <div className="space-y-4">
@@ -523,7 +570,7 @@ const ClassWorkspace = () => {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal / Classes</p>
-            <h1 className="mt-2 text-2xl font-semibold capitalize text-slate-950">{classDisplayName(classId)}</h1>
+            <h1 className="mt-2 text-2xl font-semibold capitalize text-slate-950">{resolvedClassName}</h1>
             <p className="mt-1 text-sm text-slate-500">One class context for students, teaching, assignments, assessments, communication, and reporting.</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
