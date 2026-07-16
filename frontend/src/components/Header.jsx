@@ -301,7 +301,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
                   }}
-                  className="w-full pl-9 pr-9 py-2 rounded-xl bg-gray-50 border border-gray-200 text-sm placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 outline-none transition-all"
+                  className="w-full pl-9 pr-9 py-2 rounded-full bg-gray-50 border border-gray-200 text-sm placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 outline-none transition-all"
                 />
                 {searchText && (
                   <button
@@ -349,8 +349,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
 
             {/* School badge - desktop only */}
             {(studentData.schoolName || studentData.schoolLogo) && (
-              <div className="hidden xl:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-xl border border-gray-100">
-                <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
+              <div className="hidden xl:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-100">
+                <div className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
                   {studentData.schoolLogo ? (
                     <img src={studentData.schoolLogo} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                   ) : (
