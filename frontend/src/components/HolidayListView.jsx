@@ -66,15 +66,6 @@ const getHolidayDuration = (startValue, endValue) => {
   return Math.max(1, Math.floor((end - start) / dayMs) + 1);
 };
 
-const isPastHoliday = (startValue, endValue) => {
-  const dt = new Date(endValue || startValue);
-  if (Number.isNaN(dt.getTime())) return false;
-  const holidayDay = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return holidayDay < today;
-};
-
 const getHolidayStatus = (startValue, endValue) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -94,17 +85,77 @@ const toSortableDate = (value) => {
   return dt.getTime();
 };
 
+const STATUS_TONE = {
+  Upcoming: {
+    badge: 'bg-emerald-100 text-emerald-700',
+    accent: 'border-l-emerald-400',
+    dateHeader: 'bg-emerald-500',
+    dateBody: 'bg-emerald-50',
+    dateText: 'text-emerald-700',
+    dateBorder: 'border-emerald-200',
+  },
+  Ongoing: {
+    badge: 'bg-sky-100 text-sky-700',
+    accent: 'border-l-sky-400',
+    dateHeader: 'bg-sky-500',
+    dateBody: 'bg-sky-50',
+    dateText: 'text-sky-700',
+    dateBorder: 'border-sky-200',
+  },
+  Past: {
+    badge: 'bg-slate-100 text-slate-500',
+    accent: 'border-l-slate-300',
+    dateHeader: 'bg-slate-400',
+    dateBody: 'bg-slate-50',
+    dateText: 'text-slate-500',
+    dateBorder: 'border-slate-200',
+  },
+  Unknown: {
+    badge: 'bg-slate-100 text-slate-500',
+    accent: 'border-l-slate-300',
+    dateHeader: 'bg-slate-400',
+    dateBody: 'bg-slate-50',
+    dateText: 'text-slate-500',
+    dateBorder: 'border-slate-200',
+  },
+};
+
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All', activeClass: 'bg-slate-800 border-slate-800' },
+  { key: 'Upcoming', label: 'Upcoming', activeClass: 'bg-emerald-500 border-emerald-500' },
+  { key: 'Ongoing', label: 'Ongoing', activeClass: 'bg-sky-500 border-sky-500' },
+  { key: 'Past', label: 'Past', activeClass: 'bg-slate-400 border-slate-400' },
+];
+
+const StatTile = ({ label, value, grad, shadow }) => (
+  <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
+    <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
+    <div className="relative z-10">
+      <p className="text-[11px] font-semibold text-white/80">{label}</p>
+      <p className="mt-1.5 text-xl font-black text-white leading-tight">{value}</p>
+    </div>
+  </div>
+);
+
 const HolidayListView = () => {
   const { profile } = useStudentDashboard();
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const sortedHolidays = [...holidays].sort((a, b) => {
     const aDate = toSortableDate(a.startDate || a.date);
     const bDate = toSortableDate(b.startDate || b.date);
     return aDate - bDate;
+  });
+
+  const filteredHolidays = sortedHolidays.filter((item) => {
+    if (statusFilter === 'all') return true;
+    const start = item.startDate || item.date;
+    const end = item.endDate || item.startDate || item.date;
+    return getHolidayStatus(start, end) === statusFilter;
   });
 
   const stats = sortedHolidays.reduce(
@@ -302,151 +353,118 @@ const HolidayListView = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6">
-      <div className="mx-auto max-w-5xl rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-sky-50/70 p-5 shadow-sm sm:p-6">
-        <div className="mb-5 flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-            <CalendarDays className="h-5 w-5" />
+    <div className="min-h-screen bg-slate-50 space-y-5 p-4 pb-8 sm:p-6">
+      <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-purple-500 via-purple-600 to-violet-700 p-5 shadow-lg shadow-purple-200/60 sm:p-6">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
+        <div className="relative flex flex-wrap items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+            <CalendarDays className="h-5.5 w-5.5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Holiday Calendar</h1>
-            <p className="text-xs text-slate-500">Track upcoming and completed holidays in one place</p>
+            <h1 className="text-xl font-bold text-white sm:text-2xl">Holiday Calendar</h1>
+            <p className="text-sm text-white/80">Track upcoming and completed holidays in one place</p>
           </div>
           <button
             type="button"
             onClick={handleDownloadPdf}
             disabled={loading || !sortedHolidays.length || downloading}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />
             {downloading ? 'Preparing...' : 'Download PDF'}
           </button>
         </div>
-
-        {!loading && !error && sortedHolidays.length > 0 && (
-          <div className="mb-4 grid gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white/90 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total</p>
-              <p className="mt-1 text-xl font-bold text-slate-900">{stats.total}</p>
-            </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Upcoming</p>
-              <p className="mt-1 text-xl font-bold text-emerald-900">{stats.upcoming}</p>
-            </div>
-            <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-700">Ongoing</p>
-              <p className="mt-1 text-xl font-bold text-sky-900">{stats.ongoing}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-100 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Past</p>
-              <p className="mt-1 text-xl font-bold text-slate-800">{stats.past}</p>
-            </div>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading holidays...
-          </div>
-        ) : error ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-            <p className="text-sm font-medium text-rose-700">{error}</p>
-          </div>
-        ) : sortedHolidays.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="text-sm text-slate-500">No holidays announced yet.</p>
-            <p className="mt-3 text-sm font-semibold text-slate-700">Total Holidays: 0</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white sm:block">
-              <table className="min-w-full text-sm text-slate-700">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wider text-slate-500">
-                    <th className="px-3 py-2.5">Holiday</th>
-                    <th className="px-3 py-2.5">Date Range</th>
-                    <th className="px-3 py-2.5 text-center">Days</th>
-                    <th className="px-3 py-2.5 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedHolidays.map((item) => {
-                    const start = item.startDate || item.date;
-                    const end = item.endDate || item.startDate || item.date;
-                    const status = getHolidayStatus(start, end);
-                    const isPast = isPastHoliday(start, end);
-                    return (
-                      <tr key={item._id} className="border-b border-slate-100 last:border-b-0">
-                        <td className={`px-3 py-3 font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                          {item.name}
-                        </td>
-                        <td className={`px-3 py-3 ${isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                          {formatDateRange(start, end)}
-                        </td>
-                        <td className="px-3 py-3 text-center font-medium text-slate-700">
-                          {getHolidayDuration(start, end)}
-                        </td>
-                        <td className="px-3 py-3 text-center">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
-                              status === 'Upcoming'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : status === 'Ongoing'
-                                  ? 'bg-sky-100 text-sky-700'
-                                  : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {status}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="space-y-2 sm:hidden">
-              {sortedHolidays.map((item) => {
-                const start = item.startDate || item.date;
-                const end = item.endDate || item.startDate || item.date;
-                const status = getHolidayStatus(start, end);
-                const isPast = isPastHoliday(start, end);
-                const duration = getHolidayDuration(start, end);
-                return (
-                  <div key={item._id} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className={`text-sm font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</p>
-                        <p className={`mt-1 text-xs ${isPast ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
-                          {formatDateRange(start, end)}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${
-                          status === 'Upcoming'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : status === 'Ongoing'
-                              ? 'bg-sky-100 text-sky-700'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {status}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-[11px] font-medium text-slate-500">
-                      Duration: {duration} day{duration > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-
-            <p className="text-sm font-semibold text-slate-700">Total Holidays: {sortedHolidays.length}</p>
-          </div>
-        )}
       </div>
+
+      {!loading && !error && sortedHolidays.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Total" value={stats.total} grad="from-slate-700 to-slate-900" shadow="shadow-slate-300/60" />
+            <StatTile label="Upcoming" value={stats.upcoming} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
+            <StatTile label="Ongoing" value={stats.ongoing} grad="from-sky-500 to-blue-600" shadow="shadow-sky-200/60" />
+            <StatTile label="Past" value={stats.past} grad="from-slate-400 to-slate-500" shadow="shadow-slate-200/60" />
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+            {STATUS_FILTERS.map(({ key, label, activeClass }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setStatusFilter(key)}
+                className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-bold transition-all ${
+                  statusFilter === key
+                    ? `${activeClass} text-white shadow-md`
+                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {loading ? (
+        <div className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-500 shadow-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading holidays...
+        </div>
+      ) : error ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+          <p className="text-sm font-medium text-rose-700">{error}</p>
+        </div>
+      ) : sortedHolidays.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm text-slate-500">No holidays announced yet.</p>
+        </div>
+      ) : filteredHolidays.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm text-slate-500">No {statusFilter.toLowerCase()} holidays right now.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredHolidays.map((item) => {
+            const start = item.startDate || item.date;
+            const end = item.endDate || item.startDate || item.date;
+            const status = getHolidayStatus(start, end);
+            const duration = getHolidayDuration(start, end);
+            const tone = STATUS_TONE[status] || STATUS_TONE.Unknown;
+            const isPast = status === 'Past';
+            const startDt = new Date(start);
+            const hasValidStart = !Number.isNaN(startDt.getTime());
+            const monthLabel = hasValidStart ? startDt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase() : '—';
+            const dayLabel = hasValidStart ? startDt.getDate() : '—';
+
+            return (
+              <div
+                key={item._id}
+                className={`flex items-center gap-3 rounded-2xl border border-slate-100 border-l-4 bg-white p-3 shadow-sm transition-transform hover:-translate-y-0.5 sm:p-4 ${tone.accent}`}
+              >
+                <div className={`flex w-14 shrink-0 flex-col items-center overflow-hidden rounded-xl border ${tone.dateBorder}`}>
+                  <div className={`w-full py-1 text-center text-[10px] font-bold text-white ${tone.dateHeader}`}>{monthLabel}</div>
+                  <div className={`w-full py-1.5 text-center text-lg font-black ${tone.dateText} ${tone.dateBody}`}>{dayLabel}</div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className={`font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</p>
+                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${tone.badge}`}>
+                      {status}
+                    </span>
+                  </div>
+                  <p className={`mt-1 text-xs ${isPast ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {formatDateRange(start, end)} · {duration} day{duration > 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+
+          <p className="pt-1 text-sm font-semibold text-slate-700">
+            {statusFilter === 'all' ? `Total Holidays: ${sortedHolidays.length}` : `Showing ${filteredHolidays.length} of ${sortedHolidays.length} holidays`}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
