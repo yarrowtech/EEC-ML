@@ -349,7 +349,7 @@ const TeacherDashboard = () => {
       title: 'Support',
       items: [
         { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
-        { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/ai-center' },
+        { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
       ],
     },
   ];
@@ -448,7 +448,7 @@ const TeacherDashboard = () => {
                   </p>
                   <div className="mt-5 flex flex-wrap gap-3">
                     <Link to="/teacher/classes" className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5">Open classes <ArrowUpRight size={16} /></Link>
-                    <Link to="/teacher/ai-center" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">Ask AI <Sparkles size={16} /></Link>
+                    <Link to="/teacher/lesson-plan" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">Ask AI <Sparkles size={16} /></Link>
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -741,7 +741,7 @@ const UtilityPanel = ({ currentDateTime, reduceMotion, onClose }) => (
         <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
           <div className="mb-3 flex items-center gap-2"><Bot size={18} /><p className="font-semibold">AI assistant</p></div>
           <p className="text-sm leading-5 text-slate-300">Ask for lesson ideas, quiz drafts, student interventions, or report summaries.</p>
-          <Link to="/teacher/ai-center" className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-slate-950">Open AI <ArrowUpRight size={15} /></Link>
+          <Link to="/teacher/lesson-plan" className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-slate-950">Open AI <ArrowUpRight size={15} /></Link>
         </div>
       </div>
     </CardShell>

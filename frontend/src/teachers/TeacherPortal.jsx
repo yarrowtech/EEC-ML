@@ -31,6 +31,8 @@ import {
   Award,
   Library,
   Settings,
+  RefreshCw,
+  CalendarCheck,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
@@ -72,18 +74,17 @@ const portalNavigation = [
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
   { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
-  { icon: Library, label: 'Teaching Resources', path: `${PORTAL_BASE}/resource-library` },
-  { icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-center` },
+  { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
+  { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
+  { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
   { icon: Settings, label: 'Profile & Work', path: `${PORTAL_BASE}/settings` },
 ];
 
 const classTabs = [
   { icon: Home, label: 'Overview', path: '' },
   { icon: Users, label: 'Students', path: 'students' },
-  { icon: BookOpen, label: 'Teaching', path: 'teaching' },
   { icon: FileText, label: 'Assignments', path: 'assignments' },
   { icon: GraduationCap, label: 'Assessments', path: 'assessments' },
-  { icon: MessageSquare, label: 'Chat & Meetings', path: 'communication' },
   { icon: BarChart3, label: 'Reports', path: 'reports' },
 ];
 
@@ -144,6 +145,232 @@ const buildClassPath = (classId, section) =>
 
 const classDisplayName = (classId) =>
   classId === 'current' ? 'Current Class' : decodeURIComponent(classId || 'Current Class').replace(/-/g, ' ');
+
+const resolveTeacherNotificationPath = (notification) => {
+  const title = String(notification?.title || '').toLowerCase();
+  const message = String(notification?.message || '').toLowerCase();
+  const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
+  const blob = `${title} ${message} ${type}`;
+  if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
+  if (blob.includes('assignment')) return '/teacher/assignments';
+  if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
+  if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
+  if (blob.includes('feedback')) return '/teacher/feedback';
+  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/academic-alcove';
+  if (blob.includes('chat') || blob.includes('message')) return '/teacher/chat';
+  if (blob.includes('health') || blob.includes('wellbeing')) return '/teacher/health-updates';
+  return '/teacher/dashboard';
+};
+
+const notificationTypeMeta = (notification) => {
+  const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
+  if (type.includes('assignment')) return { label: 'Assignment', icon: ClipboardCheck, tone: 'blue' };
+  if (type.includes('exam') || type.includes('result')) return { label: 'Assessment', icon: GraduationCap, tone: 'rose' };
+  if (type.includes('meeting') || type.includes('parent')) return { label: 'Meeting', icon: Users, tone: 'violet' };
+  if (type.includes('attendance')) return { label: 'Attendance', icon: UserCheck, tone: 'emerald' };
+  if (type.includes('chat') || type.includes('message')) return { label: 'Message', icon: MessageSquare, tone: 'indigo' };
+  return { label: notification?.typeLabel || 'General', icon: Bell, tone: 'slate' };
+};
+
+const notificationTimeLabel = (value) => {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  if (minutes < 10080) return `${Math.floor(minutes / 1440)}d ago`;
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const notificationToneClasses = {
+  blue: 'bg-blue-50 text-blue-700',
+  rose: 'bg-rose-50 text-rose-700',
+  violet: 'bg-violet-50 text-violet-700',
+  emerald: 'bg-emerald-50 text-emerald-700',
+  indigo: 'bg-indigo-50 text-indigo-700',
+  slate: 'bg-slate-100 text-slate-600',
+};
+
+const TeacherNotifications = () => {
+  const navigate = useNavigate();
+  const [notifications, setNotifications] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadNotifications = useCallback(async ({ silent = false } = {}) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setNotifications([]);
+        return;
+      }
+      const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      }, navigate);
+      if (response.status === 304) return;
+      const data = await response.json().catch(() => []);
+      if (!response.ok) throw new Error(data?.error || 'Unable to load notifications');
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || 'Unable to load notifications');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    loadNotifications();
+    const poll = setInterval(() => loadNotifications({ silent: true }), 30_000);
+    return () => clearInterval(poll);
+  }, [loadNotifications]);
+
+  const markRead = useCallback(async (id) => {
+    if (!id) return;
+    const token = localStorage.getItem('token');
+    setNotifications((previous) => previous.map((item) => (
+      String(item?._id || item?.id || '') === String(id) ? { ...item, isRead: true } : item
+    )));
+    try {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/${id}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      }, navigate);
+      if (!response.ok) throw new Error('Unable to mark notification as read');
+    } catch (err) {
+      setError(err.message || 'Unable to mark notification as read');
+      await loadNotifications({ silent: true });
+    }
+  }, [loadNotifications, navigate]);
+
+  const markAllRead = async () => {
+    const token = localStorage.getItem('token');
+    setNotifications((previous) => previous.map((item) => ({ ...item, isRead: true })));
+    try {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      }, navigate);
+      if (!response.ok) throw new Error('Unable to mark all notifications as read');
+    } catch (err) {
+      setError(err.message || 'Unable to mark all notifications as read');
+      await loadNotifications({ silent: true });
+    }
+  };
+
+  const dismiss = async (id) => {
+    if (!id) return;
+    const token = localStorage.getItem('token');
+    setNotifications((previous) => previous.filter((item) => String(item?._id || item?.id || '') !== String(id)));
+    try {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/${id}/dismiss`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      }, navigate);
+      if (!response.ok) throw new Error('Unable to dismiss notification');
+    } catch (err) {
+      setError(err.message || 'Unable to dismiss notification');
+      await loadNotifications({ silent: true });
+    }
+  };
+
+  const unreadCount = notifications.filter((item) => !item?.isRead).length;
+  const filteredNotifications = notifications.filter((item) => {
+    if (filter === 'unread') return !item?.isRead;
+    if (filter === 'read') return Boolean(item?.isRead);
+    return true;
+  });
+
+  return (
+    <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal</p>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-950">Notifications</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-500">Keep track of announcements, class updates, meetings and action items in one place.</p>
+            </div>
+            <button type="button" onClick={() => loadNotifications({ silent: true })} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
+              <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-3"><p className="text-2xl font-semibold text-slate-950">{notifications.length}</p><p className="mt-1 text-xs text-slate-500">Total notifications</p></div>
+            <div className="rounded-xl bg-indigo-50 p-3"><p className="text-2xl font-semibold text-indigo-700">{unreadCount}</p><p className="mt-1 text-xs text-indigo-600">Unread</p></div>
+            <div className="rounded-xl bg-emerald-50 p-3"><p className="text-2xl font-semibold text-emerald-700">{notifications.length - unreadCount}</p><p className="mt-1 text-xs text-emerald-600">Already reviewed</p></div>
+          </div>
+        </section>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
+            {['all', 'unread', 'read'].map((value) => (
+              <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                {value} {value === 'unread' ? `(${unreadCount})` : ''}
+              </button>
+            ))}
+          </div>
+          {unreadCount > 0 && <button type="button" onClick={markAllRead} className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900"><CheckCheck size={15} /> Mark all as read</button>}
+        </div>
+
+        {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+        {loading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading notifications...</div>
+        ) : filteredNotifications.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Bell size={22} /></div>
+            <h2 className="mt-4 text-base font-semibold text-slate-950">{filter === 'all' ? 'You are all caught up' : `No ${filter} notifications`}</h2>
+            <p className="mt-1 text-sm text-slate-500">New school and teaching updates will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredNotifications.map((notification) => {
+              const id = String(notification?._id || notification?.id || notification?.title || 'notification');
+              const meta = notificationTypeMeta(notification);
+              const Icon = meta.icon;
+              const isRead = Boolean(notification?.isRead);
+              return (
+                <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${notificationToneClasses[meta.tone]}`}><Icon size={19} /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${notificationToneClasses[meta.tone]}`}>{meta.label}</span>
+                        {!isRead && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Unread</span>}
+                        {notification?.priority && notification.priority !== 'medium' && <span className="text-[10px] font-semibold capitalize text-slate-400">{notification.priority} priority</span>}
+                      </div>
+                      <h2 className="mt-2 text-base font-semibold text-slate-950">{notification?.title || 'Notification'}</h2>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{notification?.message || 'There is an update waiting for you.'}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                        <span>{notificationTimeLabel(notification?.createdAt)}</span>
+                        {notification?.createdByName && <span>From {notification.createdByName}</span>}
+                        {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => dismiss(id)} aria-label="Dismiss notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
+                    {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
+                    <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }) => {
   const ModuleIcon = icon;
@@ -612,22 +839,7 @@ const TeacherPortalShell = () => {
     return ts.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   }, []);
 
-  const resolveNotifPath = useCallback((notification) => {
-    const title = String(notification?.title || '').toLowerCase();
-    const message = String(notification?.message || '').toLowerCase();
-    const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
-    const blob = `${title} ${message} ${type}`;
-    if (blob.includes('substitute')) return '/teacher/attendance';
-    if (blob.includes('assignment')) return '/teacher/assignments';
-    if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
-    if (blob.includes('attendance')) return '/teacher/attendance';
-    if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
-    if (blob.includes('feedback')) return '/teacher/feedback';
-    if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/academic-alcove';
-    if (blob.includes('chat') || blob.includes('message')) return '/teacher/chat';
-    if (blob.includes('health') || blob.includes('wellbeing')) return '/teacher/health-updates';
-    return '/teacher/dashboard';
-  }, []);
+  const resolveNotifPath = useCallback(resolveTeacherNotificationPath, []);
   const {
     showPermissionModal,
     pendingCount,
@@ -1124,10 +1336,11 @@ const TeacherPortalShell = () => {
               <Route path="timetable" element={<ClassRoutine />} />
               <Route
                 path="notifications"
-                element={<PlaceholderModule icon={Bell} title="Notifications" description="Recent alerts, unread items, and action-required updates for your teaching workflow." />}
+                element={<TeacherNotifications />}
               />
               <Route path="resource-library" element={<TeacherAlcove />} />
-              <Route path="ai-center" element={<AIPoweredTeaching />} />
+              <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+              <Route path="ptm" element={<ParentMeetings />} />
               <Route path="settings" element={<MyWorkPortal />} />
               <Route path="test" element={<TestTeacherPortal />} />
 
@@ -1144,7 +1357,8 @@ const TeacherPortalShell = () => {
               <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
               <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
               <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
-              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/ai-center" replace />} />
+              <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
+              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
               <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
               <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
               <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />

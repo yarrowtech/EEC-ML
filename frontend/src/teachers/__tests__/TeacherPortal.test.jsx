@@ -103,4 +103,12 @@ describe('TeacherPortal', () => {
     const signOutNodes = screen.getAllByText(/Sign out/i).map((node) => node.textContent?.trim());
     expect(signOutNodes).toContain('Sign out');
   });
+
+  test('renders the teacher notification center', async () => {
+    renderPortal('/teacher/notifications');
+
+    expect(await screen.findByRole('heading', { name: 'Notifications' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(screen.getByText('You are all caught up')).toBeInTheDocument();
+  });
 });

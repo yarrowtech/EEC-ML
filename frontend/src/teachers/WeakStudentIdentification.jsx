@@ -377,7 +377,7 @@ const WeakStudentIdentification = () => {
                     </button>
                     {student.hasAIPath && (
                       <button
-                        onClick={() => navigate(`/teachers/ai-learning/${student.studentId._id}/${student.focusSubject || 'Mathematics'}`)}
+                        onClick={() => navigate(`/teacher/classes/current/students/${student.studentId._id}/ai-learning/${student.focusSubject || 'Mathematics'}`)}
                         className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2 text-sm"
                       >
                         <Brain className="w-4 h-4" />

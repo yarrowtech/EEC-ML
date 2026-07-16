@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
-  AlarmClock,
   Bell,
   BookOpenCheck,
   CalendarDays,
@@ -17,7 +16,6 @@ import {
   GraduationCap,
   Loader2,
   MoreHorizontal,
-  Plus,
   Search,
   Sparkles,
   Users,
@@ -77,13 +75,6 @@ const EVENT_TYPES = {
     soft: 'bg-cyan-50 text-cyan-800 border-cyan-100',
   },
 };
-
-const QUICK_ACTIONS = [
-  { label: 'Add Event', icon: Plus, type: 'school' },
-  { label: 'Schedule Meeting', icon: Users, type: 'meeting' },
-  { label: 'Create Assessment', icon: GraduationCap, type: 'exam' },
-  { label: 'Add Reminder', icon: AlarmClock, type: 'reminder' },
-];
 
 const pad = (value) => String(value).padStart(2, '0');
 const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -411,15 +402,6 @@ const HolidayList = () => {
               <p className="mt-2 max-w-3xl text-sm text-slate-500">A centralized calendar for holidays, exams, assignments, meetings, reminders, school events, and teacher planning.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {QUICK_ACTIONS.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Motion.button key={action.label} whileHover={{ y: -1, scale: 1.01 }} whileTap={{ scale: 0.98 }} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700">
-                    <Icon size={15} />
-                    {action.label}
-                  </Motion.button>
-                );
-              })}
               <button type="button" onClick={handleDownloadPdf} disabled={loading || !holidays.length || downloading} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
                 {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                 Export
