@@ -466,14 +466,18 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 
           {/* Profile strip (expanded only) */}
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+            <button
+              type="button"
+              onClick={() => handleNavigation('profile')}
+              className="mb-2 flex w-full items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-amber-200 hover:bg-amber-50"
+            >
               <div className="shrink-0">
                 {hasProfileImage ? (
                   <img src={profileImage} alt="You"
-                    className="h-8 w-8 rounded-xl object-cover border border-slate-200"
+                    className="h-8 w-8 rounded-full object-cover border border-slate-200"
                     onError={e => e.target.style.display = 'none'} />
                 ) : (
-                  <div className="h-8 w-8 rounded-xl bg-linear-to-br from-amber-400 to-yellow-500 flex items-center justify-center shadow-sm">
+                  <div className="h-8 w-8 rounded-full bg-linear-to-br from-amber-400 to-yellow-500 flex items-center justify-center shadow-sm">
                     <span className="text-xs font-black text-white">{initials.toUpperCase()}</span>
                   </div>
                 )}
@@ -485,7 +489,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                   {displaySection ? ` · ${displaySection}` : ''}
                 </p>
               </div>
-            </div>
+            </button>
           )}
 
           {/* Logout */}
@@ -500,7 +504,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                 ${collapsed ? 'h-10 justify-center' : 'gap-3 px-3 py-2.5'}
               `}
             >
-              <div className={`flex shrink-0 items-center justify-center rounded-lg bg-red-50 group-hover:bg-red-100 transition-colors ${collapsed ? 'h-8 w-8' : 'h-7 w-7'}`}>
+              <div className={`flex shrink-0 items-center justify-center rounded-full bg-red-50 group-hover:bg-red-100 transition-colors ${collapsed ? 'h-8 w-8' : 'h-7 w-7'}`}>
                 <LogOut size={collapsed ? 15 : 14} className="text-red-500" />
               </div>
               {!collapsed && (

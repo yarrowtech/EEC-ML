@@ -121,7 +121,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174/src/components/AssignmentView.jsx)",
       "Bash(kill 118689)",
       "Bash(grep -n \"viewMode === 'weekly' ?\\\\|^      </div>\\\\|export default RoutineView\\\\|^  \\);$\\\\|^};$\" src/components/RoutineView.jsx)",
-      "Bash(git -C \"/run/media/meow/New Volume/experimental/EEC ML\" status --short)"
+      "Bash(git -C \"/run/media/meow/New Volume/experimental/EEC ML\" status --short)",
+      "Bash(grep -v -E \"useDesktopNotificationBridge.js$|DesktopNotificationPermissionModal.jsx$\")",
+      "Bash(npm run *)"
     ],
     "additionalDirectories": [
       "/tmp"

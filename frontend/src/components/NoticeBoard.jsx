@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import {
   Bell,
   Search,
@@ -19,8 +21,11 @@ import {
   Paperclip,
   Megaphone,
   Clock,
+  ArrowRight,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
+import { useStudentDashboard } from './StudentDashboardContext';
+import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
 
 /* ─── Helpers ─── */
 const looksLikeUserId = (value) => {
@@ -49,6 +54,20 @@ const shouldHideNoticeFromNoticeboard = (notice) => {
   ) return true;
 
   return false;
+};
+
+const isExamNotice = (notice) => {
+  const type = String(notice?.type || '').trim().toLowerCase();
+  const entityType = String(notice?.relatedEntity?.entityType || '').trim().toLowerCase();
+  return type === 'exam' || entityType === 'exam';
+};
+
+const findExamGroupForNotice = (notice, examGroups) => {
+  const examId = String(notice?.relatedEntity?.entityId || '').trim();
+  if (!examId || !Array.isArray(examGroups)) return null;
+  return examGroups.find((group) =>
+    (group?.subjects || []).some((subject) => String(subject?._id || '') === examId)
+  ) || null;
 };
 
 const resolveAuthor = (notice) => {
@@ -199,7 +218,7 @@ const PRIORITY_BANNER = {
   general: 'from-gray-500 to-gray-600',
 };
 
-const NoticeDetailsView = ({ notice, onBack }) => {
+const NoticeDetailsView = ({ notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams }) => {
   if (!notice) return null;
   const priority = resolvePriority(notice);
   const category = resolveCategory(notice);
@@ -209,6 +228,7 @@ const NoticeDetailsView = ({ notice, onBack }) => {
   const displayDate = resolveDate(notice);
   const subjectLabel = notice.subjectName || notice.subject || '';
   const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
+  const showExamRoutine = isExamNotice(notice);
 
   return (
     <div className="space-y-4">
@@ -273,6 +293,40 @@ const NoticeDetailsView = ({ notice, onBack }) => {
             </div>
           </div>
 
+          {showExamRoutine && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-indigo-600" />
+                <p className="text-sm font-semibold text-indigo-900">Exam Routine</p>
+              </div>
+              <p className="mb-3 text-xs text-indigo-700/80">
+                {examGroup
+                  ? 'Download the full exam routine below, or see all your exams on the Exams page.'
+                  : 'View the full exam schedule on the Exams page.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {examGroup && (
+                  <button
+                    type="button"
+                    onClick={onDownloadRoutine}
+                    disabled={downloadingRoutine}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {downloadingRoutine ? 'Preparing…' : 'Download Routine PDF'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onViewExams}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                >
+                  See Details <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">{notice.message || 'No details available.'}</p>
           {subjectLabel ? <p className="text-sm text-gray-500">Subject: {subjectLabel}</p> : null}
 
@@ -329,13 +383,17 @@ const StatCard = ({ icon, value, label, grad, shadow }) => {
 
 /* ─── Main ─── */
 const NoticeBoard = () => {
+  const navigate = useNavigate();
+  const { profile } = useStudentDashboard();
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
     .replace(/\/api$/, '');
   const NOTICEBOARD_NOTICES_ENDPOINT = `${API_BASE}/api/notifications/user`;
   const NOTICEBOARD_CLASS_TEACHER_ENDPOINT = `${API_BASE}/api/student/auth/class-teacher`;
+  const NOTICEBOARD_EXAM_GROUPS_ENDPOINT = `${API_BASE}/api/exam/groups/student-schedule`;
   const NOTICEBOARD_NOTICES_CACHE_TTL_MS = 2 * 60 * 1000;
   const NOTICEBOARD_CLASS_TEACHER_CACHE_TTL_MS = 5 * 60 * 1000;
+  const NOTICEBOARD_EXAM_GROUPS_CACHE_TTL_MS = 2 * 60 * 1000;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPriority, setFilterPriority] = useState('all');
@@ -349,6 +407,8 @@ const NoticeBoard = () => {
   const [teacherLoading, setTeacherLoading] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [examGroups, setExamGroups] = useState([]);
+  const [downloadingExamId, setDownloadingExamId] = useState('');
 
   const loadNoticeBoardData = useCallback(async ({ forceRefresh = false } = {}) => {
       try {
@@ -383,6 +443,17 @@ const NoticeBoard = () => {
           },
         });
         setClassTeacher(teacherData?.teacher || null);
+
+        if (incomingNotices.some((notice) => isExamNotice(notice))) {
+          const { data: examData } = await fetchCachedJson(NOTICEBOARD_EXAM_GROUPS_ENDPOINT, {
+            ttlMs: NOTICEBOARD_EXAM_GROUPS_CACHE_TTL_MS,
+            forceRefresh,
+            fetchOptions: {
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            },
+          });
+          setExamGroups(Array.isArray(examData) ? examData : []);
+        }
       } catch (err) {
         console.error('Failed to fetch notices:', err);
         setError(err.message);
@@ -394,6 +465,8 @@ const NoticeBoard = () => {
   }, [
     NOTICEBOARD_CLASS_TEACHER_CACHE_TTL_MS,
     NOTICEBOARD_CLASS_TEACHER_ENDPOINT,
+    NOTICEBOARD_EXAM_GROUPS_CACHE_TTL_MS,
+    NOTICEBOARD_EXAM_GROUPS_ENDPOINT,
     NOTICEBOARD_NOTICES_CACHE_TTL_MS,
     NOTICEBOARD_NOTICES_ENDPOINT,
   ]);
@@ -424,10 +497,40 @@ const NoticeBoard = () => {
 
   const hasActiveFilters = filterPriority !== 'all' || filterCategory !== 'all' || searchQuery;
 
+  const pdfHeader = useMemo(() => ({
+    schoolName: String(profile?.schoolName || '').trim(),
+    schoolAddressLine: String(profile?.schoolAddress || '').trim(),
+    logoUrl: String(profile?.schoolLogo || '').trim(),
+  }), [profile?.schoolAddress, profile?.schoolLogo, profile?.schoolName]);
+
+  const matchedExamGroup = selectedNotice && isExamNotice(selectedNotice)
+    ? findExamGroupForNotice(selectedNotice, examGroups)
+    : null;
+
+  const handleDownloadRoutine = async () => {
+    if (!matchedExamGroup?._id) return;
+    setDownloadingExamId(String(matchedExamGroup._id));
+    try {
+      await generateExamSchedulePdf(matchedExamGroup, pdfHeader);
+      toast.success('Exam routine downloaded');
+    } catch (err) {
+      toast.error(err.message || 'Failed to download exam routine');
+    } finally {
+      setDownloadingExamId('');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {selectedNotice ? (
-        <NoticeDetailsView notice={selectedNotice} onBack={() => setSelectedNotice(null)} />
+        <NoticeDetailsView
+          notice={selectedNotice}
+          onBack={() => setSelectedNotice(null)}
+          examGroup={matchedExamGroup}
+          onDownloadRoutine={handleDownloadRoutine}
+          downloadingRoutine={downloadingExamId === String(matchedExamGroup?._id || '')}
+          onViewExams={() => navigate('/student/exams')}
+        />
       ) : (
       <>
       {/* Header */}

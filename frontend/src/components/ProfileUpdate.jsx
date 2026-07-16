@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  User, Mail, AtSign, Lock, Camera, Check, AlertCircle,
-  Phone, MapPin, Calendar, BookOpen, Shield, CreditCard
+  User, Mail, Lock, Camera, Check, AlertCircle,
+  Phone, MapPin, Calendar, BookOpen, Shield, CreditCard, Bell,
 } from 'lucide-react';
 import { getPoints } from '../utils/points';
+import { isPushSupported, isPushEnabled, subscribeToPush, unsubscribeFromPush } from '../utils/webPush';
 
 const initialProfile = {
   name: 'Student',
@@ -81,7 +82,7 @@ const ProfileUpdate = () => {
   const touchMoveRef = useRef({ x: 0, y: 0 });
   const swipeLockRef = useRef(0);
   const [points, setPoints] = useState(0);
-  const mobileTabs = ['personal', 'account', 'security'];
+  const mobileTabs = ['personal', 'permissions', 'security'];
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -405,6 +406,103 @@ const ProfileUpdate = () => {
     </>
   );
 
+  /* ── Push notification toggle (shared between mobile & desktop Permissions tab) ── */
+  const NotificationToggle = ({ compact = false }) => {
+    const [supported, setSupported] = useState(true);
+    const [enabled, setEnabled] = useState(false);
+    const [permissionDenied, setPermissionDenied] = useState(false);
+    const [checking, setChecking] = useState(true);
+    const [toggling, setToggling] = useState(false);
+    const [toggleError, setToggleError] = useState('');
+
+    useEffect(() => {
+      let cancelled = false;
+      const check = async () => {
+        setChecking(true);
+        const supportedNow = isPushSupported();
+        setSupported(supportedNow);
+        if (!supportedNow) {
+          setChecking(false);
+          return;
+        }
+        setPermissionDenied(Notification.permission === 'denied');
+        const isOn = await isPushEnabled();
+        if (!cancelled) {
+          setEnabled(isOn);
+          setChecking(false);
+        }
+      };
+      check();
+      return () => { cancelled = true; };
+    }, []);
+
+    const handleToggle = async () => {
+      setToggleError('');
+      setToggling(true);
+      try {
+        if (enabled) {
+          await unsubscribeFromPush();
+          setEnabled(false);
+        } else {
+          await subscribeToPush();
+          setEnabled(true);
+        }
+        setPermissionDenied(typeof Notification !== 'undefined' && Notification.permission === 'denied');
+      } catch (err) {
+        setToggleError(err.message || 'Unable to update notification settings');
+      } finally {
+        setToggling(false);
+      }
+    };
+
+    return (
+      <div className={`rounded-2xl border border-gray-100 bg-white ${compact ? 'p-3' : 'p-5'}`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={`flex shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 ${compact ? 'h-9 w-9' : 'h-10 w-10'}`}>
+              <Bell className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
+            </div>
+            <div className="min-w-0">
+              <p className={`font-bold text-gray-900 ${compact ? 'text-sm' : 'text-base'}`}>Push Notifications</p>
+              <p className={`text-gray-400 ${compact ? 'text-[11px]' : 'text-xs'}`}>
+                Get alerts for new notices, assignments &amp; messages
+              </p>
+            </div>
+          </div>
+          {checking ? (
+            <div className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-amber-300 border-t-transparent" />
+          ) : !supported ? (
+            <span className="shrink-0 text-[11px] font-semibold text-gray-400">Not supported</span>
+          ) : (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              onClick={handleToggle}
+              disabled={toggling || permissionDenied}
+              className={`flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                enabled ? 'justify-end bg-amber-500' : 'justify-start bg-gray-200'
+              }`}
+            >
+              <span className="h-6 w-6 rounded-full bg-white shadow-md transition-transform" />
+            </button>
+          )}
+        </div>
+        {permissionDenied && (
+          <p className="mt-3 text-xs text-red-500">
+            Notifications are blocked in your browser settings. Enable them for this site to turn this on.
+          </p>
+        )}
+        {toggleError && <p className="mt-3 text-xs text-red-500">{toggleError}</p>}
+        {!checking && supported && !permissionDenied && (
+          <p className="mt-3 text-xs font-semibold text-amber-600">
+            {enabled ? 'Notifications are ON' : 'Notifications are OFF'}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   /* ── Shared mobile field renderer ── */
   const MobileField = ({ label, name, type, icon: Icon, placeholder, required: req, disabled: dis = false }) => (
     <div>
@@ -587,9 +685,9 @@ const ProfileUpdate = () => {
             <div className="px-3 pt-3 pb-0">
               <div className="flex bg-gray-100 rounded-2xl p-1">
                 {[
-                  { id: 'personal', label: 'Personal' },
-                  { id: 'account',  label: 'Account'  },
-                  { id: 'security', label: 'Security'  },
+                  { id: 'personal',     label: 'Personal' },
+                  { id: 'permissions',  label: 'Permissions'  },
+                  { id: 'security',     label: 'Security'  },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -646,25 +744,10 @@ const ProfileUpdate = () => {
                 </div>
               )}
 
-              {/* Account */}
-              {activeTab === 'account' && (
+              {/* Permissions */}
+              {activeTab === 'permissions' && (
                 <div className="space-y-3">
-                  <div className="rounded-2xl overflow-hidden flex items-stretch bg-linear-to-br from-amber-50 to-yellow-50 border border-amber-100">
-                    <div className="w-1 bg-linear-to-b from-amber-400 to-yellow-400 shrink-0" />
-                    <div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center shrink-0 shadow-md">
-                        <AtSign className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Username</p>
-                        <p className="font-bold text-gray-900 text-sm truncate">{profile.username || '—'}</p>
-                      </div>
-                      <span className="text-[9px] font-black text-amber-500 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 shrink-0">
-                        FIXED
-                      </span>
-                    </div>
-                  </div>
-
+                  <NotificationToggle compact />
                 </div>
               )}
 
@@ -724,7 +807,7 @@ const ProfileUpdate = () => {
               <div className="relative flex items-end gap-6">
                 {/* Avatar */}
                 <div className="relative shrink-0">
-                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-white/60 shadow-2xl bg-amber-200">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/60 shadow-2xl bg-amber-200">
                     {preview
                       ? <img src={preview} alt="Profile" className="w-full h-full object-cover" />
                       : <div className="w-full h-full flex items-center justify-center text-amber-700 text-3xl font-black">{initialsLabel}</div>
@@ -733,7 +816,7 @@ const ProfileUpdate = () => {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-2 -right-2 w-9 h-9 bg-white text-amber-500 rounded-xl shadow-lg flex items-center justify-center hover:scale-110 transition-all border border-amber-100"
+                    className="absolute -bottom-2 -right-2 w-9 h-9 bg-white text-amber-500 rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-all border border-amber-100"
                     title="Change photo"
                   >
                     <Camera className="w-4 h-4" />
@@ -766,14 +849,14 @@ const ProfileUpdate = () => {
                 <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] mb-4 px-3">Settings</p>
                 <nav className="space-y-1">
                   {[
-                    { id: 'personal', label: 'Personal Info',  icon: User     },
-                    { id: 'account',  label: 'Account',        icon: AtSign   },
-                    { id: 'security', label: 'Security',       icon: Shield   },
+                    { id: 'personal',    label: 'Personal Info',  icon: User     },
+                    { id: 'permissions', label: 'Permissions',    icon: Bell     },
+                    { id: 'security',    label: 'Security',       icon: Shield   },
                   ].map(({ id, label, icon: Icon }) => (
                     <button
                       key={id}
                       onClick={() => setActiveTab(id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-full text-sm font-bold transition-all duration-200 ${
                         activeTab === id
                           ? 'bg-amber-400 text-white shadow-md shadow-amber-200'
                           : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
@@ -784,7 +867,6 @@ const ProfileUpdate = () => {
                     </button>
                   ))}
                 </nav>
-
                 {/* Mini stats */}
                 <div className="mt-8 space-y-2">
                   <p className="text-[10px] font-black text-black uppercase tracking-[0.2em] px-3 mb-3">Info</p>
@@ -848,21 +930,21 @@ const ProfileUpdate = () => {
                   </div>
                 )}
 
-                {/* Account */}
-                {activeTab === 'account' && (
+                {/* Permissions */}
+                {activeTab === 'permissions' && (
                   <div className="space-y-6">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-linear-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-sm">
-                        <AtSign className="w-4 h-4 text-white" />
+                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-orange-400 flex items-center justify-center shadow-sm">
+                        <Bell className="w-4 h-4 text-white" />
                       </div>
                       <div>
-                        <h3 className="text-base font-black text-gray-900">Account Settings</h3>
-                        <p className="text-xs text-gray-400 font-medium">Manage your account preferences</p>
+                        <h3 className="text-base font-black text-gray-900">Permissions</h3>
+                        <p className="text-xs text-gray-400 font-medium">Manage what the portal is allowed to do</p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <DField label="Username" name="username" icon={AtSign} disabled placeholder="Username" />
+                    <div className="max-w-md">
+                      <NotificationToggle />
                     </div>
                   </div>
                 )}
