@@ -1282,6 +1282,8 @@ const closeDetail = () => {
                 const daysColor = days < 0 ? 'text-red-600 bg-red-50 border-red-200' : days <= 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-green-700 bg-green-50 border-green-200';
                 const requiresPdf = assignment.submissionFormat === 'pdf';
                 const presentation = getAssignmentPresentation(assignment);
+                const isGraded = assignment.submissionStatus === 'graded';
+                const hasScore = isGraded && assignment.score !== undefined && assignment.score !== null;
                 return (
                   <div
                     key={assignment.id}
@@ -1319,7 +1321,11 @@ const closeDetail = () => {
                       {/* Footer row */}
                       <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-50">
                         <div className="flex items-center gap-2">
-                          {assignment.dueDate && (
+                          {isGraded ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold text-emerald-700 bg-emerald-50 border-emerald-200">
+                              <Award className="w-3 h-3" />Graded
+                            </span>
+                          ) : assignment.dueDate && (
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold ${daysColor}`}>
                               <Calendar className="w-3 h-3" />{daysText}
                             </span>
@@ -1330,9 +1336,11 @@ const closeDetail = () => {
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {assignment.maxMarks && (
+                          {hasScore ? (
+                            <span className="text-[11px] text-emerald-700 font-bold">{assignment.score}/{assignment.maxMarks}</span>
+                          ) : assignment.maxMarks ? (
                             <span className="text-[11px] text-slate-400 font-semibold">{assignment.maxMarks}mk</span>
-                          )}
+                          ) : null}
                           {assignment.attachments?.length > 0 && (
                             <span className="text-[11px] text-indigo-500 flex items-center gap-0.5">
                               <Paperclip className="w-3 h-3" />{assignment.attachments.length}
@@ -1449,10 +1457,16 @@ const closeDetail = () => {
                       {getStatusIcon(a.status)}
                       <span className="ml-0.5">{a.statusLabel || a.status}</span>
                     </span>
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${daysColor}`}>
-                      <Clock className="w-3 h-3 mr-1" />{daysText}
-                    </span>
-                    {a.maxMarks && (
+                    {isGraded && a.score !== undefined && a.score !== null ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <Award className="w-3 h-3" />Scored {a.score}/{a.maxMarks}
+                      </span>
+                    ) : (
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${daysColor}`}>
+                        <Clock className="w-3 h-3 mr-1" />{daysText}
+                      </span>
+                    )}
+                    {!isGraded && a.maxMarks && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
                         <Star className="w-3 h-3" />{a.maxMarks} marks
                       </span>

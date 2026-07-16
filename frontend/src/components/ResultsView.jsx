@@ -36,6 +36,36 @@ const formatDate = (value) => {
   return parsed.toLocaleDateString();
 };
 
+/* SVG circular progress ring — mirrors the attendance ring on the dashboard */
+const Ring = ({ pct = 0, size = 104, stroke = 10, color = '#10b981', bg = '#e5e7eb' }) => {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (Math.min(100, Math.max(0, pct)) / 100) * circ;
+  return (
+    <svg width={size} height={size} className="-rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={bg} strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 0.9s ease' }}
+      />
+    </svg>
+  );
+};
+
+const scoreTier = (pct) => pct >= 80
+  ? { ring: '#10b981', text: 'text-emerald-600', soft: 'bg-emerald-50', border: 'border-emerald-200', bar: 'bg-emerald-500' }
+  : pct >= 60
+  ? { ring: '#f59e0b', text: 'text-amber-600', soft: 'bg-amber-50', border: 'border-amber-200', bar: 'bg-amber-500' }
+  : { ring: '#ef4444', text: 'text-rose-600', soft: 'bg-rose-50', border: 'border-rose-200', bar: 'bg-rose-500' };
+
+const AVATAR_COLORS = [
+  'bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500',
+  'bg-teal-500', 'bg-orange-500', 'bg-pink-500', 'bg-blue-500',
+];
+
 const ResultsView = () => {
   const [template, setTemplate] = useState(null);
   const [reportCard, setReportCard] = useState(null);
@@ -180,7 +210,7 @@ const ResultsView = () => {
 
   return (
     <div className="space-y-5 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,0.14),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(251,146,60,0.12),_transparent_26%),linear-gradient(180deg,_#fffaf3_0%,_#f8fafc_100%)] p-3 pb-24 md:p-4 md:pb-6">
-      <div className="relative overflow-hidden rounded-[28px] border border-amber-200/70 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 p-5 text-white shadow-[0_28px_80px_-45px_rgba(249,115,22,0.65)] md:p-7">
+      {/* <div className="relative overflow-hidden rounded-[28px] border border-amber-200/70 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 p-5 text-white shadow-[0_28px_80px_-45px_rgba(249,115,22,0.65)] md:p-7">
         <div className="absolute inset-0 opacity-20">
           <div className="absolute -right-10 top-0 h-40 w-40 rounded-full bg-white/40 blur-3xl" />
           <div className="absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-yellow-100/50 blur-3xl" />
@@ -219,8 +249,8 @@ const ResultsView = () => {
             />
           </div>
         </div>
-      </div>
-
+      </div> */}
+      <h1 className='text-4xl font-bold pl-2'>My Results</h1>
       {error && (
         <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle size={16} className="shrink-0" />
@@ -228,34 +258,38 @@ const ResultsView = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <SummaryCard
           icon={Award}
           title="Published Exams"
           value={overview.examsTaken}
           subtitle={hasResults ? 'Results available now' : 'No published records yet'}
-          accent="bg-blue-100 text-blue-600"
+          grad="from-blue-500 to-indigo-600"
+          shadow="shadow-blue-200/60"
         />
         <SummaryCard
           icon={TrendingUp}
           title="Best Exam"
-          value={overview.topScore ? `${overview.topScore.percentage.toFixed(1)}%` : 'N/A'}
+          value={overview.topScore ? `${parseFloat(overview.topScore.percentage)}%` : 'N/A'}
           subtitle={overview.topScore?.examName || 'Awaiting published result'}
-          accent="bg-green-100 text-green-600"
+          grad="from-emerald-500 to-teal-600"
+          shadow="shadow-emerald-200/60"
         />
         <SummaryCard
           icon={Target}
           title="Average Score"
-          value={`${overview.averagePercentage.toFixed(1)}%`}
+          value={`${parseFloat(overview.averagePercentage)}%`}
           subtitle={hasResults ? 'Current published average' : 'Will appear after first result'}
-          accent="bg-yellow-100 text-yellow-600"
+          grad="from-amber-400 to-orange-500"
+          shadow="shadow-amber-200/60"
         />
         <SummaryCard
           icon={Calendar}
           title="Latest Exam"
           value={overview.recentExam?.examName || 'Not available'}
           subtitle={overview.recentExam?.date ? new Date(overview.recentExam.date).toLocaleDateString() : 'No exam published'}
-          accent="bg-purple-100 text-purple-600"
+          grad="from-purple-500 to-fuchsia-600"
+          shadow="shadow-purple-200/60"
         />
       </div>
 
@@ -336,16 +370,21 @@ const InfoTile = ({ icon, title, copy }) => {
   );
 };
 
-const SummaryCard = ({ icon, title, value, subtitle, accent }) => {
+const SummaryCard = ({ icon, title, value, subtitle, grad, shadow }) => {
   const IconComponent = icon;
   return (
-    <div className="bg-white rounded-xl p-3 md:p-5 shadow-sm border border-gray-100">
-      <div className={`inline-flex p-2 rounded-lg ${accent} mb-2`}>
-        <IconComponent className="w-4 h-4 md:w-5 md:h-5" />
+    <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
+      <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
+      <div className="relative z-10">
+        <div className="flex items-start justify-between">
+          <p className="text-[11px] font-semibold text-white/80">{title}</p>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
+            <IconComponent className="h-4 w-4 text-white" />
+          </div>
+        </div>
+        <p className="mt-1.5 text-lg font-black text-white leading-tight truncate md:text-xl">{value}</p>
+        {subtitle && <p className="mt-1 text-[11px] text-white/70 truncate">{subtitle}</p>}
       </div>
-      <p className="text-xs text-gray-500 font-medium">{title}</p>
-      <p className="text-lg md:text-xl font-bold text-gray-900 leading-tight truncate">{value}</p>
-      {subtitle && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{subtitle}</p>}
     </div>
   );
 };
@@ -353,15 +392,13 @@ const SummaryCard = ({ icon, title, value, subtitle, accent }) => {
 const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => {
   const [expanded, setExpanded] = useState(true);
   const percentage = toNumber(exam.percentage, 0);
-
-  const scoreColor = percentage >= 80 ? 'text-green-600' : percentage >= 60 ? 'text-yellow-600' : 'text-red-500';
-  const scoreBg = percentage >= 80 ? 'bg-green-50 border-green-100' : percentage >= 60 ? 'bg-yellow-50 border-yellow-100' : 'bg-red-50 border-red-100';
+  const tier = scoreTier(percentage);
   const hasSubjects = Array.isArray(exam.subjects) && exam.subjects.length > 0;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
       <div className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h3 className="text-base md:text-lg font-semibold text-gray-900 leading-snug">{exam.examName || 'Exam'}</h3>
             {(exam.startDate || exam.endDate) ? (
@@ -375,49 +412,52 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
                 {new Date(exam.date).toLocaleDateString()}
               </div>
             )}
+
+            <div className="flex items-center gap-2 mt-3 flex-wrap">
+              <StatPill label="Total" value={exam.totalMarks ?? 0} />
+              <StatPill label="Obtained" value={exam.obtainedMarks ?? 0} highlight={tier.text} />
+              {exam.status && (
+                <span
+                  className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                    String(exam.status).toLowerCase() === 'pass' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                  }`}
+                >
+                  {String(exam.status).toLowerCase() === 'pass' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                  {exam.status}
+                </span>
+              )}
+            </div>
+
+            {exam.remarks && (
+              <div className="mt-3 p-3 rounded-xl border-l-4 bg-amber-50 border-amber-400">
+                <p className="text-xs font-semibold mb-0.5 text-amber-900">Result</p>
+                <p className="text-xs leading-relaxed text-amber-800">{exam.remarks}</p>
+              </div>
+            )}
+
+            {showDownload && (
+              <button
+                type="button"
+                onClick={onDownload}
+                disabled={downloadingReportCard}
+                className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-linear-to-r from-indigo-500 to-purple-600 rounded-full px-3.5 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-60 shadow-sm shadow-indigo-200"
+              >
+                <Download size={12} />
+                {downloadingReportCard ? 'Downloading...' : 'Download Grade Card'}
+              </button>
+            )}
           </div>
 
-          <div className={`shrink-0 rounded-xl border px-3 py-2 text-center ${scoreBg}`}>
-            <p className={`text-2xl md:text-3xl font-bold ${scoreColor}`}>
-              {percentage.toFixed(0)}
-              <span className="text-sm font-medium">%</span>
-            </p>
-            {exam.grade && <p className={`text-xs font-semibold ${scoreColor}`}>{exam.grade}</p>}
+          <div className="relative shrink-0 flex items-center justify-center">
+            <Ring pct={percentage} color={tier.ring} size={104} stroke={10} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <p className={`text-xl font-black leading-none ${tier.text}`}>
+                {percentage.toFixed(0)}<span className="text-xs font-semibold">%</span>
+              </p>
+              {exam.grade && <p className={`mt-1 text-xs font-bold ${tier.text}`}>{exam.grade}</p>}
+            </div>
           </div>
         </div>
-
-        <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <StatPill label="Total" value={exam.totalMarks ?? 0} />
-          <StatPill label="Obtained" value={exam.obtainedMarks ?? 0} highlight={scoreColor} />
-          {exam.status && (
-            <span
-              className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
-                String(exam.status).toLowerCase() === 'pass' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-              }`}
-            >
-              {String(exam.status).toLowerCase() === 'pass' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
-              {exam.status}
-            </span>
-          )}
-          {showDownload && (
-            <button
-              type="button"
-              onClick={onDownload}
-              disabled={downloadingReportCard}
-              className="ml-auto flex items-center gap-1 text-xs text-gray-500 border border-gray-200 rounded-full px-3 py-1 hover:bg-gray-50 transition-colors disabled:opacity-60"
-            >
-              <Download size={12} />
-              {downloadingReportCard ? 'Downloading...' : 'Download Grade Card'}
-            </button>
-          )}
-        </div>
-
-        {exam.remarks && (
-          <div className="mt-3 p-3 rounded-xl border-l-4 bg-amber-50 border-amber-400">
-            <p className="text-xs font-semibold mb-0.5 text-amber-900">Result</p>
-            <p className="text-xs leading-relaxed text-amber-800">{exam.remarks}</p>
-          </div>
-        )}
       </div>
 
       {hasSubjects && (
@@ -432,22 +472,39 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
 
           {expanded && (
             <div className="divide-y divide-gray-50">
-              {exam.subjects.map((subject, idx) => (
-                <div key={`${subject.name}-${idx}`} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-gray-800 truncate">{subject.name || 'Subject'}</p>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm font-semibold text-gray-700">
-                      {toNumber(subject.marks, 0)}
-                      {subject.maxMarks ? `/${toNumber(subject.maxMarks, 0)}` : ''}
-                    </span>
-                    {subject.grade && (
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${gradeColor(subject.grade)}`}>
-                        {subject.grade}
-                      </span>
-                    )}
+              {exam.subjects.map((subject, idx) => {
+                const subjMax = toNumber(subject.maxMarks, 0);
+                const subjMarks = toNumber(subject.marks, 0);
+                const subjPct = subjMax > 0 ? Math.min(100, (subjMarks / subjMax) * 100) : 0;
+                const subjTier = scoreTier(subjPct);
+                const avatarColor = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+                return (
+                  <div key={`${subject.name}-${idx}`} className="px-4 py-3 flex items-center gap-3">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white text-sm font-bold ${avatarColor}`}>
+                      {(subject.name || 'S').trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-800 truncate">{subject.name || 'Subject'}</p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-semibold text-gray-700">
+                            {subjMarks}
+                            {subjMax ? `/${subjMax}` : ''}
+                          </span>
+                          {subject.grade && (
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${gradeColor(subject.grade)}`}>
+                              {subject.grade}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${subjTier.bar}`} style={{ width: `${subjPct}%` }} />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
