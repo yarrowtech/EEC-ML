@@ -14,8 +14,19 @@ import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import { useTypewriterPlaceholder } from '../hooks/useTypewriterPlaceholder';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+
+// Rotating typewriter examples shown in the search placeholder while it's
+// empty and unfocused — hints at what can be searched without extra UI.
+const SEARCH_PLACEHOLDER_EXAMPLES = [
+  'Search assignments…',
+  'Search attendance…',
+  'Search exam routine…',
+  'Search notices…',
+  'Search results…',
+];
 
 const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const navigate = useNavigate();
@@ -23,6 +34,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const typedSearchPlaceholder = useTypewriterPlaceholder(SEARCH_PLACEHOLDER_EXAMPLES, Boolean(searchText));
   const { profile } = useStudentDashboard();
 
   const notifRef = useRef(null);
@@ -293,7 +305,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                 <Search className="absolute left-3 text-gray-400 pointer-events-none" size={16} />
                 <input
                   type="text"
-                  placeholder="Search..."
+                  placeholder={typedSearchPlaceholder || 'Search...'}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   onFocus={() => setShowSearchSuggestions(true)}
