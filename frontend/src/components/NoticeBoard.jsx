@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Bell,
   Search,
@@ -17,10 +17,8 @@ import {
   FileText,
   Image as ImageIcon,
   Paperclip,
-  ChevronDown,
-  ChevronUp,
   Megaphone,
-  MessageSquare,
+  Clock,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 
@@ -33,15 +31,6 @@ const looksLikeUserId = (value) => {
 
 const resolvePriority = (notice) => (notice?.priority || 'general').toLowerCase();
 const resolveCategory = (notice) => (notice?.category || notice?.audience || 'general').toLowerCase();
-const resolveType = (notice) => {
-  const explicit = String(notice?.typeLabel || '').trim();
-  if (explicit) return explicit;
-  const raw = String(notice?.type || 'notice').trim().toLowerCase();
-  if (!raw) return 'Notice';
-  return raw
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (ch) => ch.toUpperCase());
-};
 const resolveDate = (notice) => notice?.date || notice?.createdAt || notice?.updatedAt || null;
 const resolveId = (notice) => notice?._id || notice?.id;
 const shouldHideNoticeFromNoticeboard = (notice) => {
@@ -71,10 +60,10 @@ const resolveAuthor = (notice) => {
 };
 
 const PRIORITY_META = {
-  high:    { label: 'High',    badge: 'bg-red-100 text-red-700 border-red-200',       bar: 'bg-red-500',    icon: AlertCircle },
-  medium:  { label: 'Medium',  badge: 'bg-amber-100 text-amber-700 border-amber-200', bar: 'bg-amber-400',  icon: Info },
-  low:     { label: 'Low',     badge: 'bg-green-100 text-green-700 border-green-200', bar: 'bg-green-500',  icon: CheckCircle },
-  general: { label: 'General', badge: 'bg-gray-100 text-gray-600 border-gray-200',    bar: 'bg-gray-300',   icon: Bell },
+  high:    { label: 'High',    badge: 'bg-red-100 text-red-700 border-red-200',       bar: 'bg-red-500',    icon: AlertCircle,  chip: 'bg-red-100 text-red-600' },
+  medium:  { label: 'Medium',  badge: 'bg-amber-100 text-amber-700 border-amber-200', bar: 'bg-amber-400',  icon: Info,         chip: 'bg-amber-100 text-amber-600' },
+  low:     { label: 'Low',     badge: 'bg-green-100 text-green-700 border-green-200', bar: 'bg-green-500',  icon: CheckCircle,  chip: 'bg-green-100 text-green-600' },
+  general: { label: 'General', badge: 'bg-gray-100 text-gray-600 border-gray-200',    bar: 'bg-gray-300',   icon: Bell,         chip: 'bg-gray-100 text-gray-500' },
 };
 
 const CATEGORY_META = {
@@ -102,6 +91,13 @@ const formatDate = (raw) => {
   return new Date(raw).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
+const formatTime = (raw) => {
+  if (!raw) return 'Time TBA';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return 'Time TBA';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+};
+
 /* ─── Skeleton ─── */
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
@@ -124,37 +120,83 @@ const SkeletonCard = () => (
   </div>
 );
 
-/* ─── Notice row ─── */
+const isRecentNotice = (notice) => {
+  const raw = resolveDate(notice);
+  if (!raw) return false;
+  const ageMs = Date.now() - new Date(raw).getTime();
+  return ageMs >= 0 && ageMs <= 2 * 24 * 60 * 60 * 1000;
+};
+
+/* ─── Notice card ─── */
 const NoticeCard = ({ notice, onOpen }) => {
   const priority = resolvePriority(notice);
+  const category = resolveCategory(notice);
   const meta = PRIORITY_META[priority] || PRIORITY_META.general;
+  const PriorityIcon = meta.icon;
   const author = resolveAuthor(notice);
   const displayDate = resolveDate(notice);
+  const isNew = isRecentNotice(notice);
+  const attachmentCount = Array.isArray(notice?.attachments) ? notice.attachments.length : 0;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-      <div className="flex">
-        <div className={`w-1.5 shrink-0 ${meta.bar}`} />
-        <div className="flex-1 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => onOpen?.(notice)}
-              className="text-sm font-semibold text-gray-900 hover:text-indigo-700 text-left underline-offset-2 hover:underline"
-            >
-              {notice?.title || 'Untitled Notice'}
-            </button>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-semibold ${meta.badge}`}>
-              {meta.label}
+    <button
+      type="button"
+      onClick={() => onOpen?.(notice)}
+      className={`group flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+        notice?.pinned ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100'
+      }`}
+    >
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${meta.chip}`}>
+        <PriorityIcon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {notice?.pinned && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+              <Pin className="h-2.5 w-2.5" /> Pinned
             </span>
-            <span className="text-xs text-gray-500">
-              {author} • {formatDate(displayDate)}
+          )}
+          {isNew && (
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+              New
             </span>
-          </div>
+          )}
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>
+            {meta.label}
+          </span>
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${CATEGORY_META[category] || CATEGORY_META.general}`}>
+            {category}
+          </span>
+        </div>
+        <p className="mt-1.5 truncate text-sm font-bold text-gray-900 group-hover:text-indigo-700">
+          {notice?.title || 'Untitled Notice'}
+        </p>
+        {notice?.message && (
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500">{notice.message}</p>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400">
+          <span className="inline-flex items-center gap-1">
+            <User className="h-3 w-3" /> {author}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Calendar className="h-3 w-3" /> {formatDate(displayDate)}
+          </span>
+          {attachmentCount > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Paperclip className="h-3 w-3" /> {attachmentCount}
+            </span>
+          )}
         </div>
       </div>
-    </div>
+    </button>
   );
+};
+
+const PRIORITY_BANNER = {
+  high: 'from-red-500 to-rose-600',
+  medium: 'from-amber-400 to-orange-500',
+  low: 'from-green-500 to-emerald-600',
+  general: 'from-gray-500 to-gray-600',
 };
 
 const NoticeDetailsView = ({ notice, onBack }) => {
@@ -162,70 +204,126 @@ const NoticeDetailsView = ({ notice, onBack }) => {
   const priority = resolvePriority(notice);
   const category = resolveCategory(notice);
   const meta = PRIORITY_META[priority] || PRIORITY_META.general;
+  const PriorityIcon = meta.icon;
   const author = resolveAuthor(notice);
   const displayDate = resolveDate(notice);
   const subjectLabel = notice.subjectName || notice.subject || '';
   const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className={`h-1.5 ${meta.bar}`} />
-      <div className="p-5 space-y-4">
-        <button type="button" onClick={onBack} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
-          ← Back to notices
-        </button>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold ${meta.badge}`}>{meta.label}</span>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-xs font-semibold capitalize ${CATEGORY_META[category] || CATEGORY_META.general}`}>{category}</span>
-        </div>
-        <h2 className="text-xl md:text-2xl font-bold text-gray-900">{notice.title || 'Untitled Notice'}</h2>
-        <p className="text-sm text-gray-500">{author} • {formatDate(displayDate)}</p>
-        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{notice.message || 'No details available.'}</p>
-        {subjectLabel ? <p className="text-sm text-gray-500">Subject: {subjectLabel}</p> : null}
-        {attachments.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-700">Attachments</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {attachments.map((att, idx) => {
-                const FileIcon = getFileIcon(att?.type);
-                return (
-                  <a
-                    key={`${att?.url || idx}`}
-                    href={att?.url || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 hover:bg-indigo-50 hover:border-indigo-200 transition-all"
-                  >
-                    <FileIcon className="w-4 h-4 text-indigo-600" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 truncate">{att?.name || `File ${idx + 1}`}</p>
-                      {att?.size ? <p className="text-xs text-gray-500">{formatFileSize(att.size)}</p> : null}
-                    </div>
-                    <Download className="w-4 h-4 text-gray-500" />
-                  </a>
-                );
-              })}
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+      >
+        ← Back to notices
+      </button>
+
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className={`relative overflow-hidden bg-linear-to-br ${PRIORITY_BANNER[priority] || PRIORITY_BANNER.general} p-5 text-white sm:p-6`}>
+          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />
+          <div className="relative flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+              <PriorityIcon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              {notice?.pinned && (
+                <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+                  <Pin className="h-2.5 w-2.5" /> Pinned Notice
+                </span>
+              )}
+              <h2 className="text-lg font-bold leading-snug sm:text-xl">{notice.title || 'Untitled Notice'}</h2>
             </div>
           </div>
-        )}
+        </div>
+
+        <div className="space-y-5 p-5 sm:p-6">
+          {/* Meta grid: who posted it, date, time, priority, category */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Posted By</p>
+              <p className="mt-1 flex items-center gap-1 truncate text-sm font-semibold text-gray-800">
+                <User className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {author}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Date</p>
+              <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-gray-800">
+                <Calendar className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {formatDate(displayDate)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Time</p>
+              <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-gray-800">
+                <Clock className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {formatTime(displayDate)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Priority</p>
+              <span className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${meta.badge}`}>
+                {meta.label}
+              </span>
+            </div>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Category</p>
+              <span className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${CATEGORY_META[category] || CATEGORY_META.general}`}>
+                {category}
+              </span>
+            </div>
+          </div>
+
+          <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">{notice.message || 'No details available.'}</p>
+          {subjectLabel ? <p className="text-sm text-gray-500">Subject: {subjectLabel}</p> : null}
+
+          {attachments.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-gray-700">Attachments</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {attachments.map((att, idx) => {
+                  const FileIcon = getFileIcon(att?.type);
+                  return (
+                    <a
+                      key={`${att?.url || idx}`}
+                      href={att?.url || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 hover:bg-indigo-50 hover:border-indigo-200 transition-all"
+                    >
+                      <FileIcon className="w-4 h-4 text-indigo-600" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">{att?.name || `File ${idx + 1}`}</p>
+                        {att?.size ? <p className="text-xs text-gray-500">{formatFileSize(att.size)}</p> : null}
+                      </div>
+                      <Download className="w-4 h-4 text-gray-500" />
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
-/* ─── Stat card ─── */
-const StatCard = ({ icon, iconBg, iconColor, value, label }) => {
+/* ─── Stat tile ─── */
+const StatCard = ({ icon, value, label, grad, shadow }) => {
   const IconComp = icon;
   return (
-  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-    <div className={`p-2.5 rounded-xl ${iconBg}`}>
-      <IconComp className={`w-5 h-5 ${iconColor}`} />
+    <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
+      <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
+      <div className="relative z-10 flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
+          <IconComp className="h-4.5 w-4.5 text-white" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-lg font-black leading-tight text-white">{value}</p>
+          <p className="text-[11px] font-semibold text-white/80">{label}</p>
+        </div>
+      </div>
     </div>
-    <div>
-      <div className="text-xl font-bold text-gray-900">{value}</div>
-      <div className="text-xs text-gray-500">{label}</div>
-    </div>
-  </div>
   );
 };
 
@@ -250,8 +348,6 @@ const NoticeBoard = () => {
   const [classTeacher, setClassTeacher] = useState(null);
   const [teacherLoading, setTeacherLoading] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState(null);
-  const [expandedCategories, setExpandedCategories] = useState({});
-  const [expandedTypes, setExpandedTypes] = useState({});
   const [refreshing, setRefreshing] = useState(false);
 
   const loadNoticeBoardData = useCallback(async ({ forceRefresh = false } = {}) => {
@@ -323,82 +419,22 @@ const NoticeBoard = () => {
     return new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0);
   });
 
-  const groupedNotices = useMemo(() => {
-    const categoryMap = new Map();
-    sortedNotices.forEach((notice) => {
-      const categoryKey = resolveCategory(notice) || 'general';
-      const typeKey = resolveType(notice) || 'Notice';
-      if (!categoryMap.has(categoryKey)) categoryMap.set(categoryKey, new Map());
-      const typeMap = categoryMap.get(categoryKey);
-      if (!typeMap.has(typeKey)) typeMap.set(typeKey, []);
-      typeMap.get(typeKey).push(notice);
-    });
-
-    const categoryOrder = ['academic', 'events', 'transport', 'general'];
-    const orderedCategories = Array.from(categoryMap.keys()).sort((a, b) => {
-      const ia = categoryOrder.indexOf(a);
-      const ib = categoryOrder.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
-
-    return orderedCategories.map((categoryKey) => {
-      const typeMap = categoryMap.get(categoryKey);
-      const types = Array.from(typeMap.keys())
-        .sort((a, b) => a.localeCompare(b))
-        .map((typeKey) => ({
-          key: typeKey,
-          notices: typeMap.get(typeKey) || [],
-        }));
-      return {
-        key: categoryKey,
-        label: categoryKey.replace(/\b\w/g, (ch) => ch.toUpperCase()),
-        total: types.reduce((sum, t) => sum + t.notices.length, 0),
-        types,
-      };
-    });
-  }, [sortedNotices]);
-
-  const categorySubtitleMap = {
-    academic: 'Study, exams, and class updates',
-    events: 'Programs, activities, and celebrations',
-    transport: 'Bus, route, and travel notices',
-    general: 'Important school announcements',
-  };
-
-  useEffect(() => {
-    if (!groupedNotices.length) return;
-    setExpandedCategories((prev) => {
-      const next = { ...prev };
-      groupedNotices.forEach((group) => {
-        if (typeof next[group.key] !== 'boolean') next[group.key] = true;
-      });
-      return next;
-    });
-    setExpandedTypes((prev) => {
-      const next = { ...prev };
-      groupedNotices.forEach((group) => {
-        group.types.forEach((typeGroup) => {
-          const key = `${group.key}::${typeGroup.key}`;
-          if (typeof next[key] !== 'boolean') next[key] = true;
-        });
-      });
-      return next;
-    });
-  }, [groupedNotices]);
+  const pinnedNotices = sortedNotices.filter((n) => Boolean(n.pinned));
+  const otherNotices = sortedNotices.filter((n) => !n.pinned);
 
   const hasActiveFilters = filterPriority !== 'all' || filterCategory !== 'all' || searchQuery;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-
+      {selectedNotice ? (
+        <NoticeDetailsView notice={selectedNotice} onBack={() => setSelectedNotice(null)} />
+      ) : (
+      <>
       {/* Header */}
       <div className="relative bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 rounded-2xl p-6 md:p-8 text-white mb-6 overflow-hidden">
         <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full pointer-events-none" />
         <div className="absolute -bottom-12 -left-6 w-36 h-36 bg-white/5 rounded-full pointer-events-none" />
-
+        <div className="flex flex-col justify-center items-center md:items-stretch md:justify-between gap-4">
         <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1 text-xs font-medium mb-3">
@@ -449,7 +485,7 @@ const NoticeBoard = () => {
             )}
           </div>
         </div>
-
+</div>
         {error && (
           <div className="relative mt-4 flex items-center gap-2 bg-red-500/20 border border-red-400/30 text-white text-sm rounded-xl px-4 py-3">
             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -460,53 +496,65 @@ const NoticeBoard = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard icon={Bell}        iconBg="bg-indigo-50"  iconColor="text-indigo-500"  value={loading ? '—' : notices.length}                                          label="All Notices" />
-        <StatCard icon={AlertCircle} iconBg="bg-red-50"     iconColor="text-red-500"     value={loading ? '—' : notices.filter(n => resolvePriority(n) === 'high').length} label="High Priority" />
-        <StatCard icon={Pin}         iconBg="bg-purple-50"  iconColor="text-purple-500"  value={loading ? '—' : notices.filter(n => Boolean(n.pinned)).length}             label="Pinned" />
-        <StatCard icon={Bookmark}    iconBg="bg-amber-50"   iconColor="text-amber-500"   value={bookmarkedNotices.length}                                                  label="Bookmarked" />
+        <StatCard icon={Bell} value={loading ? '—' : notices.length} label="All Notices" grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
+        <StatCard icon={AlertCircle} value={loading ? '—' : notices.filter(n => resolvePriority(n) === 'high').length} label="High Priority" grad="from-rose-500 to-red-600" shadow="shadow-rose-200/60" />
+        <StatCard icon={Pin} value={loading ? '—' : notices.filter(n => Boolean(n.pinned)).length} label="Pinned" grad="from-amber-400 to-orange-500" shadow="shadow-amber-200/60" />
+        <StatCard icon={Bookmark} value={bookmarkedNotices.length} label="Bookmarked" grad="from-purple-500 to-fuchsia-600" shadow="shadow-purple-200/60" />
       </div>
 
       {/* Search & Filter */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search notices…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none transition-all"
-            />
-          </div>
+        <div className="relative mb-3">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search notices…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none transition-all"
+          />
+        </div>
 
-          <div className="flex gap-2">
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-              <select
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
-                className="pl-8 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white appearance-none cursor-pointer"
-              >
-                <option value="all">All Priorities</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
-
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-white appearance-none cursor-pointer"
+        <div className="flex items-center gap-1.5 mb-2">
+          <Filter className="h-3.5 w-3.5 text-gray-400" />
+          <span className="text-xs font-semibold text-gray-400">Priority</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {['all', 'high', 'medium', 'low'].map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setFilterPriority(p)}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold capitalize transition-all ${
+                filterPriority === p
+                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
+                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+              }`}
             >
-              <option value="all">All Categories</option>
-              <option value="academic">Academic</option>
-              <option value="events">Events</option>
-              <option value="transport">Transport</option>
-              <option value="general">General</option>
-            </select>
-          </div>
+              {p === 'all' ? 'All' : p}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex items-center gap-1.5 mb-2">
+          <Megaphone className="h-3.5 w-3.5 text-gray-400" />
+          <span className="text-xs font-semibold text-gray-400">Category</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {['all', 'academic', 'events', 'transport', 'general'].map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setFilterCategory(c)}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold capitalize transition-all ${
+                filterCategory === c
+                  ? 'border-violet-600 bg-violet-600 text-white shadow-sm'
+                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {c === 'all' ? 'All' : c}
+            </button>
+          ))}
         </div>
 
         {/* Active filter chips */}
@@ -537,12 +585,9 @@ const NoticeBoard = () => {
 
       {/* Notices */}
       <div className="space-y-4">
-        {selectedNotice ? (
-          <NoticeDetailsView notice={selectedNotice} onBack={() => setSelectedNotice(null)} />
-        ) : null}
         {loading ? (
           <><SkeletonCard /><SkeletonCard /><SkeletonCard /></>
-        ) : groupedNotices.length === 0 ? (
+        ) : sortedNotices.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Bell className="w-8 h-8 text-gray-300" />
@@ -550,103 +595,38 @@ const NoticeBoard = () => {
             <h3 className="text-base font-semibold text-gray-700 mb-1">No notices found</h3>
             <p className="text-sm text-gray-400">Try adjusting your search or filter criteria</p>
           </div>
-        ) : !selectedNotice ? (
+        ) : (
           <>
             <p className="text-xs text-gray-400 px-1">
               Showing {sortedNotices.length} of {notices.length} notice{notices.length !== 1 ? 's' : ''}
             </p>
-            {groupedNotices.map((categoryGroup) => {
-              const isCategoryOpen = expandedCategories[categoryGroup.key] !== false;
-              return (
-                <div key={categoryGroup.key} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedCategories((prev) => ({
-                        ...prev,
-                        [categoryGroup.key]: !(prev[categoryGroup.key] !== false),
-                      }))
-                    }
-                    className="w-full px-4 py-3.5 flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-white to-indigo-50/40 hover:from-indigo-50 hover:to-indigo-100/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-9 w-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-                        <Megaphone className="w-4 h-4" />
-                      </div>
-                      <div className="text-left min-w-0">
-                        {/* <p className="text-[11px] uppercase tracking-wide text-indigo-500 font-semibold">Category</p> */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`px-2 py-0.5 rounded-full border text-xs font-semibold capitalize ${CATEGORY_META[categoryGroup.key] || CATEGORY_META.general}`}>
-                            {categoryGroup.label}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {categoryGroup.total} notice{categoryGroup.total !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 truncate">
-                          {categorySubtitleMap[categoryGroup.key] || 'School announcements'}
-                        </p>
-                      </div>
-                    </div>
-                    {isCategoryOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                  </button>
 
-                  {isCategoryOpen && (
-                    <div className="p-3 space-y-3">
-                      {categoryGroup.types.map((typeGroup) => {
-                        const typeKey = `${categoryGroup.key}::${typeGroup.key}`;
-                        const isTypeOpen = expandedTypes[typeKey] !== false;
-                        return (
-                          <div key={typeKey} className="rounded-xl border border-gray-100 overflow-hidden">
-                          <button
-                            type="button"
-                              onClick={() =>
-                                setExpandedTypes((prev) => ({
-                                  ...prev,
-                                  [typeKey]: !(prev[typeKey] !== false),
-                                }))
-                              }
-                            className="w-full px-4 py-2.5 flex items-center justify-between border-b border-gray-100 bg-white hover:bg-gray-50 transition-colors"
-                          >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="h-7 w-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="text-left min-w-0">
-                                  {/* <p className="text-[11px] uppercase tracking-wide text-violet-500 font-semibold">Type</p> */}
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-semibold text-gray-700">{typeGroup.key}</span>
-                                    <span className="text-xs text-gray-500">
-                                      {typeGroup.notices.length} item{typeGroup.notices.length !== 1 ? 's' : ''}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              {isTypeOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                            </button>
+            {pinnedNotices.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="flex items-center gap-1.5 px-1 text-xs font-bold uppercase tracking-wide text-amber-600">
+                  <Pin className="h-3.5 w-3.5" /> Pinned
+                </h2>
+                {pinnedNotices.map((notice) => (
+                  <NoticeCard key={resolveId(notice)} notice={notice} onOpen={setSelectedNotice} />
+                ))}
+              </div>
+            )}
 
-                            {isTypeOpen && (
-                              <div className="p-3 space-y-3 bg-white">
-                                {typeGroup.notices.map((notice) => (
-                                  <NoticeCard
-                                    key={resolveId(notice)}
-                                    notice={notice}
-                                    onOpen={setSelectedNotice}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {otherNotices.length > 0 && (
+              <div className="space-y-2">
+                {pinnedNotices.length > 0 && (
+                  <h2 className="px-1 text-xs font-bold uppercase tracking-wide text-gray-400">All Notices</h2>
+                )}
+                {otherNotices.map((notice) => (
+                  <NoticeCard key={resolveId(notice)} notice={notice} onOpen={setSelectedNotice} />
+                ))}
+              </div>
+            )}
           </>
-        ) : null}
+        )}
       </div>
+      </>
+      )}
     </div>
   );
 };

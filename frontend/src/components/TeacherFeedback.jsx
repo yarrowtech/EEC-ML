@@ -46,6 +46,7 @@ const TeacherFeedback = () => {
   const [feedback, setFeedback] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [subjectStatusFilter, setSubjectStatusFilter] = useState('all');
   const [filterSubject, setFilterSubject] = useState('all');
   const [showPreviousFeedback, setShowPreviousFeedback] = useState(false);
   const [teacherSubjects, setTeacherSubjects] = useState([]);
@@ -144,14 +145,6 @@ const TeacherFeedback = () => {
     [teacherSubjects, selectedSubject]
   );
 
-  const filteredSubjects = useMemo(() => {
-    if (!searchQuery.trim()) return teacherSubjects;
-    const q = searchQuery.toLowerCase();
-    return teacherSubjects.filter(s =>
-      s.subjectName?.toLowerCase().includes(q) || s.teacherName?.toLowerCase().includes(q)
-    );
-  }, [teacherSubjects, searchQuery]);
-
   // Set of contextIds that the student has already reviewed
   const alreadyReviewedIds = useMemo(() => {
     const set = new Set();
@@ -161,6 +154,25 @@ const TeacherFeedback = () => {
     });
     return set;
   }, [previousFeedback]);
+
+  const pendingSubjectsCount = useMemo(
+    () => teacherSubjects.filter(s => !alreadyReviewedIds.has(s.contextId)).length,
+    [teacherSubjects, alreadyReviewedIds]
+  );
+
+  const filteredSubjects = useMemo(() => {
+    let list = teacherSubjects;
+    if (subjectStatusFilter === 'pending') {
+      list = list.filter(s => !alreadyReviewedIds.has(s.contextId));
+    } else if (subjectStatusFilter === 'reviewed') {
+      list = list.filter(s => alreadyReviewedIds.has(s.contextId));
+    }
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(s =>
+      s.subjectName?.toLowerCase().includes(q) || s.teacherName?.toLowerCase().includes(q)
+    );
+  }, [teacherSubjects, searchQuery, subjectStatusFilter, alreadyReviewedIds]);
 
   const previousSubjectOptions = useMemo(() => {
     const set = new Set();
@@ -311,6 +323,10 @@ const TeacherFeedback = () => {
                 <div className="text-xs text-yellow-100">Subjects</div>
               </div>
               <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 text-center min-w-[80px]">
+                <div className="text-2xl sm:text-3xl font-bold">{pendingSubjectsCount}</div>
+                <div className="text-xs text-yellow-100">Pending</div>
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 text-center min-w-[80px]">
                 <div className="text-2xl sm:text-3xl font-bold">{totalFeedbackGiven}</div>
                 <div className="text-xs text-yellow-100">Reviewed</div>
               </div>
@@ -368,12 +384,40 @@ const TeacherFeedback = () => {
                 )}
               </div>
 
+              {/* Status filter */}
+              <div className="mb-4 flex gap-2 overflow-x-auto pb-0.5">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'pending', label: `Pending (${pendingSubjectsCount})` },
+                  { key: 'reviewed', label: `Reviewed (${totalFeedbackGiven})` },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSubjectStatusFilter(key)}
+                    className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all ${
+                      subjectStatusFilter === key
+                        ? 'border-purple-500 bg-purple-600 text-white shadow-sm'
+                        : 'border-yellow-200 bg-white text-amber-700 hover:bg-amber-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               {/* Cards */}
               {filteredSubjects.length === 0 ? (
                 <div className="col-span-2 text-center py-10">
                   <Search className="w-10 h-10 text-amber-200 mx-auto mb-3" />
-                  <p className="text-sm text-amber-600 font-medium">No matching subjects found</p>
-                  <p className="text-xs text-amber-400 mt-1">Try adjusting your search query</p>
+                  <p className="text-sm text-amber-600 font-medium">
+                    {subjectStatusFilter === 'pending'
+                      ? "You're all caught up — no pending feedback."
+                      : subjectStatusFilter === 'reviewed'
+                        ? 'No reviewed subjects yet.'
+                        : 'No matching subjects found'}
+                  </p>
+                  <p className="text-xs text-amber-400 mt-1">Try adjusting your search or filter</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -405,10 +449,14 @@ const TeacherFeedback = () => {
                               <h4 className="font-bold text-amber-900 text-sm leading-tight truncate">
                                 {subject.subjectName}
                               </h4>
-                              {isReviewed && (
+                              {isReviewed ? (
                                 <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">
                                   <CheckCircle className="w-3 h-3" />
                                   Reviewed
+                                </span>
+                              ) : feedbackWindow.isOpen && (
+                                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
+                                  Pending
                                 </span>
                               )}
                             </div>

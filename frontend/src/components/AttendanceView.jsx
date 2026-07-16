@@ -93,15 +93,18 @@ const ProgressBar = ({ value, max, className = '' }) => {
 };
 
 /* ─── Stat Card ─── */
-const StatCard = ({ icon: Icon, iconBg, label, value, valueColor = 'text-slate-900', sub }) => (
-  <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
-    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
-      <Icon className="h-5 w-5 text-white" />
-    </div>
-    <div className="min-w-0">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className={`text-xl font-bold ${valueColor}`}>{value}</p>
-      {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
+const StatCard = ({ icon: Icon, label, value, sub, grad, shadow }) => (
+  <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-4 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5`}>
+    <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
+    <div className="relative z-10 flex items-center gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
+        <Icon className="h-5 w-5 text-white" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-white/80">{label}</p>
+        <p className="text-xl font-black leading-tight text-white">{value}</p>
+        {sub && <p className="text-[10px] text-white/70">{sub}</p>}
+      </div>
     </div>
   </div>
 );
@@ -110,7 +113,7 @@ const StatCard = ({ icon: Icon, iconBg, label, value, valueColor = 'text-slate-9
 const TabBtn = ({ active, icon: Icon, label, onClick }) => (
   <button type="button" onClick={onClick}
     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition
-      ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
+      ${active ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200' : 'text-slate-600 hover:bg-slate-100'}`}>
     <Icon className="h-4 w-4" />
     <span className="hidden sm:inline">{label}</span>
   </button>
@@ -465,31 +468,38 @@ const AttendanceView = () => {
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* ─── Header ─── */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">My Attendance</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Track your overall, daily, and weekly attendance in one place.
-              </p>
+        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-indigo-500 via-indigo-600 to-purple-600 p-5 shadow-lg shadow-indigo-200/60 sm:p-6">
+          <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
+          <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
+          <div className="relative flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+                <CalendarDays className="h-5.5 w-5.5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white sm:text-2xl">My Attendance</h1>
+                <p className="mt-1 text-sm text-white/80">
+                  Track your overall, daily, and weekly attendance in one place.
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               {currentStreak > 0 && (
-                <div className="flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-600 border border-orange-200">
+                <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-white/15 px-3 py-1 text-xs font-semibold text-white">
                   <Flame className="h-3.5 w-3.5" />
                   {currentStreak} day streak
                 </div>
               )}
-              <div className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              <div className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                 attendanceStats.percentage >= 75
-                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                  : 'bg-amber-100 text-amber-700 border border-amber-200'
+                  ? 'border-white/25 bg-white/15 text-white'
+                  : 'border-amber-300 bg-amber-400 text-amber-950'
               }`}>
                 {attendanceStats.percentage >= 75 ? 'On Track' : 'Needs Attention'}
               </div>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="relative mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white/70">
             <p>
               {lastSynced
                 ? `Last updated ${lastSynced.toLocaleString(undefined, {
@@ -504,15 +514,15 @@ const AttendanceView = () => {
               type="button"
               onClick={() => fetchAttendance({ silent: true, forceRefresh: true })}
               disabled={silentRefreshing}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCcw
-                className={`h-3.5 w-3.5 ${silentRefreshing ? 'animate-spin text-indigo-600' : 'text-slate-500'}`}
-              />
+              <RefreshCcw className={`h-3.5 w-3.5 ${silentRefreshing ? 'animate-spin' : ''}`} />
               {silentRefreshing ? 'Refreshing' : 'Refresh data'}
             </button>
           </div>
-          {error && <p className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-600">{error}</p>}
+          {error && (
+            <p className="relative mt-3 rounded-lg border border-white/30 bg-white/15 p-3 text-sm text-white">{error}</p>
+          )}
         </div>
 
         {/* ─── Tab Navigation ─── */}
@@ -542,10 +552,10 @@ const AttendanceView = () => {
 
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <StatCard icon={BookOpen} iconBg="bg-indigo-500" label="Total Classes" value={attendanceStats.totalClasses} />
-                      <StatCard icon={CheckCircle2} iconBg="bg-emerald-500" label="Present" value={attendanceStats.attended} valueColor="text-emerald-600" />
-                      <StatCard icon={XCircle} iconBg="bg-rose-500" label="Absent" value={attendanceStats.absent} valueColor="text-rose-600" />
-                      <StatCard icon={Flame} iconBg="bg-orange-500" label="Current Streak" value={`${currentStreak} day${currentStreak !== 1 ? 's' : ''}`} valueColor="text-orange-600" />
+                      <StatCard icon={BookOpen} label="Total Classes" value={attendanceStats.totalClasses} grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
+                      <StatCard icon={CheckCircle2} label="Present" value={attendanceStats.attended} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
+                      <StatCard icon={XCircle} label="Absent" value={attendanceStats.absent} grad="from-rose-500 to-red-600" shadow="shadow-rose-200/60" />
+                      <StatCard icon={Flame} label="Current Streak" value={`${currentStreak} day${currentStreak !== 1 ? 's' : ''}`} grad="from-orange-400 to-amber-500" shadow="shadow-orange-200/60" />
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
