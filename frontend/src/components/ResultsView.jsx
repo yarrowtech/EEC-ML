@@ -9,6 +9,8 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -16,6 +18,7 @@ import {
   GraduationCap,
   ShieldCheck,
   BookOpen,
+  Search,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
@@ -33,7 +36,10 @@ const formatDate = (value) => {
   if (!value) return '';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toLocaleDateString();
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 /* SVG circular progress ring — mirrors the attendance ring on the dashboard */
@@ -66,6 +72,49 @@ const AVATAR_COLORS = [
   'bg-teal-500', 'bg-orange-500', 'bg-pink-500', 'bg-blue-500',
 ];
 
+const RESULTS_PAGE_SIZE = 5;
+
+// ExamGroup has no explicit session/academic-year field, so the session label is
+// derived from its start date assuming an Apr–Mar academic year (e.g. "2024-2025").
+const deriveSessionLabel = (group) => {
+  const raw = group?.startDate || group?.endDate;
+  if (!raw) return 'Other';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return 'Other';
+  const year = parsed.getFullYear();
+  const startYear = parsed.getMonth() < 3 ? year - 1 : year;
+  return `${startYear}-${startYear + 1}`;
+};
+
+const buildExamCardFromReport = (rc, group) => {
+  if (!rc) return null;
+  const totals = rc.totals || {};
+  const subjects = Array.isArray(rc.subjects) ? rc.subjects : [];
+  if (!subjects.length) return null;
+  const percentage = toNumber(totals.percentage, 0);
+  const promoted = totals.promoted;
+  return {
+    _id: group?._id || String(rc.studentId || 'exam'),
+    examName: group?.title || rc.term || 'Exam',
+    date: rc.generatedAt || null,
+    startDate: group?.startDate || null,
+    endDate: group?.endDate || null,
+    examStatus: String(group?.status || '').toLowerCase(),
+    obtainedMarks: toNumber(totals.obtainedMarks, 0),
+    totalMarks: toNumber(totals.totalMarks, 0),
+    percentage,
+    grade: String(totals.grade || '').trim(),
+    status: promoted === false ? 'Fail' : promoted === true ? 'Pass' : '',
+    remarks: promoted === false ? 'Not Promoted' : promoted === true ? 'Promoted' : '',
+    subjects: subjects.map((subject) => ({
+      name: subject.name || 'Subject',
+      marks: toNumber(subject.obtainedMarks, 0),
+      maxMarks: toNumber(subject.totalMarks, 0),
+      grade: subject.grade || '',
+    })),
+  };
+};
+
 const ResultsView = () => {
   const [template, setTemplate] = useState(null);
   const [reportCard, setReportCard] = useState(null);
@@ -75,7 +124,11 @@ const ResultsView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [downloadingReportCard, setDownloadingReportCard] = useState(false);
+  const [sessionFilter, setSessionFilter] = useState('all');
+  const [examFilter, setExamFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [resultCards, setResultCards] = useState({});
+  const [downloadingId, setDownloadingId] = useState('');
 
   const fetchExamWiseReport = useCallback(async (examGroupId = '', { forceRefresh = false } = {}) => {
     const token = localStorage.getItem('token');
@@ -172,23 +225,108 @@ const ResultsView = () => {
     };
   }, [examCards]);
 
-  const handleDownloadReportCard = async () => {
-    if (!reportCard) {
+  const groupsWithSession = useMemo(
+    () => (Array.isArray(examGroups) ? examGroups : []).map((g) => ({ ...g, sessionLabel: deriveSessionLabel(g) })),
+    [examGroups]
+  );
+
+  const sessionOptions = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    groupsWithSession.forEach((g) => {
+      if (!seen.has(g.sessionLabel)) {
+        seen.add(g.sessionLabel);
+        list.push(g.sessionLabel);
+      }
+    });
+    return list;
+  }, [groupsWithSession]);
+
+  const examOptionsForSession = useMemo(
+    () => groupsWithSession.filter((g) => sessionFilter === 'all' || g.sessionLabel === sessionFilter),
+    [groupsWithSession, sessionFilter]
+  );
+
+  const filteredGroups = useMemo(
+    () => examOptionsForSession.filter((g) => examFilter === 'all' || String(g._id) === String(examFilter)),
+    [examOptionsForSession, examFilter]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / RESULTS_PAGE_SIZE));
+
+  const pageGroups = useMemo(
+    () => filteredGroups.slice((page - 1) * RESULTS_PAGE_SIZE, page * RESULTS_PAGE_SIZE),
+    [filteredGroups, page]
+  );
+
+  useEffect(() => {
+    setExamFilter('all');
+    setPage(1);
+  }, [sessionFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [examFilter]);
+
+  useEffect(() => {
+    const toFetch = pageGroups.filter((g) => !resultCards[String(g._id)]);
+    if (toFetch.length === 0) return;
+    let cancelled = false;
+
+    setResultCards((prev) => {
+      const next = { ...prev };
+      toFetch.forEach((g) => { next[String(g._id)] = { status: 'loading' }; });
+      return next;
+    });
+
+    const token = localStorage.getItem('token');
+    Promise.all(
+      toFetch.map(async (g) => {
+        try {
+          const endpoint = `${API_BASE}/api/reports/report-cards/me?examGroupId=${g._id}`;
+          const { data } = await fetchCachedJson(endpoint, {
+            ttlMs: RESULTS_CACHE_TTL_MS,
+            fetchOptions: {
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            },
+          });
+          const card = buildExamCardFromReport(data?.reportCard, g);
+          return { id: String(g._id), status: card ? 'ready' : 'empty', card, raw: data?.reportCard || null };
+        } catch {
+          return { id: String(g._id), status: 'error' };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setResultCards((prev) => {
+        const next = { ...prev };
+        results.forEach(({ id, ...rest }) => { next[id] = rest; });
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageGroups]);
+
+  const handleDownloadFor = async (group, rawReportCard) => {
+    if (!rawReportCard) {
       toast.error('No report card available');
       return;
     }
-    setDownloadingReportCard(true);
+    const id = String(group._id);
+    setDownloadingId(id);
     try {
       await downloadSingleReportCardPdf({
         template,
-        reportCard,
-        fileName: `report_card_${String(reportCard.studentName || 'student').replace(/\s+/g, '_')}_${String(selectedExamGroupTitle || 'exam').replace(/\s+/g, '_')}.pdf`,
+        reportCard: rawReportCard,
+        fileName: `report_card_${String(rawReportCard.studentName || 'student').replace(/\s+/g, '_')}_${String(group.title || 'exam').replace(/\s+/g, '_')}.pdf`,
       });
       toast.success('Report card downloaded');
     } catch (err) {
       toast.error(err.message || 'Failed to download report card');
     } finally {
-      setDownloadingReportCard(false);
+      setDownloadingId('');
     }
   };
 
@@ -287,64 +425,157 @@ const ResultsView = () => {
           icon={Calendar}
           title="Latest Exam"
           value={overview.recentExam?.examName || 'Not available'}
-          subtitle={overview.recentExam?.date ? new Date(overview.recentExam.date).toLocaleDateString() : 'No exam published'}
+          subtitle={overview.recentExam?.date ? formatDate(overview.recentExam.date) : 'No exam published'}
           grad="from-purple-500 to-fuchsia-600"
           shadow="shadow-purple-200/60"
         />
       </div>
 
-      <div className="space-y-4">
-        {examCards.length === 0 ? (
-          <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
-            <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="border-b border-amber-100 bg-[linear-gradient(135deg,_rgba(254,243,199,0.55),_rgba(255,255,255,0.95))] p-6 sm:p-8 lg:border-b-0 lg:border-r">
-                <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  Awaiting Publication
-                </div>
-                <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Results have not been published yet</h2>
-                <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600">
-                  Your school has not released an exam result for this term yet. Once marks are published, this page will automatically show your overall percentage, subject breakdown, grade, and downloadable report card.
-                </p>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  <InfoTile
-                    icon={GraduationCap}
-                    title="What will appear here"
-                    copy="Exam name, marks, grade, pass or fail status, and subject-wise performance."
-                  />
-                  <InfoTile
-                    icon={BookOpen}
-                    title="What to do now"
-                    copy="Check with your class teacher or school noticeboard if you expected a published result already."
-                  />
-                </div>
+      {examGroups.length === 0 ? (
+        <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
+          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="border-b border-amber-100 bg-[linear-gradient(135deg,_rgba(254,243,199,0.55),_rgba(255,255,255,0.95))] p-6 sm:p-8 lg:border-b-0 lg:border-r">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Awaiting Publication
               </div>
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Results have not been published yet</h2>
+              <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600">
+                Your school has not released an exam result for this term yet. Once marks are published, this page will automatically show your overall percentage, subject breakdown, grade, and downloadable report card.
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <InfoTile
+                  icon={GraduationCap}
+                  title="What will appear here"
+                  copy="Exam name, marks, grade, pass or fail status, and subject-wise performance."
+                />
+                <InfoTile
+                  icon={BookOpen}
+                  title="What to do now"
+                  copy="Check with your class teacher or school noticeboard if you expected a published result already."
+                />
+              </div>
+            </div>
 
-              <div className="flex flex-col justify-center bg-slate-50/80 p-6 sm:p-8">
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm">
-                  <Trophy className="h-10 w-10 text-amber-300" />
-                </div>
-                <p className="mt-5 text-center text-sm font-semibold text-slate-700">
-                  Nothing is missing from your account right now.
-                </p>
-                <p className="mt-2 text-center text-sm leading-6 text-slate-500">
-                  This section will update as soon as the school publishes your exam record.
-                </p>
+            <div className="flex flex-col justify-center bg-slate-50/80 p-6 sm:p-8">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm">
+                <Trophy className="h-10 w-10 text-amber-300" />
+              </div>
+              <p className="mt-5 text-center text-sm font-semibold text-slate-700">
+                Nothing is missing from your account right now.
+              </p>
+              <p className="mt-2 text-center text-sm leading-6 text-slate-500">
+                This section will update as soon as the school publishes your exam record.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <Search className="h-4 w-4" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-800">Find a Result</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-gray-500">Session</label>
+                <select
+                  value={sessionFilter}
+                  onChange={(e) => setSessionFilter(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="all">All Sessions</option>
+                  {sessionOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-gray-500">Exam</label>
+                <select
+                  value={examFilter}
+                  onChange={(e) => setExamFilter(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="all">All Exams</option>
+                  {examOptionsForSession.map((g) => (
+                    <option key={g._id} value={g._id}>{g.title || 'Exam'}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
-        ) : (
-          examCards.map((exam, index) => (
-            <ExamCard
-              key={exam._id || index}
-              exam={exam}
-              onDownload={handleDownloadReportCard}
-              downloadingReportCard={downloadingReportCard}
-              showDownload={hasResults}
-            />
-          ))
-        )}
-      </div>
+
+          <div className="mt-4 space-y-4">
+            {filteredGroups.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                No exams match this filter.
+              </div>
+            ) : (
+              pageGroups.map((g) => {
+                const entry = resultCards[String(g._id)];
+                if (!entry || entry.status === 'loading') {
+                  return <div key={g._id} className="h-40 animate-pulse rounded-2xl border border-gray-100 bg-white shadow-sm" />;
+                }
+                if (entry.status !== 'ready' || !entry.card) {
+                  return (
+                    <div key={g._id} className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                      No published result for {g.title || 'this exam'}.
+                    </div>
+                  );
+                }
+                return (
+                  <ExamCard
+                    key={g._id}
+                    exam={entry.card}
+                    onDownload={() => handleDownloadFor(g, entry.raw)}
+                    downloadingReportCard={downloadingId === String(g._id)}
+                    showDownload
+                  />
+                );
+              })
+            )}
+
+            {filteredGroups.length > RESULTS_PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-1.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {Array.from({ length: totalPages }).map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setPage(idx + 1)}
+                    className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-bold transition-colors ${
+                      page === idx + 1
+                        ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-sm'
+                        : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {idx + 1}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -398,7 +629,7 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
       <div className="p-4 md:p-5">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h3 className="text-base md:text-lg font-semibold text-gray-900 leading-snug">{exam.examName || 'Exam'}</h3>
             {(exam.startDate || exam.endDate) ? (
@@ -409,7 +640,7 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
             ) : exam.date && (
               <div className="flex items-center gap-1 text-xs text-gray-400 mt-1.5">
                 <Calendar size={11} />
-                {new Date(exam.date).toLocaleDateString()}
+                {formatDate(exam.date)}
               </div>
             )}
 
@@ -429,7 +660,7 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
             </div>
 
             {exam.remarks && (
-              <div className="mt-3 p-3 rounded-xl border-l-4 bg-amber-50 border-amber-400">
+              <div className="w-auto mt-3 p-3 rounded-xl border-l-4 bg-amber-50 border-amber-400">
                 <p className="text-xs font-semibold mb-0.5 text-amber-900">Result</p>
                 <p className="text-xs leading-relaxed text-amber-800">{exam.remarks}</p>
               </div>
