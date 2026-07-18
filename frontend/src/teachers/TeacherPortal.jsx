@@ -434,11 +434,14 @@ const ClassesHub = () => {
       const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
       const key = `${String(className).trim().toLowerCase()}::${String(sectionName).trim().toLowerCase()}`;
       const subjectName = item?.subjectId?.name || item?.subjectName || item?.subject || 'Assigned subject';
-      const classId = item?.classId?._id || item?.classId?.id || `${className}-${sectionName}`.toLowerCase().replace(/\s+/g, '-');
+      const mongoId = item?.classId?._id || item?.classId?.id || '';
+      const slug = `${String(className).trim()}-${String(sectionName).trim()}`
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `class-${index + 1}`;
 
       if (!grouped.has(key)) {
         grouped.set(key, {
-          id: String(classId || `class-${index + 1}`),
+          id: slug,
+          mongoId,
           title: `${className} ${sectionName}`.trim(),
           subjects: [],
           isClassTeacher: false,
@@ -491,7 +494,7 @@ const ClassesHub = () => {
             <NavLink
               key={item.id}
               to={buildClassPath(item.id)}
-              state={{ className: item.title }}
+              state={{ className: item.title, classMongoId: item.mongoId }}
               className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-200 hover:shadow-lg hover:shadow-slate-200/70"
             >
               <div className="flex items-center justify-between gap-3">
@@ -527,11 +530,16 @@ const CW_TABS = [
     id: 'overview',
     label: 'Overview',
     icon: Home,
-    ownPaths: (rel) => rel === '' || rel.startsWith('teaching') || rel === 'overview',
-    firstPath: 'students/analytics',
+    // Owns the index, the two overview/* alias routes, and lesson-plans
+    ownPaths: (rel) =>
+      rel === '' ||
+      rel === 'overview' ||
+      rel.startsWith('overview/') ||
+      rel === 'teaching/lesson-plans',
+    firstPath: 'overview/analytics',
     subTabs: [
-      { label: 'Overall Class Analytics',  path: 'students/analytics' },
-      { label: 'Overall Attendance',       path: 'students/attendance' },
+      { label: 'Overall Class Analytics',  path: 'overview/analytics' },
+      { label: 'Overall Attendance',       path: 'overview/attendance' },
       { label: 'Teaching Path Completion', path: 'teaching/lesson-plans' },
     ],
   },
@@ -543,7 +551,6 @@ const CW_TABS = [
       rel === 'students' ||
       rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
-      rel.startsWith('students/achievements') ||
       rel === 'assignments' ||
       rel === 'reports',
     firstPath: 'students/health-records',
@@ -561,19 +568,28 @@ const CW_TABS = [
     ownPaths: (rel) =>
       rel.startsWith('students/observations') ||
       rel.startsWith('students/analytics') ||
+      rel.startsWith('students/achievements') ||
       rel.includes('ai-learning'),
     firstPath: 'students/observations',
     subTabs: [
-      { label: 'Weak Students',              path: 'students/analytics' },
+      { label: 'Weak Students',              path: 'students/observations' },
       { label: 'Analytics',                  path: 'students/analytics' },
-      { label: 'Customized Path Generation', path: 'students/analytics' },
+      { label: 'Customized Path Generation', path: 'students/achievements' },
     ],
   },
   {
     id: 'ai',
     label: 'AI',
     icon: BarChart3,
-    ownPaths: (rel) => rel.startsWith('teaching/ai') || rel.startsWith('assessments'),
+    // Owns all teaching/* EXCEPT lesson-plans (Overview), plus assessments
+    ownPaths: (rel) =>
+      rel === 'teaching' ||
+      rel.startsWith('teaching/ai') ||
+      rel.startsWith('teaching/lesson-planner') ||
+      rel.startsWith('teaching/class-notes') ||
+      rel.startsWith('teaching/practice') ||
+      rel.startsWith('teaching/study') ||
+      rel.startsWith('assessments'),
     firstPath: 'teaching/ai-assistant',
     subTabs: [],
   },
@@ -613,9 +629,18 @@ const ClassWorkspace = () => {
         if (!res.ok) return;
         const data = await res.json().catch(() => []);
         if (cancelled || !Array.isArray(data)) return;
+        const classMongoId = location.state?.classMongoId;
         const alloc = data.find((it) => {
-          const aid = it?.classId?._id || it?.classId?.id || it?.classId;
-          return String(aid || '') === String(classId);
+          if (classMongoId) {
+            const aid = it?.classId?._id || it?.classId?.id || it?.classId;
+            return String(aid || '') === String(classMongoId);
+          }
+          // fallback: match by slug derived from class + section name
+          const cn = it?.classId?.name || it?.className || '';
+          const sn = it?.sectionId?.name || it?.sectionName || '';
+          const itSlug = `${String(cn).trim()}-${String(sn).trim()}`
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          return itSlug === classId;
         });
         if (!alloc || cancelled) return;
         const cn = alloc?.classId?.name || alloc?.className || '';
@@ -1456,6 +1481,8 @@ const TeacherPortalShell = () => {
                     />
                   }
                 />
+                <Route path="overview/analytics"  element={<StudentAnalyticsPortal />} />
+                <Route path="overview/attendance" element={<AttendanceManagement />} />
                 <Route path="students/attendance" element={<AttendanceManagement />} />
                 <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
                 <Route path="students/observations" element={<StudentObservationOverview />} />
