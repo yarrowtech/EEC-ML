@@ -3,7 +3,6 @@ import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Na
 import { motion as Motion } from 'framer-motion';
 import {
   Users,
-  Activity,
   Calendar,
   Bell,
   FileText,
@@ -17,7 +16,6 @@ import {
   BarChart3,
   AlertTriangle,
   Brain,
-  Briefcase,
   Clock,
   Eye,
   LogOut,
@@ -514,100 +512,247 @@ const ClassesHub = () => {
   );
 };
 
+/*
+ * Image reference (Content.png):
+ *   Title  : "Class :5  Section : A"  — bold, large, centered
+ *   Sub    : "Switch class"            — small oval pill, centered
+ *   Tabs   : Overview | Students | Observations | AI  (4 tabs, pill bar, centered)
+ *            Active = indigo fill (#4F46E5), inactive = dark text, no fill
+ *   Caret  : small downward triangle below active tab, connecting to sub-bar
+ *   Sub-bar: lavender pill (#EEF2FF / #C7D2FE), 3 items with indigo bullet dots
+ *            Active sub-item = white pill inside
+ */
+const CW_TABS = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    icon: Home,
+    ownPaths: (rel) => rel === '' || rel.startsWith('teaching') || rel === 'overview',
+    firstPath: 'students/analytics',
+    subTabs: [
+      { label: 'Overall Class Analytics',  path: 'students/analytics' },
+      { label: 'Overall Attendance',       path: 'students/attendance' },
+      { label: 'Teaching Path Completion', path: 'teaching/lesson-plans' },
+    ],
+  },
+  {
+    id: 'students',
+    label: 'Students',
+    icon: Users,
+    ownPaths: (rel) =>
+      rel === 'students' ||
+      rel.startsWith('students/health') ||
+      rel.startsWith('students/attendance') ||
+      rel.startsWith('students/achievements') ||
+      rel === 'assignments' ||
+      rel === 'reports',
+    firstPath: 'students/health-records',
+    subTabs: [
+      { label: 'Student Health Records', path: 'students/health-records' },
+      { label: 'Attendance',             path: 'students/attendance' },
+      { label: 'Assignments',            path: 'assignments' },
+      { label: 'Reports',                path: 'reports' },
+    ],
+  },
+  {
+    id: 'observations',
+    label: 'Observations',
+    icon: Eye,
+    ownPaths: (rel) =>
+      rel.startsWith('students/observations') ||
+      rel.startsWith('students/analytics') ||
+      rel.includes('ai-learning'),
+    firstPath: 'students/observations',
+    subTabs: [
+      { label: 'Weak Students',              path: 'students/analytics' },
+      { label: 'Analytics',                  path: 'students/analytics' },
+      { label: 'Customized Path Generation', path: 'students/analytics' },
+    ],
+  },
+  {
+    id: 'ai',
+    label: 'AI',
+    icon: BarChart3,
+    ownPaths: (rel) => rel.startsWith('teaching/ai') || rel.startsWith('assessments'),
+    firstPath: 'teaching/ai-assistant',
+    subTabs: [],
+  },
+];
+
 const ClassWorkspace = () => {
   const { classId = 'current' } = useParams();
   const location = useLocation();
-  const [resolvedClassName, setResolvedClassName] = useState(
-    () => location.state?.className || classDisplayName(classId)
-  );
+  const [className, setClassName] = useState('');
+  const [sectionName, setSectionName] = useState('');
   const basePath = buildClassPath(classId);
 
+  // ── Resolve class name + section separately ───────────────
   useEffect(() => {
-    const navigatedClassName = location.state?.className;
-    if (navigatedClassName) {
-      setResolvedClassName(navigatedClassName);
+    // seed from navigation state
+    const navName = location.state?.className || '';
+    if (navName) {
+      const parts = navName.split(' ');
+      setClassName(parts[0] || navName);
+      setSectionName(parts.slice(1).join(' '));
+    } else {
+      const fallback = classDisplayName(classId);
+      const parts = fallback.split(' ');
+      setClassName(parts[0] || fallback);
+      setSectionName(parts.slice(1).join(' '));
     }
 
     if (!classId || classId === 'current') return undefined;
-
     let cancelled = false;
-    const loadClassName = async () => {
+    const load = async () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) return;
-        const response = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+        const res = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
           headers: { authorization: `Bearer ${token}` },
         });
-        if (!response.ok) return;
-        const data = await response.json().catch(() => []);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => []);
         if (cancelled || !Array.isArray(data)) return;
-
-        const allocation = data.find((item) => {
-          const allocationClassId = item?.classId?._id || item?.classId?.id || item?.classId;
-          return String(allocationClassId || '') === String(classId);
+        const alloc = data.find((it) => {
+          const aid = it?.classId?._id || it?.classId?.id || it?.classId;
+          return String(aid || '') === String(classId);
         });
-        if (!allocation) return;
-
-        const className = allocation?.classId?.name || allocation?.className;
-        const sectionName = allocation?.sectionId?.name || allocation?.sectionName;
-        if (className && !cancelled) {
-          setResolvedClassName(`${className}${sectionName ? ` ${sectionName}` : ''}`.trim());
-        }
-      } catch {
-        // Keep the name passed during navigation or the route fallback.
-      }
+        if (!alloc || cancelled) return;
+        const cn = alloc?.classId?.name || alloc?.className || '';
+        const sn = alloc?.sectionId?.name || alloc?.sectionName || '';
+        if (!cancelled) { setClassName(cn); setSectionName(sn); }
+      } catch { /* keep fallback */ }
     };
-
-    loadClassName();
-    return () => {
-      cancelled = true;
-    };
+    load();
+    return () => { cancelled = true; };
   }, [classId, location.state?.className]);
+
+  // ── Active tab ────────────────────────────────────────────
+  const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
+  const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
+  const hasSubTabs = activeTab.subTabs.length > 0;
+
+  // ── Active tab index (for caret offset) ──────────────────
+  const activeIdx = CW_TABS.indexOf(activeTab);
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal / Classes</p>
-            <h1 className="mt-2 text-2xl font-semibold capitalize text-slate-950">{resolvedClassName}</h1>
-            <p className="mt-1 text-sm text-slate-500">One class context for students, teaching, assignments, assessments, communication, and reporting.</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-                Class-scoped workspace
-              </span>
-              <NavLink
-                to="/teacher/classes"
-                className="inline-flex rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
-              >
-                Switch class
-              </NavLink>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {classTabs.map((tab) => {
+
+      {/* ══════════════════════════════════════════════════
+          Card  — white, rounded-[20px], subtle shadow
+      ══════════════════════════════════════════════════ */}
+      <div className="rounded-[20px] bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] border border-slate-100">
+
+        {/* ── Title block — centered ─────────────────────── */}
+        <div className="pt-8 pb-2 flex flex-col items-center gap-3">
+
+          {/* "Class :5  Section : A" */}
+          <h1 className="text-[1.75rem] font-bold tracking-tight text-[#0F172A] text-center">
+            {className
+              ? <>Class&nbsp;:{className}&nbsp;&nbsp;Section&nbsp;:&nbsp;{sectionName || '—'}</>
+              : classDisplayName(classId)
+            }
+          </h1>
+
+          {/* Switch class pill */}
+          <NavLink
+            to="/teacher/classes"
+            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+          >
+            Switch class
+          </NavLink>
+        </div>
+
+        {/* ── Tab bar — centered, pill ───────────────────────
+            Ref: rx=24, fill=#F8FAFC, stroke=#E2E8F0, h=48
+            Active: fill=#4F46E5, rx=18.5, h=37
+        ──────────────────────────────────────────────────── */}
+        <div className="flex justify-center px-6 pt-4 pb-0">
+          <div className="inline-flex items-center gap-[5px] rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-[5.5px]">
+            {CW_TABS.map((tab) => {
               const Icon = tab.icon;
-              const to = tab.path ? `${basePath}/${tab.path}` : basePath;
+              const isActive = tab.id === activeTab.id;
+              const to = tab.subTabs.length > 0
+                ? `${basePath}/${tab.firstPath}`
+                : `${basePath}/${tab.firstPath}`;
               return (
                 <NavLink
-                  key={tab.label}
+                  key={tab.id}
                   to={to}
-                  end={!tab.path}
-                  className={({ isActive }) =>
-                    `inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                      isActive ? 'bg-indigo-100 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
-                    }`
-                  }
+                  className={[
+                    'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
+                    'h-[37px] whitespace-nowrap transition-all duration-150',
+                    isActive
+                      ? 'bg-[#4F46E5] text-white shadow-sm'
+                      : 'text-[#475569] hover:text-[#1E293B]',
+                  ].join(' ')}
                 >
-                  <Icon size={14} />
+                  <Icon size={15} strokeWidth={isActive ? 2.2 : 1.8} />
                   {tab.label}
                 </NavLink>
               );
             })}
           </div>
         </div>
+
+        {/* ── Caret + Sub-tab bar ────────────────────────────
+            Ref image: small downward-pointing triangle
+            connecting active tab to the sub-bar below.
+            Sub-bar: rx=21.5, fill=#EEF2FF, stroke=#C7D2FE
+            Active sub-item: rx=16, fill=white, h=32
+            Items: indigo bullet dot + text
+        ──────────────────────────────────────────────────── */}
+        {hasSubTabs && (
+          <Motion.div
+            key={activeTab.id}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="flex flex-col items-center pb-6 pt-0"
+          >
+            {/* Triangle caret — points down from tab bar to sub-bar */}
+            <div
+              style={{
+                width: 0,
+                height: 0,
+                borderLeft: '10px solid transparent',
+                borderRight: '10px solid transparent',
+                borderTop: '10px solid #EEF2FF',
+                filter: 'drop-shadow(0 -1px 0 #C7D2FE)',
+              }}
+            />
+
+            {/* Sub-bar pill */}
+            <div className="inline-flex items-center gap-[5px] rounded-[22px] border border-[#C7D2FE] bg-[#EEF2FF] p-[5.5px]">
+              {activeTab.subTabs.map((sub, idx) => (
+                <NavLink
+                  key={sub.path + idx}
+                  to={`${basePath}/${sub.path}`}
+                  className={({ isActive: ia }) =>
+                    [
+                      'inline-flex items-center gap-1.5 rounded-[16px] px-3',
+                      'h-8 text-[12.5px] font-semibold whitespace-nowrap transition-all duration-150',
+                      ia
+                        ? 'bg-white text-[#0F172A] shadow-sm'
+                        : 'text-[#4338CA] hover:text-[#312E81]',
+                    ].join(' ')
+                  }
+                >
+                  {/* Indigo bullet dot — r=2.5 from SVG */}
+                  <span className="w-[5px] h-[5px] rounded-full bg-[#4F46E5] shrink-0" />
+                  {sub.label}
+                </NavLink>
+              ))}
+            </div>
+          </Motion.div>
+        )}
+
+        {!hasSubTabs && <div className="pb-4" />}
       </div>
+
+      {/* Child route */}
       <Outlet />
+
     </div>
   );
 };

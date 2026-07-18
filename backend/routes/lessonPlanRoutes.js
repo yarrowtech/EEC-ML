@@ -1539,6 +1539,35 @@ router.get('/student/status', authStudent, async (req, res) => {
   }
 });
 
+router.post('/teacher/generate-tryout', authTeacher, async (req, res) => {
+  try {
+    const { subject, chapterTitle, topic, subTopic } = req.body;
+    const schoolId = resolveSchoolId(req);
+
+    const aiResponse = await axios.post(
+      `${AI_SERVICE_URL}/generate/tutor`,
+      {
+        mode: 'quiz',
+        subject: normalizeString(subject) || 'General',
+        topic: normalizeString(topic) || normalizeString(subTopic) || 'General',
+        subTopic: normalizeString(subTopic) || null,
+        chapterTitle: normalizeString(chapterTitle) || null,
+        schoolId: schoolId ? String(schoolId) : null,
+      },
+      { timeout: 120000 }
+    );
+
+    return res.json({
+      success: true,
+      content: aiResponse.data?.content || '',
+    });
+  } catch (err) {
+    const status = err?.response?.status || 500;
+    const message = err?.response?.data?.detail || err.message || 'AI generation failed';
+    return res.status(status).json({ success: false, error: message });
+  }
+});
+
 router.post('/teacher', authTeacher, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req);

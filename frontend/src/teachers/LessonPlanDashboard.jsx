@@ -13,6 +13,7 @@ import {
   X,
   CheckSquare,
   Upload,
+  Sparkles,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -63,7 +64,7 @@ const createEmptySubTopic = () => ({
   mindMaps: [''],
   worksheets: [''],
   referenceMaterials: [''],
-  tryoutSections: [''],
+  tryoutSections: [],
   selfAssessments: [''],
   questionPapers: {
     basic: '',
@@ -129,6 +130,7 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
   const [statusForm, setStatusForm] = useState(emptyStatusForm);
   const [uploadingAssetKey, setUploadingAssetKey] = useState('');
   const [publishingSubtopicKey, setPublishingSubtopicKey] = useState('');
+  const [generatingTryoutKey, setGeneratingTryoutKey] = useState('');
 
   const plannerArrayFields = useMemo(() => ([
     ['learningPaths', 'Learning Path'],
@@ -264,9 +266,7 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                     referenceMaterials: Array.isArray(subTopic?.referenceMaterials) && subTopic.referenceMaterials.length
                       ? subTopic.referenceMaterials
                       : [''],
-                    tryoutSections: Array.isArray(subTopic?.tryoutSections) && subTopic.tryoutSections.length
-                      ? subTopic.tryoutSections
-                      : [''],
+                    tryoutSections: Array.isArray(subTopic?.tryoutSections) ? subTopic.tryoutSections : [],
                     selfAssessments: Array.isArray(subTopic?.selfAssessments) && subTopic.selfAssessments.length
                       ? subTopic.selfAssessments
                       : [''],
@@ -427,6 +427,90 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
 
     picker.click();
   };
+
+  const parseQuizTextToObjects = (text) => {
+    const questions = [];
+    const lines = (text || '').split('\n');
+    let current = null;
+    for (const line of lines) {
+      const t = line.trim();
+      const qMatch = t.match(/^\d+[.)]\s+(.+)/);
+      const optMatch = t.match(/^([A-D])[.)]\s+(.+)/);
+      const ansMatch = t.match(/^[*_]*Answer[*_]*:\s*\*?([A-D])\*?/i);
+      if (qMatch) {
+        if (current) questions.push(current);
+        current = { question: qMatch[1], optMap: {}, answer: null };
+      } else if (optMatch && current) {
+        current.optMap[optMatch[1]] = optMatch[2];
+      } else if (ansMatch && current) {
+        current.answer = ansMatch[1].toUpperCase();
+      }
+    }
+    if (current) questions.push(current);
+    return questions
+      .filter((q) => Object.keys(q.optMap).length >= 2)
+      .map((q, idx) => ({
+        id: `ai-q-${Date.now()}-${idx}`,
+        type: 'mcq',
+        theme: 'block',
+        question: q.question,
+        options: ['A', 'B', 'C', 'D'].map((k) => q.optMap[k]).filter(Boolean),
+        answer: q.answer,
+      }));
+  };
+
+  const generateTryoutWithAI = async (chapterIndex, topicIndex, subTopicIndex) => {
+    const key = [chapterIndex, topicIndex, subTopicIndex].join(':');
+    try {
+      setGeneratingTryoutKey(key);
+      setError('');
+
+      const planner = sanitizePlannerContent(form.plannerContent);
+      const chapter = planner.chapters[chapterIndex];
+      const topic = chapter?.topics?.[topicIndex];
+      const subTopic = topic?.subTopics?.[subTopicIndex];
+
+      const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/generate-tryout`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          subject: form.subject,
+          chapterTitle: chapter?.title || '',
+          topic: topic?.title || '',
+          subTopic: subTopic?.title || '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'AI generation failed');
+
+      const content = data?.content || '';
+      if (!content) return;
+
+      const parsed = parseQuizTextToObjects(content);
+      if (!parsed.length) {
+        setError('AI returned content but no parseable MCQ questions were found. Try again.');
+        return;
+      }
+
+      updatePlanner((planner) => {
+        const sub = planner.chapters[chapterIndex]?.topics?.[topicIndex]?.subTopics?.[subTopicIndex];
+        if (!sub) return;
+        const existing = (sub.tryoutSections || []).filter((item) => item && typeof item === 'object');
+        sub.tryoutSections = [...existing, ...parsed];
+      });
+    } catch (err) {
+      setError(err?.message || 'Failed to generate tryout questions');
+    } finally {
+      setGeneratingTryoutKey('');
+    }
+  };
+
+  const removeTryoutQuestion = (chapterIndex, topicIndex, subTopicIndex, questionIndex) =>
+    updatePlanner((planner) => {
+      const sub = planner.chapters[chapterIndex]?.topics?.[topicIndex]?.subTopics?.[subTopicIndex];
+      if (!sub || !Array.isArray(sub.tryoutSections)) return;
+      sub.tryoutSections = sub.tryoutSections.filter((_, idx) => idx !== questionIndex);
+    });
 
   const openCreateModal = async () => {
     setEditingPlanId('');
@@ -881,7 +965,7 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                                       Mind Maps: {(subTopic.mindMaps || []).filter(Boolean).length} •
                                       Worksheets: {(subTopic.worksheets || []).filter(Boolean).length} •
                                       References: {(subTopic.referenceMaterials || []).filter(Boolean).length} •
-                                      Tryout: {(subTopic.tryoutSections || []).filter(Boolean).length} •
+                                      Tryout: {(subTopic.tryoutSections || []).filter((item) => item && typeof item === 'object').length} Q •
                                       Self Assess: {(subTopic.selfAssessments || []).filter(Boolean).length}
                                     </p>
                                     <button
@@ -1237,7 +1321,65 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                                   </button>
                                 </div>
 
-                                {plannerArrayFields.map(([field, label]) => (
+                                {plannerArrayFields.map(([field, label]) => {
+                                  const isTryout = field === 'tryoutSections';
+
+                                  if (isTryout) {
+                                    const tryoutItems = Array.isArray(subTopic.tryoutSections) ? subTopic.tryoutSections : [];
+                                    const questionItems = tryoutItems.filter((item) => item && typeof item === 'object');
+                                    const isGenerating = generatingTryoutKey === [chapterIndex, topicIndex, subTopicIndex].join(':');
+                                    return (
+                                      <div key={field} className="rounded-md border border-violet-300 bg-violet-50/30 p-2">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <p className="text-xs font-medium text-violet-700 flex items-center gap-1">
+                                            <Sparkles className="w-3 h-3" />
+                                            Tryout Section
+                                            {questionItems.length > 0 && (
+                                              <span className="ml-1 rounded-full bg-violet-200 px-1.5 py-0.5 text-[10px] font-bold text-violet-800">
+                                                {questionItems.length} Q
+                                              </span>
+                                            )}
+                                          </p>
+                                          <button
+                                            type="button"
+                                            disabled={isGenerating}
+                                            onClick={() => generateTryoutWithAI(chapterIndex, topicIndex, subTopicIndex)}
+                                            className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-violet-400 text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-60"
+                                          >
+                                            <Sparkles className="w-3 h-3" />
+                                            {isGenerating ? 'Generating…' : questionItems.length > 0 ? 'Regenerate AI' : 'AI Generate'}
+                                          </button>
+                                        </div>
+                                        {isGenerating && (
+                                          <p className="text-[11px] text-violet-500 italic mb-2">Generating questions, please wait…</p>
+                                        )}
+                                        {questionItems.length === 0 && !isGenerating && (
+                                          <p className="text-[11px] text-slate-400 italic mb-1">No questions yet. Click AI Generate to create MCQ questions from this subtopic.</p>
+                                        )}
+                                        {questionItems.map((q, qi) => (
+                                          <div key={q.id || qi} className="mb-2 rounded border border-violet-200 bg-white p-2 flex items-start gap-2">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-[11px] font-semibold text-slate-700 truncate">Q{qi + 1}: {q.question}</p>
+                                              {Array.isArray(q.options) && (
+                                                <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                                                  {q.options.slice(0, 4).map((opt, oi) => `${String.fromCharCode(65+oi)}) ${opt}`).join('  •  ')}
+                                                </p>
+                                              )}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeTryoutQuestion(chapterIndex, topicIndex, subTopicIndex, qi)}
+                                              className="shrink-0 px-1.5 py-0.5 text-[10px] rounded border border-red-200 text-red-600 hover:bg-red-50"
+                                            >
+                                              ✕
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
                                   <div key={field} className="rounded-md border border-slate-200 bg-white p-2">
                                     <p className="text-xs font-medium text-slate-700 mb-2">{label}</p>
                                     {(subTopic[field] || ['']).map((entry, entryIndex) => (
@@ -1287,7 +1429,8 @@ const LessonPlanDashboard = ({ variant = 'default' }) => {
                                       + Add {label}
                                     </button>
                                   </div>
-                                ))}
+                                  );
+                                })}
 
                                 <div className="rounded-md border border-slate-200 bg-white p-2">
                                   <p className="text-xs font-medium text-slate-700 mb-2">Question Paper Builder</p>
