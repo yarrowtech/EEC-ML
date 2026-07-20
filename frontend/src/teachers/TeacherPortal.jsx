@@ -39,7 +39,6 @@ import ParentMeetings from './ParentMeetings';
 import AssignmentPortal from './AssignmentPortal';
 import AttendanceManagement from './AttendanceManagement';
 import TeacherDashboard from './TeacherDashboard';
-import LessonPlanDashboard from './LessonPlanDashboard';
 import SmartTeachingLessonPlanner from './SmartTeachingLessonPlanner';
 import LessonPlannerWizard from './components/LessonPlannerWizard';
 import TeacherChat from './TeacherChat';
@@ -78,14 +77,6 @@ const portalNavigation = [
   { icon: Settings, label: 'Profile & Work', path: `${PORTAL_BASE}/settings` },
 ];
 
-const classTabs = [
-  { icon: Home, label: 'Overview', path: '' },
-  { icon: Users, label: 'Students', path: 'students' },
-  { icon: FileText, label: 'Assignments', path: 'assignments' },
-  { icon: GraduationCap, label: 'Assessments', path: 'assessments' },
-  { icon: BarChart3, label: 'Reports', path: 'reports' },
-];
-
 const studentsLinks = [
   { label: 'Student List', to: 'students' },
   { label: 'Attendance', to: 'students/attendance' },
@@ -96,7 +87,6 @@ const studentsLinks = [
 ];
 
 const teachingLinks = [
-  { label: 'Lesson Plans', to: 'teaching/lesson-plans' },
   { label: 'Lesson Planner Wizard', to: 'teaching/lesson-planner-wizard' },
   { label: 'Class Notes', to: 'teaching/class-notes' },
   { label: 'Practice Questions', to: 'teaching/practice-questions' },
@@ -530,17 +520,15 @@ const CW_TABS = [
     id: 'overview',
     label: 'Overview',
     icon: Home,
-    // Owns the index, the two overview/* alias routes, and lesson-plans
+    // Owns the index and the two overview/* alias routes
     ownPaths: (rel) =>
       rel === '' ||
       rel === 'overview' ||
-      rel.startsWith('overview/') ||
-      rel === 'teaching/lesson-plans',
+      rel.startsWith('overview/'),
     firstPath: 'overview/analytics',
     subTabs: [
       { label: 'Overall Class Analytics',  path: 'overview/analytics' },
       { label: 'Overall Attendance',       path: 'overview/attendance' },
-      { label: 'Teaching Path Completion', path: 'teaching/lesson-plans' },
     ],
   },
   {
@@ -581,7 +569,7 @@ const CW_TABS = [
     id: 'ai',
     label: 'AI',
     icon: BarChart3,
-    // Owns all teaching/* EXCEPT lesson-plans (Overview), plus assessments
+    // Owns all remaining teaching/* routes, plus assessments
     ownPaths: (rel) =>
       rel === 'teaching' ||
       rel.startsWith('teaching/ai') ||
@@ -656,9 +644,6 @@ const ClassWorkspace = () => {
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
   const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
   const hasSubTabs = activeTab.subTabs.length > 0;
-
-  // ── Active tab index (for caret offset) ──────────────────
-  const activeIdx = CW_TABS.indexOf(activeTab);
 
   return (
     <div className="space-y-4">
@@ -1486,7 +1471,6 @@ const TeacherPortalShell = () => {
                     />
                   }
                 />
-                <Route path="teaching/lesson-plans" element={<LessonPlanDashboard />} />
                 <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
                 <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
                 <Route path="teaching/class-notes" element={<ClassNotes />} />
@@ -1571,7 +1555,6 @@ const TeacherPortalShell = () => {
               <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
               <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
               <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
-              <Route path="lesson-plans" element={<Navigate to={buildClassPath('current', 'teaching/lesson-plans')} replace />} />
               <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
               <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exams')} replace />} />
               <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/results')} replace />} />

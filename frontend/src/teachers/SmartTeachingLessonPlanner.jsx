@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Brain } from 'lucide-react';
-import LessonPlanDashboard from './LessonPlanDashboard';
+import AIPoweredTeaching from './AIPoweredTeaching';
 
 const SmartTeachingLessonPlanner = () => {
   const navigate = useNavigate();
@@ -32,7 +32,7 @@ const SmartTeachingLessonPlanner = () => {
           </div>
         </div>
 
-        <LessonPlanDashboard variant="smart-teaching" />
+        <AIPoweredTeaching />
       </div>
     </div>
   );

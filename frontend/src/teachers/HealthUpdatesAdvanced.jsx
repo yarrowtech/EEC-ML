@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertCircle, Calendar, CheckCircle2, Heart, MessageCircle, Search, Shield, TrendingUp, User } from 'lucide-react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 const moodScores = { '😊': 95, '😐': 65, '😟': 35 };
 const energyScores = { High: 90, Medium: 65, Low: 40 };
@@ -214,176 +215,193 @@ const HealthUpdatesAdvanced = () => {
       behavior: logs.map((l) => l.behaviorScore || 60),
     };
   }, [selectedStudent, range]);
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+  const todayLabel = today.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+  const teacherName = (() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      return user.name || user.fullName || user.firstName || 'Teacher';
+    } catch {
+      return 'Teacher';
+    }
+  })();
+  const checkedInCount = enriched.filter((student) => student.logs.some((log) => log.date === todayKey)).length;
+  const pendingCount = Math.max(enriched.length - checkedInCount, 0);
+  const atRiskCount = emotionalInsights.atRisk.length;
+  const healthCounts = {
+    good: enriched.filter((student) => student.metrics.status === 'Good').length,
+    moderate: enriched.filter((student) => student.metrics.status === 'Risk').length,
+    risk: enriched.filter((student) => student.metrics.status === 'Critical').length,
+  };
+  const toneFor = (score) => score >= 70 ? 'green' : score >= 40 ? 'yellow' : 'red';
+  const toneStyles = {
+    green: { bar: 'border-l-[#16a34a]', avatar: 'bg-[#dcfce7] text-[#16a34a]', score: 'bg-[#dcfce7] text-[#16a34a]', dot: 'bg-[#16a34a]', badge: 'bg-[#dcfce7] text-[#16a34a]' },
+    yellow: { bar: 'border-l-[#d97706]', avatar: 'bg-[#fef3c7] text-[#d97706]', score: 'bg-[#fef3c7] text-[#d97706]', dot: 'bg-[#d97706]', badge: 'bg-[#fef3c7] text-[#d97706]' },
+    red: { bar: 'border-l-[#dc2626]', avatar: 'bg-[#fecaca] text-[#dc2626]', score: 'bg-[#fecaca] text-[#dc2626]', dot: 'bg-[#dc2626]', badge: 'bg-[#fecaca] text-[#dc2626]' },
+  };
+  const initials = (name) => String(name || 'Student').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 space-y-6">
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h1 className="text-2xl font-bold text-slate-900">Student Health Updates</h1>
-        <p className="text-sm text-slate-600">Quick entry, smart alerts, wellbeing analytics, trends, parent feedback, interventions and confidential notes.</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-          <h2 className="font-semibold text-slate-900">Student Directory</h2>
-          <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" placeholder="Search student..." /></div>
-          <div className="grid grid-cols-3 gap-2">
-            <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} className="border rounded-lg px-2 py-2 text-sm"><option value="">All Years</option>{sessionOptions.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-            <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="border rounded-lg px-2 py-2 text-sm"><option value="">All Classes</option>{classOptions.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-            <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className="border rounded-lg px-2 py-2 text-sm"><option value="">All Sections</option>{sectionOptions.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+    <Motion.div
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      className="min-h-full bg-[#f0f4fe] p-3 text-[#0b1a33] sm:p-6"
+    >
+      <div className="mx-auto max-w-[1200px]">
+        <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-[-0.02em] sm:text-[1.7rem]">Good Afternoon, <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">{teacherName}</span></h1>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400"><Calendar className="size-3.5" /> {todayLabel}</p>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-sm"><option value="all">All Status</option><option value="good">Good</option><option value="risk">Risk</option><option value="critical">Critical</option></select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="border rounded-lg px-2 py-2 text-sm"><option value="recent">Recent issue</option><option value="lowest">Lowest wellbeing</option></select>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#e8eef6] bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm"><span className="text-blue-600">⚑</span> Today's Check-in</span>
+            <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-violet-600 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">{initials(teacherName).slice(0, 1)}</span>
           </div>
-          <div className="max-h-[420px] overflow-y-auto space-y-2">
-            {loadingStudents && <div className="text-sm text-slate-500 p-2">Loading students...</div>}
-            {loadError && <div className="text-sm text-red-600 p-2">{loadError}</div>}
-            {directory.map((s) => (
-              <button key={s.id} onClick={() => setSelectedId(s.id)} className={`w-full text-left border rounded-lg p-3 ${selectedId === s.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}>
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-slate-900">{s.name}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusClass(s.metrics.status)}`}>{s.metrics.status}</span>
-                </div>
-                <p className="text-xs text-slate-600 mt-1">{s.className} • Roll {s.roll} • Sec {s.section}</p>
-                <p className="text-xs text-slate-500 mt-1">Wellbeing: {s.metrics.wellbeingScore}</p>
-              </button>
-            ))}
-          </div>
+        </header>
+
+        <div className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: 'Students', value: enriched.length, icon: User, color: 'bg-[#eff6ff] text-[#2563eb]' },
+            { label: 'Checked In', value: checkedInCount, icon: CheckCircle2, color: 'bg-[#ecfdf5] text-[#16a34a]' },
+            { label: 'Pending', value: pendingCount, icon: Calendar, color: 'bg-[#fffbeb] text-[#d97706]' },
+            { label: 'At Risk', value: atRiskCount, icon: AlertCircle, color: 'bg-[#fef2f2] text-[#dc2626]' },
+          ].map((stat, index) => (
+            <Motion.div key={stat.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="flex items-center gap-3 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              <div className={'flex size-10 items-center justify-center rounded-xl ' + stat.color}><stat.icon className="size-4" /></div>
+              <div><p className="text-2xl font-bold leading-none">{stat.value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.03em] text-slate-400">{stat.label}</p></div>
+            </Motion.div>
+          ))}
         </div>
 
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 space-y-5">
-          {!selectedStudent ? <p className="text-slate-500">Select a student.</p> : (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-900">{selectedStudent.name}</h2>
-                  <p className="text-sm text-slate-600">{selectedStudent.className} • Roll {selectedStudent.roll} • Sec {selectedStudent.section}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTab('parent')}
-                    className="px-3 py-1 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  >
-                    Parent Feedback
-                  </button>
-                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${statusClass(selectedStudent.metrics.status)}`}>{selectedStudent.metrics.status}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <MetricCard label="Mood Score" value={selectedStudent.metrics.moodScore} icon={<Heart className="w-4 h-4" />} />
-                <MetricCard label="Behavior Score" value={selectedStudent.metrics.behaviorScore} icon={<User className="w-4 h-4" />} />
-                <MetricCard label="Health Score" value={selectedStudent.metrics.healthScore} icon={<Activity className="w-4 h-4" />} />
-                <MetricCard label="Wellbeing (0-100)" value={selectedStudent.metrics.wellbeingScore} icon={<TrendingUp className="w-4 h-4" />} />
-              </div>
-
-              <div className="border rounded-xl p-4">
-                <h3 className="font-semibold text-slate-900 mb-3">Quick Health Entry</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                  <div className="flex gap-2">{['😊', '😐', '😟'].map((m) => <button key={m} type="button" onClick={() => setQuick((q) => ({ ...q, mood: m }))} className={`px-3 py-2 rounded-lg border ${quick.mood === m ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>{m}</button>)}</div>
-                  <select value={quick.energy} onChange={(e) => setQuick((q) => ({ ...q, energy: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm"><option>High</option><option>Medium</option><option>Low</option></select>
-                  <select value={quick.physicalIssue} onChange={(e) => setQuick((q) => ({ ...q, physicalIssue: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm"><option>No</option><option>Yes</option></select>
-                  <input value={quick.issueTag} onChange={(e) => setQuick((q) => ({ ...q, issueTag: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm" placeholder="Issue tag (stress/fatigue)" />
-                  <input value={quick.notes} onChange={(e) => setQuick((q) => ({ ...q, notes: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm" placeholder="Short notes" />
-                </div>
-                <button type="button" onClick={saveQuickEntry} className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"><CheckCircle2 className="w-4 h-4" />Save in 1 click</button>
-              </div>
-
-              <div className="flex gap-2 flex-wrap">
-                {['overview', 'trends', 'parent', 'intervention', 'confidential', 'daily'].map((t) => (
-                  <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-lg text-sm ${tab === t ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>{t}</button>
-                ))}
-              </div>
-
-              {tab === 'overview' && (
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="border rounded-xl p-4">
-                    <h4 className="font-semibold mb-2">Smart Alert</h4>
-                    <p className="text-sm text-slate-700">{selectedStudent.metrics.autoAlert ? 'Repeated issue detected 3+ times. Auto alert raised.' : 'No repeated critical pattern.'}</p>
-                    <p className="text-xs text-slate-500 mt-1">Logic: Good (green), Risk (yellow), Critical (red).</p>
-                  </div>
-                  <div className="border rounded-xl p-4">
-                    <h4 className="font-semibold mb-2">Emotional Insights</h4>
-                    <p className="text-sm">At Risk Students: <span className="font-semibold">{emotionalInsights.atRisk.length}</span></p>
-                    <ul className="text-xs mt-2 text-slate-600 space-y-1">{emotionalInsights.frequentIssues.map(([k, c]) => <li key={k}>{k}: {c}</li>)}</ul>
-                  </div>
-                </div>
-              )}
-
-              {tab === 'trends' && (
-                <div className="space-y-4">
-                  <div className="flex gap-2"><button onClick={() => setRange('7')} className={`px-3 py-1 rounded ${range === '7' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100'}`}>7 days</button><button onClick={() => setRange('30')} className={`px-3 py-1 rounded ${range === '30' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100'}`}>30 days</button></div>
-                  <div><p className="text-sm font-medium mb-1">Mood Trend</p><TrendGraph pointsA={trendData.mood} /></div>
-                  <div><p className="text-sm font-medium mb-1">Attendance vs Mood</p><TrendGraph pointsA={trendData.attendance} pointsB={trendData.mood} colorA="#10b981" colorB="#2563eb" /></div>
-                  <div><p className="text-sm font-medium mb-1">Behavior Trend</p><TrendGraph pointsA={trendData.behavior} colorA="#f97316" /></div>
-                </div>
-              )}
-
-              {tab === 'parent' && (
-                <div className="border rounded-xl p-4 space-y-2">
-                  <h4 className="font-semibold flex items-center gap-2"><MessageCircle className="w-4 h-4" />Parent Feedback</h4>
-                  <p className="text-sm">Home behavior: {selectedStudent.parentFeedback.homeBehavior}</p>
-                  <p className="text-sm">Sleep/screen time: {selectedStudent.parentFeedback.sleepScreen}</p>
-                  <p className="text-sm">Emotional state: {selectedStudent.parentFeedback.emotionalState}</p>
-                  <p className="text-xs text-slate-500 mt-2">Teacher vs Parent view helps identify mismatch early.</p>
-                </div>
-              )}
-
-              {tab === 'intervention' && (
-                <div className="space-y-3">
-                  <div className="grid md:grid-cols-2 gap-2">
-                    <select value={action.type} onChange={(e) => setAction((a) => ({ ...a, type: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm"><option>Talked to student</option><option>Informed parent</option><option>Sent to counselor</option></select>
-                    <input type="date" value={action.followUpDate} onChange={(e) => setAction((a) => ({ ...a, followUpDate: e.target.value }))} className="border rounded-lg px-2 py-2 text-sm" />
-                  </div>
-                  <textarea value={action.notes} onChange={(e) => setAction((a) => ({ ...a, notes: e.target.value }))} className="w-full border rounded-lg px-2 py-2 text-sm" rows={3} placeholder="Action notes..." />
-                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={action.privateNote} onChange={(e) => setAction((a) => ({ ...a, privateNote: e.target.checked }))} />Private note (teacher + admin)</label>
-                  <button type="button" onClick={saveIntervention} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Save Action</button>
-                  <div className="space-y-2">{(selectedStudent.interventions || []).map((i, idx) => <div key={`${i.date}-${idx}`} className="border rounded-lg p-2 text-sm">{i.date} • {i.type} {i.followUpDate ? `• Follow-up: ${i.followUpDate}` : ''}<div className="text-xs text-slate-600">{i.description}</div></div>)}</div>
-                </div>
-              )}
-
-              {tab === 'confidential' && (
-                <div className="border rounded-xl p-4">
-                  <h4 className="font-semibold flex items-center gap-2"><Shield className="w-4 h-4" />Confidential Notes</h4>
-                  <div className="space-y-2 mt-2">{(selectedStudent.confidentialNotes || []).length ? selectedStudent.confidentialNotes.map((n, i) => <div key={`${n.date}-${i}`} className="text-sm border rounded p-2">{n.date} • {n.note}</div>) : <p className="text-sm text-slate-500">No confidential notes yet.</p>}</div>
-                </div>
-              )}
-
-              {tab === 'daily' && (
-                <div className="border rounded-xl p-4">
-                  <h4 className="font-semibold flex items-center gap-2"><Calendar className="w-4 h-4" />Daily Logs</h4>
-                  <div className="mt-2 space-y-2 max-h-56 overflow-y-auto">
-                    {selectedStudent.logs.map((l, idx) => (
-                      <div key={`${l.date}-${idx}`} className="text-sm border rounded p-2">
-                        <div className="font-medium">Date: {l.date}</div>
-                        <div className="text-xs text-slate-700">Observation: Energy {l.energy}, Physical issue {l.physicalIssue}</div>
-                        <div className="text-xs text-slate-700">Mood: {l.mood}</div>
-                        <div className="text-xs text-slate-600">Notes: {l.notes || '-'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+        <div className="mb-6 flex flex-wrap items-center gap-4 rounded-full border border-[#edf2f7] bg-white px-4 py-2 text-[11px] font-medium text-slate-500 shadow-sm">
+          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#16a34a]" /> Good (70-100)</span>
+          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#d97706]" /> Moderate (40-69)</span>
+          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#dc2626]" /> At Risk (0-39)</span>
+          <span className="ml-auto flex items-center gap-3 text-slate-400"><span className="text-[#16a34a]">● {healthCounts.good}</span><span className="text-[#d97706]">● {healthCounts.moderate}</span><span className="text-[#dc2626]">● {healthCounts.risk}</span></span>
         </div>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold"><span className="text-blue-600">▦</span> Student Directory</h2>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" onClick={() => setStatusFilter('all')} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (statusFilter === 'all' ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-transparent bg-slate-50 text-slate-400')}>All Years</button>
+                <button type="button" onClick={() => setSelectedClass('')} className="rounded-full border border-transparent bg-slate-50 px-3 py-1 text-[10px] font-medium text-slate-400">All Classes</button>
+                <button type="button" onClick={() => setSelectedSection('')} className="rounded-full border border-transparent bg-slate-50 px-3 py-1 text-[10px] font-medium text-slate-400">All Sections</button>
+                <button type="button" onClick={() => setStatusFilter('critical')} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (statusFilter === 'critical' ? 'border-red-200 bg-red-50 text-red-600' : 'border-transparent bg-slate-50 text-slate-400')}>Recent Issue</button>
+              </div>
+            </div>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-300" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student..." className="w-full rounded-full border border-[#edf2f7] bg-[#fafbfc] py-2 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10" />
+            </div>
+
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <select value={selectedSession} onChange={(event) => setSelectedSession(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Years</option>{sessionOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+              <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Classes</option>{classOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+              <select value={selectedSection} onChange={(event) => setSelectedSection(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Sections</option>{sectionOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+            </div>
+
+            <div className="mb-3 flex flex-wrap gap-2">
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-1.5 text-[11px] outline-none"><option value="all">All Status</option><option value="good">Good</option><option value="risk">Risk</option><option value="critical">Critical</option></select>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-1.5 text-[11px] outline-none"><option value="recent">Recent issue</option><option value="lowest">Lowest wellbeing</option></select>
+            </div>
+
+            <div className="max-h-[430px] space-y-1 overflow-y-auto pr-1">
+              {loadingStudents && <div className="p-5 text-center text-sm text-slate-400">Loading students...</div>}
+              {loadError && <div className="rounded-xl bg-red-50 p-3 text-xs text-red-600">{loadError}</div>}
+              {!loadingStudents && !directory.length && !loadError && <div className="p-8 text-center text-sm text-slate-400">No students match the current filters.</div>}
+              <AnimatePresence initial={false}>
+                {directory.map((student, index) => {
+                  const tone = toneFor(student.metrics.wellbeingScore);
+                  const styles = toneStyles[tone];
+                  return (
+                    <Motion.button key={student.id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ delay: index * 0.035 }} type="button" onClick={() => setSelectedId(student.id)} className={'flex w-full items-center justify-between rounded-xl border-l-4 px-3 py-2 text-left transition hover:translate-x-0.5 hover:bg-slate-50 ' + styles.bar + (selectedId === student.id ? ' bg-blue-50 ring-1 ring-blue-200' : '')}>
+                      <span className="flex min-w-0 items-center gap-2.5"><span className={'flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ' + styles.avatar}>{initials(student.name)}</span><span className="min-w-0"><span className="block truncate text-xs font-medium">{student.name}</span><span className="block text-[10px] text-slate-400">{student.className} · Roll {student.roll || '—'} · Sec {student.section || '—'}</span></span></span>
+                      <span className="flex items-center gap-1.5"><span className={'size-2.5 rounded-full ' + styles.dot} /><span className={'rounded-full px-2 py-0.5 text-[10px] font-semibold ' + styles.score}>{student.metrics.wellbeingScore}</span>{tone === 'red' && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-bold uppercase text-red-600">Risk</span>}</span>
+                    </Motion.button>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </Motion.section>
+
+          <aside className="space-y-4">
+            {selectedStudent ? (
+              <Motion.section layout className="relative overflow-hidden rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-amber-500 to-green-600" />
+                <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3">
+                  <span className={'flex size-11 items-center justify-center rounded-full text-sm font-semibold ' + toneStyles[toneFor(selectedStudent.metrics.wellbeingScore)].avatar}>{initials(selectedStudent.name)}</span>
+                  <div className="min-w-0"><h3 className="truncate text-sm font-semibold">{selectedStudent.name}</h3><p className="text-[10px] text-slate-400">{selectedStudent.className} · Roll {selectedStudent.roll || '—'} · Sec {selectedStudent.section || '—'}</p></div>
+                  <span className={'ml-auto rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase ' + statusClass(selectedStudent.metrics.status)}>{selectedStudent.metrics.status}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Mood', value: selectedStudent.metrics.moodScore, color: 'text-blue-600' },
+                    { label: 'Behavior', value: selectedStudent.metrics.behaviorScore, color: 'text-violet-600' },
+                    { label: 'Health', value: selectedStudent.metrics.healthScore, color: 'text-green-600' },
+                  ].map((metric) => <div key={metric.label} className="rounded-xl bg-slate-50 p-2 text-center"><p className={'text-base font-bold ' + metric.color}>{metric.value}</p><p className="text-[9px] uppercase text-slate-400">{metric.label}</p></div>)}
+                  <div className={'col-span-2 rounded-xl p-3 text-center ' + toneStyles[toneFor(selectedStudent.metrics.wellbeingScore)].badge}><p className="text-2xl font-bold">{selectedStudent.metrics.wellbeingScore}</p><p className="text-[9px] uppercase text-slate-600">Wellbeing</p></div>
+                </div>
+              </Motion.section>
+            ) : <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Select a student to view wellbeing.</div>}
+
+            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+              <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><Heart className="size-3.5 text-blue-600" /> Quick Health Entry</h4>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {[
+                  { label: 'Good', value: 'High', active: 'bg-[#16a34a] text-white border-transparent' },
+                  { label: 'Moderate', value: 'Medium', active: 'bg-[#d97706] text-white border-transparent' },
+                  { label: 'At Risk', value: 'Low', active: 'bg-[#dc2626] text-white border-transparent' },
+                ].map((entry) => <button key={entry.label} type="button" onClick={() => setQuick((previous) => ({ ...previous, energy: entry.value }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium transition ' + (quick.energy === entry.value ? entry.active : 'border-slate-200 text-slate-400')}>{entry.label}</button>)}
+              </div>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {['No', 'Yes', 'Maybe'].map((value) => <button key={value} type="button" onClick={() => setQuick((previous) => ({ ...previous, physicalIssue: value === 'Maybe' ? 'No' : value }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + ((quick.physicalIssue === value || (value === 'Maybe' && quick.physicalIssue === 'No')) ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-400')}>{value}</button>)}
+              </div>
+              <div className="mb-2 flex flex-wrap gap-1.5">{['none', 'Headache', 'Fatigue'].map((value) => <button key={value} type="button" onClick={() => setQuick((previous) => ({ ...previous, issueTag: value.toLowerCase() }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (quick.issueTag.toLowerCase() === value.toLowerCase() ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-400')}>{value}</button>)}</div>
+              <textarea value={quick.notes} onChange={(event) => setQuick((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Short notes..." className="mb-2 min-h-10 w-full resize-y rounded-xl border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none focus:border-blue-500" />
+              <button type="button" onClick={saveQuickEntry} disabled={!selectedStudent} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 disabled:opacity-50"><CheckCircle2 className="size-3.5" /> Save in 1 click</button>
+            </Motion.section>
+
+            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+              <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><AlertCircle className="size-3.5 text-red-600" /> At Risk Students</h4>
+              <div className="flex flex-wrap gap-1.5">{emotionalInsights.atRisk.map((student) => <button type="button" key={student.id} onClick={() => setSelectedId(student.id)} className="rounded-full border border-slate-200 bg-[#fafbfc] px-2.5 py-1 text-[10px] text-slate-600 hover:bg-slate-100">{student.name.split(' ').slice(0, 2).join(' ')} <span className={student.metrics.status === 'Critical' ? 'font-semibold text-red-600' : 'font-semibold text-amber-600'}>{student.metrics.wellbeingScore}</span></button>)}{!emotionalInsights.atRisk.length && <span className="text-xs text-slate-400">No at-risk students.</span>}</div>
+            </Motion.section>
+
+            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+              <h4 className="mb-1 flex items-center gap-2 text-xs font-semibold"><Activity className="size-3.5 text-amber-500" /> Frequent Issues</h4>
+              {emotionalInsights.frequentIssues.length ? <div className="flex flex-wrap gap-1.5">{emotionalInsights.frequentIssues.map(([issue, count]) => <span key={issue} className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] text-slate-600">{issue}: {count}</span>)}</div> : <p className="flex items-center gap-1.5 text-xs text-slate-300"><CheckCircle2 className="size-3.5 text-green-600" /> No frequent issues</p>}
+            </Motion.section>
+          </aside>
+        </div>
+
+        {selectedStudent && (
+          <Motion.section layout className="mt-6 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div><h2 className="text-sm font-semibold">Student wellbeing details</h2><p className="mt-0.5 text-xs text-slate-400">{selectedStudent.name} · {selectedStudent.className}</p></div>
+              <div className="flex flex-wrap gap-1.5">
+                {['overview', 'trends', 'parent', 'intervention', 'confidential', 'daily'].map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={'rounded-full px-3 py-1.5 text-[10px] font-medium capitalize transition ' + (tab === item ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{item}</button>)}
+              </div>
+            </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <Motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+                {tab === 'overview' && <div className="grid gap-3 md:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><h4 className="mb-1 text-xs font-semibold">Smart Alert</h4><p className="text-xs text-slate-600">{selectedStudent.metrics.autoAlert ? 'Repeated issue detected 3+ times. Auto alert raised.' : 'No repeated critical pattern.'}</p></div><div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><h4 className="mb-1 text-xs font-semibold">Emotional Insights</h4><p className="text-xs text-slate-600">At-risk students: <strong>{emotionalInsights.atRisk.length}</strong></p><div className="mt-2 flex flex-wrap gap-1.5">{emotionalInsights.frequentIssues.map(([issue, count]) => <span key={issue} className="rounded-full bg-white px-2 py-1 text-[10px] text-slate-500">{issue}: {count}</span>)}</div></div></div>}
+                {tab === 'trends' && <div className="space-y-3"><div className="flex gap-1.5"><button type="button" onClick={() => setRange('7')} className={'rounded-full px-3 py-1 text-[10px] ' + (range === '7' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100')}>7 days</button><button type="button" onClick={() => setRange('30')} className={'rounded-full px-3 py-1 text-[10px] ' + (range === '30' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100')}>30 days</button></div><TrendGraph pointsA={trendData.mood} /><TrendGraph pointsA={trendData.attendance} pointsB={trendData.mood} colorA="#10b981" colorB="#2563eb" /><TrendGraph pointsA={trendData.behavior} colorA="#f97316" /></div>}
+                {tab === 'parent' && <div className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600"><h4 className="mb-2 flex items-center gap-2 font-semibold text-slate-800"><MessageCircle className="size-3.5" /> Parent Feedback</h4><p>Home behavior: {selectedStudent.parentFeedback.homeBehavior}</p><p>Sleep/screen time: {selectedStudent.parentFeedback.sleepScreen}</p><p>Emotional state: {selectedStudent.parentFeedback.emotionalState}</p></div>}
+                {tab === 'intervention' && <div className="space-y-3"><div className="grid gap-2 md:grid-cols-2"><select value={action.type} onChange={(event) => setAction((previous) => ({ ...previous, type: event.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs"><option>Talked to student</option><option>Informed parent</option><option>Sent to counselor</option></select><input type="date" value={action.followUpDate} onChange={(event) => setAction((previous) => ({ ...previous, followUpDate: event.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs" /></div><textarea value={action.notes} onChange={(event) => setAction((previous) => ({ ...previous, notes: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" rows={3} placeholder="Action notes..." /><label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={action.privateNote} onChange={(event) => setAction((previous) => ({ ...previous, privateNote: event.target.checked }))} /> Private note</label><button type="button" onClick={saveIntervention} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white">Save Action</button>{selectedStudent.interventions?.map((item, index) => <div key={item.date + index} className="rounded-xl border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">{item.date} · {item.type}{item.followUpDate ? ' · Follow-up: ' + item.followUpDate : ''}<div className="mt-1 text-slate-500">{item.description}</div></div>)}</div>}
+                {tab === 'confidential' && <div className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600"><h4 className="mb-2 flex items-center gap-2 font-semibold text-slate-800"><Shield className="size-3.5" /> Confidential Notes</h4>{selectedStudent.confidentialNotes?.length ? selectedStudent.confidentialNotes.map((item, index) => <div key={item.date + index} className="mb-1 rounded-lg bg-white p-2">{item.date} · {item.note}</div>) : 'No confidential notes yet.'}</div>}
+                {tab === 'daily' && <div className="max-h-56 space-y-2 overflow-y-auto"><h4 className="flex items-center gap-2 text-xs font-semibold"><Calendar className="size-3.5" /> Daily Logs</h4>{selectedStudent.logs.map((item, index) => <div key={item.date + index} className="rounded-xl border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">{item.date} · Energy {item.energy} · Physical issue {item.physicalIssue}<div>Mood: {item.mood} · {item.notes || 'No notes'}</div></div>)}</div>}
+              </Motion.div>
+            </AnimatePresence>
+          </Motion.section>
+        )}
       </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <h3 className="font-semibold mb-2">At Risk Students</h3>
-        <div className="flex flex-wrap gap-2">
-          {emotionalInsights.atRisk.map((s) => <span key={s.id} className={`text-xs px-2 py-1 rounded-full ${statusClass(s.metrics.status)}`}>{s.name} ({s.metrics.wellbeingScore})</span>)}
-          {!emotionalInsights.atRisk.length && <span className="text-sm text-slate-500">No at-risk students.</span>}
-        </div>
-        <h3 className="font-semibold mt-4 mb-2">Frequent Issues</h3>
-        <div className="flex flex-wrap gap-2">
-          {emotionalInsights.frequentIssues.map(([k, c]) => <span key={k} className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700">{k}: {c}</span>)}
-          {!emotionalInsights.frequentIssues.length && <span className="text-sm text-slate-500">No frequent issues.</span>}
-        </div>
-      </div>
-    </div>
+    </Motion.div>
   );
+
 };
 
 const MetricCard = ({ label, value, icon }) => (

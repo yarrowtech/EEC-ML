@@ -21,7 +21,6 @@ Teaching Tools
 - AI Learning Path: /teacher/ai-learning/:studentId/:subject
 - Assignments: /teacher/assignments (Alias: /teacher/evaluation)
 - Practice Questions: /teacher/practice-questions
-- Lesson Plans: /teacher/lesson-plans
 - Class Notes: /teacher/class-notes
 
 Assessment

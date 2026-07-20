@@ -18,7 +18,6 @@ const componentMocks = {
   '../HealthUpdatesAdvanced': 'Health Updates',
   '../ParentMeetings': 'Parent Meetings',
   '../AssignmentPortal': 'Assignments',
-  '../LessonPlanDashboard': 'Lesson Plans',
   '../TeacherChat': 'Teacher Chat',
   '../AILearningPath': 'AI Learning',
   '../AIPoweredTeaching': 'Smart Teaching',
