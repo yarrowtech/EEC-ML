@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
+  CheckCircle2,
   ChevronRight,
   Layers,
   Lightbulb,
@@ -52,10 +53,10 @@ const Sidebar = ({
       animate={collapsed ? 'collapsed' : 'expanded'}
       variants={sidebarVariants}
       transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-      className="relative h-full min-h-0 shrink-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-xl shadow-slate-200/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20 self-stretch"
+      className="relative h-[300px] min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[#e9edf2] bg-[#f8fafc] shadow-none backdrop-blur-xl lg:h-full dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20"
       aria-label="Lesson chapters sidebar"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-linear-to-b from-blue-50/90 to-transparent dark:from-blue-950/20" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-linear-to-b from-[#eef2ff] to-transparent dark:from-blue-950/20" />
 
       <div className="relative flex h-full min-h-0 flex-col p-2.5">
         {/* Header */}
@@ -63,30 +64,44 @@ const Sidebar = ({
           <div className={`flex items-start ${collapsed ? 'justify-center' : 'justify-between'} gap-2`}>
             {!collapsed && (
               <div className="min-w-0 flex items-center gap-1.5">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] text-white shadow-sm">
                   <Layers className="size-3.5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1">
-                    <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">2</span>
-                    <h2 className="truncate text-xs font-semibold text-slate-900 dark:text-slate-50">Your Chapters</h2>
+                    <h2 className="truncate text-sm font-semibold text-[#1e293b] dark:text-slate-50">Your Chapters</h2>
                   </div>
-                  <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                  <p className="mt-0.5 text-[11px] text-[#64748b] dark:text-slate-400">
                     {chapters.length === 0 ? 'No chapters yet' : `${chapters.length} chapter${chapters.length === 1 ? '' : 's'}`}
                   </p>
                 </div>
               </div>
             )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={onToggleCollapse}
-                title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-              {collapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
-            </Button>
+              <div className="flex items-center gap-1">
+                {!collapsed && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={onAdd}
+                    disabled={addDisabled}
+                    title="Create chapter"
+                    aria-label="Create chapter"
+                    className="rounded-full bg-[#eef2ff] text-[#2563eb] hover:bg-[#dbe7fe] disabled:opacity-50"
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={onToggleCollapse}
+                  title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  {collapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
+                </Button>
+              </div>
           </div>
           {!collapsed && <Separator className="mt-2.5 bg-slate-200 dark:bg-slate-800" />}
         </div>
@@ -109,7 +124,7 @@ const Sidebar = ({
                     value={query}
                     onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search chapters..."
-                    className="h-8 rounded-xl border-slate-200 bg-slate-50/80 pl-8 text-xs focus-visible:ring-2 focus-visible:ring-blue-200 dark:bg-slate-900"
+                    className="h-9 rounded-full border-[#dce2ea] bg-white pl-8 text-xs focus-visible:ring-2 focus-visible:ring-blue-200 dark:bg-slate-900"
                     style={{ color: '#0f172a', caretColor: '#0f172a' }}
                     aria-label="Search chapters"
                   />
@@ -157,6 +172,28 @@ const Sidebar = ({
 
                 {chapters.length === 0 && <EmptyState onAdd={onAdd} />}
               </div>
+
+              <Motion.div variants={itemVariants} className="mt-3 rounded-[24px] bg-[#eef2ff] p-4">
+                <h4 className="mb-2.5 text-xs font-semibold text-[#1e293b]">
+                  <span className="mr-1.5">🚀</span>How to get started
+                </h4>
+                <ul className="space-y-2 text-[11px] text-[#334155]">
+                  {[
+                    'Select class, section & subject above',
+                    'Click + to add a chapter',
+                    'Fill details step by step',
+                    'Publish to share with students',
+                  ].map((tip) => (
+                    <li key={tip} className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[#2563eb]" />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 rounded-full border border-[#d9e6ff] bg-white px-3 py-1.5 text-center text-[11px] font-medium text-[#2563eb]">
+                  Start by selecting your class above ↑
+                </div>
+              </Motion.div>
             </Motion.div>
           ) : (
             <CollapsedRail

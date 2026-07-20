@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion as Motion } from 'framer-motion';
 import { Toaster, toast } from 'react-hot-toast';
-import { BookOpenCheck } from 'lucide-react';
+import { BookOpenCheck, ClipboardList } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
@@ -144,6 +145,7 @@ const AIPoweredTeaching = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [activeStep, setActiveStep] = useState(0);
   const [publishing, setPublishing] = useState(false);
   const [publishProgress, setPublishProgress] = useState(0);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
@@ -816,9 +818,16 @@ const AIPoweredTeaching = () => {
     }
   };
 
+  const activeChapter = openChapters[openChapters.length - 1] || null;
+
   return (
-    <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_#dbeafe,_#eef2ff_42%,_#f8fafc_70%)] p-3 dark:bg-slate-950">
-      <div className="mx-auto flex h-full max-w-[1600px] min-h-0 flex-col gap-2.5">
+    <div className="h-full min-h-0 overflow-hidden bg-[#f4f7fb] p-2.5 sm:p-4 dark:bg-slate-950">
+      <Motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
+        className="mx-auto flex h-full max-w-[1440px] min-h-0 flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] sm:rounded-[40px]"
+      >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
           classValue={selectedClass}
@@ -827,6 +836,8 @@ const AIPoweredTeaching = () => {
           classOptions={classOptions}
           sectionOptions={sectionOptions}
           subjectOptions={subjectOptions}
+          currentChapter={activeChapter}
+          currentStep={activeStep}
           onUploadMaterial={handleUploadMaterialFiles}
           uploadMaterialDisabled={uploadingMaterial}
           onClassChange={async (value) => {
@@ -864,7 +875,20 @@ const AIPoweredTeaching = () => {
           }}
         />
 
-        <div className="flex flex-1 min-h-0 gap-2.5">
+        {activeChapter && (
+          <div className="flex justify-end px-2 pt-1 sm:px-3">
+            <button
+              type="button"
+              onClick={() => setActiveStep(5)}
+              className="inline-flex items-center gap-2 rounded-full border border-[#fcd34d] bg-[#fef3c7] px-4 py-1.5 text-xs font-medium text-[#92400e] transition hover:bg-[#fde68a]"
+            >
+              <ClipboardList className="size-3.5" />
+              Add Evaluation <span className="hidden sm:inline">(after class)</span>
+            </button>
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-2.5 sm:p-3 lg:flex-row">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
@@ -874,6 +898,7 @@ const AIPoweredTeaching = () => {
               if (!openChapterIds.includes(id)) {
                 setOpenChapterIds((prev) => [...prev, id]);
               }
+              setActiveStep(0);
             }}
             onAdd={handleAddChapter}
             onDelete={handleDeleteChapter}
@@ -885,7 +910,7 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl ">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-[28px] bg-white">
             {openChapters.length > 0 ? (
               <div className="space-y-4 overflow-y-auto pb-4 pr-1">
                 {openChapters.map((chapter) => (
@@ -912,6 +937,10 @@ const AIPoweredTeaching = () => {
                     onPublishChapter={() => handlePublishChapter(chapter.id)}
                     isPublishing={publishing}
                     publishProgress={publishProgress}
+                    externalStep={chapter.id === activeChapter?.id ? activeStep : undefined}
+                    onStepChange={(step) => {
+                      if (chapter.id === activeChapter?.id) setActiveStep(step);
+                    }}
                   />
                 ))}
               </div>
@@ -958,7 +987,7 @@ const AIPoweredTeaching = () => {
             )}
           </div>
         </div>
-      </div>
+      </Motion.div>
     </div>
   );
 };

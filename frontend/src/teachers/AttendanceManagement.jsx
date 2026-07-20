@@ -1,7 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
+  CalendarCheck,
+  CheckCheck,
+  ClipboardCheck,
+  BookOpen,
+  Calculator,
+  FlaskConical,
+  Landmark,
+  Languages,
+  Leaf,
+  MapPin,
+  Printer,
   Search,
+  School,
   Users,
   TrendingUp,
   BarChart3,
@@ -10,6 +22,7 @@ import {
   Download,
   MoveRight,
 } from 'lucide-react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
 import toast from 'react-hot-toast';
 
@@ -386,10 +399,6 @@ const AttendanceManagement = () => {
     () => Object.values(attendanceData).filter((status) => status === STATUS.ABSENT).length,
     [attendanceData]
   );
-  const attendanceRate = useMemo(() => {
-    const total = presentCount + absentCount;
-    return total > 0 ? Math.round((presentCount / total) * 100) : 0;
-  }, [presentCount, absentCount]);
   const areAllMarkedPresent = useMemo(
     () => students.length > 0 && students.every((student) => (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT),
     [students, attendanceData]
@@ -400,347 +409,202 @@ const AttendanceManagement = () => {
   );
 
   const inputClass = 'w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors';
-  const schoolInitials = (schoolMeta.schoolName || 'SC').slice(0, 2).toUpperCase();
   const canShowSchoolLogo = Boolean(schoolMeta.schoolLogo && !schoolLogoFailed);
 
+  const subjectTabs = subjectOptions.length > 0
+    ? subjectOptions
+    : ['Math', 'Science', 'History', 'English', 'EVS'];
+  const subjectIcons = [Calculator, FlaskConical, Landmark, Languages, Leaf];
+  const classLabel = selectedClass || '5';
+  const sectionLabel = selectedSection || 'A';
+  const sessionLabel = selectedSession || '2025–2026';
+  const updatedTime = new Date(nowTick).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
   return (
-    <div className="space-y-4 sm:space-y-5">
-      {/* Filters */}
-      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-gray-100 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
-          <div className="relative sm:col-span-2 xl:col-span-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search student..."
-              className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-            />
-          </div>
-          <select
-            value={selectedSession}
-            onChange={(e) => { setSelectedSession(e.target.value); setSelectedClass(''); setSelectedSection(''); }}
-            className={inputClass}
+    <Motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="mx-auto w-full max-w-[1100px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
+    >
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Motion.div
+            initial={{ scale: 0.8, rotate: -8 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 260, damping: 18 }}
+            className="flex size-11 items-center justify-center rounded-[14px] border border-[#e2e8ee] bg-[#f0f4f8]"
           >
-            <option value="">All Sessions</option>
-            {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select
-            value={selectedClass}
-            onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }}
-            className={inputClass}
-          >
-            <option value="">All Classes</option>
-            {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select
-            value={selectedSection}
-            onChange={(e) => setSelectedSection(e.target.value)}
-            className={inputClass}
-          >
-            <option value="">All Sections</option>
-            {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2 px-0.5">
-          <input
-            id="substitute-mode"
-            type="checkbox"
-            checked={isSubstituteMode}
-            onChange={(e) => setIsSubstituteMode(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <label htmlFor="substitute-mode" className="text-xs font-medium text-gray-700">
-            Mark as Substitute Attendance
-          </label>
-          {isSubstituteMode && (
-            <span className="text-[11px] text-indigo-600">
-              Use session, class and section filters. Students will see subject as General.
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              min={todayDateString}
-              max={todayDateString}
-              disabled
-              className="pl-9 pr-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-            />
-          </div>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-          />
-          <select
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className="flex-1 min-w-[140px] px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-          >
-            <option value="">All Subjects</option>
-            {subjectOptions.map((subj) => (
-              <option key={subj} value={subj}>{subj}</option>
-            ))}
-          </select>
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              type="button"
-              onClick={exportToPDF}
-              disabled={!hasRequiredHierarchyFilters || students.length === 0 || loading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
-            >
-              <Download size={14} />
-              Export
-            </button>
-            <button
-              type="button"
-              onClick={saveAttendance}
-              disabled={saving || loading || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-linear-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save
-            </button>
+            <ClipboardCheck className="size-5" />
+          </Motion.div>
+          <div>
+            <h1 className="text-xl font-bold tracking-[-0.01em] sm:text-[1.4rem]">Mark Attendance</h1>
+            <p className="mt-0.5 text-xs text-black/60">Class {classLabel} · Section {sectionLabel} · Session {sessionLabel}</p>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setSelectedDate(todayDateString)} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-transparent px-4 py-2 text-xs font-medium transition hover:bg-[#f4f7fa]">
+            <Calendar className="size-3.5 opacity-50" /> Today
+          </button>
+          <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-4 py-2 text-xs font-semibold transition hover:bg-[#e8eef4]">
+            <Printer className="size-3.5 opacity-50" /> Print
+          </button>
+        </div>
+      </header>
 
-        {error && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-            <p className="text-xs text-red-600 font-medium">{error}</p>
-          </div>
-        )}
-        {success && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            <p className="text-xs text-emerald-600 font-medium">{success}</p>
-          </div>
-        )}
-        {isAttendanceLocked && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-100">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-            <p className="text-xs text-amber-700 font-medium">{attendanceLockReason}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {[
-          { label: 'Present', value: presentCount, icon: Users, gradient: 'from-emerald-500 to-green-500' },
-          { label: 'Absent', value: absentCount, icon: Users, gradient: 'from-red-500 to-rose-500' },
-          { label: 'Attendance', value: `${attendanceRate}%`, icon: TrendingUp, gradient: 'from-blue-500 to-indigo-500' },
-          { label: 'Students', value: students.length, icon: BarChart3, gradient: 'from-amber-500 to-orange-500' },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-white rounded-2xl p-4 border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl bg-linear-to-br ${stat.gradient} flex items-center justify-center shadow-lg`}>
-                <stat.icon size={18} className="text-white" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                <p className="text-xs text-gray-500">{stat.label}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {(!isSubstituteMode && selectedClass && selectedSection && subject.trim()) && (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="px-4 sm:px-5 py-3 border-b border-gray-100">
-            <h2 className="text-sm font-bold text-gray-900">Lesson Plan for selected date</h2>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              {selectedDate} · {selectedClass} · {selectedSection} · {subject.trim()}
-            </p>
-          </div>
-          <div className="p-4 sm:p-5">
-            {!lessonPlanContext || !Array.isArray(lessonPlanContext.plans) || lessonPlanContext.plans.length === 0 ? (
-              <p className="text-xs text-gray-500">No lesson plan found for this date/subject.</p>
+      <Motion.section
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+        className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] px-4 py-3"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#e2e8ee] bg-white">
+            {canShowSchoolLogo ? (
+              <img src={schoolMeta.schoolLogo} alt={schoolMeta.schoolName || 'School'} className="size-full object-cover" onError={() => setSchoolLogoFailed(true)} />
             ) : (
-              <div className="space-y-2.5">
-                {lessonPlanContext.plans.map((plan) => (
-                  <div key={plan.id} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">{plan.title || 'Untitled Lesson Plan'}</p>
-                      <p className="text-[11px] text-gray-500 mt-1">
-                        {(plan.date || selectedDate || '').toString().slice(0, 10)} · {plan.subject || subject.trim()}
-                      </p>
-                    </div>
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      plan.status === 'completed'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : plan.status === 'in_progress'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}>
-                      {plan.status === 'completed' ? 'Completed' : plan.status === 'in_progress' ? 'In Progress' : 'Pending'}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <School className="size-4 opacity-45" />
             )}
           </div>
-        </div>
-      )}
-
-      {/* Student Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-4 sm:px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-gray-900">Mark Attendance</h2>
-          <span className="text-[11px] text-gray-400 font-medium">{selectedDate}</span>
-        </div>
-        <div className="px-4 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/70">
-          <div className="flex items-center justify-center gap-3 mb-2.5">
-            <div className="h-11 w-11 rounded-xl border border-gray-200 bg-white overflow-hidden shrink-0 flex items-center justify-center">
-              {canShowSchoolLogo ? (
-                <img
-                  src={schoolMeta.schoolLogo}
-                  alt={schoolMeta.schoolName || 'School'}
-                  className="h-full w-full object-cover"
-                  onError={() => {
-                    setSchoolLogoFailed(true);
-                  }}
-                />
-              ) : (
-                <span className="text-xs font-bold text-gray-500">
-                  {schoolInitials}
-                </span>
-              )}
-            </div>
-            <div className="text-center">
-              <p className="text-base font-bold text-gray-900">{schoolMeta.schoolName || 'School'}</p>
-              {schoolMeta.campusName && (
-                <span className='text-black font-medium text-xs'>Campus: <p className="text-xs text-indigo-600 font-medium inline">{schoolMeta.campusName}</p></span>
-              )}
-              {schoolMeta.schoolAddress && (
-                <p className="text-xs text-gray-500 max-w-2xl">{schoolMeta.schoolAddress}</p>
-              )}
-            </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{schoolMeta.schoolName || 'School'}</p>
+            <p className="truncate text-[11px] text-black/60">
+              {schoolMeta.schoolAddress ? <><MapPin className="mr-1 inline size-3 opacity-50" />{schoolMeta.schoolAddress}</> : 'Teacher attendance workspace'}
+            </p>
           </div>
-          <p className="text-sm font-semibold text-gray-800 text-center">
-            Session: <span className="text-indigo-700">{selectedSession || '—'}</span>
-            {' '}| Class: <span className="text-indigo-700">{selectedClass || '—'}</span>
-            {' '}| Section: <span className="text-indigo-700">{selectedSection || '—'}</span>
-            {' '}| Subject: <span className="text-indigo-700">{subject || 'All Subjects'}</span>
-          </p>
         </div>
-        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-3 py-1.5 text-xs font-medium">
+          <CalendarCheck className="size-3.5 opacity-50" /> {sessionLabel} · Class {classLabel} · Sec {sectionLabel}
+        </span>
+      </Motion.section>
+
+      <div className="mb-5 grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2 lg:grid-cols-5">
+        <select value={selectedSession} onChange={(e) => { setSelectedSession(e.target.value); setSelectedClass(''); setSelectedSection(''); }} className={inputClass} aria-label="Session">
+          <option value="">Select Session</option>
+          {sessionOptions.map((session) => <option key={session} value={session}>{session}</option>)}
+        </select>
+        <select value={selectedClass} onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }} className={inputClass} aria-label="Class">
+          <option value="">Select Class</option>
+          {classOptions.map((className) => <option key={className} value={className}>{className}</option>)}
+        </select>
+        <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className={inputClass} aria-label="Section">
+          <option value="">Select Section</option>
+          {sectionOptions.map((section) => <option key={section} value={section}>{section}</option>)}
+        </select>
+        <div className="relative">
+          <Calendar className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
+          <input type="date" value={selectedDate} min={todayDateString} max={todayDateString} disabled className={`${inputClass} pl-9`} aria-label="Attendance date" />
+        </div>
+        <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className={inputClass} aria-label="Attendance month" />
+      </div>
+
+      <div className="mb-5 flex flex-wrap gap-2">
+        <button type="button" onClick={() => setSubject('')} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${!subject ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-[#f4f7fa] hover:bg-[#eef2f6]'}`}>
+          <BookOpen className="mr-1.5 inline size-3.5 opacity-45" /> All Subjects
+        </button>
+        {subjectTabs.map((tab, index) => {
+          const Icon = subjectIcons[index % subjectIcons.length];
+          return (
+            <button key={tab} type="button" onClick={() => setSubject(tab)} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${subject === tab ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-[#f4f7fa] hover:bg-[#eef2f6]'}`}>
+              <Icon className="mr-1.5 inline size-3.5 opacity-45" /> {tab}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-medium text-black/70"><CheckCheck className="mr-1 inline size-3.5 opacity-45" />Mark Attendance</span>
+          <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50"><CheckCheck className="size-3.5 opacity-50" /> Check All</button>
+          <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-50"><span className="text-sm leading-none opacity-50">×</span> Uncheck All</button>
+          <label className="inline-flex items-center gap-1.5 text-[11px] text-black/60"><input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-3.5 accent-black" /> Substitute attendance</label>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-40" />
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student..." className="w-40 rounded-full border border-[#e2e8ee] bg-white py-1.5 pl-8 pr-3 text-xs outline-none transition focus:border-[#b8c4d0] sm:w-48" />
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium"><Users className="size-3.5 opacity-50" /> {students.length} students</span>
+        </div>
+      </div>
+
+      <Motion.div layout className="mb-5 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
+        <div className="overflow-x-auto">
           {!hasRequiredHierarchyFilters ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mb-3">
-                <Search size={20} className="text-indigo-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-600">Select Class and Section in the active session to view students</p>
-              <p className="text-xs text-gray-400 mt-1">Flow: Session to Class to Section</p>
+            <div className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center">
+              <Search className="mb-3 size-8 opacity-30" />
+              <p className="text-sm font-medium text-black/70">Select Class and Section to view students</p>
+              <p className="mt-1 text-xs text-black/45">Flow: Session → Class → Section</p>
             </div>
           ) : loading ? (
-            <div className="flex flex-col items-center justify-center py-14">
-              <Loader2 size={24} className="animate-spin text-indigo-500 mb-3" />
-              <p className="text-sm text-gray-500">Loading students...</p>
-            </div>
+            <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-sm text-black/50"><Loader2 className="size-6 animate-spin opacity-60" /> Loading students...</div>
           ) : students.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center mb-3">
-                <Users size={20} className="text-gray-400" />
-              </div>
-              <p className="text-sm font-medium text-gray-500">No students found</p>
-              <p className="text-xs text-gray-400 mt-1">Try adjusting your filters</p>
-            </div>
+            <div className="flex min-h-[260px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 opacity-30" /><p className="text-sm font-medium text-black/60">No students found</p><p className="mt-1 text-xs text-black/40">Try adjusting your filters</p></div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Roll No</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Name</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide"></th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">User ID</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                    <div className="flex items-center justify-center gap-2">
-                      {/* <span>Status</span> */}
-                      <button
-                        type="button"
-                        onClick={() => markAllAttendance(STATUS.PRESENT)}
-                        disabled={areAllMarkedPresent}
-                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Check all
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => markAllAttendance(STATUS.ABSENT)}
-                        disabled={areAllMarkedAbsent}
-                        className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Uncheck all
-                      </button>
-                    </div>
-                  </th>
+            <table className="w-full min-w-[560px] border-collapse text-sm">
+              <thead className="border-b border-[#e2e8ee] bg-[#f0f4f8]">
+                <tr>
+                  <th className="w-[90px] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Roll No</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Name</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">User ID</th>
+                  <th className="w-[100px] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Present</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {students.map((student) => {
-                  const status = attendanceData[student._id] || STATUS.ABSENT;
-                  const isPresent = status === STATUS.PRESENT;
-                  return (
-                    <tr
-                      key={student._id}
-                      className={`transition-colors hover:bg-gray-50/60 ${isPresent ? 'bg-emerald-50/30' : ''}`}
-                    >
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center justify-center min-w-8 px-2 py-0.5 rounded-md text-xs font-bold ${
-                          isPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-red-50 text-red-600'
-                        }`}>
-                          {student.roll || '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className="text-sm font-semibold text-gray-900">{student.name || '—'}</span>
-                      </td>
-                      <td> <MoveRight size={20} className='text-black' /> </td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500 font-mono">{student.username || '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={isPresent}
-                            onClick={() => toggleStudentPresent(student._id, !isPresent)}
-                            className={`relative h-6 w-11 shrink-0 overflow-hidden rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${
-                              isPresent
-                                ? 'bg-emerald-500 border-emerald-500'
-                                : 'bg-gray-200 border-gray-300'
-                            }`}
-                          >
-                            <span
-                              className={`pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                                isPresent ? 'translate-x-5' : 'translate-x-0.5'
-                              }`}
-                            />
-                          </button>
-                          <span className={`text-[11px] font-semibold min-w-[56px] ${isPresent ? 'text-emerald-600' : 'text-red-500'}`}>
-                            {isPresent ? 'Present' : 'Absent'}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {students.map((student, index) => {
+                    const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
+                    return (
+                      <Motion.tr key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="border-b border-[#e2e8ee] transition-colors last:border-0 hover:bg-[#f4f7fa]">
+                        <td className="px-4 py-3"><span className="text-xs font-semibold opacity-60">{student.roll || '—'}</span></td>
+                        <td className="px-4 py-3"><span className="text-sm font-medium">{student.name || '—'}</span></td>
+                        <td className="px-4 py-3"><span className="text-xs font-mono opacity-50">{student.username || '—'}</span></td>
+                        <td className="px-4 py-3">
+                          <label className="flex cursor-pointer items-center justify-center gap-2">
+                            <input type="checkbox" checked={isPresent} disabled={isAttendanceLocked} onChange={(e) => toggleStudentPresent(student._id, e.target.checked)} className="size-[18px] cursor-pointer appearance-none rounded-md border-2 border-[#c8d0d8] bg-white transition checked:border-black checked:bg-black disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Mark ${student.name || 'student'} present`} />
+                            <span className="sr-only">{isPresent ? 'Present' : 'Absent'}</span>
+                          </label>
+                        </td>
+                      </Motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
               </tbody>
             </table>
           )}
         </div>
-      </div>
-    </div>
+      </Motion.div>
+
+      {(!isSubstituteMode && selectedClass && selectedSection && subject.trim()) && (
+        <Motion.section initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-5 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
+          <div className="border-b border-[#e2e8ee] px-4 py-3"><h2 className="text-sm font-semibold">Lesson Plan for selected date</h2><p className="mt-0.5 text-[11px] text-black/50">{selectedDate} · {selectedClass} · {selectedSection} · {subject.trim()}</p></div>
+          <div className="p-4">
+            {!lessonPlanContext?.plans?.length ? <p className="text-xs text-black/50">No lesson plan found for this date/subject.</p> : <div className="space-y-2">{lessonPlanContext.plans.map((plan) => <div key={plan.id} className="flex items-start justify-between gap-3 rounded-xl border border-[#e2e8ee] bg-white px-3 py-2.5"><div><p className="text-sm font-medium">{plan.title || 'Untitled Lesson Plan'}</p><p className="mt-1 text-[11px] text-black/50">{(plan.date || selectedDate || '').toString().slice(0, 10)} · {plan.subject || subject.trim()}</p></div><span className="rounded-full bg-[#f0f4f8] px-2.5 py-1 text-[10px] font-semibold">{plan.status === 'completed' ? 'Completed' : plan.status === 'in_progress' ? 'In Progress' : 'Pending'}</span></div>)}</div>}
+          </div>
+        </Motion.section>
+      )}
+
+      <footer className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-black/60">
+          <span><Users className="mr-1 inline size-3.5 opacity-50" /><strong className="text-black">{presentCount}</strong> present · <strong className="text-black">{absentCount}</strong> absent</span>
+          <span className="opacity-45"><CalendarCheck className="mr-1 inline size-3.5" /> Last updated: today {updatedTime}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={exportToPDF} disabled={!hasRequiredHierarchyFilters || students.length === 0 || loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-transparent px-4 py-2 text-xs font-medium transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-50"><Download className="size-3.5 opacity-50" /> Export</button>
+          <button type="button" onClick={saveAttendance} disabled={saving || loading || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0} className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-5 py-2 text-xs font-semibold transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50">{saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5 opacity-50" />} Save</button>
+        </div>
+      </footer>
+
+      <AnimatePresence>
+        {(error || success || isAttendanceLocked) && (
+          <Motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="mt-4 space-y-2">
+            {error && <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-600">{error}</p>}
+            {success && <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{success}</p>}
+            {isAttendanceLocked && <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">{attendanceLockReason}</p>}
+          </Motion.div>
+        )}
+      </AnimatePresence>
+    </Motion.div>
   );
 };
 

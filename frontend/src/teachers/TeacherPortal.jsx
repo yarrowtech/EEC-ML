@@ -855,17 +855,6 @@ const TeacherPortalShell = () => {
     location.pathname === path || location.pathname.startsWith(`${path}/`),
   [location.pathname]);
 
-  const activePageTitle = useMemo(() => {
-    const active = portalNavigation.find((item) => isItemActive(item.path));
-    if (active) return active.label;
-    if (location.pathname.includes('/students')) return 'Students';
-    if (location.pathname.includes('/teaching')) return 'Teaching';
-    if (location.pathname.includes('/assessments')) return 'Assessments';
-    if (location.pathname.includes('/communication')) return 'Chat & Meetings';
-    if (location.pathname.includes('/reports')) return 'Reports';
-    return 'Teacher Portal';
-  }, [isItemActive, location.pathname]);
-
   const handleLogout = () => {
     setShowLogoutConfirm(true);
   };
@@ -928,8 +917,13 @@ const TeacherPortalShell = () => {
   const { greeting, dateLabel } = useMemo(() => {
     const now = new Date();
     const hour = now.getHours();
-    const g = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    const d = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    const g = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
+    const d = now.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
     return { greeting: g, dateLabel: d };
   }, []);
 
@@ -1266,34 +1260,27 @@ const TeacherPortalShell = () => {
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col h-screen">
-        <header className="sticky top-0 z-20 w-full bg-white/80 backdrop-blur-xl border-b border-gray-100">
-          <div className="px-3 sm:px-5">
-            <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
+        <header className="sticky top-0 z-20 w-full bg-slate-100 px-0 py-0">
+          <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
+            <div className="min-w-0 px-16 text-center leading-none">
+              <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
+                {greeting}, <span className="text-[#4F46E5]">{teacherFirstName}</span>
+              </p>
+              <p className="mt-2 truncate text-[12px] font-normal leading-none text-[#64748B]">
+                {dateLabel}
+              </p>
+            </div>
 
-              {/* Left: Sidebar toggle + Greeting + Page title */}
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
-                  aria-label="Open sidebar"
-                >
-                  <Menu size={20} className="text-gray-600" />
-                </button>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
-                    {greeting}, <span className="text-indigo-600">{teacherFirstName}</span>
-                  </p>
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                    <CalendarDays size={12} />
-                    <span>{dateLabel}</span>
-                    <span className="text-gray-300">|</span>
-                    <span className="truncate">{activePageTitle}</span>
-                  </div>
-                </div>
-              </div>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="absolute left-2 rounded-xl p-2 text-slate-600 transition-all hover:bg-slate-100 active:scale-95 lg:hidden"
+              aria-label="Open sidebar"
+            >
+              <Menu size={20} />
+            </button>
 
               {/* Right: Profile */}
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="absolute right-2 flex items-center gap-1.5 sm:gap-2">
                 <div className="relative" ref={notificationsRef}>
                   <button
                     onClick={handleToggleNotifications}
@@ -1448,7 +1435,6 @@ const TeacherPortalShell = () => {
                   )}
                 </div>
               </div>
-            </div>
           </div>
         </header>
 

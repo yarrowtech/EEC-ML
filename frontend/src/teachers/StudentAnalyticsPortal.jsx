@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Users, Search, TrendingUp, TrendingDown, BarChart3, Award, Target,
-  Calendar, Eye, FileText, AlertCircle, Minus, ChevronRight, Loader2,
+  Calendar, Eye, FileText, AlertCircle, Minus, ChevronDown, ChevronRight, Loader2,
   X, RefreshCcw, AlertTriangle, Brain, BookOpen, Clock, Filter,
-  Play, CheckCircle, XCircle, ArrowRight, Lightbulb, Star,
+  Play, CheckCircle, XCircle, ArrowRight, ArrowUp, Lightbulb, Star,
   UserCheck, Activity, TrendingUp as TrendingUpIcon
 } from 'lucide-react';
 
@@ -18,17 +19,6 @@ const authHeaders = () => ({
 // ═════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ═════════════════════════════════════════════════════════════════════════════
-const getGradeColor = (grade) => ({
-  'A+': 'text-emerald-700 bg-emerald-50 border-emerald-200',
-  'A': 'text-emerald-700 bg-emerald-50 border-emerald-200',
-  'B+': 'text-blue-700 bg-blue-50 border-blue-200',
-  'B': 'text-blue-700 bg-blue-50 border-blue-200',
-  'C+': 'text-amber-700 bg-amber-50 border-amber-200',
-  'C': 'text-amber-700 bg-amber-50 border-amber-200',
-  'D': 'text-orange-700 bg-orange-50 border-orange-200',
-  'F': 'text-red-700 bg-red-50 border-red-200',
-}[grade] || 'text-gray-600 bg-gray-50 border-gray-200');
-
 const getScoreColor = (score) => {
   if (score >= 90) return 'text-emerald-600';
   if (score >= 75) return 'text-blue-600';
@@ -67,11 +57,21 @@ const TrendIcon = ({ trend }) => {
   return <Minus size={14} className="text-gray-400" />;
 };
 
+const formatClassLabel = (classId) => {
+  if (!classId || classId === 'current') return 'Current Class';
+  return decodeURIComponent(classId)
+    .split('-')
+    .map((part) => part.toUpperCase())
+    .join('-');
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 const StudentAnalyticsPortal = () => {
   const navigate = useNavigate();
+  const { classId = 'current' } = useParams();
+  const classLabel = formatClassLabel(classId);
   const [activeTab, setActiveTab] = useState('progress'); // 'progress' or 'intervention'
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -86,7 +86,6 @@ const StudentAnalyticsPortal = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [progressViewMode, setProgressViewMode] = useState('overview');
 
   // ─────────────────────────────────────────────────────────────────────────
   // INTERVENTION TAB STATE
@@ -414,91 +413,94 @@ const StudentAnalyticsPortal = () => {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Hero Header */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-600 to-indigo-500 text-white">
-        <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(255,255,255,0.15) 0, transparent 55%)' }} />
-        <div className="relative px-4 md:px-6 pt-8 pb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Activity className="w-7 h-7" />
-            </div>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold">Student Analytics</h1>
-              <p className="text-white/80 text-sm mt-1">Track progress and identify students needing support</p>
-            </div>
+    <div className="min-h-full bg-[linear-gradient(145deg,#f0f6fb_0%,#e3ecf5_100%)] p-3 sm:p-5">
+      <Motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        className="mx-auto max-w-[1200px] rounded-[2rem] border border-white/40 bg-white/35 p-4 shadow-[0_24px_48px_-16px_rgba(0,30,50,0.2),0_8px_24px_-6px_rgba(0,0,0,0.04)] backdrop-blur-xl sm:rounded-[2.8rem] sm:p-8"
+      >
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-4 sm:mb-8">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-[-0.01em] text-[#0a2d40] sm:text-[1.8rem]">
+              <Activity className="size-6 text-[#1f6d8a] sm:size-7" /> Class Analytics
+            </h1>
+            <span className="mt-1 inline-flex items-center rounded-full border border-white/30 bg-white/25 px-4 py-1 text-sm text-[#2f556b] backdrop-blur-sm">
+              <span className="mr-1.5">⚑</span>{classLabel} · Full class performance &amp; progress
+            </span>
           </div>
 
-          {/* Tab Navigation */}
-          <div className="flex gap-2 border-b border-white/20 pb-4">
-            <button
-              onClick={() => setActiveTab('progress')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl font-semibold text-sm transition-all ${
-                activeTab === 'progress'
-                  ? 'bg-white text-purple-700 shadow-lg'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-              }`}
-            >
-              <TrendingUpIcon className="w-4 h-4" />
-              Progress Overview
-            </button>
-            <button
-              onClick={() => setActiveTab('intervention')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl font-semibold text-sm transition-all ${
-                activeTab === 'intervention'
-                  ? 'bg-white text-purple-700 shadow-lg'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-              }`}
-            >
-              <AlertTriangle className="w-4 h-4" />
-              Intervention Tracking
-            </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex rounded-full border border-white/40 bg-white/30 p-1 backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={() => setActiveTab('progress')}
+                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition ${activeTab === 'progress' ? 'bg-white/70 text-[#0a2f42] shadow-sm' : 'text-[#1f4359] hover:bg-white/40'}`}
+              >
+                <TrendingUpIcon className="size-3.5" /> Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('intervention')}
+                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition ${activeTab === 'intervention' ? 'bg-white/70 text-[#0a2f42] shadow-sm' : 'text-[#1f4359] hover:bg-white/40'}`}
+              >
+                <Target className="size-3.5" /> Intervention
+              </button>
+            </div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/25 px-4 py-2 text-xs font-medium text-[#1a4055] backdrop-blur-sm">
+              <Filter className="size-3.5" /> Filter
+            </span>
           </div>
-        </div>
-      </section>
+        </header>
 
-      {/* Content Area */}
-      <div className="p-4 md:p-6 space-y-6">
-        {/* Tab Content */}
-        {activeTab === 'progress' ? (
-          <ProgressTab
-            students={students}
-            filteredStudents={filteredStudents}
-            analytics={analytics}
-            filters={filters}
-            setFilters={setFilters}
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-            loading={loading}
-            error={error}
-            setError={setError}
-            selectedStudent={selectedStudent}
-            setSelectedStudent={setSelectedStudent}
-            progressViewMode={progressViewMode}
-            setProgressViewMode={setProgressViewMode}
-            fetchProgressData={fetchProgressData}
-            classOptions={classOptions}
-            sectionOptions={sectionOptions}
-            overallScore={overallScore}
-          />
-        ) : (
-          <InterventionTab
-            weakStudents={weakStudents}
-            filteredWeakStudents={filteredWeakStudents}
-            interventionFilters={interventionFilters}
-            setInterventionFilters={setInterventionFilters}
-            interventionSearch={interventionSearch}
-            setInterventionSearch={setInterventionSearch}
-            loadingWeak={loadingWeak}
-            analyzing={analyzing}
-            selectedWeakStudent={selectedWeakStudent}
-            setSelectedWeakStudent={setSelectedWeakStudent}
-            analyzeStudentWeakness={analyzeStudentWeakness}
-            generateLearningPath={generateLearningPath}
-            navigate={navigate}
-          />
-        )}
-      </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <Motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === 'progress' ? (
+              <ProgressTab
+                filteredStudents={filteredStudents}
+                analytics={analytics}
+                filters={filters}
+                setFilters={setFilters}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                loading={loading}
+                error={error}
+                setError={setError}
+                selectedStudent={selectedStudent}
+                setSelectedStudent={setSelectedStudent}
+                setActiveTab={setActiveTab}
+                fetchProgressData={fetchProgressData}
+                classOptions={classOptions}
+                sectionOptions={sectionOptions}
+                overallScore={overallScore}
+                classLabel={classLabel}
+              />
+            ) : (
+              <InterventionTab
+                filteredWeakStudents={filteredWeakStudents}
+                interventionFilters={interventionFilters}
+                setInterventionFilters={setInterventionFilters}
+                interventionSearch={interventionSearch}
+                setInterventionSearch={setInterventionSearch}
+                loadingWeak={loadingWeak}
+                analyzing={analyzing}
+                selectedWeakStudent={selectedWeakStudent}
+                setSelectedWeakStudent={setSelectedWeakStudent}
+                analyzeStudentWeakness={analyzeStudentWeakness}
+                generateLearningPath={generateLearningPath}
+                navigate={navigate}
+                classLabel={classLabel}
+              />
+            )}
+          </Motion.div>
+        </AnimatePresence>
+      </Motion.div>
     </div>
   );
 };
@@ -507,531 +509,385 @@ const StudentAnalyticsPortal = () => {
 // PROGRESS TAB COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 const ProgressTab = ({
-  students, filteredStudents, analytics, filters, setFilters,
+  filteredStudents, analytics, filters, setFilters,
   searchTerm, setSearchTerm, loading, error, setError,
-  selectedStudent, setSelectedStudent, progressViewMode, setProgressViewMode,
-  fetchProgressData, classOptions, sectionOptions, overallScore
-}) => (
-  <div className="space-y-6">
-    {/* Error Banner */}
-    {error && (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
-        <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-        <p className="text-xs text-red-600 font-medium flex-1">{error}</p>
-        <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 p-1">
-          <X size={14} />
-        </button>
-      </div>
-    )}
+  fetchProgressData, classOptions, sectionOptions, overallScore, classLabel,
+  selectedStudent, setSelectedStudent, setActiveTab
+}) => {
+  const supportStudents = filteredStudents.filter((student) => overallScore(student) < 60);
+  const averageFromMetrics = (field) => {
+    const values = filteredStudents
+      .flatMap((student) => student.progressMetrics || [])
+      .map((metric) => Number(metric?.[field]))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+  };
+  const averageScore = Number(analytics?.averageScore ?? 0) || (
+    filteredStudents.length
+      ? Math.round(filteredStudents.reduce((sum, student) => sum + overallScore(student), 0) / filteredStudents.length)
+      : 0
+  );
+  const attendanceRate = Number(analytics?.attendanceRate ?? 0) || averageFromMetrics('attendanceRate');
+  const assignmentPairs = filteredStudents
+    .flatMap((student) => student.progressMetrics || [])
+    .map((metric) => ({ completed: Number(metric?.completedAssignments), total: Number(metric?.totalAssignments) }))
+    .filter((item) => item.total > 0);
+  const assignmentCompletion = assignmentPairs.length
+    ? Math.round((assignmentPairs.reduce((sum, item) => sum + item.completed, 0) / assignmentPairs.reduce((sum, item) => sum + item.total, 0)) * 100)
+    : averageScore;
+  const testPerformance = Number(analytics?.testPerformance ?? analytics?.assessmentAverage ?? 0) || averageFromMetrics('testPerformance') || averageScore;
+  const progressItems = [
+    { label: 'Overall class average', value: averageScore, tone: 'bg-gradient-to-r from-[#4a9bb5] to-[#2d7a94]' },
+    { label: 'Attendance rate', value: attendanceRate, tone: 'bg-gradient-to-r from-[#4aad7a] to-[#2d8f5e]' },
+    { label: 'Assignment completion', value: assignmentCompletion, tone: 'bg-gradient-to-r from-[#4a9bb5] to-[#2d7a94]' },
+    { label: 'Test performance', value: testPerformance, tone: 'bg-gradient-to-r from-[#d98c4a] to-[#c47a3a]' },
+  ];
+  const clampPercent = (value) => Math.max(0, Math.min(100, Number(value) || 0));
 
-    {/* Analytics Cards */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {[
-        { label: 'Total Students', value: analytics?.totalStudents ?? students.length, sub: 'in your classes', icon: Users, gradient: 'from-purple-500 to-indigo-500' },
-        { label: 'Average Score', value: analytics?.averageScore != null ? `${analytics.averageScore}%` : '—', sub: 'across subjects', icon: Target, gradient: 'from-blue-500 to-cyan-500' },
-        { label: 'Need Help', value: students.filter(s => overallScore(s) < 60).length, sub: 'scoring below 60%', icon: AlertTriangle, gradient: 'from-red-500 to-orange-500' },
-        { label: 'Improving', value: analytics?.improvementTrends?.improving ?? '—', sub: 'students trending up', icon: TrendingUp, gradient: 'from-green-500 to-emerald-500' },
-      ].map((stat) => (
-        <div key={stat.label} className="bg-white rounded-2xl p-4 border-[2.5px] border-purple-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg`}>
-              <stat.icon size={18} className="text-white" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              <p className="text-xs text-gray-500">{stat.label}</p>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">{stat.sub}</p>
-        </div>
-      ))}
-    </div>
+  return (
+    <div className="space-y-5">
+      {error && (
+        <Motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50/70 px-4 py-2 text-xs text-red-700"
+        >
+          <AlertCircle className="size-3.5 shrink-0" />
+          <p className="flex-1 font-medium">{error}</p>
+          <button type="button" onClick={() => setError('')} className="rounded-full p-1 text-red-400 hover:bg-red-100 hover:text-red-600" aria-label="Dismiss error">
+            <X className="size-3.5" />
+          </button>
+        </Motion.div>
+      )}
 
-    {/* Filters */}
-    <div className="bg-white rounded-2xl border-[2.5px] border-purple-300 p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-gray-900">Filter Students</h3>
-        <button
-          onClick={fetchProgressData}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-[2px] border-purple-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCcw size={13} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name or roll..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 transition-colors"
-          />
-        </div>
-        <select
-          value={filters.grade}
-          onChange={(e) => setFilters(f => ({ ...f, grade: e.target.value }))}
-          className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 transition-colors"
-        >
-          <option value="">All Grades</option>
-          {classOptions.length > 0
-            ? classOptions.map(c => <option key={c} value={c}>{c}</option>)
-            : ['9', '10', '11', '12'].map(g => <option key={g} value={g}>Grade {g}</option>)}
-        </select>
-        <select
-          value={filters.section}
-          onChange={(e) => setFilters(f => ({ ...f, section: e.target.value }))}
-          className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 transition-colors"
-        >
-          <option value="">All Sections</option>
-          {sectionOptions.length > 0
-            ? sectionOptions.map(s => <option key={s} value={s}>{s}</option>)
-            : ['A', 'B', 'C'].map(s => <option key={s} value={s}>Section {s}</option>)}
-        </select>
-        <input
-          type="text"
-          placeholder="Subject (optional)"
-          value={filters.subject}
-          onChange={(e) => setFilters(f => ({ ...f, subject: e.target.value }))}
-          className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 transition-colors"
-        />
-      </div>
-    </div>
-
-    {/* Student Table */}
-    <div className="bg-white rounded-2xl border-[2.5px] border-purple-300 overflow-hidden">
-      <div className="px-5 py-4 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h2 className="text-base font-bold text-gray-900">
-          {filteredStudents.length} Student{filteredStudents.length !== 1 ? 's' : ''}
-        </h2>
-        <div className="flex gap-1.5 bg-purple-100 p-1 rounded-lg w-fit">
-          {['overview', 'detailed'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setProgressViewMode(tab)}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold capitalize transition-colors ${
-                progressViewMode === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab}
+      <Motion.div layout className="flex flex-wrap items-center justify-between gap-3 rounded-full border border-white/30 bg-white/20 px-4 py-2.5 backdrop-blur-sm sm:px-6">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
+          <div className="flex min-w-0 items-center rounded-full border border-white/20 bg-white/25 pl-3 backdrop-blur-sm focus-within:bg-white/40">
+            <Search className="size-3.5 shrink-0 text-[#3e6b82]" />
+            <input
+              type="text"
+              placeholder="Search by name or roll..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="w-[150px] bg-transparent px-2 py-2 text-xs text-[#123b50] outline-none placeholder:text-[#4b788f]/60 focus:w-[190px] sm:w-[170px]"
+            />
+            <button type="button" className="rounded-full bg-white/30 px-2.5 py-1.5 text-[#1f4b62] hover:bg-white/50" aria-label="Search options">
+              <ChevronDown className="size-3" />
             </button>
-          ))}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Loader2 size={24} className="animate-spin text-purple-500" />
-          <p className="text-sm text-gray-500">Loading student progress...</p>
-        </div>
-      ) : filteredStudents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-          <div className="p-4 rounded-2xl bg-purple-100">
-            <Users size={22} className="text-purple-500" />
           </div>
-          <p className="text-sm font-semibold text-gray-600">No students found</p>
-          <p className="text-xs text-gray-400">Try adjusting your filters</p>
-        </div>
-      ) : progressViewMode === 'overview' ? (
-        <div className="divide-y divide-purple-50">
-          {filteredStudents.map((student) => {
-            const score = overallScore(student);
-            const needsIntervention = score < 60;
-            const interventionLevel = score < 35 ? 'critical' : score < 45 ? 'high' : 'medium';
 
-            return (
-              <div key={student._id} className={`flex items-center justify-between gap-4 px-5 py-4 hover:bg-purple-50/60 transition-colors ${needsIntervention ? 'bg-red-50/30' : ''}`}>
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-black shrink-0 ${needsIntervention ? 'bg-gradient-to-br from-red-500 to-orange-500' : 'bg-gradient-to-br from-purple-600 to-indigo-600'}`}>
-                    {(student.studentId?.name || 'S').charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900 truncate">{student.studentId?.name || 'Unknown'}</p>
-                      {needsIntervention && (
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${getInterventionColor(interventionLevel)}`}>
-                          {getInterventionIcon(interventionLevel)}
-                          <span className="capitalize">Needs Help</span>
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Grade {student.studentId?.grade || '—'}
-                      {student.studentId?.section ? `-${student.studentId.section}` : ''}
-                      &nbsp;·&nbsp;Roll {student.studentId?.roll || '—'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-5 shrink-0">
-                  <div className="text-center hidden sm:block">
-                    <p className="text-xs text-gray-500">Score</p>
-                    <p className={`text-sm font-black mt-0.5 ${getScoreColor(score)}`}>{score}%</p>
-                  </div>
-                  {student.overallGrade && (
-                    <span className={`hidden sm:inline-flex text-xs font-bold px-2 py-1 rounded-md border ${getGradeColor(student.overallGrade)}`}>
-                      {student.overallGrade}
-                    </span>
-                  )}
-                  <TrendIcon trend={student.improvementTrend} />
-                  <button
-                    onClick={() => setSelectedStudent(student)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
-                  >
-                    <Eye size={14} /> Details
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          <label className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/20 px-3 py-1.5 text-xs text-[#1b445b] backdrop-blur-sm">
+            <LayersIcon />
+            <select value={filters.grade} onChange={(event) => setFilters((previous) => ({ ...previous, grade: event.target.value }))} className="max-w-[110px] bg-transparent outline-none">
+              <option value="">All Grades</option>
+              {classOptions.length > 0 ? classOptions.map((grade) => <option key={grade} value={grade}>{grade}</option>) : ['9', '10', '11', '12'].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/20 px-3 py-1.5 text-xs text-[#1b445b] backdrop-blur-sm">
+            <Users className="size-3.5" />
+            <select value={filters.section} onChange={(event) => setFilters((previous) => ({ ...previous, section: event.target.value }))} className="max-w-[115px] bg-transparent outline-none">
+              <option value="">All Sections</option>
+              {sectionOptions.length > 0 ? sectionOptions.map((section) => <option key={section} value={section}>{section}</option>) : ['A', 'B', 'C'].map((section) => <option key={section} value={section}>Section {section}</option>)}
+            </select>
+          </label>
+          <label className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/20 px-3 py-1.5 text-xs text-[#1b445b] backdrop-blur-sm">
+            <BookOpen className="size-3.5" />
+            <input value={filters.subject} onChange={(event) => setFilters((previous) => ({ ...previous, subject: event.target.value }))} placeholder="Subject (optional)" className="w-[122px] bg-transparent outline-none placeholder:text-[#4b788f]/70" />
+          </label>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-purple-50 border-b border-purple-100">
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Student</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Overall</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Grade</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">Trend</th>
-                {[...new Set(filteredStudents.flatMap(s => (s.progressMetrics || []).map(m => m.subject)))].slice(0, 3).map(subj => (
-                  <th key={subj} className="px-4 py-3 text-left text-[11px] font-bold text-gray-500 uppercase tracking-wider">{subj}</th>
-                ))}
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-purple-50">
-              {filteredStudents.map((student) => {
+
+        <div className="flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium text-[#1c4b63]">
+          <UserCheck className="size-3.5" /> {analytics?.totalStudents ?? filteredStudents.length} Students
+          <button type="button" onClick={fetchProgressData} disabled={loading} className="ml-1 rounded-full p-1 hover:bg-white/40 disabled:opacity-50" aria-label="Refresh progress data">
+            <RefreshCcw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </Motion.div>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
+        <Motion.section
+          initial={{ opacity: 0, x: -12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: 0.08 }}
+          className="rounded-[2rem] border border-white/30 bg-white/20 p-5 backdrop-blur-md sm:p-6"
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-[#083142]">
+              <Users className="size-4 text-[#1f6d8a]" /> Needs support
+            </h2>
+            <span className="rounded-full bg-white/30 px-3 py-1 text-xs text-[#1b4a62]">{supportStudents.length}</span>
+          </div>
+
+          {loading ? (
+            <div className="flex min-h-[250px] flex-col items-center justify-center gap-2 text-sm text-[#3e6b82]">
+              <Loader2 className="size-6 animate-spin text-[#1f6d8a]" /> Loading progress...
+            </div>
+          ) : supportStudents.length === 0 ? (
+            <div className="flex min-h-[250px] flex-col items-center justify-center rounded-[1.5rem] bg-white/15 px-4 text-center text-sm text-[#3e6b82]">
+              <CheckCircle className="mb-2 size-8 text-emerald-600" />
+              No students currently need additional support.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {supportStudents.slice(0, 6).map((student, index) => {
                 const score = overallScore(student);
-                const needsIntervention = score < 60;
-                const interventionLevel = score < 35 ? 'critical' : score < 45 ? 'high' : 'medium';
-                const subjects = [...new Set(filteredStudents.flatMap(s => (s.progressMetrics || []).map(m => m.subject)))].slice(0, 3);
                 return (
-                  <tr key={student._id} className={`hover:bg-purple-50/60 transition-colors ${needsIntervention ? 'bg-red-50/30' : ''}`}>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black shrink-0 ${needsIntervention ? 'bg-gradient-to-br from-red-500 to-orange-500' : 'bg-gradient-to-br from-purple-600 to-indigo-600'}`}>
-                          {(student.studentId?.name || 'S').charAt(0)}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-gray-900">{student.studentId?.name || '—'}</p>
-                            {needsIntervention && (
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${getInterventionColor(interventionLevel)}`}>
-                                {getInterventionIcon(interventionLevel)}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-400">Roll {student.studentId?.roll || '—'}</p>
-                        </div>
+                  <Motion.button
+                    key={student._id}
+                    type="button"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.045 }}
+                    whileHover={{ x: 4, scale: 1.01 }}
+                    onClick={() => setSelectedStudent(student)}
+                    className="flex w-full items-center justify-between gap-3 rounded-full border border-white/10 bg-white/15 px-3 py-2 text-left transition hover:bg-white/35"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#c95a5a] to-[#b13a3a] text-xs font-bold text-white">
+                        {(student.studentId?.name || 'S').charAt(0)}
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`font-black ${getScoreColor(score)}`}>{score}%</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {student.overallGrade ? (
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${getGradeColor(student.overallGrade)}`}>
-                          {student.overallGrade}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <TrendIcon trend={student.improvementTrend} />
-                    </td>
-                    {subjects.map(subj => {
-                      const metric = (student.progressMetrics || []).find(m => m.subject === subj);
-                      return (
-                        <td key={subj} className="px-4 py-3">
-                          <span className={`font-semibold ${getScoreColor(metric?.averageScore ?? 0)}`}>
-                            {metric?.averageScore != null ? `${metric.averageScore}%` : '—'}
-                          </span>
-                        </td>
-                      );
-                    })}
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setSelectedStudent(student)}
-                        className="text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors"
-                      >
-                        <Eye size={14} />
-                      </button>
-                    </td>
-                  </tr>
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 truncate text-xs font-semibold text-[#0b3145]">
+                          {student.studentId?.name || 'Unknown'}
+                          <AlertCircle className="size-3 text-[#b13a3a]" />
+                        </p>
+                        <p className="text-[10px] text-[#3e6b82]/80">{classLabel} · Roll {student.studentId?.roll || '—'}</p>
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-red-100/70 px-2.5 py-1 text-xs font-semibold text-[#b13a3a]">{score}%</span>
+                  </Motion.button>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+              {supportStudents.length > 6 && (
+                <button type="button" onClick={() => setActiveTab('intervention')} className="mt-2 w-full rounded-full border border-dashed border-white/20 bg-white/5 px-3 py-2 text-[11px] text-[#2b5e78] transition hover:bg-white/20">
+                  <ChevronRight className="mr-1 inline size-3.5" /> {supportStudents.length - 6} more students · view all
+                </button>
+              )}
+            </div>
+          )}
+        </Motion.section>
+
+        <Motion.section
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, delay: 0.12 }}
+          className="rounded-[2rem] border border-white/30 bg-white/20 p-5 backdrop-blur-md sm:p-6"
+        >
+          <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-[#083142]">
+            <BarChart3 className="size-4 text-[#1f6d8a]" /> Class Progress
+            <span className="ml-auto rounded-full bg-white/20 px-3 py-1 text-[11px] font-normal text-[#1f4b62]">{classLabel} · {new Date().getFullYear()}</span>
+          </div>
+
+          <div className="space-y-4">
+            {progressItems.map((item, index) => {
+              const value = clampPercent(item.value);
+              return (
+                <div key={item.label}>
+                  <div className="mb-1 flex justify-between text-xs text-[#1a4055]">
+                    <span>{item.label}</span>
+                    <span className="font-semibold text-[#0a2f42]">{value}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full border border-white/10 bg-white/20">
+                    <Motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${value}%` }}
+                      transition={{ duration: 0.8, delay: 0.18 + index * 0.08, ease: [0.16, 1, 0.3, 1] }}
+                      className={`h-full rounded-full ${item.tone}`}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2 border-t border-white/15 pt-3">
+            {[
+              { value: `${averageScore}%`, label: 'class avg' },
+              { value: analytics?.totalStudents ?? filteredStudents.length, label: 'students' },
+              { value: supportStudents.length, label: 'at risk' },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-2xl bg-white/10 px-2 py-2 text-center">
+                <span className="block text-lg font-bold text-[#0a2f42]">{stat.value}</span>
+                <span className="text-[9px] uppercase tracking-[0.03em] text-[#386f89]">{stat.label}</span>
+              </div>
+            ))}
+          </div>
+        </Motion.section>
+      </div>
+
+      {selectedStudent && (
+        <StudentDetailModal
+          student={selectedStudent}
+          onClose={() => setSelectedStudent(null)}
+        />
       )}
     </div>
+  );
+};
 
-    {/* Student Detail Modal */}
-    {selectedStudent && (
-      <StudentDetailModal
-        student={selectedStudent}
-        onClose={() => setSelectedStudent(null)}
-      />
-    )}
-  </div>
-);
+const LayersIcon = () => <span aria-hidden="true" className="text-[11px]">▰</span>;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // INTERVENTION TAB COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 const InterventionTab = ({
-  weakStudents, filteredWeakStudents, interventionFilters, setInterventionFilters,
+  filteredWeakStudents, interventionFilters, setInterventionFilters,
   interventionSearch, setInterventionSearch, loadingWeak, analyzing,
   selectedWeakStudent, setSelectedWeakStudent, analyzeStudentWeakness,
-  generateLearningPath, navigate
-}) => (
-  <div className="space-y-6">
-    {/* Statistics Cards */}
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div className="bg-white rounded-2xl shadow-sm p-5 border-l-4 border-red-500 border-[2.5px] border-t-purple-300 border-r-purple-300 border-b-purple-300">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Critical Students</p>
-            <p className="text-2xl font-bold text-red-600">
-              {filteredWeakStudents.filter(s => s.interventionLevel === 'critical').length}
-            </p>
-          </div>
-          <XCircle className="w-8 h-8 text-red-500" />
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm p-5 border-l-4 border-orange-500 border-[2.5px] border-t-purple-300 border-r-purple-300 border-b-purple-300">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">High Priority</p>
-            <p className="text-2xl font-bold text-orange-600">
-              {filteredWeakStudents.filter(s => s.interventionLevel === 'high').length}
-            </p>
-          </div>
-          <AlertCircle className="w-8 h-8 text-orange-500" />
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm p-5 border-l-4 border-yellow-500 border-[2.5px] border-t-purple-300 border-r-purple-300 border-b-purple-300">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Medium Priority</p>
-            <p className="text-2xl font-bold text-yellow-600">
-              {filteredWeakStudents.filter(s => s.interventionLevel === 'medium').length}
-            </p>
-          </div>
-          <AlertTriangle className="w-8 h-8 text-yellow-500" />
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm p-5 border-l-4 border-blue-500 border-[2.5px] border-t-purple-300 border-r-purple-300 border-b-purple-300">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">With AI Paths</p>
-            <p className="text-2xl font-bold text-blue-600">
-              {filteredWeakStudents.filter(s => s.hasAIPath).length}
-            </p>
-          </div>
-          <Brain className="w-8 h-8 text-blue-500" />
-        </div>
-      </div>
-    </div>
+  generateLearningPath, navigate, classLabel
+}) => {
+  const priorityStats = [
+    { key: 'critical', label: 'Critical Students', icon: AlertTriangle, iconClass: 'bg-[#fce8e8] text-[#b13a3a]' },
+    { key: 'high', label: 'High Priority', icon: ArrowUp, iconClass: 'bg-[#f5ede4] text-[#b57a3a]' },
+    { key: 'medium', label: 'Medium Priority', icon: Minus, iconClass: 'bg-[#e4edf2] text-[#3a7a94]' },
+    { key: 'ai', label: 'With AI Paths', icon: Brain, iconClass: 'bg-[#ede8f5] text-[#6b5bb5]' },
+  ];
 
-    {/* Filters */}
-    <div className="bg-white rounded-2xl shadow-sm border-[2.5px] border-purple-300 p-5">
-      <h3 className="text-sm font-bold text-gray-900 mb-4">Filter Students</h3>
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search students..."
-            value={interventionSearch}
-            onChange={(e) => setInterventionSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border-[2px] border-purple-200 bg-gray-50 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-          />
-        </div>
-        <select
-          value={interventionFilters.grade}
-          onChange={(e) => setInterventionFilters({ ...interventionFilters, grade: e.target.value })}
-          className="border-[2px] border-purple-200 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-        >
-          <option value="">All Grades</option>
-          <option value="9">Grade 9</option>
-          <option value="10">Grade 10</option>
-          <option value="11">Grade 11</option>
-          <option value="12">Grade 12</option>
-        </select>
-        <select
-          value={interventionFilters.section}
-          onChange={(e) => setInterventionFilters({ ...interventionFilters, section: e.target.value })}
-          className="border-[2px] border-purple-200 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-        >
-          <option value="">All Sections</option>
-          <option value="A">Section A</option>
-          <option value="B">Section B</option>
-          <option value="C">Section C</option>
-        </select>
-        <select
-          value={interventionFilters.subject}
-          onChange={(e) => setInterventionFilters({ ...interventionFilters, subject: e.target.value })}
-          className="border-[2px] border-purple-200 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-        >
-          <option value="">All Subjects</option>
-          <option value="Mathematics">Mathematics</option>
-          <option value="Physics">Physics</option>
-          <option value="Chemistry">Chemistry</option>
-          <option value="Biology">Biology</option>
-        </select>
-        <select
-          value={interventionFilters.interventionLevel}
-          onChange={(e) => setInterventionFilters({ ...interventionFilters, interventionLevel: e.target.value })}
-          className="border-[2px] border-purple-200 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
-        >
-          <option value="">All Levels</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
-    </div>
+  const updateFilter = (key, value) => setInterventionFilters((previous) => ({ ...previous, [key]: value }));
+  const selectClass = 'rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 text-xs text-[#3a5a6e] outline-none transition focus:border-[#b0c8d8] focus:ring-2 focus:ring-[#3a7a94]/10';
+  const actionClass = 'inline-flex items-center gap-1.5 rounded-full border-0 bg-[#f0f4f8] px-3 py-1.5 text-[11px] font-medium text-[#3a5a6e] transition hover:bg-[#e4eaf0] disabled:opacity-50';
 
-    {/* Students List */}
-    <div className="bg-white rounded-2xl shadow-sm border-[2.5px] border-purple-300">
-      <div className="p-5 border-b border-purple-100">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-          <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
-          Students Needing Intervention ({filteredWeakStudents.length})
-        </h2>
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-[#e4edf2] text-[#3a7a94]"><AlertTriangle className="size-4" /></span>
+            Intervention
+          </h2>
+          <span className="mt-1 inline-flex items-center rounded-full bg-[#f0f4f8] px-3 py-1 text-xs font-medium text-[#5a7a8e]">⚑ {classLabel} · Full class performance</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] p-1">
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#1a2e3f] shadow-sm"><Users className="mr-1 inline size-3.5" /> Students</span>
+          <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="rounded-full px-3 py-1.5 text-xs font-medium text-[#4a6a7e] hover:bg-white/70"><BarChart3 className="mr-1 inline size-3.5" /> Analytics</button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {priorityStats.map((stat, index) => {
+          const Icon = stat.icon;
+          const count = stat.key === 'ai'
+            ? filteredWeakStudents.filter((student) => student.hasAIPath).length
+            : filteredWeakStudents.filter((student) => student.interventionLevel === stat.key).length;
+          return (
+            <Motion.div
+              key={stat.key}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.06 }}
+              className="flex items-center gap-3 rounded-[1.2rem] border border-[#eaedf0] bg-[#f8fafc] p-3 transition hover:border-[#dce2e8] hover:bg-[#f4f7fa] sm:p-4"
+            >
+              <div className={`flex size-9 shrink-0 items-center justify-center rounded-full ${stat.iconClass}`}><Icon className="size-4" /></div>
+              <div>
+                <p className="text-xl font-semibold leading-tight text-[#1a2e3f]">{count}</p>
+                <p className="text-[10px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">{stat.label}</p>
+              </div>
+            </Motion.div>
+          );
+        })}
       </div>
 
-      <div className="p-5">
-        {loadingWeak ? (
-          <div className="text-center py-12">
-            <Loader2 className="w-12 h-12 animate-spin text-purple-500 mx-auto mb-4" />
-            <p className="text-gray-600">Analyzing weak students...</p>
-          </div>
-        ) : filteredWeakStudents.length === 0 ? (
-          <div className="text-center py-12">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-800 mb-2">Great News!</h3>
-            <p className="text-gray-600">No students currently need immediate intervention.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredWeakStudents.map((student) => (
-              <div key={student._id} className="border-[2px] border-purple-200 rounded-2xl p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 flex items-center justify-center text-white font-semibold">
-                      {student.studentId?.name?.charAt(0) || 'S'}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-800">{student.studentId?.name || 'Unknown'}</h3>
-                      <p className="text-sm text-gray-500">
-                        Grade {student.studentId?.grade}-{student.studentId?.section} • Roll {student.studentId?.roll}
-                      </p>
-                    </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#eaedf0] bg-[#f8fafc] px-3 py-2">
+        <div className="flex min-w-[180px] flex-1 items-center rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 focus-within:border-[#b0c8d8] focus-within:ring-2 focus-within:ring-[#3a7a94]/10">
+          <Search className="size-3.5 text-[#5a7a8e]/60" />
+          <input value={interventionSearch} onChange={(event) => setInterventionSearch(event.target.value)} placeholder="Search students..." className="w-full bg-transparent px-2 text-xs text-[#1a2e3f] outline-none placeholder:text-[#8aa8ba]" />
+        </div>
+        <select value={interventionFilters.grade} onChange={(event) => updateFilter('grade', event.target.value)} className={selectClass}>
+          <option value="">All Grades</option><option value="9">Grade 9</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option>
+        </select>
+        <select value={interventionFilters.section} onChange={(event) => updateFilter('section', event.target.value)} className={selectClass}>
+          <option value="">All Sections</option><option value="A">Section A</option><option value="B">Section B</option><option value="C">Section C</option>
+        </select>
+        <select value={interventionFilters.subject} onChange={(event) => updateFilter('subject', event.target.value)} className={selectClass}>
+          <option value="">All Subjects</option><option value="Mathematics">Mathematics</option><option value="Physics">Physics</option><option value="Chemistry">Chemistry</option><option value="Biology">Biology</option>
+        </select>
+        <select value={interventionFilters.interventionLevel} onChange={(event) => updateFilter('interventionLevel', event.target.value)} className={selectClass}>
+          <option value="">All Levels</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+        </select>
+        <span className="rounded-full bg-[#f0f4f8] px-3 py-1.5 text-xs font-medium text-[#3a5a6e]">{filteredWeakStudents.length} students</span>
+      </div>
+
+      {loadingWeak ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Analyzing weak students...
+        </div>
+      ) : filteredWeakStudents.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <CheckCircle className="mb-2 size-10 text-emerald-600" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">Great News!</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">No students currently need immediate intervention.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {filteredWeakStudents.map((student, index) => {
+            const level = student.interventionLevel || 'medium';
+            const priorityClass = level === 'critical'
+              ? 'bg-[#fce8e8] text-[#b13a3a]'
+              : level === 'high'
+                ? 'bg-[#f5ede4] text-[#b57a3a]'
+                : 'bg-[#e4edf2] text-[#3a7a94]';
+            const studentId = student.studentId?._id || student.studentId?.id;
+            return (
+              <Motion.article
+                key={student._id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.045 }}
+                whileHover={{ y: -2 }}
+                className="rounded-[1.4rem] border border-[#eaedf0] bg-[#fafbfc] p-4 transition hover:border-[#d0d8e0] hover:bg-white hover:shadow-[0_2px_12px_rgba(0,20,30,0.04)] sm:p-5"
+              >
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{student.studentId?.name || 'Unknown'}</p>
+                    <span className="mt-1 inline-flex rounded-full bg-[#f0f4f8] px-2.5 py-0.5 text-[10px] text-[#5a7a8e]">{classLabel} · Roll {student.studentId?.roll || '—'}</span>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-sm font-medium border flex items-center space-x-2 ${getInterventionColor(student.interventionLevel)}`}>
-                    {getInterventionIcon(student.interventionLevel)}
-                    <span className="capitalize">{student.interventionLevel}</span>
-                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] ${priorityClass}`}>
+                    <span className="mr-1">●</span>{level}
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Target className="w-4 h-4 text-purple-600" />
-                      <span className="text-sm font-medium text-gray-700">Consistency Score</span>
-                    </div>
-                    <p className="text-lg font-bold text-gray-800">{student.consistencyScore || 0}%</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <BookOpen className="w-4 h-4 text-purple-600" />
-                      <span className="text-sm font-medium text-gray-700">Focus Subject</span>
-                    </div>
-                    <p className="font-medium text-gray-800">{student.focusSubject || 'General'}</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <TrendingDown className="w-4 h-4 text-purple-600" />
-                      <span className="text-sm font-medium text-gray-700">Weak Areas</span>
-                    </div>
-                    <p className="text-sm text-gray-600">{student.weakAreas?.slice(0, 2).join(', ') || 'Analysis needed'}</p>
-                  </div>
+                <div className="my-2 flex flex-wrap gap-x-5 gap-y-2 border-y border-[#eaedf0] py-2">
+                  <div><p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Consistency</p><p className="text-sm font-semibold text-[#b13a3a]">{student.consistencyScore || 0}%</p></div>
+                  <div><p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Focus Subject</p><p className="text-sm font-semibold text-[#1a2e3f]">{student.focusSubject || 'General'}</p></div>
                 </div>
 
-                {student.weakAreas && student.weakAreas.length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Identified Weak Areas:</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {student.weakAreas.map((area, index) => (
-                        <span key={index} className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                          {area}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <span className="inline-flex max-w-full items-center rounded-full bg-[#f0f4f8] px-3 py-1 text-[11px] text-[#4a6a7e]">
+                  <AlertCircle className="mr-1.5 size-3 text-[#b13a3a]" />
+                  <span className="truncate">{student.weakAreas?.slice(0, 2).join(', ') || 'Needs comprehensive review'}</span>
+                </span>
 
-                <div className="flex justify-end space-x-2">
-                  <button
-                    onClick={() => analyzeStudentWeakness(student.studentId._id, student.focusSubject || 'Mathematics')}
-                    disabled={analyzing}
-                    className="px-3 py-2 bg-yellow-600 text-white rounded-xl hover:bg-yellow-700 disabled:bg-yellow-400 transition-colors flex items-center space-x-2 text-xs font-semibold"
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    <span>{analyzing ? 'Analyzing...' : 'Re-analyze'}</span>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => studentId && analyzeStudentWeakness(studentId, student.focusSubject || 'Mathematics')} disabled={analyzing || !studentId} className={actionClass}>
+                    <RefreshCcw className={`size-3 ${analyzing ? 'animate-spin' : ''}`} /> {analyzing ? 'Analyzing...' : 'Re-analyze'}
                   </button>
-                  <button
-                    onClick={() => generateLearningPath(
-                      student.studentId._id,
-                      student.focusSubject || 'Mathematics',
-                      student.weakAreas || [],
-                      'basic'
-                    )}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center space-x-2 text-xs font-semibold"
-                  >
-                    <Brain className="w-4 h-4" />
-                    <span>Generate AI Path</span>
+                  <button type="button" onClick={() => studentId && generateLearningPath(studentId, student.focusSubject || 'Mathematics', student.weakAreas || [], 'basic')} disabled={!studentId} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5] hover:bg-[#e4dcee]`}>
+                    <Brain className="size-3" /> Generate AI Path
                   </button>
-                  <button
-                    onClick={() => setSelectedWeakStudent(student)}
-                    className="px-3 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors flex items-center space-x-2 text-xs font-semibold"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                    <span>View Details</span>
+                  <button type="button" onClick={() => setSelectedWeakStudent(student)} className={`${actionClass} bg-[#e4edf2] text-[#2a5a72] hover:bg-[#d4e0e8]`}>
+                    <ChevronRight className="size-3" /> View
                   </button>
-                  {student.hasAIPath && (
-                    <button
-                      onClick={() => navigate(`/teacher/classes/current/students/${student.studentId._id}/ai-learning/${student.focusSubject || 'Mathematics'}`)}
-                      className="px-3 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center space-x-2 text-xs font-semibold"
-                    >
-                      <Play className="w-4 h-4" />
-                      <span>View AI Path</span>
+                  {student.hasAIPath && studentId && (
+                    <button type="button" onClick={() => navigate(`/teacher/classes/current/students/${studentId}/ai-learning/${student.focusSubject || 'Mathematics'}`)} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5]`}>
+                      <Play className="size-3" /> AI Path
                     </button>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              </Motion.article>
+            );
+          })}
+        </div>
+      )}
 
-    {/* Student Detail Modal */}
-    {selectedWeakStudent && (
-      <WeakStudentDetailModal
-        student={selectedWeakStudent}
-        onClose={() => setSelectedWeakStudent(null)}
-        generateLearningPath={generateLearningPath}
-      />
-    )}
-  </div>
-);
+      {selectedWeakStudent && (
+        <WeakStudentDetailModal
+          student={selectedWeakStudent}
+          onClose={() => setSelectedWeakStudent(null)}
+          generateLearningPath={generateLearningPath}
+        />
+      )}
+    </div>
+  );
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // STUDENT DETAIL MODAL (Progress)
@@ -1052,7 +908,7 @@ const StudentDetailModal = ({ student, onClose }) => {
         if (!res.ok) throw new Error('Unable to load student details');
         const data = await res.json();
         setDetail(data);
-      } catch (err) {
+      } catch {
         setDetail(student);
         setError('Some details may be unavailable.');
       } finally {
