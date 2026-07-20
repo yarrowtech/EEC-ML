@@ -53,6 +53,7 @@ import ClassNotes from './ClassNotes';
 import PracticeQuestions from './PracticeQuestions';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
+import ExamManagement from './ExamManagement';
 import ResultManagement from './ResultManagement';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
@@ -1489,7 +1490,7 @@ const TeacherPortalShell = () => {
                     />
                   }
                 />
-                <Route path="assessments/exams" element={<ResultManagement />} />
+                <Route path="assessments/exams" element={<ExamManagement />} />
                 <Route path="assessments/results" element={<ResultManagement />} />
                 <Route path="assessments/evaluations" element={<ResultManagement />} />
                 <Route path="assessments/report-cards" element={<ResultManagement />} />
@@ -1512,10 +1513,10 @@ const TeacherPortalShell = () => {
                   path="reports"
                   element={
                     <PlaceholderModule
-                      icon={BarChart3}
-                      title="Reports & Analytics"
-                      description="Analytics stays interactive for trends and weak-student detection; reports are exportable summaries for review and sharing."
-                      actions={[{ label: 'Student Analytics', to: '../students/analytics' }, { label: 'Results', to: '../assessments/results' }]}
+                      icon={FileText}
+                      title="Reports"
+                      description="Choose an exam or result report for this class."
+                      actions={[{ label: 'Exam', to: '../assessments/exams' }, { label: 'Result', to: '../assessments/results' }]}
                     />
                   }
                 />
