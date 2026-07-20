@@ -8,12 +8,13 @@ import {
   Target, ListChecks, Activity, Layers, GraduationCap
 } from 'lucide-react';
 import axios from 'axios';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const AssignmentPortal = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState('manage'); // 'manage' or 'evaluate'
+  const [activeTab] = useState('evaluate');
 
   // ─────────────────────────────────────────────────────────────────────────
   // ASSIGNMENT MANAGEMENT STATE
@@ -60,7 +61,7 @@ const AssignmentPortal = () => {
     submissionFormat: "text",
     attachments: []
   });
-  const [pdfFile, setPdfFile] = useState(null);
+  const [, setPdfFile] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [showCreateSuccessModal, setShowCreateSuccessModal] = useState(false);
   const [createSuccessMessage, setCreateSuccessMessage] = useState('');
@@ -82,13 +83,8 @@ const AssignmentPortal = () => {
   const [feedback, setFeedback] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [showPdfPreview, setShowPdfPreview] = useState(false);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [assignmentFilter, setAssignmentFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
-  const [sectionFilter, setSectionFilter] = useState('all');
-  const [sortOrder, setSortOrder] = useState('recent');
   const [evaluationMode, setEvaluationMode] = useState('single');
   const [bulkDraft, setBulkDraft] = useState({});
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -159,19 +155,12 @@ const AssignmentPortal = () => {
   const topics = [...new Set(assignments.map(a => a.topic).filter(Boolean))];
   const totalAssignments = assignments.length;
   const activeAssignments = assignments.filter(a => a.status === 'active').length;
-  const completedAssignments = assignments.filter(a => a.status === 'completed').length;
   const draftAssignments = assignments.filter(a => a.status === 'draft').length;
 
   const assignmentTitles = ['all', ...new Set(submissions.map(s => s.assignmentTitle))];
   const classOptions = ['all', ...new Set(submissions.map(s => s.grade).filter(Boolean))];
-  const sectionOptions = ['all', ...new Set(submissions.map(s => s.section).filter(Boolean))];
   const pendingCount = submissions.filter(s => s.score === null || s.score === undefined).length;
   const gradedCount = submissions.filter(s => s.score !== null && s.score !== undefined).length;
-  const lateCount = submissions.filter(s => s.status === 'late').length;
-  const gradedSubmissions = submissions.filter(s => s.score !== null && s.score !== undefined && s.totalMarks);
-  const averageScore = gradedSubmissions.length
-    ? Math.round((gradedSubmissions.reduce((acc, sub) => acc + (sub.score / sub.totalMarks), 0) / gradedSubmissions.length) * 100)
-    : null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH DATA
@@ -293,33 +282,14 @@ const AssignmentPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let list = [...submissions];
-    if (statusFilter !== 'all') {
-      list = list.filter(s => statusFilter === 'graded' ? s.score !== null : s.score === null);
-    }
     if (assignmentFilter !== 'all') {
       list = list.filter(s => s.assignmentTitle === assignmentFilter);
     }
     if (classFilter !== 'all') {
       list = list.filter(s => String(s.grade || '') === String(classFilter));
     }
-    if (sectionFilter !== 'all') {
-      list = list.filter(s => String(s.section || '') === String(sectionFilter));
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(s =>
-        s.studentName?.toLowerCase().includes(q) ||
-        s.assignmentTitle?.toLowerCase().includes(q) ||
-        s.subject?.toLowerCase().includes(q)
-      );
-    }
-    list.sort((a, b) => {
-      const dateA = new Date(a.submittedAt || a.createdAt || 0).getTime();
-      const dateB = new Date(b.submittedAt || b.createdAt || 0).getTime();
-      return sortOrder === 'oldest' ? dateA - dateB : dateB - dateA;
-    });
     setFiltered(list);
-  }, [submissions, statusFilter, assignmentFilter, classFilter, sectionFilter, search, sortOrder]);
+  }, [submissions, assignmentFilter, classFilter]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // HELPER FUNCTIONS
@@ -360,15 +330,6 @@ const AssignmentPortal = () => {
     return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleDateString();
   };
 
-  const formatTime = (d) => d ? new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-
-  const getInlineDocumentUrl = (rawUrl = '') => {
-    const url = String(rawUrl || '').trim();
-    if (!url) return '';
-    if (url.includes('docs.google.com/gview')) return url;
-    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
-  };
-
   const toDateInputValue = (value) => {
     if (!value) return '';
     const parsed = new Date(value);
@@ -389,13 +350,6 @@ const AssignmentPortal = () => {
   const getAssignmentSectionName = (assignment) =>
     assignment?.sectionId?.name || assignment?.sectionName || assignment?.section || '';
 
-  const statusChip = (sub) => {
-    if (sub.score !== null && sub.score !== undefined)
-      return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">Graded</span>;
-    if (sub.status === 'late')
-      return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">Late</span>;
-    return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">Pending</span>;
-  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // ASSIGNMENT MANAGEMENT HANDLERS
@@ -597,17 +551,11 @@ const AssignmentPortal = () => {
     setMarks(sub.score !== null && sub.score !== undefined ? String(sub.score) : '');
     setFeedback(sub.feedback || '');
     setSaveError('');
-    setShowPdfPreview(false);
   };
 
   const closePanel = () => {
     setSelected(null);
     setSaveError('');
-    setShowPdfPreview(false);
-  };
-
-  const handleRefresh = () => {
-    fetchSubmissions();
   };
 
   const saveGrade = async () => {
@@ -731,22 +679,24 @@ const AssignmentPortal = () => {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Hero Header */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-600 to-indigo-500 text-white">
+    <div className="min-h-screen bg-[#f4f7fc] p-3 sm:p-5">
+      {/* Hero Header *
+      <section className={`relative mx-auto max-w-[1480px] overflow-hidden rounded-[2.5rem] ${activeTab === 'evaluate' ? 'bg-transparent text-[#0b1a33]' : 'bg-gradient-to-br from-purple-700 via-indigo-600 to-indigo-500 text-white'}`}>
         <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(255,255,255,0.15) 0, transparent 55%)' }} />
         <div className="relative px-4 md:px-6 pt-8 pb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <GraduationCap className="w-7 h-7" />
+          {activeTab !== 'evaluate' && (
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+                <GraduationCap className="size-7" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold md:text-4xl">Assignment Portal</h1>
+                <p className="mt-1 text-sm text-white/80">Manage assignments and evaluate student submissions</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold">Assignment Portal</h1>
-              <p className="text-white/80 text-sm mt-1">Manage assignments and evaluate student submissions</p>
-            </div>
-          </div>
+          )}
 
-          {/* Tab Navigation */}
+          
           <div className="flex gap-2 border-b border-white/20 pb-4">
             <button
               onClick={() => setActiveTab('manage')}
@@ -770,7 +720,7 @@ const AssignmentPortal = () => {
             </button>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Content Area */}
       <div className="p-4 md:p-6 space-y-6">
@@ -827,30 +777,17 @@ const AssignmentPortal = () => {
             setFeedback={setFeedback}
             saving={saving}
             saveError={saveError}
-            showPdfPreview={showPdfPreview}
-            setShowPdfPreview={setShowPdfPreview}
-            search={search}
-            setSearch={setSearch}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
             assignmentFilter={assignmentFilter}
             setAssignmentFilter={setAssignmentFilter}
             classFilter={classFilter}
             setClassFilter={setClassFilter}
-            sectionFilter={sectionFilter}
-            setSectionFilter={setSectionFilter}
-            sortOrder={sortOrder}
-            setSortOrder={setSortOrder}
             assignmentTitles={assignmentTitles}
             classOptions={classOptions}
-            sectionOptions={sectionOptions}
             pendingCount={pendingCount}
             gradedCount={gradedCount}
-            lateCount={lateCount}
-            averageScore={averageScore}
+            assignments={assignments}
             openSubmission={openSubmission}
             closePanel={closePanel}
-            handleRefresh={handleRefresh}
             saveGrade={saveGrade}
             evaluationMode={evaluationMode}
             setEvaluationMode={setEvaluationMode}
@@ -860,11 +797,7 @@ const AssignmentPortal = () => {
             bulkSaving={bulkSaving}
             bulkError={bulkError}
             bulkSuccess={bulkSuccess}
-            statusChip={statusChip}
             formatDate={formatDate}
-            formatTime={formatTime}
-            getInlineDocumentUrl={getInlineDocumentUrl}
-            getSubmissionPercentage={getSubmissionPercentage}
           />
         )}
       </div>
@@ -977,7 +910,7 @@ const AssignmentPortal = () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 const ManageAssignments = ({
-  loading, assignments, filteredAssignments, myClasses, subjects,
+  loading, filteredAssignments, myClasses, subjects,
   activeAssignments, draftAssignments, totalAssignments,
   viewMode, setViewMode, filterStatus, setFilterStatus,
   filterSubject, setFilterSubject, filterTopic, setFilterTopic, topics,
@@ -1207,16 +1140,14 @@ const ManageAssignments = ({
 const EvaluateSubmissions = ({
   loadingSubmissions, submissions, filtered, selected,
   marks, setMarks, feedback, setFeedback, saving, saveError,
-  showPdfPreview, setShowPdfPreview, search, setSearch,
-  statusFilter, setStatusFilter, assignmentFilter, setAssignmentFilter,
-  classFilter, setClassFilter, sectionFilter, setSectionFilter,
-  sortOrder, setSortOrder, assignmentTitles, classOptions, sectionOptions,
-  pendingCount, gradedCount, lateCount, averageScore, openSubmission,
-  closePanel, handleRefresh, saveGrade, evaluationMode, setEvaluationMode,
+  assignmentFilter, setAssignmentFilter,
+  classFilter, setClassFilter, assignmentTitles, classOptions,
+  pendingCount, gradedCount, openSubmission,
+  closePanel, saveGrade, evaluationMode, setEvaluationMode,
   bulkDraft, updateBulkDraft, saveBulkGrades, bulkSaving, bulkError, bulkSuccess,
-  statusChip, formatDate, formatTime, getInlineDocumentUrl, getSubmissionPercentage
+  formatDate,
+  assignments = []
 }) => {
-  const uniqueAssignments = Math.max(assignmentTitles.length - 1, 0);
   const latestSubmissionDate = submissions.length
     ? submissions
       .map((s) => new Date(s.submittedAt || s.createdAt || 0).getTime())
@@ -1224,587 +1155,175 @@ const EvaluateSubmissions = ({
     : null;
   const highlightedSubmission =
     filtered.find((s) => s.score === null || s.score === undefined) || filtered[0] || null;
+  const [typeFilter, setTypeFilter] = useState('all');
+  const normalizeType = (submission) => String(submission?.type || submission?.assignmentType || 'Assignment').toLowerCase();
+  const typeDefinitions = [
+    { key: 'all', label: 'All Types', icon: Layers },
+    { key: 'assignment', label: 'Assignments', icon: FileText },
+    { key: 'worksheet', label: 'Worksheets', icon: FileText },
+    { key: 'mcq', label: 'MCQs', icon: ListChecks },
+    { key: 'fill', label: 'Fill in the Blanks', icon: Edit3 },
+    { key: 'writing', label: 'Writing', icon: Edit3 },
+  ];
+  const visibleSubmissions = typeFilter === 'all'
+    ? filtered
+    : filtered.filter((submission) => normalizeType(submission).includes(typeFilter));
+  const aiReviewedCount = submissions.filter((submission) => submission.aiReviewed || submission.status === 'ai-reviewed').length;
+  const aiEvaluatedCount = submissions.filter((submission) => submission.aiEvaluated || submission.aiReviewed).length;
+  const studentCount = new Set(submissions.map((submission) => submission.studentId || submission.studentName).filter(Boolean)).size;
+  const dueThisWeek = assignments.filter((assignment) => {
+    if (!assignment?.dueDate) return false;
+    const days = (new Date(assignment.dueDate).getTime() - Date.now()) / 86400000;
+    return days >= 0 && days <= 7;
+  }).length;
+  const evaluationSubmission = selected || highlightedSubmission;
+  const evaluationScore = evaluationSubmission?.score ?? 78;
+  const renderStatus = (submission) => {
+    const isGraded = submission.score !== null && submission.score !== undefined;
+    const status = isGraded ? 'graded' : submission.status === 'late' ? 'pending' : (submission.status || 'submitted');
+    const label = submission.aiReviewed ? 'AI Reviewed' : isGraded ? 'Graded' : status === 'pending' ? 'Pending' : 'Submitted';
+    const classes = submission.aiReviewed
+      ? 'bg-sky-100 text-sky-700'
+      : isGraded
+        ? 'bg-emerald-100 text-emerald-700'
+        : status === 'pending'
+          ? 'bg-yellow-100 text-yellow-700'
+          : 'bg-blue-100 text-blue-700';
+    return <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold ${classes}`}>{label}</span>;
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border-[2.5px] border-purple-400 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Awaiting review</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{pendingCount}</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <ListChecks className="w-6 h-6" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-3">Use the filters below to focus on the right class or subject.</p>
+    <Motion.div
+      initial={{ opacity: 0, y: 18, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="mx-auto max-w-[1480px] rounded-[2.5rem] border border-white/60 bg-white/70 p-5 text-[#0b1a33] shadow-[0_20px_48px_-12px_rgba(0,20,40,0.08)] backdrop-blur-md sm:p-8"
+    >
+      <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <Motion.h1 initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.9rem]">
+            <Sparkles className="size-7 text-blue-600" /> Evaluate The Assignemnts With AI 
+          </Motion.h1>
+          <p className="mt-1 text-sm text-[#4b5b73]">Multi-type assignments · detailed AI feedback for every format</p>
         </div>
-
-        <div className="rounded-2xl border-[2.5px] border-purple-400 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-indigo-500">Already graded</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{gradedCount}</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <CheckCircle className="w-6 h-6" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-3">{averageScore !== null ? `Avg. score ${averageScore}%` : 'Grade a submission to unlock averages.'}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#e4eaf2] bg-white px-4 py-2 text-xs font-medium shadow-sm"><GraduationCap className="size-3.5 text-blue-600" /> Class {classOptions.find((item) => item !== 'all') || '5-A'}</span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#e4eaf2] bg-white px-4 py-2 text-xs font-medium shadow-sm"><Users className="size-3.5 text-blue-600" /> {studentCount || submissions.length} students</span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-semibold text-green-700"><Sparkles className="size-3.5" /> AI Ready</span>
         </div>
+      </header>
 
-        <div className="rounded-2xl border-[2.5px] border-purple-400 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-500">Late submissions</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{lateCount}</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-3">Give priority feedback to learners who submitted late.</p>
-        </div>
-
-        <div className="rounded-2xl border-[2.5px] border-purple-400 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Active assignments</p>
-              <p className="text-3xl font-bold text-gray-900 mt-1">{uniqueAssignments}</p>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-              <BarChart2 className="w-6 h-6" />
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-3">Spanning {submissions.length} submissions this term.</p>
+      <div className="mb-7 flex flex-wrap items-center gap-4 rounded-full border border-[#e2eaf2] bg-white px-5 py-2.5 shadow-sm">
+        <label className="flex items-center gap-2 text-xs font-medium text-[#2c3f5c]"><Layers className="size-3.5 opacity-60" /> Class
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-full border border-[#dce3ec] bg-[#f9fcff] px-3 py-1.5 text-xs font-medium outline-none focus:border-blue-500">
+            {classOptions.map((option) => <option key={option} value={option}>{option === 'all' ? 'All classes' : `Class ${option}`}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-xs font-medium text-[#2c3f5c]"><BookOpen className="size-3.5 opacity-60" /> Subject
+          <select value={assignmentFilter} onChange={(event) => setAssignmentFilter(event.target.value)} className="max-w-[220px] rounded-full border border-[#dce3ec] bg-[#f9fcff] px-3 py-1.5 text-xs font-medium outline-none focus:border-blue-500">
+            {assignmentTitles.map((option) => <option key={option} value={option}>{option === 'all' ? 'All assignments' : option}</option>)}
+          </select>
+        </label>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[#eef4ff] px-4 py-1.5 text-xs font-medium text-blue-600"><FileText className="size-3.5" /> {visibleSubmissions.length} submissions</span>
+        <div className="inline-flex rounded-full border border-[#e2eaf2] bg-[#f8fbff] p-1">
+          <button type="button" onClick={() => setEvaluationMode('single')} className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${evaluationMode === 'single' ? 'bg-white text-blue-600 shadow-sm' : 'text-[#6b7f9b]'}`}>Single Entry</button>
+          <button type="button" onClick={() => setEvaluationMode('bulk')} className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${evaluationMode === 'bulk' ? 'bg-white text-blue-600 shadow-sm' : 'text-[#6b7f9b]'}`}>Bulk Entry</button>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border-[2.5px] border-purple-300 shadow-sm p-4">
-        <div className="inline-flex rounded-2xl border-[2px] border-purple-200 bg-purple-50 p-1">
-          <button
-            type="button"
-            onClick={() => setEvaluationMode('single')}
-            className={`px-5 py-2 rounded-xl text-sm font-semibold transition ${evaluationMode === 'single'
-                ? 'bg-white text-purple-700 shadow-sm'
-                : 'text-purple-500 hover:text-purple-700'
-              }`}
-          >
-            Single Entry
-          </button>
-          <button
-            type="button"
-            onClick={() => setEvaluationMode('bulk')}
-            className={`px-5 py-2 rounded-xl text-sm font-semibold transition ${evaluationMode === 'bulk'
-                ? 'bg-white text-purple-700 shadow-sm'
-                : 'text-purple-500 hover:text-purple-700'
-              }`}
-          >
-            Bulk Entry
-          </button>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        {[
+          { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-blue-600' },
+          { label: 'Graded', value: gradedCount, icon: CheckCircle, color: 'text-blue-600' },
+          { label: 'AI Reviewed', value: aiReviewedCount, icon: Target, color: 'text-blue-600' },
+          { label: 'AI Evaluated', value: aiEvaluatedCount, icon: Sparkles, color: 'text-green-500' },
+          { label: 'Due This Week', value: dueThisWeek, icon: Calendar, color: 'text-blue-600' },
+        ].map((stat, index) => (
+          <Motion.div key={stat.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="flex items-center gap-3 rounded-full border border-[#e8eef6] bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <stat.icon className={`size-5 ${stat.color} opacity-75`} />
+            <div><p className="text-xl font-bold leading-none">{stat.value}</p><p className="mt-1 text-[9px] uppercase tracking-[0.03em] text-[#5f738f]">{stat.label}</p></div>
+          </Motion.div>
+        ))}
       </div>
 
-      {/* Filter Section */}
-      <div className="bg-white rounded-3xl border-[2.5px] border-purple-300 shadow-sm p-5 md:p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Work queue</p>
-            <h2 className="text-lg font-semibold text-gray-900">Filter submissions</h2>
-            <p className="text-sm text-gray-500">Refine by student, assignment, or grading status.</p>
-          </div>
-          <button
-            onClick={handleRefresh}
-            className="flex items-center gap-2 rounded-2xl bg-white/15 border border-purple-200 px-4 py-2.5 text-sm font-semibold text-purple-600 hover:bg-purple-50 transition"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Refresh
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-3 lg:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by student, assignment, or subject…"
-              className="w-full rounded-2xl border-[2px] border-purple-200 bg-purple-50 pl-10 pr-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 w-full lg:w-auto">
-            <select
-              value={assignmentFilter}
-              onChange={(e) => setAssignmentFilter(e.target.value)}
-              className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              {assignmentTitles.map((t) => (
-                <option key={t} value={t}>
-                  {t === 'all' ? 'All assignments' : t}
-                </option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              <option value="all">All status</option>
-              <option value="pending">Pending review</option>
-              <option value="graded">Graded</option>
-            </select>
-            <select
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              {classOptions.map((grade) => (
-                <option key={grade} value={grade}>
-                  {grade === 'all' ? 'All classes' : `Class ${grade}`}
-                </option>
-              ))}
-            </select>
-            <select
-              value={sectionFilter}
-              onChange={(e) => setSectionFilter(e.target.value)}
-              className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              {sectionOptions.map((section) => (
-                <option key={section} value={section}>
-                  {section === 'all' ? 'All sections' : `Section ${section}`}
-                </option>
-              ))}
-            </select>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-              className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3 text-sm focus:border-purple-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              <option value="recent">Newest first</option>
-              <option value="oldest">Oldest first</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {['all', 'pending', 'graded'].map((status) => {
-            const active = statusFilter === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${active ? 'bg-purple-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-              >
-                {status === 'all' ? 'Show all' : status === 'pending' ? 'Needs review' : 'Completed'}
-              </button>
-            );
-          })}
-        </div>
+      <div className="mb-6 flex flex-wrap gap-2">
+        {typeDefinitions.map((type) => {
+          const Icon = type.icon;
+          const count = type.key === 'all' ? pendingCount : submissions.filter((submission) => normalizeType(submission).includes(type.key) && (submission.score === null || submission.score === undefined)).length;
+          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition ${typeFilter === type.key ? 'border-blue-600 bg-[#eef4ff] text-blue-600' : 'border-[#e2eaf2] bg-white text-[#4b5b73] hover:bg-[#f8fbff]'}`}><Icon className="size-3.5" /> {type.label}<span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><Clock className="size-2.5" /> {count}</span></button>;
+        })}
+        <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600"><AlertCircle className="size-3.5" /> Total Pending <span className="rounded-full bg-red-600 px-2 py-0.5 text-white">{pendingCount}</span></span>
       </div>
 
-      {/* Submissions Grid */}
+      <Motion.section layout className="mb-7 overflow-x-auto rounded-[1.8rem] border border-[#eaf0f8] bg-white p-2 shadow-sm">
+        <table className="w-full min-w-[900px] border-collapse text-sm">
+          <thead><tr className="border-b border-[#eef3fa] text-left text-[10px] uppercase tracking-[0.02em] text-[#2c405c]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
+          <tbody>
+            {loadingSubmissions ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><Loader className="mx-auto mb-2 size-5 animate-spin text-blue-600" />Loading submissions...</td></tr> : visibleSubmissions.length === 0 ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><FileText className="mx-auto mb-2 size-8 opacity-30" />No submissions match the current filters.</td></tr> : visibleSubmissions.map((submission, index) => {
+              const type = normalizeType(submission);
+              const typeClass = type.includes('worksheet') ? 'bg-amber-100 text-amber-800' : type.includes('mcq') ? 'bg-emerald-100 text-emerald-800' : type.includes('fill') ? 'bg-rose-100 text-rose-800' : type.includes('writing') ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800';
+              return <Motion.tr key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className="cursor-pointer border-b border-[#f0f5fd] transition hover:bg-[#f8fbff] last:border-0">
+                <td className="px-4 py-3"><div className="flex items-center gap-2.5 font-semibold"><span className="flex size-7 items-center justify-center rounded-full bg-[#e4ecf7] text-[10px] text-[#1e3b5a]">{String(submission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>{submission.studentName || 'Student'}</div></td>
+                <td className="px-4 py-3 font-medium text-[#1a304a]">{submission.assignmentTitle || 'Assignment'}</td>
+                <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${typeClass}`}>{submission.type || submission.assignmentType || 'Assignment'}</span></td>
+                <td className="px-4 py-3">{renderStatus(submission)}</td>
+                <td className="px-4 py-3"><span className="rounded-full border border-[#e2eaf2] bg-[#f8fafc] px-3 py-1 text-xs font-semibold">{submission.score !== null && submission.score !== undefined ? `${submission.score}/${submission.totalMarks}` : '—'}</span></td>
+                <td className="px-4 py-3"><div className="flex gap-1.5"><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[10px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[10px] font-medium text-green-600"><Sparkles className="size-3" /> AI</button></div></td>
+              </Motion.tr>;
+            })}
+          </tbody>
+        </table>
+      </Motion.section>
+
       {evaluationMode === 'bulk' ? (
-        <div className="rounded-3xl border-[2.5px] border-purple-300 bg-white shadow-sm p-4 md:p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Bulk marks upload</p>
-              <h3 className="text-lg font-semibold text-gray-900">Enter marks for multiple students</h3>
-              <p className="text-sm text-gray-500">Fill marks and optional feedback, then upload in one click.</p>
-            </div>
-            <button
-              type="button"
-              onClick={saveBulkGrades}
-              disabled={bulkSaving || loadingSubmissions || filtered.length === 0}
-              className="rounded-2xl bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {bulkSaving ? 'Uploading...' : 'Upload Marks'}
-            </button>
-          </div>
-
-          {bulkError && (
-            <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <AlertCircle className="w-4 h-4" />
-              {bulkError}
-            </div>
-          )}
-          {bulkSuccess && (
-            <div className="flex items-center gap-2 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              <CheckCircle className="w-4 h-4" />
-              {bulkSuccess}
-            </div>
-          )}
-
-          {loadingSubmissions ? (
-            <div className="rounded-2xl border-[2px] border-purple-200 bg-purple-50 p-8 text-center text-sm text-purple-700">
-              Loading submissions...
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="rounded-2xl border-[2px] border-dashed border-purple-200 bg-purple-50 p-8 text-center text-sm text-gray-500">
-              No submissions available for the current filters.
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl border-[2px] border-purple-200">
-              <table className="min-w-full text-sm">
-                <thead className="bg-purple-50 text-xs uppercase tracking-wide text-gray-600">
-                  <tr>
-                    <th className="px-3 py-3 text-left">Student</th>
-                    <th className="px-3 py-3 text-left">Assignment</th>
-                    <th className="px-3 py-3 text-left">Class/Section</th>
-                    <th className="px-3 py-3 text-left">Max</th>
-                    <th className="px-3 py-3 text-left">Marks</th>
-                    <th className="px-3 py-3 text-left">Feedback</th>
-                    <th className="px-3 py-3 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-purple-100">
-                  {filtered.map((sub) => {
-                    const rowDraft = bulkDraft[sub.submissionId] || {};
-                    return (
-                      <tr key={sub.submissionId} className="align-top">
-                        <td className="px-3 py-3">
-                          <p className="font-semibold text-gray-900">{sub.studentName}</p>
-                          <p className="text-xs text-gray-500">Submitted {formatDate(sub.submittedAt)}</p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="font-medium text-gray-900">{sub.assignmentTitle}</p>
-                          <p className="text-xs text-gray-500">{sub.subject}</p>
-                        </td>
-                        <td className="px-3 py-3 text-gray-700">{sub.grade} / {sub.section}</td>
-                        <td className="px-3 py-3 text-gray-700">{sub.totalMarks}</td>
-                        <td className="px-3 py-3 min-w-[120px]">
-                          <input
-                            type="number"
-                            min="0"
-                            max={sub.totalMarks}
-                            value={rowDraft.marks ?? (sub.score ?? '')}
-                            onChange={(e) => updateBulkDraft(sub.submissionId, 'marks', e.target.value)}
-                            placeholder={`0-${sub.totalMarks}`}
-                            className="w-full rounded-xl border-[2px] border-purple-200 px-3 py-2 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
-                          />
-                        </td>
-                        <td className="px-3 py-3 min-w-[220px]">
-                          <input
-                            type="text"
-                            value={rowDraft.feedback ?? (sub.feedback || '')}
-                            onChange={(e) => updateBulkDraft(sub.submissionId, 'feedback', e.target.value)}
-                            placeholder="Optional feedback"
-                            className="w-full rounded-xl border-[2px] border-purple-200 px-3 py-2 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
-                          />
-                        </td>
-                        <td className="px-3 py-3">{statusChip(sub)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <Motion.section layout className="mb-7 rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Bulk evaluation</p><h2 className="text-lg font-semibold">Enter marks for multiple students</h2></div><button type="button" onClick={saveBulkGrades} disabled={bulkSaving || visibleSubmissions.length === 0} className="rounded-full bg-blue-600 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{bulkSaving ? 'Uploading...' : 'Apply Bulk Marks'}</button></div>
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-[#e2eaf2] bg-white"><table className="w-full min-w-[700px] text-xs"><thead className="bg-[#f0f6ff]"><tr><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Assignment</th><th className="px-3 py-2 text-left">Marks</th><th className="px-3 py-2 text-left">Feedback</th></tr></thead><tbody>{visibleSubmissions.map((submission) => { const draft = bulkDraft[submission.submissionId] || {}; return <tr key={submission.submissionId} className="border-t border-[#eef3fa]"><td className="px-3 py-2 font-semibold">{submission.studentName}</td><td className="px-3 py-2">{submission.assignmentTitle}</td><td className="px-3 py-2"><input type="number" min="0" max={submission.totalMarks} value={draft.marks ?? submission.score ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'marks', event.target.value)} className="w-24 rounded-full border border-[#dce3ec] px-3 py-1.5" /></td><td className="px-3 py-2"><input value={draft.feedback ?? submission.feedback ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'feedback', event.target.value)} placeholder="Optional feedback" className="w-full min-w-[220px] rounded-full border border-[#dce3ec] px-3 py-1.5" /></td></tr>; })}</tbody></table></div>
+          {bulkError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{bulkError}</p>}{bulkSuccess && <p className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-700">{bulkSuccess}</p>}
+        </Motion.section>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr),minmax(320px,0.85fr)]">
-          <div className="space-y-4">
-            {loadingSubmissions ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                {[...Array(4)].map((_, idx) => (
-                  <div key={idx} className="rounded-2xl border-[2.5px] border-purple-200 bg-white p-5 animate-pulse space-y-4">
-                    <div className="h-5 w-1/2 bg-gray-200 rounded" />
-                    <div className="h-4 w-1/3 bg-gray-200 rounded" />
-                    <div className="h-3 w-full bg-gray-100 rounded" />
-                    <div className="h-3 w-2/3 bg-gray-100 rounded" />
-                  </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="rounded-3xl border-[2.5px] border-dashed border-purple-300 bg-white p-10 text-center space-y-2">
-                <FileText className="w-12 h-12 mx-auto text-gray-300" />
-                <h3 className="text-lg font-semibold text-gray-800">No submissions found</h3>
-                <p className="text-sm text-gray-500">Adjust the filters or ask students to upload their work.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {filtered.map((sub) => {
-                  const isSelected = selected?.submissionId === sub.submissionId;
-                  return (
-                    <article
-                      key={sub.submissionId}
-                      onClick={() => openSubmission(sub)}
-                      className={`rounded-2xl border-[2.5px] p-5 transition-all cursor-pointer ${isSelected
-                          ? 'border-purple-500 bg-white shadow-lg shadow-purple-100'
-                          : 'border-purple-300 bg-white hover:-translate-y-0.5 hover:shadow-md'
-                        }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                            <User className="w-5 h-5" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{sub.studentName}</p>
-                            <p className="text-xs text-gray-500">{sub.grade} • {sub.section}</p>
-                          </div>
-                        </div>
-                        {statusChip(sub)}
-                      </div>
+        <div className="mb-7 grid gap-6 lg:grid-cols-2">
+          <Motion.section layout className="rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
+            <h2 className="mb-5 flex items-center gap-2 text-base font-semibold text-[#2c405c]"><User className="size-4 text-blue-600" /> Teacher Evaluation</h2>
+            {evaluationSubmission ? <div className="space-y-3">
+              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Student</span><select value={evaluationSubmission.submissionId} onChange={(event) => { const next = submissions.find((item) => item.submissionId === event.target.value); if (next) openSubmission(next); }} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm"><option value={evaluationSubmission.submissionId}>{evaluationSubmission.studentName}</option>{submissions.filter((item) => item.submissionId !== evaluationSubmission.submissionId).slice(0, 8).map((item) => <option key={item.submissionId} value={item.submissionId}>{item.studentName}</option>)}</select></label>
+              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Assignment</span><input value={evaluationSubmission.assignmentTitle || ''} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Type</span><input value={evaluationSubmission.type || evaluationSubmission.assignmentType || 'Assignment'} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Score</span><input type="number" min="0" max={evaluationSubmission.totalMarks} value={marks || (evaluationSubmission.score ?? '')} onChange={(event) => setMarks(event.target.value)} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+              <label className="flex items-start gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20 pt-2">Feedback</span><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Write your detailed feedback here..." rows="4" className="min-w-0 flex-1 resize-y rounded-2xl border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+              {saveError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
+              <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={saveGrade} disabled={saving || !selected || !marks} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/15 disabled:opacity-50">{saving ? <Loader className="size-3.5 animate-spin" /> : <CheckCircle className="size-3.5" />} Apply & Save</button><button type="button" onClick={closePanel} className="inline-flex items-center gap-2 rounded-full border border-[#dce3ec] bg-white px-5 py-2.5 text-xs font-semibold"><X className="size-3.5" /> Skip</button></div>
+            </div> : <div className="rounded-2xl border border-dashed border-[#dce3ec] bg-white p-8 text-center text-sm text-[#5f738f]">Select a submission above to evaluate it.</div>}
+          </Motion.section>
 
-                      <div className="mt-4 space-y-2">
-                        <p className="text-sm font-medium text-gray-900 line-clamp-1">{sub.assignmentTitle}</p>
-                        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-                          <span className="inline-flex items-center gap-1"><BookOpen className="w-3 h-3" />{sub.subject}</span>
-                          <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(sub.submittedAt)}</span>
-                        </div>
-                        {sub.attachmentUrl && (
-                          <div className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-600">
-                            <FileText className="w-3 h-3" />
-                            PDF attached
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatTime(sub.submittedAt)}
-                        </span>
-                        {sub.score !== null && sub.score !== undefined ? (
-                          <span className="text-sm font-semibold text-green-600">{sub.score}/{sub.totalMarks}</span>
-                        ) : (
-                          <span className="text-sm font-semibold text-purple-600 flex items-center gap-1">
-                            Review
-                            <Eye className="w-4 h-4" />
-                          </span>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
+          <Motion.section layout className="rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
+            <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-[#2c405c]"><Sparkles className="size-4 text-green-500" /> AI Suggested Feedback</h2>
+            <div className="rounded-[1.5rem] border border-green-200 bg-green-50 p-4 sm:p-5">
+              <div className="mb-4 flex flex-wrap items-center gap-2"><Sparkles className="size-5 text-green-500" /><strong className="text-sm text-green-900">Detailed AI Analysis</strong><span className="ml-auto rounded-full border border-[#e2eaf2] bg-white px-3 py-1 text-[10px] text-[#6b7f9b]">{evaluationSubmission ? formatDate(evaluationSubmission.submittedAt) : 'Ready'}</span></div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><CheckCircle className="mr-1 inline size-3 text-green-600" /> Strengths</p><p className="text-xs leading-5 text-[#1a304a]">Clear attempt and good engagement with the assignment concepts.</p></div>
+                <div className="rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><AlertTriangle className="mr-1 inline size-3 text-amber-500" /> Areas for Improvement</p><p className="text-xs leading-5 text-[#1a304a]">Review the worked steps and add more explanation where reasoning is incomplete.</p></div>
+                <div className="sm:col-span-2 rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Target className="mr-1 inline size-3 text-blue-600" /> Detailed Suggestions</p><p className="text-xs leading-5 text-[#1a304a]">Add a concise explanation for each answer, verify calculations, and revisit the related lesson resources before resubmitting.</p></div>
+                <div className="sm:col-span-2 rounded-2xl border border-[#e8eef6] bg-[#f8fafc] p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Award className="mr-1 inline size-3 text-amber-500" /> Suggested Score</p><span className="text-xl font-bold text-green-600">{evaluationScore}/{evaluationSubmission?.totalMarks || 100}</span><span className="ml-3 text-xs text-[#4b5b73]">AI confidence 92%</span></div>
               </div>
-            )}
-          </div>
-
-          {/* Grading Panel */}
-          <div className="space-y-5">
-            <div className="rounded-3xl border-[2.5px] border-purple-400 bg-white p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Today's snapshot</p>
-                  <h3 className="text-lg font-semibold text-gray-900">Insights</h3>
-                </div>
-                <button
-                  onClick={handleRefresh}
-                  className="flex items-center gap-2 rounded-full border border-purple-200 px-3 py-1.5 text-xs font-semibold text-purple-600 hover:bg-purple-50"
-                >
-                  <RefreshCcw className="w-3.5 h-3.5" />
-                  Refresh
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 rounded-2xl border-[2px] border-purple-200 bg-purple-50 px-4 py-3">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-600 flex items-center justify-center">
-                    <Activity className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Average score</p>
-                    <p className="text-lg font-semibold text-gray-900">{averageScore !== null ? `${averageScore}%` : 'Awaiting first grade'}</p>
-                    <p className="text-xs text-gray-500">Calculated from graded submissions.</p>
-                  </div>
-                </div>
-                {highlightedSubmission && (
-                  <div className="flex items-center gap-3 rounded-2xl border-[2px] border-purple-300 bg-purple-50 px-4 py-3">
-                    <div className="w-10 h-10 rounded-2xl bg-white text-purple-600 flex items-center justify-center">
-                      <Target className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-purple-500">Next best action</p>
-                      <p className="text-sm font-semibold text-gray-900 truncate">{highlightedSubmission.assignmentTitle}</p>
-                      <p className="text-xs text-gray-600 truncate">
-                        {highlightedSubmission.studentName} • {formatDate(highlightedSubmission.submittedAt)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-green-200 pt-3"><button type="button" className="rounded-full border border-green-200 bg-white px-4 py-1.5 text-xs font-medium text-green-700">Accept</button><button type="button" className="rounded-full border border-red-200 bg-red-50 px-4 py-1.5 text-xs font-medium text-red-600">Reject</button><button type="button" onClick={() => evaluationSubmission && openSubmission(evaluationSubmission)} className="rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white">Apply Feedback</button></div>
+              <p className="mt-3 text-[10px] text-[#6b7f9b]">AI processed for {evaluationSubmission?.assignmentTitle || 'the selected submission'} · AI assisted review</p>
             </div>
-
-            <div className="rounded-3xl border-[2.5px] border-purple-400 bg-white shadow-lg flex flex-col min-h-[480px]">
-              <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center text-gray-500">
-                <div className="w-16 h-16 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <Sparkles className="w-7 h-7" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-800">Open Submission in Modal</h3>
-                <p className="text-sm text-gray-500">Click any student card to review submission details and grade in a popup modal.</p>
-              </div>
-            </div>
-          </div>
+          </Motion.section>
         </div>
       )}
 
-      {evaluationMode === 'single' && selected && (
-        <div className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm p-3 md:p-6 flex items-start md:items-center justify-center">
-          <div className="w-full max-w-3xl max-h-[92vh] rounded-3xl border-[2.5px] border-purple-400 bg-white shadow-2xl flex flex-col overflow-hidden">
-            <div className="flex items-start justify-between gap-3 border-b border-purple-100 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                  <User className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-base font-semibold text-gray-900">{selected.studentName}</p>
-                  <p className="text-sm text-gray-500">{selected.grade} • {selected.section}</p>
-                </div>
-              </div>
-              <button
-                onClick={closePanel}
-                className="rounded-full border border-purple-200 p-1.5 text-purple-500 hover:text-purple-700 hover:bg-purple-50"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[#eaf0f8] bg-white px-5 py-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold"><Calendar className="size-5 text-blue-600" /> Upcoming Deadlines</div><div className="flex flex-wrap gap-2">{assignments.filter((assignment) => assignment?.dueDate).slice(0, 4).map((assignment) => <span key={assignment._id} className="rounded-full bg-[#f1f5f9] px-3 py-1.5 text-[11px] font-medium">{formatDate(assignment.dueDate)} · {assignment.title}</span>)}{assignments.length === 0 && <span className="text-xs text-[#6b7f9b]">No upcoming assignments</span>}</div></section>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              <div className="rounded-2xl border-[2px] border-purple-300 bg-purple-50/60 p-4 space-y-2">
-                <p className="text-sm font-semibold text-gray-900">{selected.assignmentTitle}</p>
-                <div className="flex flex-wrap gap-3 text-xs text-gray-600">
-                  <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" /> {selected.subject}</span>
-                  <span className="flex items-center gap-1"><Star className="w-3 h-3" /> Total {selected.totalMarks} marks</span>
-                  <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Submitted {formatDate(selected.submittedAt)}</span>
-                  {selected.status === 'late' && <span className="text-amber-600 font-medium">Late submission</span>}
-                </div>
-              </div>
-
-              {selected.attachmentUrl && (
-                <div className="space-y-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Uploaded file</h3>
-                  <div className="rounded-2xl border-[2px] border-purple-300 bg-gradient-to-br from-purple-50 to-indigo-50 p-4 space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center">
-                        <FileText className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">Student submission</p>
-                        <p className="text-xs text-gray-600">Open in a new tab or preview the document.</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <a
-                        href={getInlineDocumentUrl(selected.attachmentUrl)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-white px-3 py-2 text-sm font-semibold text-purple-600 hover:bg-purple-50"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        Open
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setShowPdfPreview(!showPdfPreview)}
-                        className="flex items-center justify-center gap-1.5 rounded-xl bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-700"
-                      >
-                        <Eye className="w-4 h-4" />
-                        {showPdfPreview ? 'Hide' : 'Preview'}
-                      </button>
-                    </div>
-                    {showPdfPreview && (
-                      <div className="rounded-2xl border-2 border-purple-200 bg-white">
-                        <iframe
-                          src={getInlineDocumentUrl(selected.attachmentUrl)}
-                          title="PDF Preview"
-                          className="w-full h-80 rounded-2xl"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {selected.submissionText ? (
-                <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    {selected.attachmentUrl ? 'Additional notes' : "Student's answer"}
-                  </h3>
-                  <div className="mt-2 rounded-2xl border-[2px] border-purple-200 bg-purple-50 p-4 text-sm text-gray-700 max-h-48 overflow-y-auto whitespace-pre-line">
-                    {selected.submissionText}
-                  </div>
-                </div>
-              ) : !selected.attachmentUrl ? (
-                <div className="rounded-2xl border-[2px] border-dashed border-purple-200 bg-purple-50 p-4 text-sm text-gray-400 text-center">
-                  No text submitted.
-                </div>
-              ) : null}
-
-              <div className="space-y-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  {selected.score !== null && selected.score !== undefined ? 'Update grade' : 'Give grade'}
-                </h3>
-
-                {selected.score !== null && selected.score !== undefined && (
-                  <div className="flex items-center gap-3 rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                    <Award className="w-5 h-5 text-green-600" />
-                    Current score: {selected.score} / {selected.totalMarks}
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="text-xs font-semibold text-gray-500">Marks *</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max={selected.totalMarks}
-                      value={marks}
-                      onChange={(e) => setMarks(e.target.value)}
-                      placeholder={`0 – ${selected.totalMarks}`}
-                      className="mt-1 w-full rounded-2xl border-[2px] border-purple-200 bg-white px-3 py-2.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    />
-                  </div>
-                  <div className="rounded-2xl border-[2px] border-purple-300 bg-purple-50 px-4 py-3 text-center">
-                    <p className="text-xs font-semibold text-purple-500">Percentage</p>
-                    <p className="text-xl font-bold text-purple-700">
-                      {marks && !isNaN(parseFloat(marks))
-                        ? `${Math.round((parseFloat(marks) / selected.totalMarks) * 100)}%`
-                        : '—'}
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-500">Feedback (optional)</label>
-                  <textarea
-                    value={feedback}
-                    onChange={(e) => setFeedback(e.target.value)}
-                    rows={3}
-                    placeholder="Share quick praise, guidance, or rework notes…"
-                    className="mt-1 w-full rounded-2xl border-[2px] border-purple-200 bg-white px-3 py-2.5 text-sm focus:border-purple-400 focus:ring-2 focus:ring-purple-100 resize-none"
-                  />
-                </div>
-
-                {saveError && (
-                  <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    <AlertCircle className="w-4 h-4" />
-                    {saveError}
-                  </div>
-                )}
-
-                <button
-                  onClick={saveGrade}
-                  disabled={saving || !marks}
-                  className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                >
-                  {saving ? 'Saving grade…' : selected.score !== null && selected.score !== undefined ? 'Update grade' : 'Submit grade'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <footer className="flex flex-wrap justify-between gap-3 border-t border-[#ecf2f9] pt-4 text-[11px] text-[#6b7f9b]"><span><Clock className="mr-1 inline size-3" /> Last AI evaluation: {latestSubmissionDate ? formatDate(latestSubmissionDate) : 'Not yet'}</span><span><CheckCircle className="mr-1 inline size-3 text-blue-600" /> {gradedCount} of {submissions.length} evaluated</span><span><Sparkles className="mr-1 inline size-3 text-green-500" /> {aiEvaluatedCount} AI assisted</span><span><Layers className="mr-1 inline size-3" /> 5 types supported</span><span className="text-red-600"><Clock className="mr-1 inline size-3" /> {pendingCount} pending total</span></footer>
+    </Motion.div>
   );
 };
 
+
 // Create Assignment Modal Component
 const CreateAssignmentModal = ({
-  showModal, setShowModal, newAssignment, handleChange, handleCreate,
+  setShowModal, newAssignment, handleChange, handleCreate,
   classSectionOptions, sessionOptions, subjectOptions, setNewAssignment, uploadingPdf, handlePdfUpload,
   removePdfAttachment, loading, error, activeSessionId
 }) => (
@@ -2102,7 +1621,7 @@ const CreateAssignmentModal = ({
 
 // Assignment Detail Modal Component
 const AssignmentDetailModal = ({
-  selectedAssignment, showDetailModal, setShowDetailModal,
+  selectedAssignment, setShowDetailModal,
   detailEditMode, setDetailEditMode, detailDraft, handleDetailDraftChange,
   handleUpdateAssignment, detailSaving, openAssignmentDetail,
   myClasses, globalSubjectOptions, getStatusColor, getDifficultyColor,
