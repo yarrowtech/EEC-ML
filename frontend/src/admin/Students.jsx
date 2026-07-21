@@ -68,6 +68,11 @@ const Students = ({ setShowAdminHeader }) => {
   const [editingStudent, setEditingStudent] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const importProgressTimerRef = useRef(null);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState(0);
+  const deleteProgressTimerRef = useRef(null);
   const fileInputRef = useRef(null);
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
@@ -221,6 +226,10 @@ const Students = ({ setShowAdminHeader }) => {
     () => paginatedStudents.map((student) => String(student?._id || student?.id)).filter(Boolean),
     [paginatedStudents]
   );
+  const filteredStudentIds = useMemo(
+    () => filteredStudents.map((student) => String(student?._id || student?.id)).filter(Boolean),
+    [filteredStudents]
+  );
   const selectedIdSet = useMemo(
     () => new Set(selectedStudentIds.map((id) => String(id))),
     [selectedStudentIds]
@@ -228,6 +237,8 @@ const Students = ({ setShowAdminHeader }) => {
   const isAllVisibleSelected =
     visibleStudentIds.length > 0 && visibleStudentIds.every((id) => selectedIdSet.has(id));
   const isAnyVisibleSelected = visibleStudentIds.some((id) => selectedIdSet.has(id));
+  const isAllFilteredSelected =
+    filteredStudentIds.length > 0 && filteredStudentIds.every((id) => selectedIdSet.has(id));
   const pageNumbers = useMemo(
     () => Array.from({ length: totalPages }, (_, idx) => idx + 1),
     [totalPages]
@@ -251,8 +262,8 @@ const Students = ({ setShowAdminHeader }) => {
 
   useEffect(() => {
     if (!sessionOptions.length) return;
-    if (!sessionFilter || !sessionOptions.includes(sessionFilter)) {
-      setSessionFilter(sessionOptions[0]);
+    if (sessionFilter && !sessionOptions.includes(sessionFilter)) {
+      setSessionFilter("");
       setClassFilter("");
       setSectionFilter("");
     }
@@ -1031,6 +1042,14 @@ const Students = ({ setShowAdminHeader }) => {
     });
   };
 
+  const toggleSelectAllFiltered = () => {
+    if (isAllFilteredSelected) {
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds(filteredStudentIds);
+    }
+  };
+
   const handleBulkDeleteStudents = async () => {
     if (!selectedStudentIds.length) return;
     const confirm = await Swal.fire({
@@ -1044,43 +1063,73 @@ const Students = ({ setShowAdminHeader }) => {
     });
     if (!confirm.isConfirmed) return;
 
-    const results = await Promise.allSettled(
-      selectedStudentIds.map((id) =>
-        fetch(`${API_BASE}/api/admin/users/students/${id}`, {
-          method: "DELETE",
-          headers: {
-            authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        }).then(async (res) => {
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.error || data.message || res.statusText);
-          }
-          return true;
-        })
-      )
-    );
-
-    const failed = results.filter((r) => r.status === "rejected");
-    const successCount = results.length - failed.length;
-
-    setSelectedStudentIds([]);
-    await refreshStudents();
-
-    if (failed.length) {
-      Swal.fire({
-        icon: "warning",
-        title: "Bulk Delete Completed",
-        html: `<p><strong>${successCount}</strong> deleted, <strong>${failed.length}</strong> failed.</p>`,
+    setIsBulkDeleting(true);
+    setDeleteProgress(20);
+    if (deleteProgressTimerRef.current) clearInterval(deleteProgressTimerRef.current);
+    deleteProgressTimerRef.current = setInterval(() => {
+      setDeleteProgress((prev) => {
+        if (prev >= 90) return prev;
+        const step = prev < 50 ? 8 : prev < 75 ? 4 : 2;
+        return Math.min(90, prev + step);
       });
-      return;
-    }
+    }, 200);
 
-    Swal.fire({
-      icon: "success",
-      title: "Students Deleted",
-      text: `${successCount} student(s) deleted successfully.`,
-    });
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/students/bulk`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ ids: selectedStudentIds }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || data.message || res.statusText);
+      }
+
+      if (deleteProgressTimerRef.current) {
+        clearInterval(deleteProgressTimerRef.current);
+        deleteProgressTimerRef.current = null;
+      }
+      setDeleteProgress(100);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const successCount = data.deletedCount || 0;
+      const failedCount = Array.isArray(data.failedIds) ? data.failedIds.length : 0;
+
+      setSelectedStudentIds([]);
+      await refreshStudents();
+
+      if (failedCount) {
+        Swal.fire({
+          icon: "warning",
+          title: "Bulk Delete Completed",
+          html: `<p><strong>${successCount}</strong> deleted, <strong>${failedCount}</strong> failed.</p>`,
+        });
+        return;
+      }
+
+      Swal.fire({
+        icon: "success",
+        title: "Students Deleted",
+        text: `${successCount} student(s) deleted successfully.`,
+      });
+    } catch (err) {
+      Swal.fire({
+        icon: "error",
+        title: "Bulk Delete Failed",
+        text: err.message || "Unable to delete selected students.",
+      });
+    } finally {
+      if (deleteProgressTimerRef.current) {
+        clearInterval(deleteProgressTimerRef.current);
+        deleteProgressTimerRef.current = null;
+      }
+      setIsBulkDeleting(false);
+      setDeleteProgress(0);
+    }
   };
 
   const handleBulkArchiveStudents = async () => {
@@ -2554,9 +2603,30 @@ const Students = ({ setShowAdminHeader }) => {
     XLSX.writeFile(workbook, "student_bulk_upload_template.xlsx");
   };
 
+  const startImportProgress = () => {
+    setImportProgress(2);
+    if (importProgressTimerRef.current) clearInterval(importProgressTimerRef.current);
+    importProgressTimerRef.current = setInterval(() => {
+      setImportProgress((prev) => {
+        if (prev >= 90) return prev;
+        const step = prev < 50 ? 6 : prev < 75 ? 3 : 1;
+        return Math.min(90, prev + step);
+      });
+    }, 200);
+  };
+
+  const finishImportProgress = () => {
+    if (importProgressTimerRef.current) {
+      clearInterval(importProgressTimerRef.current);
+      importProgressTimerRef.current = null;
+    }
+    setImportProgress(100);
+  };
+
   const handleBulkFilePicked = async (file) => {
     try {
       setIsImporting(true);
+      startImportProgress();
 
       const rows = await parseFileToRows(file);
 
@@ -2769,6 +2839,9 @@ const Students = ({ setShowAdminHeader }) => {
         return;
       }
 
+      finishImportProgress();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
       await Swal.fire({
         icon: "success",
         title: "Import Complete!",
@@ -2797,7 +2870,12 @@ const Students = ({ setShowAdminHeader }) => {
         text: e.message || "An error occurred during import",
       });
     } finally {
+      if (importProgressTimerRef.current) {
+        clearInterval(importProgressTimerRef.current);
+        importProgressTimerRef.current = null;
+      }
       setIsImporting(false);
+      setImportProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -2836,10 +2914,18 @@ const Students = ({ setShowAdminHeader }) => {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isImporting}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              className="relative overflow-hidden border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
             >
-              {isImporting ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-              {isImporting ? "Importing..." : "Bulk Upload"}
+              {isImporting && (
+                <span
+                  className="absolute inset-y-0 left-0 bg-amber-100 transition-all duration-200 ease-out"
+                  style={{ width: `${importProgress}%` }}
+                />
+              )}
+              <span className="relative flex items-center gap-2">
+                {isImporting ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                {isImporting ? `Importing... ${importProgress}%` : "Bulk Upload"}
+              </span>
             </button>
             <input
               ref={fileInputRef}
@@ -2858,6 +2944,15 @@ const Students = ({ setShowAdminHeader }) => {
             >
               <Plus size={15} /> Add Student
             </button>
+            <button
+              onClick={toggleSelectAllFiltered}
+              disabled={filteredStudentIds.length === 0}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              title={isAllFilteredSelected ? "Clear selection" : `Select all ${filteredStudentIds.length} student(s)`}
+            >
+              <CheckCircle size={15} />
+              {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`}
+            </button>
             {selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkArchiveStudents}
@@ -2872,11 +2967,20 @@ const Students = ({ setShowAdminHeader }) => {
             {selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkDeleteStudents}
-                className="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                disabled={isBulkDeleting}
+                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
                 title={`Delete ${selectedStudentIds.length} selected student(s)`}
               >
-                <Trash2 size={15} />
-                Delete ({selectedStudentIds.length})
+                {isBulkDeleting && (
+                  <span
+                    className="absolute inset-y-0 left-0 bg-red-700/60 transition-all duration-200 ease-out"
+                    style={{ width: `${deleteProgress}%` }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete (${selectedStudentIds.length})`}
+                </span>
               </button>
             )}
             <button
@@ -2975,12 +3079,20 @@ const Students = ({ setShowAdminHeader }) => {
           {/* Students Table */}
           <>
             <div className="relative flex-1 overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-              {/* {isImporting && (
-                <div className={`sticky ${tableRefreshing ? "top-8" : "top-0"} z-20 flex items-center justify-center gap-2 bg-blue-50/95 border-b border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-700`}>
-                  <Loader2 size={13} className="animate-spin" />
-                  Uploading bulk student file...
+              {isImporting && (
+                <div className="sticky top-0 z-20 bg-blue-50/95 border-b border-blue-200">
+                  <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700">
+                    <Loader2 size={13} className="animate-spin" />
+                    Uploading bulk student file... {importProgress}%
+                  </div>
+                  <div className="h-1 w-full bg-blue-100">
+                    <div
+                      className="h-full bg-blue-500 transition-all duration-200 ease-out"
+                      style={{ width: `${importProgress}%` }}
+                    />
+                  </div>
                 </div>
-              )} */}
+              )}
               <table className="w-full min-w-[980px] border-collapse table-fixed">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-gray-50">

@@ -170,6 +170,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   // Show/hide add form
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeClassId, setActiveClassId] = useState("all");
+  const [activeSubjectClassId, setActiveSubjectClassId] = useState("all");
 
   const authHeaders = useMemo(() => {
     const token = localStorage.getItem("token");
@@ -269,6 +270,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     ];
   }, [visibleClasses]);
 
+  const subjectsByClass = useMemo(() => {
+    const map = {};
+    classes.forEach((c) => { map[String(c._id)] = 0; });
+    subjects.forEach((s) => {
+      const cId = String(s.classId || "");
+      if (cId && map[cId] !== undefined) {
+        map[cId]++;
+      }
+    });
+    return map;
+  }, [subjects, classes]);
+
   /* ─── Filtered data ─── */
   const filteredYears = useMemo(() => {
     let sourceYears = activeYears;
@@ -312,9 +325,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   }, [visibleSections, searchSection, classNameById, activeClassId]);
 
   const filteredSubjects = useMemo(() => {
-    if (!searchSubject.trim()) return visibleSubjects;
+    let list = visibleSubjects;
+    if (activeSubjectClassId !== "all") {
+      list = list.filter((s) => {
+        const classId = String(s.classId || "").trim();
+        return !classId || classId === activeSubjectClassId;
+      });
+    }
+    if (!searchSubject.trim()) return list;
     const q = searchSubject.toLowerCase();
-    return visibleSubjects.filter((s) => {
+    return list.filter((s) => {
       const className = classNameById[String(s.classId || "")] || "";
       return (
         s.name.toLowerCase().includes(q) ||
@@ -323,7 +343,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         className.toLowerCase().includes(q)
       );
     });
-  }, [visibleSubjects, searchSubject, classNameById]);
+  }, [visibleSubjects, searchSubject, classNameById, activeSubjectClassId]);
 
   const classTeacherAllocations = useMemo(
     () =>
@@ -2095,6 +2115,33 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </form>
             )}
+
+            <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+              {classTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveSubjectClassId(tab.id)}
+                  className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    activeSubjectClassId === tab.id
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {tab.name}
+                  {tab.id !== "all" && (
+                    <span
+                      className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        activeSubjectClassId === tab.id
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-gray-200 text-gray-500"
+                      }`}
+                    >
+                      {subjectsByClass[tab.id] || 0}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
 
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">

@@ -998,6 +998,97 @@ router.put('/students/:id', adminAuth, async (req, res) => {
   }
 });
 
+router.delete('/students/bulk', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const validIds = ids.filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'No valid student ids provided' });
+    }
+
+    const filter = buildScopedFilter(req);
+    filter._id = { $in: validIds };
+
+    const studentsToRemove = await StudentUser.find(filter).lean();
+    if (!studentsToRemove.length) {
+      return res.status(404).json({ error: 'No matching students found' });
+    }
+
+    await StudentUser.deleteMany({ _id: { $in: studentsToRemove.map((s) => s._id) } });
+
+    let deletedParents = 0;
+    let updatedParents = 0;
+
+    for (const removedStudent of studentsToRemove) {
+      const studentId = String(removedStudent._id);
+      const studentName = String(removedStudent.name || '').trim();
+      const studentGrade = String(removedStudent.grade || '').trim();
+
+      const parentScope = { schoolId: removedStudent.schoolId };
+      if (req.campusId) {
+        parentScope.$or = [
+          { campusId: req.campusId },
+          { campusId: { $exists: false } },
+          { campusId: null },
+        ];
+      }
+
+      const linkedParents = await ParentUser.find({
+        ...parentScope,
+        $or: [
+          { childrenIds: removedStudent._id },
+          ...(studentName ? [{ children: studentName }] : []),
+        ],
+      });
+
+      for (const parent of linkedParents) {
+        parent.childrenIds = Array.isArray(parent.childrenIds)
+          ? parent.childrenIds.filter((id) => String(id) !== studentId)
+          : [];
+
+        if (studentName) {
+          parent.children = Array.isArray(parent.children)
+            ? parent.children.filter((name) => String(name || '').trim() !== studentName)
+            : [];
+        }
+
+        if (studentGrade) {
+          parent.grade = Array.isArray(parent.grade)
+            ? parent.grade.filter((grade) => String(grade || '').trim() !== studentGrade)
+            : [];
+        }
+
+        const remainingChildIds = Array.isArray(parent.childrenIds) ? parent.childrenIds.length : 0;
+        const remainingChildNames = Array.isArray(parent.children) ? parent.children.length : 0;
+        if (remainingChildIds === 0 && remainingChildNames === 0) {
+          await ParentUser.deleteOne({ _id: parent._id });
+          deletedParents += 1;
+        } else {
+          await parent.save();
+          updatedParents += 1;
+        }
+      }
+    }
+
+    const deletedIds = studentsToRemove.map((s) => String(s._id));
+    const failedIds = validIds
+      .map((id) => String(id))
+      .filter((id) => !deletedIds.includes(id));
+
+    return res.json({
+      message: 'Deleted successfully',
+      deletedCount: deletedIds.length,
+      deletedStudentIds: deletedIds,
+      failedIds,
+      deletedParents,
+      updatedParents,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/students/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {

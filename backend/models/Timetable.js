@@ -10,6 +10,7 @@ const entrySchema = new mongoose.Schema(
     endTime: { type: String, trim: true },
     roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room' },
     room: { type: String, trim: true },
+    isBreak: { type: Boolean, default: false },
   },
   { _id: false }
 );

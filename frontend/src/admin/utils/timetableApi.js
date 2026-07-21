@@ -173,6 +173,20 @@ export const timetableApi = {
       console.error('Error fetching teacher schedule:', error);
       throw error;
     }
+  },
+
+  // Delete all timetables for the school
+  deleteAll: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/timetable/all`, {
+        method: 'DELETE',
+        headers: createHeaders()
+      });
+      return handleResponse(res);
+    } catch (error) {
+      console.error('Error deleting all timetables:', error);
+      throw error;
+    }
   }
 };
 
@@ -424,9 +438,10 @@ export const transformTimetablesToRoutines = (timetables) => {
 
       byDay[entry.dayOfWeek].push({
         time: `${convertTo12Hour(entry.startTime)} - ${convertTo12Hour(entry.endTime)}`,
-        subject: entry.subjectId?.name || 'Unknown',
+        isBreak: Boolean(entry.isBreak),
+        subject: entry.isBreak ? 'Break' : (entry.subjectId?.name || 'Unknown'),
         subjectId: entry.subjectId?._id || entry.subjectId || null,
-        teacher: entry.teacherId?.name || '-',
+        teacher: entry.isBreak ? '-' : (entry.teacherId?.name || '-'),
         teacherId: entry.teacherId?._id || entry.teacherId || null,
         roomId: entry.roomId?._id || entry.roomId || null,
         room: entry.room || '',

@@ -130,14 +130,30 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       }
       if (yearRes.ok) {
         const data = await yearRes.json();
-        setAcademicYears(Array.isArray(data) ? data : []);
-        // Pre-select current academic year if one is marked active
-        const active = (Array.isArray(data) ? data : []).find((y) => y.isActive);
+        const years = Array.isArray(data) ? data : [];
+        setAcademicYears(years);
+        // "To" defaults to the active session — that's genuinely the
+        // destination of a promotion. "From" must NOT default to that
+        // same active year: schools commonly create + activate the new
+        // session first and only then run promotions, so defaulting
+        // "From" to "active" would silently search for students who are
+        // already in the year they're being promoted INTO, finding none.
+        // Default "From" to the year immediately before the active one
+        // (by start date) instead, and leave it blank if there isn't one.
+        const sorted = [...years].sort(
+          (a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0)
+        );
+        const active = years.find((y) => y.isActive);
         if (active) {
-          setFromAcademicYearId(active._id);
-          setFromAcademicYear(active.name);
           setToAcademicYearId(active._id);
           setToAcademicYear(active.name);
+
+          const activeIdx = sorted.findIndex((y) => String(y._id) === String(active._id));
+          const previous = activeIdx > 0 ? sorted[activeIdx - 1] : null;
+          if (previous) {
+            setFromAcademicYearId(previous._id);
+            setFromAcademicYear(previous.name);
+          }
         }
       }
       if (studentRes.ok) {
@@ -274,6 +290,17 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
           (s) => !["Leaving", "Left"].includes(String(s?.status || ""))
         );
         setPreviewStudents(students);
+        if (students.length > 0 && data.academicYearRelaxed) {
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "info",
+            title: `No students matched session "${fromAcademicYear}" — showing all students in ${fromClassName}${fromSection ? " – " + fromSection : ""} instead.`,
+            showConfirmButton: false,
+            timer: 5000,
+            timerProgressBar: true,
+          });
+        }
         if (students.length === 0) {
           Swal.fire({
             icon: "info",

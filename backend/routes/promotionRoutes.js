@@ -73,6 +73,44 @@ const buildPromotionStudentFilter = ({
   return filter;
 };
 
+// Students are often promoted right after a new academic year is created
+// and marked active — at that point the "from" year selected in the UI
+// can end up equal to the (not-yet-populated) *new* year rather than the
+// year students are actually still tagged with. A strict match then finds
+// nobody even though the class clearly has students. To avoid that trap,
+// fall back to matching on class/section alone (ignoring the session)
+// whenever the strict, session-scoped query comes back empty.
+const findPromotionCandidates = async ({
+  schoolId,
+  campusId,
+  fromClass,
+  fromSection,
+  fromAcademicYear,
+  extraFilter = {},
+  select,
+}) => {
+  const runQuery = async (filter) => {
+    let query = StudentUser.find({ ...filter, ...extraFilter });
+    if (select) query = query.select(select);
+    return query.sort({ section: 1, roll: 1, name: 1 }).lean();
+  };
+
+  const strictFilter = buildPromotionStudentFilter({ schoolId, campusId, fromClass, fromSection, fromAcademicYear });
+  let students = await runQuery(strictFilter);
+  let academicYearRelaxed = false;
+
+  if (students.length === 0 && fromAcademicYear) {
+    const relaxedFilter = buildPromotionStudentFilter({ schoolId, campusId, fromClass, fromSection });
+    const relaxed = await runQuery(relaxedFilter);
+    if (relaxed.length > 0) {
+      students = relaxed;
+      academicYearRelaxed = true;
+    }
+  }
+
+  return { students, academicYearRelaxed };
+};
+
 const toSafePercentage = (value, fallback = 50) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -311,20 +349,16 @@ router.post('/preview', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'fromClass is required' });
     }
 
-    const filter = buildPromotionStudentFilter({
+    const { students, academicYearRelaxed } = await findPromotionCandidates({
       schoolId,
       campusId,
       fromClass,
       fromSection,
       fromAcademicYear,
+      select: '_id name grade section roll academicYear studentCode status email mobile',
     });
 
-    const students = await StudentUser.find(filter)
-      .select('_id name grade section roll academicYear studentCode status email mobile')
-      .sort({ section: 1, roll: 1, name: 1 })
-      .lean();
-
-    res.json({ students, count: students.length });
+    res.json({ students, count: students.length, academicYearRelaxed });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to preview students' });
   }
@@ -347,18 +381,14 @@ router.post('/preview-marks', adminAuth, async (req, res) => {
     }
 
     const threshold = toSafePercentage(minPercentage, 50);
-    const filter = buildPromotionStudentFilter({
+    const { students, academicYearRelaxed } = await findPromotionCandidates({
       schoolId,
       campusId,
       fromClass,
       fromSection,
       fromAcademicYear,
+      select: '_id name grade section roll academicYear studentCode status email mobile',
     });
-
-    const students = await StudentUser.find(filter)
-      .select('_id name grade section roll academicYear studentCode status email mobile')
-      .sort({ section: 1, roll: 1, name: 1 })
-      .lean();
 
     const summaryByStudent = await computeResultSummaryByStudent({
       schoolId,
@@ -406,6 +436,7 @@ router.post('/preview-marks', adminAuth, async (req, res) => {
       count: ranked.length,
       eligibleCount: eligibleIds.length,
       ineligibleCount: ranked.length - eligibleIds.length,
+      academicYearRelaxed,
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to preview marks-based promotion' });
@@ -456,21 +487,36 @@ router.post('/execute', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid student IDs provided' });
     }
 
-    const eligibleFilter = {
-      _id: { $in: validIds },
-      schoolId,
-      isArchived: { $ne: true },
-      status: { $nin: ['Leaving', 'Left', 'Expelled'] },
+    const buildExecuteEligibleFilter = (includeAcademicYear) => {
+      const filter = {
+        _id: { $in: validIds },
+        schoolId,
+        isArchived: { $ne: true },
+        status: { $nin: ['Leaving', 'Left', 'Expelled'] },
+      };
+      if (campusId) filter.campusId = campusId;
+      if (fromClass) filter.grade = fromClass;
+      if (fromSection) filter.section = fromSection;
+      if (includeAcademicYear && fromAcademicYear) {
+        const matcher = buildAcademicYearMatcher(fromAcademicYear);
+        if (matcher) filter.academicYear = matcher;
+      }
+      return filter;
     };
-    if (campusId) eligibleFilter.campusId = campusId;
-    if (fromClass) eligibleFilter.grade = fromClass;
-    if (fromSection) eligibleFilter.section = fromSection;
-    if (fromAcademicYear) {
-      const matcher = buildAcademicYearMatcher(fromAcademicYear);
-      if (matcher) eligibleFilter.academicYear = matcher;
-    }
 
-    const eligibleStudents = await StudentUser.find(eligibleFilter).select('_id').lean();
+    // Same relaxation as /preview: if the strict session match finds
+    // nobody (e.g. the selected "from" year doesn't match what's stored
+    // on these students yet), fall back to class/section alone so the
+    // students the admin already picked in preview still get promoted.
+    let eligibleStudents = await StudentUser.find(buildExecuteEligibleFilter(true)).select('_id').lean();
+    let academicYearRelaxed = false;
+    if (eligibleStudents.length === 0 && fromAcademicYear) {
+      const relaxed = await StudentUser.find(buildExecuteEligibleFilter(false)).select('_id').lean();
+      if (relaxed.length > 0) {
+        eligibleStudents = relaxed;
+        academicYearRelaxed = true;
+      }
+    }
     if (eligibleStudents.length === 0) {
       return res.status(400).json({ error: 'No eligible students found for promotion' });
     }
@@ -630,6 +676,7 @@ router.post('/execute', adminAuth, async (req, res) => {
       feeInvoiceReason: feeResult.reason || null,
       historyId: history._id,
       message: `${updateResult.modifiedCount} student(s) promoted to ${toClass}${toSection ? ' - ' + toSection : ''}`,
+      academicYearRelaxed,
     });
 
     await writeAuditLog({

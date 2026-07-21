@@ -527,6 +527,24 @@ router.get('/teacher/:teacherId', adminAuth, async (req, res) => {
   }
 });
 
+// Delete all timetables for the school (all class routines)
+router.delete('/all', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Timetable']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    if (!ensureSchoolAdmin(req, res)) return;
+    const campusId = resolveCampusId(req);
+
+    const result = await Timetable.deleteMany(buildCampusFilter(schoolId, campusId));
+    await syncTimetableGroupThreads({ schoolId, campusId: campusId || null });
+
+    res.json({ message: 'All routines deleted successfully', deletedCount: result.deletedCount || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Delete timetable
 router.delete('/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Timetable']

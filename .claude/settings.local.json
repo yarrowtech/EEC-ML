@@ -124,7 +124,22 @@
       "Bash(git -C \"/run/media/meow/New Volume/experimental/EEC ML\" status --short)",
       "Bash(grep -v -E \"useDesktopNotificationBridge.js$|DesktopNotificationPermissionModal.jsx$\")",
       "Bash(npm run *)",
-      "Bash(grep -n 'placeholder=\"Search...\\\\|placeholder={' src/components/Header.jsx)"
+      "Bash(grep -n 'placeholder=\"Search...\\\\|placeholder={' src/components/Header.jsx)",
+      "Bash(node -c routes/adminUserManagement.js)",
+      "Bash(node -c routes/timetableRoutes.js)",
+      "Bash(grep -n \"doc.save\\(\\\\`all_routines\\\\|/\\\\* ════════════════════ RENDER\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/admin/Routines.jsx\")",
+      "Bash(grep -n \"key={\\\\`\\\\${row.time}-\\\\${idx}\\\\`}\\\\|form.schedule.map\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/admin/Routines.jsx\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(netstat -ltnp)",
+      "Bash(grep -n \"setForm\\(\\\\|useState\\({ class\\\\|const \\\\[form, setForm\\\\]\" \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend/src/admin/Routines.jsx\")",
+      "Bash(command -v chromium-cli)",
+      "Bash(node -e \"require.resolve\\('playwright'\\)\")",
+      "Bash(rm -f /tmp/rout_check.js)",
+      "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" && npx esbuild --bundle=false src/admin/Routines.jsx --outfile=/tmp/rout_check2.js && echo \"PARSE OK\" && rm -f /tmp/rout_check2.js)",
+      "Bash(node -c models/Timetable.js)",
+      "Bash(node -c routes/promotionRoutes.js)",
+      "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" && npx esbuild --bundle=false src/admin/pages/StudentPromotion.jsx --outfile=/tmp/sp_check.js && echo \"PARSE OK\" && rm -f /tmp/sp_check.js)"
     ],
     "additionalDirectories": [
       "/tmp"
