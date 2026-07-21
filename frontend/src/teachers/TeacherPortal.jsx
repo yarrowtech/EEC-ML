@@ -540,6 +540,7 @@ const CW_TABS = [
       rel === 'students' ||
       rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
+      rel.startsWith('students/achievements') ||
       rel === 'assignments' ||
       rel === 'reports' ||
       rel.startsWith('assessments'),
@@ -548,6 +549,7 @@ const CW_TABS = [
       { label: 'Student Health Records', path: 'students/health-records' },
       { label: 'Attendance',             path: 'students/attendance' },
       { label: 'Assignments',            path: 'assignments' },
+      { label: 'Achievements',           path: 'students/achievements' },
       { label: 'Exams',                  path: 'assessments/exams' },
       { label: 'Results',                path: 'assessments/results' },
     ],
@@ -558,14 +560,10 @@ const CW_TABS = [
     icon: Eye,
     ownPaths: (rel) =>
       rel.startsWith('students/observations') ||
-      rel.startsWith('students/analytics') ||
-      rel.startsWith('students/achievements') ||
       rel.includes('ai-learning'),
     firstPath: 'students/observations',
     subTabs: [
-      { label: 'Weak Students',              path: 'students/observations' },
-      { label: 'Analytics',                  path: 'students/analytics' },
-      { label: 'Customized Path Generation', path: 'students/achievements' },
+      { label: 'Emotional Wellbeing', path: 'students/observations' },
     ],
   },
   {

@@ -1,115 +1,77 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, Eye } from "lucide-react";
-import { formatStudentDisplay } from "../utils/studentDisplay";
+import { motion as Motion, AnimatePresence } from "framer-motion";
+import { CheckCircle2, Clock, Heart, Search, Save, ChevronDown, ChevronUp } from "lucide-react";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
-const SCORE_OPTIONS = ["High", "Medium", "Low"];
-const ATTITUDE_OPTIONS = ["Excellent", "Good", "Average", "Needs Support"];
-const BEHAVIOR_OPTIONS = ["Excellent", "Good", "Average", "Needs Improvement"];
-const SOCIAL_OPTIONS = ["Strong", "Good", "Developing", "Needs Support"];
-const COMM_OPTIONS = ["Excellent", "Good", "Fair", "Needs Support"];
-const TRAIT_OPTIONS = ["Strong", "Good", "Developing", "Needs Support"];
-const EMOTIONAL_OPTIONS = ["Stable", "Mostly Stable", "Fluctuating", "Needs Support"];
-const PHYSICAL_OPTIONS = ["Active", "Moderately Active", "Low Activity", "Needs Encouragement"];
-const CREATIVITY_OPTIONS = ["High", "Moderate", "Emerging", "Low"];
-const ROUTINE_OPTIONS = ["Consistent", "Mostly Consistent", "Inconsistent", "Needs Improvement"];
-const field = (label, options = SCORE_OPTIONS) => ({ label, options });
 
+/* ─── Rating option sets ─────────────────────────────────────── */
+const EMOTIONAL_OPTIONS = ["Stable", "Mostly Stable", "Fluctuating", "Needs Support"];
+const SOCIAL_OPTIONS    = ["Strong", "Good", "Developing", "Needs Support"];
+const BEHAVIOR_OPTIONS  = ["Excellent", "Good", "Average", "Needs Improvement"];
+const ATTITUDE_OPTIONS  = ["Excellent", "Good", "Average", "Needs Support"];
+const TRAIT_OPTIONS     = ["Strong", "Good", "Developing", "Needs Support"];
+
+/* ─── 5 key sections ─────────────────────────────────────────── */
 const SECTION_FIELDS = [
   {
-    title: "1. Learning & Attitude",
-    group: "emotion",
-    fields: [
-      field("Attention span", ["High", "Medium", "Low"]),
-      field("Curiosity level", ATTITUDE_OPTIONS),
-      field("Willingness to learn", ATTITUDE_OPTIONS),
-      field("Ability to follow instructions", ATTITUDE_OPTIONS),
-      field("Initiative", ATTITUDE_OPTIONS),
-    ],
-  },
-  {
-    title: "2. Classroom Behavior",
-    group: "emotion",
-    fields: [
-      field("Discipline", BEHAVIOR_OPTIONS),
-      field("Respect towards teachers", BEHAVIOR_OPTIONS),
-      field("Listening skills", BEHAVIOR_OPTIONS),
-      field("Rule-following behavior", BEHAVIOR_OPTIONS),
-      field("Time management", BEHAVIOR_OPTIONS),
-    ],
-  },
-  {
-    title: "3. Social Behavior",
-    group: "emotion",
-    fields: [
-      field("Interaction with peers", SOCIAL_OPTIONS),
-      field("Teamwork", SOCIAL_OPTIONS),
-      field("Leadership qualities", SOCIAL_OPTIONS),
-      field("Helping nature", SOCIAL_OPTIONS),
-      field("Conflict resolution skills", SOCIAL_OPTIONS),
-    ],
-  },
-  {
-    title: "4. Communication Skills",
-    group: "emotion",
-    fields: [
-      field("Verbal communication", COMM_OPTIONS),
-      field("Confidence in speaking", COMM_OPTIONS),
-      field("Clarity of expression", COMM_OPTIONS),
-      field("Body language", COMM_OPTIONS),
-      field("Listening to others", COMM_OPTIONS),
-    ],
-  },
-  {
-    title: "5. Personal Traits",
-    group: "emotion",
-    fields: [
-      field("Confidence level", TRAIT_OPTIONS),
-      field("Responsibility", TRAIT_OPTIONS),
-      field("Honesty / integrity", TRAIT_OPTIONS),
-      field("Patience", TRAIT_OPTIONS),
-      field("Adaptability", TRAIT_OPTIONS),
-    ],
-  },
-  {
-    title: "6. Emotional & Mental State",
+    title: "Emotional & Mental State",
+    emoji: "💛",
     group: "health",
+    color: "amber",
     fields: [
-      field("Emotional control", EMOTIONAL_OPTIONS),
-      field("Stress handling", EMOTIONAL_OPTIONS),
-      field("Motivation level", EMOTIONAL_OPTIONS),
-      field("Mood stability", EMOTIONAL_OPTIONS),
-      field("Self-esteem", EMOTIONAL_OPTIONS),
+      { label: "Emotional control",  options: EMOTIONAL_OPTIONS },
+      { label: "Stress handling",    options: EMOTIONAL_OPTIONS },
+      { label: "Motivation level",   options: EMOTIONAL_OPTIONS },
+      { label: "Mood stability",     options: EMOTIONAL_OPTIONS },
+      { label: "Self-esteem",        options: EMOTIONAL_OPTIONS },
     ],
   },
   {
-    title: "7. Physical & Activity Participation",
-    group: "health",
-    fields: [
-      field("Participation in sports", PHYSICAL_OPTIONS),
-      field("Energy level", PHYSICAL_OPTIONS),
-      field("Interest in physical activities", PHYSICAL_OPTIONS),
-      field("Coordination / fitness", PHYSICAL_OPTIONS),
-    ],
-  },
-  {
-    title: "8. Creativity & Interests",
+    title: "Social Behavior",
+    emoji: "🤝",
     group: "emotion",
+    color: "blue",
     fields: [
-      field("Creative thinking", CREATIVITY_OPTIONS),
-      field("Artistic interest", CREATIVITY_OPTIONS),
-      field("Innovation / idea generation", CREATIVITY_OPTIONS),
-      field("Hobby engagement", CREATIVITY_OPTIONS),
+      { label: "Interaction with peers",     options: SOCIAL_OPTIONS },
+      { label: "Teamwork",                   options: SOCIAL_OPTIONS },
+      { label: "Helping nature",             options: SOCIAL_OPTIONS },
+      { label: "Conflict resolution skills", options: SOCIAL_OPTIONS },
     ],
   },
   {
-    title: "9. Discipline & Routine",
+    title: "Classroom Behavior",
+    emoji: "🏫",
     group: "emotion",
+    color: "indigo",
     fields: [
-      field("Punctuality", ROUTINE_OPTIONS),
-      field("Daily routine consistency", ROUTINE_OPTIONS),
-      field("Task completion habits", ROUTINE_OPTIONS),
-      field("Responsibility towards duties", ROUTINE_OPTIONS),
+      { label: "Discipline",                  options: BEHAVIOR_OPTIONS },
+      { label: "Respect towards teachers",    options: BEHAVIOR_OPTIONS },
+      { label: "Listening skills",            options: BEHAVIOR_OPTIONS },
+      { label: "Time management",             options: BEHAVIOR_OPTIONS },
+    ],
+  },
+  {
+    title: "Learning & Attitude",
+    emoji: "📚",
+    group: "emotion",
+    color: "emerald",
+    fields: [
+      { label: "Attention span",       options: ATTITUDE_OPTIONS },
+      { label: "Curiosity level",      options: ATTITUDE_OPTIONS },
+      { label: "Willingness to learn", options: ATTITUDE_OPTIONS },
+      { label: "Initiative",           options: ATTITUDE_OPTIONS },
+    ],
+  },
+  {
+    title: "Personal Traits",
+    emoji: "⭐",
+    group: "emotion",
+    color: "violet",
+    fields: [
+      { label: "Confidence level", options: TRAIT_OPTIONS },
+      { label: "Responsibility",   options: TRAIT_OPTIONS },
+      { label: "Patience",         options: TRAIT_OPTIONS },
+      { label: "Adaptability",     options: TRAIT_OPTIONS },
     ],
   },
 ];
@@ -121,21 +83,68 @@ const NOTES_FIELDS = [
   "Any incidents worth noting",
 ];
 
+/* ─── Per-color style tokens (full literals for Tailwind JIT) ── */
+const COLOR = {
+  amber: {
+    header:      "bg-amber-50 border-amber-100",
+    text:        "text-amber-700",
+    pillActive:  "bg-amber-500 border-amber-500 text-white",
+    pillInactive:"bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700",
+  },
+  blue: {
+    header:      "bg-blue-50 border-blue-100",
+    text:        "text-blue-700",
+    pillActive:  "bg-blue-500 border-blue-500 text-white",
+    pillInactive:"bg-white border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700",
+  },
+  indigo: {
+    header:      "bg-indigo-50 border-indigo-100",
+    text:        "text-indigo-700",
+    pillActive:  "bg-indigo-500 border-indigo-500 text-white",
+    pillInactive:"bg-white border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700",
+  },
+  emerald: {
+    header:      "bg-emerald-50 border-emerald-100",
+    text:        "text-emerald-700",
+    pillActive:  "bg-emerald-500 border-emerald-500 text-white",
+    pillInactive:"bg-white border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700",
+  },
+  violet: {
+    header:      "bg-violet-50 border-violet-100",
+    text:        "text-violet-700",
+    pillActive:  "bg-violet-500 border-violet-500 text-white",
+    pillInactive:"bg-white border-slate-200 text-slate-600 hover:bg-violet-50 hover:border-violet-300 hover:text-violet-700",
+  },
+};
+
+/* ─── Rating → colour tone helper ───────────────────────────── */
+const optionTone = (value) => {
+  const v = String(value || "").toLowerCase();
+  if (v.includes("excellent") || v.includes("strong") || v.includes("stable") || v.includes("active")) return "emerald";
+  if (v.includes("good") || v.includes("mostly") || v.includes("moderate") || v.includes("medium")) return "blue";
+  if (v.includes("average") || v.includes("developing") || v.includes("fluctuating") || v.includes("fair")) return "amber";
+  if (v.includes("low") || v.includes("needs") || v.includes("inconsistent")) return "red";
+  return "slate";
+};
+
+const TONE_BADGE = {
+  emerald: "bg-emerald-50 text-emerald-700",
+  blue:    "bg-blue-50 text-blue-700",
+  amber:   "bg-amber-50 text-amber-700",
+  red:     "bg-red-50 text-red-700",
+  slate:   "bg-slate-100 text-slate-600",
+};
+
+/* ─── Helpers ────────────────────────────────────────────────── */
 const buildInitialRatings = () => {
   const out = {};
-  SECTION_FIELDS.forEach((section) => {
-    section.fields.forEach((fieldDef) => {
-      out[fieldDef.label] = "";
-    });
-  });
+  SECTION_FIELDS.forEach((s) => s.fields.forEach((f) => { out[f.label] = ""; }));
   return out;
 };
 
 const buildInitialNotes = () => {
   const out = {};
-  NOTES_FIELDS.forEach((field) => {
-    out[field] = "";
-  });
+  NOTES_FIELDS.forEach((f) => { out[f] = ""; });
   return out;
 };
 
@@ -148,71 +157,152 @@ const parseSortableNumber = (value) => {
   return m ? Number(m[0]) : Number.POSITIVE_INFINITY;
 };
 
-const getOptionEmoji = (option) => {
-  const value = String(option || "").toLowerCase();
-  if (value.includes("excellent") || value.includes("strong") || value.includes("active") || value.includes("high")) return "😀";
-  if (value.includes("good") || value.includes("stable") || value.includes("moderate") || value.includes("medium")) return "🙂";
-  if (value.includes("average") || value.includes("developing") || value.includes("mostly")) return "😐";
-  if (value.includes("low") || value.includes("needs") || value.includes("inconsistent") || value.includes("fluctuating")) return "😟";
-  return "🙂";
+const TOTAL_FIELDS = SECTION_FIELDS.reduce((sum, s) => sum + s.fields.length, 0);
+
+/* ─── StudentChip ────────────────────────────────────────────── */
+const StudentChip = ({ student, selected, onClick, disabled }) => {
+  const name     = student.name || "Student";
+  const initials = name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const roll     = student.roll || student.rollNo || student.rollNumber || "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        "flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150",
+        selected
+          ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+          : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50",
+      ].join(" ")}
+    >
+      <span className={[
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold",
+        selected ? "bg-white/20 text-white" : "bg-indigo-100 text-indigo-700",
+      ].join(" ")}>
+        {initials}
+      </span>
+      <span className="flex flex-col min-w-0">
+        <span className="text-xs font-semibold truncate leading-tight">{name}</span>
+        {roll && (
+          <span className={["text-[10px]", selected ? "text-indigo-200" : "text-slate-400"].join(" ")}>
+            Roll {roll}
+          </span>
+        )}
+      </span>
+    </button>
+  );
 };
 
+/* ─── HistoryEntry ───────────────────────────────────────────── */
+const HistoryEntry = ({ entry }) => {
+  const [expanded, setExpanded] = useState(false);
+  const allRatings = { ...(entry.healthObservations || {}), ...(entry.emotionObservations || {}) };
+  const ratingEntries = Object.entries(allRatings).filter(([, v]) => v);
+
+  return (
+    <div className="rounded-xl border border-slate-100 bg-white p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900 truncate">{entry.studentName || "Student"}</p>
+          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400">
+            <Clock className="h-3 w-3 shrink-0" />
+            {entry.recordedAt
+              ? new Date(entry.recordedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+              : "—"}
+          </p>
+        </div>
+        {ratingEntries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((p) => !p)}
+            className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && ratingEntries.length > 0 && (
+          <Motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {ratingEntries.map(([key, val]) => (
+                <span
+                  key={key}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${TONE_BADGE[optionTone(val)] || TONE_BADGE.slate}`}
+                >
+                  {key}: {val}
+                </span>
+              ))}
+            </div>
+          </Motion.div>
+        )}
+      </AnimatePresence>
+
+      {entry.additionalNotes && (
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500 line-clamp-2 whitespace-pre-line">
+          {entry.additionalNotes}
+        </p>
+      )}
+    </div>
+  );
+};
+
+/* ─── Main component ─────────────────────────────────────────── */
 const StudentObservationOverview = () => {
-  const [students, setStudents] = useState([]);
-  const [studentIdSet, setStudentIdSet] = useState(new Set());
-  const [observations, setObservations] = useState([]);
+  const [students, setStudents]             = useState([]);
+  const [studentIdSet, setStudentIdSet]     = useState(new Set());
+  const [observations, setObservations]     = useState([]);
   const [sessionOptions, setSessionOptions] = useState([]);
-  const [classOptions, setClassOptions] = useState([]);
+  const [classOptions, setClassOptions]     = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
-  const [selectedSession, setSelectedSession] = useState("");
-  const [selectedClass, setSelectedClass] = useState("");
-  const [selectedSection, setSelectedSection] = useState("");
+  const [selectedSession, setSelectedSession]   = useState("");
+  const [selectedClass, setSelectedClass]       = useState("");
+  const [selectedSection, setSelectedSection]   = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [studentSearch, setStudentSearch]         = useState("");
   const [ratings, setRatings] = useState(buildInitialRatings);
-  const [notes, setNotes] = useState(buildInitialNotes);
-  const [studentsLoading, setStudentsLoading] = useState(true);
+  const [notes, setNotes]     = useState(buildInitialNotes);
+  const [studentsLoading, setStudentsLoading]       = useState(true);
   const [observationsLoading, setObservationsLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState("");
   const [success, setSuccess] = useState("");
 
+  /* Load students */
   useEffect(() => {
-    const loadStudents = async () => {
+    const load = async () => {
       setStudentsLoading(true);
       setError("");
       try {
-        const token = localStorage.getItem("token");
+        const token    = localStorage.getItem("token");
         const userType = localStorage.getItem("userType");
-        if (!token || userType !== "Teacher") {
-          throw new Error("Teacher session not found. Please log in again.");
-        }
-
+        if (!token || userType !== "Teacher") throw new Error("Teacher session not found. Please log in again.");
         const query = new URLSearchParams();
         if (selectedSession) query.set("session", selectedSession);
-        if (selectedClass) query.set("className", selectedClass);
+        if (selectedClass)   query.set("className", selectedClass);
         if (selectedSection) query.set("section", selectedSection);
-
-        const headers = { Authorization: `Bearer ${token}` };
-        const studentsRes = await fetch(
-          `${API_BASE_URL}/api/attendance/teacher/students?${query.toString()}`,
-          { headers }
-        );
-        const studentsPayload = await studentsRes.json().catch(() => ({}));
-        if (!studentsRes.ok) throw new Error(studentsPayload?.error || "Unable to load students");
-
-        const scopedStudents = Array.isArray(studentsPayload?.students) ? studentsPayload.students : [];
-        const allowedIds = new Set(scopedStudents.map((s) => String(s?._id || s?.id || "")));
-
-        setSessionOptions(Array.isArray(studentsPayload?.options?.sessions) ? studentsPayload.options.sessions : []);
-        setClassOptions(Array.isArray(studentsPayload?.options?.classes) ? studentsPayload.options.classes : []);
-        setSectionOptions(Array.isArray(studentsPayload?.options?.sections) ? studentsPayload.options.sections : []);
-        setStudents(scopedStudents);
-        setStudentIdSet(allowedIds);
-        if (!allowedIds.has(String(selectedStudentId || ""))) {
-          setSelectedStudentId("");
-        }
+        const res = await fetch(`${API_BASE_URL}/api/attendance/teacher/students?${query.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || "Unable to load students");
+        const list = Array.isArray(payload?.students) ? payload.students : [];
+        const ids  = new Set(list.map((s) => String(s?._id || s?.id || "")));
+        setSessionOptions(Array.isArray(payload?.options?.sessions)  ? payload.options.sessions  : []);
+        setClassOptions(Array.isArray(payload?.options?.classes)    ? payload.options.classes    : []);
+        setSectionOptions(Array.isArray(payload?.options?.sections) ? payload.options.sections   : []);
+        setStudents(list);
+        setStudentIdSet(ids);
+        if (!ids.has(String(selectedStudentId || ""))) setSelectedStudentId("");
       } catch (err) {
-        console.error("Load students error:", err);
         setError(err.message || "Unable to load data");
         setStudents([]);
         setStudentIdSet(new Set());
@@ -220,15 +310,15 @@ const StudentObservationOverview = () => {
         setStudentsLoading(false);
       }
     };
-
-    loadStudents();
+    load();
   }, [selectedSession, selectedClass, selectedSection]);
 
+  /* Load observations */
   useEffect(() => {
-    const loadObservations = async () => {
+    const load = async () => {
       setObservationsLoading(true);
       try {
-        const token = localStorage.getItem("token");
+        const token    = localStorage.getItem("token");
         const userType = localStorage.getItem("userType");
         if (!token || userType !== "Teacher") return;
         const res = await fetch(`${API_BASE_URL}/api/observations/teacher?limit=30`, {
@@ -243,53 +333,50 @@ const StudentObservationOverview = () => {
         setObservationsLoading(false);
       }
     };
-    loadObservations();
+    load();
   }, []);
 
-  const selectedCount = useMemo(
-    () => Object.values(ratings).filter(Boolean).length,
-    [ratings]
-  );
+  const filledCount = useMemo(() => Object.values(ratings).filter(Boolean).length, [ratings]);
 
-  const sortedStudents = useMemo(() => {
-    return [...students].sort((a, b) => {
-      const idA = parseSortableNumber(a?.roll ?? a?.rollNo ?? a?.rollNumber ?? a?.studentCode);
-      const idB = parseSortableNumber(b?.roll ?? b?.rollNo ?? b?.rollNumber ?? b?.studentCode);
-      if (idA !== idB) return idA - idB;
+  const sortedStudents = useMemo(() =>
+    [...students].sort((a, b) => {
+      const nA = parseSortableNumber(a?.roll ?? a?.rollNo ?? a?.rollNumber ?? a?.studentCode);
+      const nB = parseSortableNumber(b?.roll ?? b?.rollNo ?? b?.rollNumber ?? b?.studentCode);
+      if (nA !== nB) return nA - nB;
       return String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { numeric: true });
-    });
-  }, [students]);
+    }),
+  [students]);
 
-  const handleRatingChange = (field, value) => {
-    setRatings((prev) => ({ ...prev, [field]: value }));
-  };
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return sortedStudents;
+    return sortedStudents.filter(
+      (s) =>
+        (s.name || "").toLowerCase().includes(q) ||
+        String(s.roll || s.rollNo || "").includes(q),
+    );
+  }, [sortedStudents, studentSearch]);
 
-  const handleRatingDrop = (field, options, droppedValue) => {
-    if (!options.includes(droppedValue)) return;
-    handleRatingChange(field, droppedValue);
-  };
+  const handleRatingChange = (label, value) =>
+    setRatings((prev) => ({ ...prev, [label]: prev[label] === value ? "" : value }));
 
-  const handleNoteChange = (field, value) => {
+  const handleNoteChange = (field, value) =>
     setNotes((prev) => ({ ...prev, [field]: value }));
-  };
 
   const buildPayload = () => {
-    const healthObservations = {};
+    const healthObservations  = {};
     const emotionObservations = {};
-
-    SECTION_FIELDS.forEach((section) => {
-      section.fields.forEach((fieldDef) => {
-        if (!ratings[fieldDef.label]) return;
-        if (section.group === "health") healthObservations[fieldDef.label] = ratings[fieldDef.label];
-        else emotionObservations[fieldDef.label] = ratings[fieldDef.label];
-      });
-    });
-
-    const concernText = notes["Areas of concern"] || "";
-    const urgencyLevel = concernText.trim() ? "high" : "normal";
+    SECTION_FIELDS.forEach((section) =>
+      section.fields.forEach((f) => {
+        if (!ratings[f.label]) return;
+        if (section.group === "health") healthObservations[f.label]  = ratings[f.label];
+        else                            emotionObservations[f.label] = ratings[f.label];
+      }),
+    );
+    const concernText    = notes["Areas of concern"] || "";
+    const urgencyLevel   = concernText.trim() ? "high" : "normal";
     const followUpRequired = Boolean(concernText.trim());
-    const noteLines = NOTES_FIELDS.map((field) => `${field}: ${notes[field] || "-"}`);
-
+    const noteLines      = NOTES_FIELDS.map((f) => `${f}: ${notes[f] || "-"}`);
     return {
       studentId: selectedStudentId,
       date: new Date().toISOString().split("T")[0],
@@ -308,276 +395,317 @@ const StudentObservationOverview = () => {
     setError("");
     setSuccess("");
     try {
-      if (!selectedStudentId) {
-        throw new Error("Please select a student.");
-      }
-      if (!studentIdSet.has(String(selectedStudentId))) {
-        throw new Error("Selected student is not in your academic allocation.");
-      }
-
+      if (!selectedStudentId) throw new Error("Please select a student.");
+      if (!studentIdSet.has(String(selectedStudentId))) throw new Error("Selected student is not in your allocation.");
       const token = localStorage.getItem("token");
       if (!token) throw new Error("Teacher session not found. Please log in again.");
-
       setSaving(true);
       const res = await fetch(`${API_BASE_URL}/api/observations/teacher`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(buildPayload()),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || "Unable to save observation");
-
       setObservations((prev) => [payload, ...prev].slice(0, 10));
       setRatings(buildInitialRatings());
       setNotes(buildInitialNotes());
       setSelectedStudentId("");
-      setSuccess("Observation saved successfully.");
+      setStudentSearch("");
+      setSuccess("Wellbeing observation saved.");
     } catch (err) {
-      console.error("Observation save error:", err);
       setError(err.message || "Unable to save observation");
     } finally {
       setSaving(false);
     }
   };
 
+  const progressPct = Math.round((filledCount / TOTAL_FIELDS) * 100);
+
+  /* ── Render ─────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-gray-50 py-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <Eye className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Student Observations (Non-Academic)</h1>
-              <p className="text-sm text-gray-600">
-                Select students by Academic Year, Class and Section filters.
-              </p>
-            </div>
+    <div className="space-y-4">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] px-6 py-5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl select-none">
+            💛
           </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-semibold text-slate-950">Emotional Wellbeing</h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Record non-academic observations on students' emotional, social, and behavioral wellbeing.
+            </p>
+          </div>
+          {filledCount > 0 && (
+            <div className="shrink-0 flex items-center gap-2.5">
+              <div className="h-2 w-28 rounded-full bg-slate-100 overflow-hidden">
+                <Motion.div
+                  className="h-full rounded-full bg-indigo-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPct}%` }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-indigo-600 tabular-nums">
+                {filledCount}/{TOTAL_FIELDS}
+              </span>
+            </div>
+          )}
         </div>
+      </div>
 
-        {error && <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">{error}</div>}
-        {success && (
-          <div className="mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            {success}
-          </div>
+      {/* ── Alerts ─────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {error && (
+          <Motion.div
+            key="err"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            {error}
+          </Motion.div>
         )}
+        {success && (
+          <Motion.div
+            key="ok"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2"
+          >
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            {success}
+          </Motion.div>
+        )}
+      </AnimatePresence>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <form onSubmit={handleSubmit} className="lg:col-span-2 bg-white rounded-lg shadow-sm p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Academic Year</label>
-                <select
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={selectedSession}
-                  onChange={(e) => setSelectedSession(e.target.value)}
-                  disabled={studentsLoading || saving}
+      {/* ── Two-column grid ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* ── Left: form ─────────────────────────────────────────── */}
+        <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-4">
+
+          {/* Filter row */}
+          <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 mb-3">
+              Filter Students
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                {
+                  label: "Academic Year", value: selectedSession,
+                  options: sessionOptions, placeholder: "All Years",
+                  onChange: setSelectedSession,
+                },
+                {
+                  label: "Class", value: selectedClass,
+                  options: classOptions, placeholder: "All Classes",
+                  onChange: (v) => { setSelectedClass(v); setSelectedSection(""); },
+                },
+                {
+                  label: "Section", value: selectedSection,
+                  options: sectionOptions, placeholder: "All Sections",
+                  onChange: setSelectedSection,
+                },
+              ].map(({ label, value, options, placeholder, onChange }) => (
+                <div key={label}>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">{label}</label>
+                  <select
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    disabled={studentsLoading || saving}
+                  >
+                    <option value="">{placeholder}</option>
+                    {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Student picker */}
+          <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Select Student
+              </p>
+              {selectedStudentId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentId("")}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
                 >
-                  <option value="">All Years</option>
-                  {sessionOptions.map((session) => (
-                    <option key={session} value={session}>
-                      {session}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Class</label>
-                <select
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={selectedClass}
-                  onChange={(e) => {
-                    setSelectedClass(e.target.value);
-                    setSelectedSection("");
-                  }}
-                  disabled={studentsLoading || saving}
-                >
-                  <option value="">All Classes</option>
-                  {classOptions.map((cls) => (
-                    <option key={cls} value={cls}>
-                      {cls}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
-                <select
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  value={selectedSection}
-                  onChange={(e) => setSelectedSection(e.target.value)}
-                  disabled={studentsLoading || saving}
-                >
-                  <option value="">All Sections</option>
-                  {sectionOptions.map((sec) => (
-                    <option key={sec} value={sec}>
-                      {sec}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  Clear
+                </button>
+              )}
             </div>
 
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-900">Students</h3>
-                <p className="text-xs text-gray-600">
-                  Selected ratings: <span className="font-semibold text-gray-900">{selectedCount}</span>
-                </p>
-              </div>
-              {studentsLoading ? (
-                <p className="text-sm text-gray-500">Loading students...</p>
-              ) : sortedStudents.length === 0 ? (
-                <p className="text-sm text-gray-500">No students found for selected filters.</p>
-              ) : (
-                <div className="max-h-56 overflow-y-auto space-y-2">
-                  {sortedStudents.map((student) => {
+            {/* Search */}
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name or roll…"
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+
+            {studentsLoading ? (
+              <p className="py-6 text-center text-sm text-slate-400">Loading students…</p>
+            ) : filteredStudents.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-400">No students found.</p>
+            ) : (
+              <div className="max-h-52 overflow-y-auto pr-0.5">
+                <div className="flex flex-wrap gap-2">
+                  {filteredStudents.map((student) => {
                     const id = String(student._id || student.id || "");
-                    const checked = String(selectedStudentId) === id;
                     return (
-                      <label
+                      <StudentChip
                         key={id}
-                        className={`flex items-center gap-3 border rounded-lg px-3 py-2 cursor-pointer ${
-                          checked ? "border-blue-400 bg-blue-50" : "border-gray-200"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="selectedStudent"
-                          value={id}
-                          checked={checked}
-                          onChange={(e) => setSelectedStudentId(e.target.value)}
-                          className="h-4 w-4 text-blue-600"
-                          disabled={saving}
-                          required
-                        />
-                        <span className="text-sm text-gray-800">{formatStudentDisplay(student)}</span>
-                      </label>
+                        student={student}
+                        selected={String(selectedStudentId) === id}
+                        onClick={() =>
+                          setSelectedStudentId((prev) => (String(prev) === id ? "" : id))
+                        }
+                        disabled={saving}
+                      />
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
 
-            {SECTION_FIELDS.map((section) => (
-              <div key={section.title} className="border border-gray-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">{section.title}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Rating sections */}
+          {SECTION_FIELDS.map((section, si) => {
+            const C = COLOR[section.color] || COLOR.indigo;
+            const sectionFilled = section.fields.filter((f) => ratings[f.label]).length;
+            return (
+              <Motion.div
+                key={section.title}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: si * 0.06 }}
+                className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] overflow-hidden"
+              >
+                {/* Section header */}
+                <div className={`flex items-center justify-between px-5 py-3.5 border-b ${C.header}`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg select-none">{section.emoji}</span>
+                    <span className={`text-sm font-semibold ${C.text}`}>{section.title}</span>
+                  </div>
+                  <span className={`text-xs font-semibold tabular-nums ${sectionFilled > 0 ? C.text : "text-slate-400"}`}>
+                    {sectionFilled}/{section.fields.length}
+                  </span>
+                </div>
+
+                {/* Fields */}
+                <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
                   {section.fields.map((fieldDef) => (
-                    <label key={fieldDef.label} className="block">
-                      <span className="block text-xs font-medium text-gray-700 mb-1">{fieldDef.label}</span>
-                      <div
-                        className="w-full p-2 border border-gray-300 rounded-lg bg-white"
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const droppedValue = e.dataTransfer.getData("text/plain");
-                          handleRatingDrop(fieldDef.label, fieldDef.options, droppedValue);
-                        }}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs text-gray-500">
-                            {ratings[fieldDef.label] ? `Selected: ${ratings[fieldDef.label]}` : "Click or drag emoji option"}
-                          </p>
-                          {ratings[fieldDef.label] && (
+                    <div key={fieldDef.label}>
+                      <span className="block text-xs font-semibold text-slate-700 mb-2">
+                        {fieldDef.label}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {fieldDef.options.map((opt) => {
+                          const active = ratings[fieldDef.label] === opt;
+                          return (
                             <button
+                              key={opt}
                               type="button"
-                              className="text-xs text-red-600 hover:text-red-700"
-                              onClick={() => handleRatingChange(fieldDef.label, "")}
+                              onClick={() => handleRatingChange(fieldDef.label, opt)}
                               disabled={saving}
+                              className={[
+                                "px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all duration-150",
+                                active ? C.pillActive : C.pillInactive,
+                              ].join(" ")}
                             >
-                              Clear
+                              {opt}
                             </button>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {fieldDef.options.map((opt) => {
-                            const active = ratings[fieldDef.label] === opt;
-                            return (
-                              <button
-                                key={opt}
-                                type="button"
-                                draggable={!saving}
-                                onDragStart={(e) => e.dataTransfer.setData("text/plain", opt)}
-                                onClick={() => handleRatingChange(fieldDef.label, opt)}
-                                disabled={saving}
-                                className={`inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs border transition ${
-                                  active
-                                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                                    : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100"
-                                }`}
-                                title="Click to select, or drag and drop"
-                              >
-                                <span className="text-sm">{getOptionEmoji(opt)}</span>
-                                <span>{opt}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
+                          );
+                        })}
                       </div>
-                    </label>
+                    </div>
                   ))}
                 </div>
-              </div>
-            ))}
+              </Motion.div>
+            );
+          })}
 
-            <div className="border border-gray-200 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">10. Special Observations / Notes</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {NOTES_FIELDS.map((field) => (
-                  <label key={field} className="block">
-                    <span className="block text-xs font-medium text-gray-700 mb-1">{field}</span>
-                    <textarea
-                      rows="3"
-                      className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={notes[field]}
-                      onChange={(e) => handleNoteChange(field, e.target.value)}
-                      disabled={saving}
-                    />
-                  </label>
-                ))}
-              </div>
+          {/* Notes */}
+          <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] p-5">
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="text-lg select-none">📝</span>
+              <span className="text-sm font-semibold text-slate-700">Special Observations & Notes</span>
             </div>
-
-            <button
-              type="submit"
-              disabled={saving || studentsLoading}
-              className={`w-full py-3 rounded-lg text-white font-medium ${saving || studentsLoading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
-            >
-              {saving ? "Saving..." : "Save Observation"}
-            </button>
-          </form>
-
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Observations</h2>
-            <div className="space-y-3">
-              {observationsLoading ? (
-                <p className="text-sm text-gray-500">Loading...</p>
-              ) : observations.length === 0 ? (
-                <p className="text-sm text-gray-500">No observations available.</p>
-              ) : (
-                observations.map((entry) => (
-                  <div key={entry.id} className="border border-gray-200 rounded-lg p-3">
-                    <p className="text-sm font-medium text-gray-900">{entry.studentName || "Student"}</p>
-                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {entry.recordedAt ? new Date(entry.recordedAt).toLocaleDateString() : "-"}
-                    </p>
-                    {entry.additionalNotes && (
-                      <p className="text-xs text-gray-700 mt-2 line-clamp-3 whitespace-pre-line">{entry.additionalNotes}</p>
-                    )}
-                  </div>
-                ))
-              )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {NOTES_FIELDS.map((f) => (
+                <div key={f}>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">{f}</label>
+                  <textarea
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50 resize-none"
+                    placeholder={`Enter ${f.toLowerCase()}…`}
+                    value={notes[f]}
+                    onChange={(e) => handleNoteChange(f, e.target.value)}
+                    disabled={saving}
+                  />
+                </div>
+              ))}
             </div>
           </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={saving || studentsLoading || !selectedStudentId}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save Wellbeing Observation"}
+          </button>
+        </form>
+
+        {/* ── Right: history ──────────────────────────────────── */}
+        <div>
+          <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] p-5 sticky top-4">
+            <h2 className="text-sm font-semibold text-slate-950 mb-4">Observation History</h2>
+
+            {observationsLoading ? (
+              <p className="py-8 text-center text-sm text-slate-400">Loading…</p>
+            ) : observations.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10">
+                <Heart className="h-9 w-9 text-slate-200" />
+                <p className="text-sm text-slate-400 text-center leading-relaxed">
+                  No observations yet.<br />Save one to see it here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <AnimatePresence initial={false}>
+                  {observations.map((entry, i) => (
+                    <Motion.div
+                      key={entry.id || entry._id || i}
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2, delay: i * 0.04 }}
+                    >
+                      <HistoryEntry entry={entry} />
+                    </Motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
         </div>
+
       </div>
     </div>
   );

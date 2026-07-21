@@ -217,15 +217,6 @@ const HealthUpdatesAdvanced = () => {
   }, [selectedStudent, range]);
   const today = new Date();
   const todayKey = today.toISOString().slice(0, 10);
-  const todayLabel = today.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-  const teacherName = (() => {
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      return user.name || user.fullName || user.firstName || 'Teacher';
-    } catch {
-      return 'Teacher';
-    }
-  })();
   const checkedInCount = enriched.filter((student) => student.logs.some((log) => log.date === todayKey)).length;
   const pendingCount = Math.max(enriched.length - checkedInCount, 0);
   const atRiskCount = emotionalInsights.atRisk.length;
@@ -247,20 +238,9 @@ const HealthUpdatesAdvanced = () => {
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-      className="min-h-full bg-[#f0f4fe] p-3 text-[#0b1a33] sm:p-6"
+      className="mx-auto w-full max-w-[1100px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-[#0b1a33] shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
     >
-      <div className="mx-auto max-w-[1200px]">
-        <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-[-0.02em] sm:text-[1.7rem]">Good Afternoon, <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">{teacherName}</span></h1>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400"><Calendar className="size-3.5" /> {todayLabel}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full border border-[#e8eef6] bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm"><span className="text-blue-600">⚑</span> Today's Check-in</span>
-            <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-violet-600 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">{initials(teacherName).slice(0, 1)}</span>
-          </div>
-        </header>
-
+      <div className="w-full">
         <div className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             { label: 'Students', value: enriched.length, icon: User, color: 'bg-[#eff6ff] text-[#2563eb]' },
@@ -275,15 +255,20 @@ const HealthUpdatesAdvanced = () => {
           ))}
         </div>
 
-        <div className="mb-6 flex flex-wrap items-center gap-4 rounded-full border border-[#edf2f7] bg-white px-4 py-2 text-[11px] font-medium text-slate-500 shadow-sm">
+        <Motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22, duration: 0.3 }}
+          className="mb-6 flex flex-wrap items-center gap-4 rounded-full border border-[#edf2f7] bg-[#fafbfc] px-4 py-2 text-[11px] font-medium text-slate-500"
+        >
           <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#16a34a]" /> Good (70-100)</span>
           <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#d97706]" /> Moderate (40-69)</span>
           <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#dc2626]" /> At Risk (0-39)</span>
           <span className="ml-auto flex items-center gap-3 text-slate-400"><span className="text-[#16a34a]">● {healthCounts.good}</span><span className="text-[#d97706]">● {healthCounts.moderate}</span><span className="text-[#dc2626]">● {healthCounts.risk}</span></span>
-        </div>
+        </Motion.div>
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
+          <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-[#fafbfc] p-4 shadow-sm sm:p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 text-sm font-semibold"><span className="text-blue-600">▦</span> Student Directory</h2>
               <div className="flex flex-wrap gap-1.5">
@@ -331,7 +316,7 @@ const HealthUpdatesAdvanced = () => {
 
           <aside className="space-y-4">
             {selectedStudent ? (
-              <Motion.section layout className="relative overflow-hidden rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+              <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34, duration: 0.35 }} className="relative overflow-hidden rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
                 <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-amber-500 to-green-600" />
                 <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3">
                   <span className={'flex size-11 items-center justify-center rounded-full text-sm font-semibold ' + toneStyles[toneFor(selectedStudent.metrics.wellbeingScore)].avatar}>{initials(selectedStudent.name)}</span>
@@ -349,7 +334,7 @@ const HealthUpdatesAdvanced = () => {
               </Motion.section>
             ) : <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Select a student to view wellbeing.</div>}
 
-            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
               <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><Heart className="size-3.5 text-blue-600" /> Quick Health Entry</h4>
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {[
@@ -366,12 +351,12 @@ const HealthUpdatesAdvanced = () => {
               <button type="button" onClick={saveQuickEntry} disabled={!selectedStudent} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 disabled:opacity-50"><CheckCircle2 className="size-3.5" /> Save in 1 click</button>
             </Motion.section>
 
-            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
               <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><AlertCircle className="size-3.5 text-red-600" /> At Risk Students</h4>
               <div className="flex flex-wrap gap-1.5">{emotionalInsights.atRisk.map((student) => <button type="button" key={student.id} onClick={() => setSelectedId(student.id)} className="rounded-full border border-slate-200 bg-[#fafbfc] px-2.5 py-1 text-[10px] text-slate-600 hover:bg-slate-100">{student.name.split(' ').slice(0, 2).join(' ')} <span className={student.metrics.status === 'Critical' ? 'font-semibold text-red-600' : 'font-semibold text-amber-600'}>{student.metrics.wellbeingScore}</span></button>)}{!emotionalInsights.atRisk.length && <span className="text-xs text-slate-400">No at-risk students.</span>}</div>
             </Motion.section>
 
-            <Motion.section layout className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
+            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
               <h4 className="mb-1 flex items-center gap-2 text-xs font-semibold"><Activity className="size-3.5 text-amber-500" /> Frequent Issues</h4>
               {emotionalInsights.frequentIssues.length ? <div className="flex flex-wrap gap-1.5">{emotionalInsights.frequentIssues.map(([issue, count]) => <span key={issue} className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] text-slate-600">{issue}: {count}</span>)}</div> : <p className="flex items-center gap-1.5 text-xs text-slate-300"><CheckCircle2 className="size-3.5 text-green-600" /> No frequent issues</p>}
             </Motion.section>
@@ -379,7 +364,7 @@ const HealthUpdatesAdvanced = () => {
         </div>
 
         {selectedStudent && (
-          <Motion.section layout className="mt-6 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
+          <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.58, duration: 0.35 }} className="mt-6 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div><h2 className="text-sm font-semibold">Student wellbeing details</h2><p className="mt-0.5 text-xs text-slate-400">{selectedStudent.name} · {selectedStudent.className}</p></div>
               <div className="flex flex-wrap gap-1.5">
