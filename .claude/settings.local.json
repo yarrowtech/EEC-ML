@@ -139,7 +139,18 @@
       "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" && npx esbuild --bundle=false src/admin/Routines.jsx --outfile=/tmp/rout_check2.js && echo \"PARSE OK\" && rm -f /tmp/rout_check2.js)",
       "Bash(node -c models/Timetable.js)",
       "Bash(node -c routes/promotionRoutes.js)",
-      "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" && npx esbuild --bundle=false src/admin/pages/StudentPromotion.jsx --outfile=/tmp/sp_check.js && echo \"PARSE OK\" && rm -f /tmp/sp_check.js)"
+      "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" && npx esbuild --bundle=false src/admin/pages/StudentPromotion.jsx --outfile=/tmp/sp_check.js && echo \"PARSE OK\" && rm -f /tmp/sp_check.js)",
+      "Bash(sed -n '1028,1209p' /tmp/teachers_orig_full.jsx)",
+      "Bash(sed -n '1030,1218p' src/admin/Teachers.jsx)",
+      "Bash(cd \"/mnt/F6960AAB960A6C85/Projects/EEC B2B ML/EEC-ML/frontend\" *)",
+      "Bash(cp /tmp/region_orig2.txt /tmp/step.txt)",
+      "Bash(csplit -z -f /tmp/hunk_ /tmp/full.patch '/^@@/' '{*}')",
+      "Bash(cp /tmp/region_orig2.txt /tmp/step1.txt)",
+      "Bash(cat /tmp/hunk_00 /tmp/hunk_01)",
+      "Bash(patch -o /tmp/step1_out.txt /tmp/step1.txt)",
+      "Bash(echo \"applied1: exit=$?\")",
+      "Bash(grep -n \"^@@\" /tmp/full.patch)",
+      "Bash(cat -A /tmp/hunk_04 | head -3 *)"
     ],
     "additionalDirectories": [
       "/tmp"

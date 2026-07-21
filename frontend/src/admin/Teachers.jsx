@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import {
@@ -25,7 +26,8 @@ import {
   User,
   Award,
   Hash,
-  Crown
+  Crown,
+  Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -1025,19 +1027,26 @@ const Teachers = ({setShowAdminHeader}) => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-200">
+        {/* Hero header */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-600 p-6 md:p-8 mb-6 shadow-lg shadow-indigo-200/60">
+          <div className="absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 pointer-events-none" />
+          <div className="absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-black/10 pointer-events-none" />
+          <div className="absolute top-1/2 right-16 w-20 h-20 rounded-full bg-yellow-300/10 border border-yellow-300/20 pointer-events-none" />
+          <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center shadow-inner shrink-0">
                 <GraduationCap size={24} className="text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Teachers</h1>
-                <p className="text-sm text-gray-500 mt-0.5">Manage your teaching staff</p>
+                <div className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-2.5 py-0.5 mb-1.5">
+                  <Sparkles className="w-3 h-3 text-yellow-200" />
+                  <span className="text-[11px] font-semibold text-white/90 tracking-wide">Staff Directory</span>
+                </div>
+                <h1 className="text-xl md:text-2xl font-black text-white leading-tight">Teachers</h1>
+                <p className="text-indigo-100/80 text-sm mt-1">Manage your teaching staff, credentials, and principal assignments.</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               {/* <CredentialGeneratorButton
                 buttonText="Generate Teacher ID"
                 defaultRole="Teacher"
@@ -1079,16 +1088,17 @@ const Teachers = ({setShowAdminHeader}) => {
                   resetTeacherForm();
                   setShowAddForm(true);
                 }}
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md shadow-indigo-200 text-sm font-medium"
+                className="inline-flex items-center gap-2 bg-white text-indigo-700 px-4 py-2.5 rounded-xl hover:-translate-y-0.5 hover:shadow-lg transition-all shadow-md text-sm font-bold"
               >
                 <Plus size={18} />
                 Add Teacher
               </button>
             </div>
           </div>
+        </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div>
@@ -1151,35 +1161,36 @@ const Teachers = ({setShowAdminHeader}) => {
           )}
 
           {/* Tabs */}
-          <div className="mt-6 flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-            <button
-              onClick={() => setActiveTab('teachers')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'teachers'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <GraduationCap size={15} />
-              Teachers
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${activeTab === 'teachers' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'}`}>
-                {teachers.length}
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTab('principals')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'principals'
-                  ? 'bg-white text-purple-700 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Crown size={15} />
-              Principals
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${activeTab === 'principals' ? 'bg-purple-100 text-purple-600' : 'bg-gray-200 text-gray-500'}`}>
-                {principals.length}
-              </span>
-            </button>
+          <div className="relative mt-6 flex gap-1 p-1.5 bg-white/80 backdrop-blur border border-gray-200/70 rounded-2xl w-fit shadow-sm">
+            {[
+              { key: 'teachers', label: 'Teachers', icon: GraduationCap, count: teachers.length },
+              { key: 'principals', label: 'Principals', icon: Crown, count: principals.length },
+            ].map((tab) => {
+              const TabIcon = tab.icon;
+              const active = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`relative z-10 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    active ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {active && (
+                    <Motion.span
+                      layoutId="teachersTabIndicator"
+                      className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md shadow-indigo-200"
+                      transition={{ type: 'spring', duration: 0.5, bounce: 0.2 }}
+                    />
+                  )}
+                  <TabIcon size={15} />
+                  {tab.label}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Search and Filter — Teachers only */}
@@ -1205,7 +1216,6 @@ const Teachers = ({setShowAdminHeader}) => {
               <option value="On Leave">On Leave</option>
             </select>
           </div>}
-        </div>
 
         {/* Teachers Table */}
         {activeTab === 'teachers' && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

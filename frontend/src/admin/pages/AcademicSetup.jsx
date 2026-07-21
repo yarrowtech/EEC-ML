@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
-  ChevronUp, ChevronDown, ChevronsUpDown, Search, GraduationCap, Copy,
-  FolderOpen, UserCheck,
+  ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
+  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -72,32 +73,49 @@ const writeAcademicCache = (key, data) => {
   }
 };
 
-const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = false }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-          <button type="button" onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <form onSubmit={onSubmit} className="px-6 py-5">
-          {children}
-          <div className="mt-6 flex gap-3">
-            <button type="button" onClick={onClose} disabled={isSubmitting} className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-              Cancel
-            </button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
-              {isSubmitting ? "Saving..." : "Save Changes"}
+const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = false }) => (
+  <AnimatePresence>
+    {isOpen && (
+      <Motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4"
+      >
+        <Motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          transition={{ type: "spring", duration: 0.35, bounce: 0.2 }}
+          className="w-full max-w-md rounded-3xl border border-gray-100 bg-white shadow-2xl"
+        >
+          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+            <h2 className="flex items-center gap-2.5 text-lg font-bold text-gray-800">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-sm">
+                <Edit3 className="h-4 w-4 text-white" />
+              </span>
+              {title}
+            </h2>
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600">
+              <X className="h-5 w-5" />
             </button>
           </div>
-        </form>
-      </div>
-    </div>
-  );
-};
+          <form onSubmit={onSubmit} className="px-6 py-5">
+            {children}
+            <div className="mt-6 flex gap-3">
+              <button type="button" onClick={onClose} disabled={isSubmitting} className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/70 transition hover:shadow-lg disabled:opacity-50">
+                {isSubmitting ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </Motion.div>
+      </Motion.div>
+    )}
+  </AnimatePresence>
+);
 
 const AcademicSetup = ({ setShowAdminHeader }) => {
   const [activeTab, setActiveTab] = useState("years");
@@ -1188,12 +1206,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ SUB-COMPONENTS ═══════════════════════ */
 
   const StatCard = ({ icon, label, value, color }) => (
-    <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${color}`}>
+    <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-gray-100 bg-white px-4 py-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gray-50 transition-colors group-hover:bg-amber-50" />
+      <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${color}`}>
         {React.createElement(icon, { className: "h-5 w-5 text-white" })}
       </div>
-      <div>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <div className="relative">
+        <p className="text-2xl font-black text-gray-900">{value}</p>
         <p className="text-xs text-gray-500">{label}</p>
       </div>
     </div>
@@ -1201,13 +1220,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   const SearchInput = ({ value, onChange, placeholder }) => (
     <div className="relative">
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-200 py-2 pl-10 pr-4 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+        className="w-full rounded-xl border border-gray-200 bg-white/90 py-2.5 pl-10 pr-4 text-sm transition focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
     </div>
   );
@@ -1215,7 +1234,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const SortableHeader = ({ label, field, sortConfig, onSort }) => (
     <th
       onClick={() => onSort(field)}
-      className="cursor-pointer select-none whitespace-nowrap bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 transition hover:bg-amber-50"
+      className="cursor-pointer select-none whitespace-nowrap bg-gray-50/80 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 transition hover:bg-amber-50"
     >
       <div className="flex items-center gap-1.5">
         {label}
@@ -1246,43 +1265,43 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     for (let i = pStart; i <= pEnd; i++) pages.push(i);
 
     return (
-      <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/50 px-4 py-3 sm:flex-row">
+      <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-4 py-3 sm:flex-row">
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">
-            {start}–{end} of {totalItems}
+            Showing <strong className="text-gray-700">{start}</strong>–<strong className="text-gray-700">{end}</strong> of <strong className="text-gray-700">{totalItems}</strong>
           </span>
           <select
             value={itemsPerPage}
             onChange={(e) => setItemsPerPage(Number(e.target.value))}
-            className="rounded border border-gray-200 px-2 py-1 text-xs focus:ring-2 focus:ring-amber-200"
+            className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
             <option value={50}>50</option>
           </select>
         </div>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
-            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Prev
+            <ChevronLeft className="h-4 w-4" />
           </button>
           {pStart > 1 && (
             <>
-              <button onClick={() => onPageChange(1)} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs hover:bg-gray-100">1</button>
-              {pStart > 2 && <span className="px-1 text-xs text-gray-400">...</span>}
+              <button onClick={() => onPageChange(1)} className="h-8 min-w-8 rounded-lg px-2 text-xs font-semibold text-gray-600 hover:bg-white border border-transparent hover:border-gray-200">1</button>
+              {pStart > 2 && <span className="px-1 text-xs text-gray-300">…</span>}
             </>
           )}
           {pages.map((n) => (
             <button
               key={n}
               onClick={() => onPageChange(n)}
-              className={`rounded-md border px-2.5 py-1 text-xs transition ${
+              className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${
                 currentPage === n
-                  ? "border-amber-400 bg-amber-500 text-white"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-100"
+                  ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-white border border-transparent hover:border-gray-200"
               }`}
             >
               {n}
@@ -1290,16 +1309,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           ))}
           {pEnd < totalPages && (
             <>
-              {pEnd < totalPages - 1 && <span className="px-1 text-xs text-gray-400">...</span>}
-              <button onClick={() => onPageChange(totalPages)} className="rounded-md border border-gray-200 px-2.5 py-1 text-xs hover:bg-gray-100">{totalPages}</button>
+              {pEnd < totalPages - 1 && <span className="px-1 text-xs text-gray-300">…</span>}
+              <button onClick={() => onPageChange(totalPages)} className="h-8 min-w-8 rounded-lg px-2 text-xs font-semibold text-gray-600 hover:bg-white border border-transparent hover:border-gray-200">{totalPages}</button>
             </>
           )}
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
-            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Next
+            <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -1310,18 +1329,20 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const [selected] = selectionMap[entityType];
     if (selected.length === 0) return null;
     return (
-      <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-2">
-        <span className="text-sm font-medium text-gray-700">{selected.length} selected</span>
+      <div className="mb-3 flex items-center justify-between rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-2.5">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-800">
+          <CheckCircle2 className="h-4 w-4 text-amber-500" /> {selected.length} selected
+        </span>
         <div className="flex gap-2">
           <button
             onClick={() => selectionMap[entityType][1]([])}
-            className="rounded border border-gray-300 px-3 py-1 text-xs text-black hover:bg-white"
+            className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
             Clear
           </button>
           <button
             onClick={() => handleBulkDelete(entityType, entityName)}
-            className="flex items-center gap-1 rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700"
+            className="flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
           >
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </button>
@@ -1331,8 +1352,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   };
 
   const EmptyState = ({ search, entity }) => (
-    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-      <FolderOpen className="mb-3 h-10 w-10" />
+    <div className="flex flex-col items-center justify-center py-14 text-gray-400">
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
+        <FolderOpen className="h-7 w-7 text-amber-300" />
+      </div>
       <p className="text-sm">{search ? `No matching ${entity} found.` : `No ${entity} yet.`}</p>
     </div>
   );
@@ -1350,61 +1373,95 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ RENDER ═══════════════════════ */
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50/30 to-white p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        {/* ─── Header ─── */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Academic Setup</h1>
-            <p className="mt-1 text-sm text-gray-500">Manage academic years, classes, sections and subjects.</p>
+        {/* ─── Hero header ─── */}
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 p-6 md:p-8 shadow-lg shadow-amber-200/60">
+          <div className="pointer-events-none absolute -top-16 -right-10 h-56 w-56 rounded-full bg-white/10" />
+          <div className="pointer-events-none absolute -bottom-20 -left-16 h-64 w-64 rounded-full bg-black/10" />
+          <div className="pointer-events-none absolute top-1/2 right-16 h-20 w-20 rounded-full border border-yellow-200/20 bg-yellow-200/10" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/25 bg-white/15 shadow-inner backdrop-blur-sm">
+                <GraduationCap className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-2.5 py-0.5">
+                  <Sparkles className="h-3 w-3 text-yellow-200" />
+                  <span className="text-[11px] font-semibold tracking-wide text-white/90">Guided Setup</span>
+                </div>
+                <h1 className="text-xl font-black leading-tight text-white md:text-2xl">Academic Setup</h1>
+                <p className="mt-1 text-sm text-orange-50/80">
+                  Build your school year step by step — sessions, classes, sections, subjects and class teachers.
+                </p>
+              </div>
+            </div>
+            {activeTab !== "class-teachers" && (
+              <button
+                onClick={() => setShowAddForm((v) => !v)}
+                className="flex items-center gap-2 self-start rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-600 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg sm:self-auto"
+              >
+                <Plus className="h-4 w-4" />
+                {showAddForm ? "Hide Form" : "Add New"}
+              </button>
+            )}
           </div>
-          {activeTab !== "class-teachers" && (
-            <button
-              onClick={() => setShowAddForm((v) => !v)}
-              className="flex items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-amber-600"
-            >
-              <Plus className="h-4 w-4" />
-              {showAddForm ? "Hide Form" : "Add New"}
-            </button>
-          )}
         </div>
 
         {/* ─── Stat Cards ─── */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatCard icon={Calendar} label="Academic Years" value={activeYears.length} color="bg-blue-500" />
-          <StatCard icon={Layers} label="Classes" value={visibleClasses.length} color="bg-emerald-500" />
-          <StatCard icon={BookOpen} label="Sections" value={visibleSections.length} color="bg-violet-500" />
-          <StatCard icon={GraduationCap} label="Subjects" value={visibleSubjects.length} color="bg-amber-500" />
+          <StatCard icon={Calendar} label="Academic Years" value={activeYears.length} color="bg-gradient-to-br from-blue-500 to-indigo-500" />
+          <StatCard icon={Layers} label="Classes" value={visibleClasses.length} color="bg-gradient-to-br from-emerald-500 to-teal-500" />
+          <StatCard icon={BookOpen} label="Sections" value={visibleSections.length} color="bg-gradient-to-br from-violet-500 to-fuchsia-500" />
+          <StatCard icon={GraduationCap} label="Subjects" value={visibleSubjects.length} color="bg-gradient-to-br from-amber-500 to-orange-500" />
         </div>
 
         {/* ─── Error ─── */}
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {/* ─── Tabs ─── */}
-        <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => { setActiveTab(t.key); setShowAddForm(false); }}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${
-                activeTab === t.key
-                  ? "bg-white text-gray-900 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <t.icon className="h-4 w-4" />
-              {t.label}
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                activeTab === t.key ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-500"
-              }`}>
-                {t.count}
-              </span>
-            </button>
-          ))}
+        {/* ─── Step pipeline ─── */}
+        <div className="relative flex items-center gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/80 p-2 shadow-sm backdrop-blur">
+          {tabs.map((t, idx) => {
+            const active = activeTab === t.key;
+            const done = t.count > 0;
+            return (
+              <React.Fragment key={t.key}>
+                <button
+                  onClick={() => { setActiveTab(t.key); setShowAddForm(false); }}
+                  className={`relative z-10 flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${
+                    active ? "text-white" : "text-gray-500 hover:text-gray-800"
+                  }`}
+                >
+                  {active && (
+                    <Motion.span
+                      layoutId="academicStepIndicator"
+                      className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 shadow-md shadow-amber-200"
+                      transition={{ type: "spring", duration: 0.5, bounce: 0.2 }}
+                    />
+                  )}
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                    active ? "bg-white/25 text-white" : done ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
+                  }`}>
+                    {done && !active ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
+                  </span>
+                  <t.icon className="h-4 w-4" />
+                  {t.label}
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {t.count}
+                  </span>
+                </button>
+                {idx < tabs.length - 1 && (
+                  <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-300 sm:block" />
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
 
         {/* ═══════════════ YEARS TAB ═══════════════ */}
@@ -1412,8 +1469,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           <div className="space-y-4">
             {/* Add Form */}
             {showAddForm && ( 
-              <form onSubmit={submitYear} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h3 className="mb-4 text-base font-semibold text-gray-800">Add Academic Year</h3>
+              <form onSubmit={submitYear} className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center gap-2.5">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">1</span>
+                  <h3 className="text-base font-bold text-gray-800">Add Academic Year</h3>
+                </div>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">Year Name</label>
@@ -1434,7 +1494,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <div className="flex items-end gap-3">
                     <label className="flex items-center gap-2 text-sm text-gray-600">
                       <input type="checkbox" checked={yearForm.isActive} onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400" />
+                        className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer focus:ring-amber-400" />
                       Active
                     </label>
                     <button type="submit" disabled={isSubmitting}
@@ -1447,9 +1507,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             )}
 
             {/* Table Card */}
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-700">Academic Years</h3>
+            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-transparent px-5 py-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <Calendar className="h-4 w-4 text-blue-500" /> Academic Years
+                </h3>
                 <div className="flex items-center gap-2">
                   <select
                     value={yearStatusFilter}
@@ -1472,7 +1534,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <tr className="border-b border-gray-100">
                       <th className="w-12 bg-gray-50 px-4 py-3">
                         <input type="checkbox" checked={selectedYears.length === paginatedYears.length && paginatedYears.length > 0}
-                          onChange={() => handleSelectAll("years", paginatedYears)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                          onChange={() => handleSelectAll("years", paginatedYears)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                       </th>
                       <SortableHeader label="Name" field="name" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
                       <SortableHeader label="Start Date" field="startDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
@@ -1486,7 +1548,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <tr key={year._id} className="transition hover:bg-amber-50/30">
                         <td className="px-4 py-3">
                           <input type="checkbox" checked={selectedYears.includes(year._id)}
-                            onChange={() => handleSelectItem("years", year._id)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                            onChange={() => handleSelectItem("years", year._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                         </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{year.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{year.startDate ? new Date(year.startDate).toLocaleDateString() : "—"}</td>
@@ -1532,10 +1594,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {activeTab === "classes" && (
           <div className="space-y-4">
             {showAddForm && (
-              <div className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+              <div className="rounded-2xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
                 {/* Mode switcher */}
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-amber-50/40">
-                  <h3 className="text-sm font-semibold text-gray-800">Add Classes</h3>
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-emerald-50/40">
+                  <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white shadow-sm">2</span>
+                    Add Classes
+                  </h3>
                   <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
                     {["range", "custom", "stream"].map((mode) => (
                       <button key={mode} type="button" onClick={() => setClassAddMode(mode)}
@@ -1756,9 +1821,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
             )}
 
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-700">Classes</h3>
+            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-emerald-50/60 to-transparent px-5 py-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <Layers className="h-4 w-4 text-emerald-500" /> Classes
+                </h3>
                 <div className="w-64">
                   <SearchInput value={searchClass} onChange={setSearchClass} placeholder="Search classes..." />
                 </div>
@@ -1770,7 +1837,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <tr className="border-b border-gray-100">
                       <th className="w-12 bg-gray-50 px-4 py-3">
                         <input type="checkbox" checked={selectedClasses.length === paginatedClasses.length && paginatedClasses.length > 0}
-                          onChange={() => handleSelectAll("classes", paginatedClasses)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                          onChange={() => handleSelectAll("classes", paginatedClasses)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                       </th>
                       <SortableHeader label="Name" field="name" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
                       <SortableHeader label="Order" field="order" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
@@ -1784,7 +1851,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <tr key={cls._id} className="transition hover:bg-amber-50/30">
                         <td className="px-4 py-3">
                           <input type="checkbox" checked={selectedClasses.includes(cls._id)}
-                            onChange={() => handleSelectItem("classes", cls._id)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                            onChange={() => handleSelectItem("classes", cls._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                         </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{cls.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{cls.order ?? 0}</td>
@@ -1818,10 +1885,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {activeTab === "sections" && (
           <div className="space-y-4">
             {showAddForm && (
-              <form onSubmit={submitSectionsBulk} className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
-                <div className="border-b border-gray-100 px-5 py-3 bg-amber-50/40">
-                  <h3 className="text-sm font-semibold text-gray-800">Add Sections</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Pick a class, tap quick letters and/or type custom names — all created in one click.</p>
+              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-gray-100 px-5 py-3 bg-violet-50/40">
+                  <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-500 text-xs font-bold text-white shadow-sm">3</span>
+                    Add Sections
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Pick a class, tap quick letters and/or type custom names — all created in one click.</p>
                 </div>
                 <div className="p-5 space-y-5">
                   {/* Class selector */}
@@ -1926,7 +1996,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </form>
             )}
 
-            <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
               {classTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -1953,9 +2023,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               ))}
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-700">Sections</h3>
+            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-violet-50/60 to-transparent px-5 py-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <BookOpen className="h-4 w-4 text-violet-500" /> Sections
+                </h3>
                 <div className="w-64">
                   <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
                 </div>
@@ -1967,7 +2039,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <tr className="border-b border-gray-100">
                       <th className="w-12 bg-gray-50 px-4 py-3">
                         <input type="checkbox" checked={selectedSections.length === paginatedSections.length && paginatedSections.length > 0}
-                          onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                          onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                       </th>
                       <SortableHeader label="Name" field="name" sortConfig={sectionSort} onSort={toggleSort(setSectionSort)} />
                       <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
@@ -1979,7 +2051,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <tr key={sec._id} className="transition hover:bg-amber-50/30">
                         <td className="px-4 py-3">
                           <input type="checkbox" checked={selectedSections.includes(sec._id)}
-                            onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                            onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                         </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{sec.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sec.classId || "")] || "—"}</td>
@@ -2009,10 +2081,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {activeTab === "subjects" && (
           <div className="space-y-4">
             {showAddForm && (
-              <form onSubmit={submitSubjectsBulk} className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+              <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-amber-50/40">
-                  <h3 className="text-sm font-semibold text-gray-800">Add Subjects</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Type a name and press <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">,</kbd> to add it — create many subjects in one go.</p>
+                  <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">4</span>
+                    Add Subjects
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Type a name and press <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">,</kbd> to add it — create many subjects in one go.</p>
                 </div>
                 <div className="p-5 space-y-4">
                   {/* Class selector */}
@@ -2116,7 +2191,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </form>
             )}
 
-            <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
+            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
               {classTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -2143,9 +2218,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               ))}
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-700">Subjects</h3>
+            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-amber-50/60 to-transparent px-5 py-3">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <GraduationCap className="h-4 w-4 text-amber-500" /> Subjects
+                </h3>
                 <div className="w-64">
                   <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
                 </div>
@@ -2157,7 +2234,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <tr className="border-b border-gray-100">
                       <th className="w-12 bg-gray-50 px-4 py-3">
                         <input type="checkbox" checked={selectedSubjects.length === paginatedSubjects.length && paginatedSubjects.length > 0}
-                          onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                          onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                       </th>
                       <SortableHeader label="Name" field="name" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} />
                       {/* <SortableHeader label="Code" field="code" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} /> */}
@@ -2171,7 +2248,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <tr key={sub._id} className="transition hover:bg-amber-50/30">
                         <td className="px-4 py-3">
                           <input type="checkbox" checked={selectedSubjects.includes(sub._id)}
-                            onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 text-amber-500" />
+                            onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
                         </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
                         {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
@@ -2204,9 +2281,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
         {activeTab === "class-teachers" && (
           <div className="space-y-4">
-            <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-gray-200"}`}>
+            <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-rose-200"}`}>
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-gray-800">
+                <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white shadow-sm">5</span>
                   {editingClassTeacherId ? "Update Class Teacher" : "Assign Class Teacher"}
                 </h3>
                 {editingClassTeacherId && (
@@ -2313,28 +2391,35 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
             </form>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-base font-semibold text-gray-800">Current Class Teachers</h3>
+            <div className="rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur p-5 shadow-sm">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-gray-800">
+                <UserCheck className="h-4 w-4 text-rose-500" /> Current Class Teachers
+              </h3>
               <div className="space-y-3">
                 {classTeacherAllocations.length === 0 && (
-                  <p className="text-sm text-gray-500">No class teachers assigned yet.</p>
+                  <EmptyState entity="class teachers" />
                 )}
                 {classTeacherAllocations.map((item) => (
                   <div
                     key={item._id}
-                    className={`flex items-center justify-between rounded-lg border px-4 py-3 transition ${
+                    className={`flex items-center justify-between rounded-xl border px-4 py-3 transition ${
                       editingClassTeacherId === item._id
                         ? "border-amber-400 bg-amber-50"
                         : "border-gray-200 hover:bg-gray-50"
                     }`}
                   >
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Class {item.classId?.name || "—"} | Section {item.sectionId?.name || "—"}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-orange-400 text-xs font-bold text-white shadow-sm">
+                        {String(item.teacherId?.name || item.teacherId?.employeeCode || "T").slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-800">
+                          {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Class {item.classId?.name || "—"} | Section {item.sectionId?.name || "—"}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -2388,7 +2473,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={editingYear?.isActive || false}
                 onChange={(e) => setEditingYear((p) => ({ ...p, isActive: e.target.checked }))}
-                className="h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400" />
+                className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer focus:ring-amber-400" />
               Set as active
             </label>
           </div>
