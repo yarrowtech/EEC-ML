@@ -431,7 +431,7 @@ const StudentAnalyticsPortal = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex rounded-full border border-white/40 bg-white/30 p-1 backdrop-blur-sm">
+            <div className="inline-flex rounded-full border border-blue-300 bg-blue-100 p-1 backdrop-blur-sm">
               <button
                 type="button"
                 onClick={() => setActiveTab('progress')}

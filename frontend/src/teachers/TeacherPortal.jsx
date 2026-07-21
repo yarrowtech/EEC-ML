@@ -382,7 +382,7 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }
             <NavLink
               key={action.to}
               to={action.to}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-300"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
             >
               {action.label}
             </NavLink>
@@ -541,13 +541,15 @@ const CW_TABS = [
       rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
       rel === 'assignments' ||
-      rel === 'reports',
+      rel === 'reports' ||
+      rel.startsWith('assessments'),
     firstPath: 'students/health-records',
     subTabs: [
       { label: 'Student Health Records', path: 'students/health-records' },
       { label: 'Attendance',             path: 'students/attendance' },
       { label: 'Assignments',            path: 'assignments' },
-      { label: 'Reports',                path: 'reports' },
+      { label: 'Exams',                  path: 'assessments/exams' },
+      { label: 'Results',                path: 'assessments/results' },
     ],
   },
   {
@@ -570,15 +572,13 @@ const CW_TABS = [
     id: 'ai',
     label: 'AI',
     icon: BarChart3,
-    // Owns all remaining teaching/* routes, plus assessments
     ownPaths: (rel) =>
       rel === 'teaching' ||
       rel.startsWith('teaching/ai') ||
       rel.startsWith('teaching/lesson-planner') ||
       rel.startsWith('teaching/class-notes') ||
       rel.startsWith('teaching/practice') ||
-      rel.startsWith('teaching/study') ||
-      rel.startsWith('assessments'),
+      rel.startsWith('teaching/study'),
     firstPath: 'teaching/ai-assistant',
     subTabs: [],
   },
@@ -1511,14 +1511,7 @@ const TeacherPortalShell = () => {
                 <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
                 <Route
                   path="reports"
-                  element={
-                    <PlaceholderModule
-                      icon={FileText}
-                      title="Reports"
-                      description="Choose an exam or result report for this class."
-                      actions={[{ label: 'Exam', to: '../assessments/exams' }, { label: 'Result', to: '../assessments/results' }]}
-                    />
-                  }
+                  element={<Navigate to="../assessments/exams" replace />}
                 />
               </Route>
 
