@@ -694,7 +694,7 @@ const ClassWorkspace = () => {
                     'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
                     'h-[37px] whitespace-nowrap transition-all duration-150',
                     isActive
-                      ? 'bg-[#4F46E5] text-white shadow-sm'
+                      ? 'bg-white text-white shadow-sm'
                       : 'text-[#475569] hover:text-[#1E293B]',
                   ].join(' ')}
                 >
