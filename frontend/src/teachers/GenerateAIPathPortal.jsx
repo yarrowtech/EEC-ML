@@ -284,16 +284,6 @@ const GenerateAIPathPortal = () => {
         className="mx-auto max-w-[1100px] rounded-[2.75rem] border border-white/60 bg-white/80 px-4 py-5 shadow-[0_24px_52px_-14px_rgba(0,20,40,.10)] backdrop-blur-xl sm:px-8 sm:py-7"
       >
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <Motion.button
-            type="button"
-            whileHover={{ x: -2 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/teacher/classes/current/teaching')}
-            className="inline-flex items-center gap-2 rounded-full border border-[#e3ebf6] bg-white px-4 py-2 text-sm font-medium text-[#1f3a5f] shadow-sm transition hover:border-[#b8cce6] hover:bg-[#f0f6fe]"
-          >
-            <ArrowLeft className="size-4" />
-            Back
-          </Motion.button>
 
           <div className="flex items-center gap-3">
             <Motion.div
@@ -305,42 +295,14 @@ const GenerateAIPathPortal = () => {
               <Brain className="size-5" />
             </Motion.div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#65758b]">CogniBloom</p>
+              
               <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#0b1c2f] sm:text-2xl">Generate AI Path</h1>
-              <p className="text-xs text-[#65758b]">EEC · AI Learning Path</p>
+              
             </div>
-          </div>
-
-          <div className="rounded-full border border-[#e3ebf6] bg-[#f8fbfe] p-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setRole('teacher')}
-              className={`rounded-full px-5 py-2 text-sm font-medium transition ${role === 'teacher' ? 'bg-white text-[#0b1c2f] shadow-sm' : 'text-[#4a5e78]'}`}
-            >
-              Teacher
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('student')}
-              className={`rounded-full px-5 py-2 text-sm font-medium transition ${role === 'student' ? 'bg-white text-[#0b1c2f] shadow-sm' : 'text-[#4a5e78]'}`}
-            >
-              Student
-            </button>
           </div>
         </div>
 
         <div className="space-y-5">
-          <div className="flex items-center justify-between gap-4 rounded-[1.8rem] border border-[#eef2f9] bg-white px-5 py-4 shadow-[0_4px_12px_rgba(0,0,0,.01)]">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#65758b]">Role view</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-[-0.01em] text-[#0b1c2f]">{roleStyles[role].header}</h2>
-              <p className="text-sm text-[#65758b]">{roleStyles[role].body}</p>
-            </div>
-            <div className="hidden items-center gap-2 rounded-full bg-[#f0f6fe] px-3 py-1.5 text-xs font-medium text-[#1f4b8a] sm:inline-flex">
-              <Sparkles className="size-3.5" />
-              Interactive motion UI
-            </div>
-          </div>
 
           {role === 'teacher' ? (
             <>
