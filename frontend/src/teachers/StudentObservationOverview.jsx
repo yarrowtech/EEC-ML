@@ -424,22 +424,27 @@ const StudentObservationOverview = () => {
 
   /* ── Render ─────────────────────────────────────────────────── */
   return (
-    <div className="space-y-4">
+    <Motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="mx-auto w-full max-w-[1100px] space-y-4 rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
+    >
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] px-6 py-5">
-        <div className="flex items-center gap-4">
+        <div className="relative flex flex-col items-center gap-3 text-center">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl select-none">
             💛
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0">
             <h1 className="text-lg font-semibold text-slate-950">Emotional Wellbeing</h1>
             <p className="mt-0.5 text-sm text-slate-500">
               Record non-academic observations on students' emotional, social, and behavioral wellbeing.
             </p>
           </div>
           {filledCount > 0 && (
-            <div className="shrink-0 flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 sm:absolute sm:right-0 sm:top-1/2 sm:-translate-y-1/2">
               <div className="h-2 w-28 rounded-full bg-slate-100 overflow-hidden">
                 <Motion.div
                   className="h-full rounded-full bg-indigo-500"
@@ -707,7 +712,7 @@ const StudentObservationOverview = () => {
         </div>
 
       </div>
-    </div>
+    </Motion.div>
   );
 };
 

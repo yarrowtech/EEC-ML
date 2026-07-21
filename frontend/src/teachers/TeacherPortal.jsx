@@ -53,8 +53,7 @@ import ClassNotes from './ClassNotes';
 import PracticeQuestions from './PracticeQuestions';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
-import ExamManagement from './ExamManagement';
-import ResultManagement from './ResultManagement';
+import ExamResultPortal from './ExamResultPortal';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
@@ -106,10 +105,7 @@ const teachingSectionLinks = teachingLinks.map((item) => ({
 }));
 
 const assessmentLinks = [
-  { label: 'Exams', to: 'assessments/exams' },
-  { label: 'Results', to: 'assessments/results' },
-  { label: 'Evaluations', to: 'assessments/evaluations' },
-  { label: 'Report Cards', to: 'assessments/report-cards' },
+  { label: 'Exam', to: 'assessments/exam' },
 ];
 
 const assessmentSectionLinks = assessmentLinks.map((item) => ({
@@ -550,8 +546,7 @@ const CW_TABS = [
       { label: 'Attendance',             path: 'students/attendance' },
       { label: 'Assignments',            path: 'assignments' },
       { label: 'Achievements',           path: 'students/achievements' },
-      { label: 'Exams',                  path: 'assessments/exams' },
-      { label: 'Results',                path: 'assessments/results' },
+      { label: 'Exam',                   path: 'assessments/exam' },
     ],
   },
   {
@@ -1488,10 +1483,7 @@ const TeacherPortalShell = () => {
                     />
                   }
                 />
-                <Route path="assessments/exams" element={<ExamManagement />} />
-                <Route path="assessments/results" element={<ResultManagement />} />
-                <Route path="assessments/evaluations" element={<ResultManagement />} />
-                <Route path="assessments/report-cards" element={<ResultManagement />} />
+                <Route path="assessments/exam" element={<ExamResultPortal />} />
                 <Route
                   path="communication"
                   element={
@@ -1509,7 +1501,7 @@ const TeacherPortalShell = () => {
                 <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
                 <Route
                   path="reports"
-                  element={<Navigate to="../assessments/exams" replace />}
+                  element={<Navigate to="../assessments/exam" replace />}
                 />
               </Route>
 
@@ -1548,9 +1540,9 @@ const TeacherPortalShell = () => {
               <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
               <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
               <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
-              <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exams')} replace />} />
-              <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/results')} replace />} />
-              <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/results')} replace />} />
+              <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+              <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+              <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
               <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
               <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
             </Routes>
