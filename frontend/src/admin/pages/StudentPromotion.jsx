@@ -862,7 +862,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ──────── Tabs ──────── */}
-      <div className="relative flex gap-1 mb-6 bg-white/80 backdrop-blur border border-gray-200/70 rounded-2xl p-1.5 w-fit shadow-sm">
+      <div className="relative flex gap-1 mb-6 bg-white/80 backdrop-blur border border-gray-200/70 rounded-full p-1.5 w-fit shadow-sm">
         {[
           { key: "promotion", label: "Class Promotion", icon: ArrowRight },
           { key: "leave", label: "Leave Management", icon: LogOut },
@@ -873,14 +873,14 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`relative z-10 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+              className={`relative z-10 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
                 active ? "text-white" : "text-gray-600 hover:text-gray-900"
               }`}
             >
               {active && (
                 <Motion.span
                   layoutId="promoTabIndicator"
-                  className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-200"
+                  className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-200"
                   transition={{ type: "spring", duration: 0.5, bounce: 0.2 }}
                 />
               )}

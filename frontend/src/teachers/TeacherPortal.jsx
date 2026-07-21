@@ -46,7 +46,6 @@ import StudentAnalyticsPortal from './StudentAnalyticsPortal';
 import AILearningPath from './AILearningPath';
 import TestTeacherPortal from './TestTeacherPortal';
 import AIPoweredTeaching from './AIPoweredTeaching';
-import GenerateAIPathPortal from './GenerateAIPathPortal';
 import MyWorkPortal from './MyWorkPortal';
 import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
@@ -1471,7 +1470,7 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/class-notes" element={<ClassNotes />} />
                 <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
                 <Route path="teaching/study-materials" element={<TeacherAlcove />} />
-                <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
+                <Route path="teaching/ai-assistant" element={<AIPoweredTeaching />} />
                 <Route path="assignments" element={<AssignmentPortal />} />
                 <Route
                   path="assessments"

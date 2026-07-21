@@ -27,7 +27,9 @@ import {
   Award,
   Hash,
   Crown,
-  Sparkles
+  Sparkles,
+  Loader2,
+  RefreshCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -1161,7 +1163,7 @@ const Teachers = ({setShowAdminHeader}) => {
           )}
 
           {/* Tabs */}
-          <div className="relative mt-6 flex gap-1 p-1.5 bg-white/80 backdrop-blur border border-gray-200/70 rounded-2xl w-fit shadow-sm">
+          <div className="relative mt-6 flex gap-1 p-1.5 bg-white/80 backdrop-blur border border-gray-200/70 rounded-full w-fit shadow-sm">
             {[
               { key: 'teachers', label: 'Teachers', icon: GraduationCap, count: teachers.length },
               { key: 'principals', label: 'Principals', icon: Crown, count: principals.length },
@@ -1172,14 +1174,14 @@ const Teachers = ({setShowAdminHeader}) => {
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`relative z-10 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                  className={`relative z-10 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
                     active ? 'text-white' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   {active && (
                     <Motion.span
                       layoutId="teachersTabIndicator"
-                      className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md shadow-indigo-200"
+                      className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md shadow-indigo-200"
                       transition={{ type: 'spring', duration: 0.5, bounce: 0.2 }}
                     />
                   )}
@@ -1194,19 +1196,19 @@ const Teachers = ({setShowAdminHeader}) => {
           </div>
 
           {/* Search and Filter — Teachers only */}
-          {activeTab === 'teachers' && <div className="mt-4 flex flex-col sm:flex-row gap-3">
+          {activeTab === 'teachers' && <div className="mt-4 flex flex-col sm:flex-row gap-3 pb-5">
             <div className="flex-1 relative">
               <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search by name, subject or email..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <select
-              className="sm:w-44 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm text-gray-700"
+              className="sm:w-44 border border-gray-200 rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm text-gray-700"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
@@ -1241,7 +1243,7 @@ const Teachers = ({setShowAdminHeader}) => {
                     <tr key={teacher._id || teacher.id} className="hover:bg-indigo-50/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                          <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
                             {teacher.profilePic ? (
                               <img
                                 src={teacher.profilePic}
@@ -1448,22 +1450,22 @@ const Teachers = ({setShowAdminHeader}) => {
         {activeTab === 'principals' && (
           <div>
             {/* Principals search */}
-            <div className="mb-4 flex flex-col sm:flex-row gap-3">
+            <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4">
               <div className="flex-1 relative">
                 <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search by name or email..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white shadow-sm text-sm"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white shadow-sm text-sm"
                   value={principalSearchTerm}
                   onChange={(e) => setPrincipalSearchTerm(e.target.value)}
                 />
               </div>
               <button
                 onClick={fetchPrincipals}
-                className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors"
+                className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors"
               >
-                Refresh
+                <RefreshCcw />
               </button>
             </div>
 
