@@ -152,7 +152,7 @@ const QuickStats = () => {
         value: assignmentSummary.loading ? '…' : String(assignmentSummary.total),
         change: assignmentSummary.loading
           ? 'Loading…'
-          : assignmentSummary.total > 0 ? `${assignmentSummary.evaluated} evaluated` : 'No assignments',
+          : assignmentSummary.total > 0 ? `${assignmentSummary.evaluated} Evaluated` : 'No assignments',
         icon: FileText,
       },
       {

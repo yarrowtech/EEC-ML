@@ -927,7 +927,7 @@ const RoutineView = () => {
               <table className="min-w-[900px] w-full border-collapse">
                 <thead>
                   <tr className="bg-slate-100">
-                    <th className="text-left text-sm font-semibold text-slate-700 px-4 py-3 border-b border-slate-200">
+                    <th className="text-center text-sm font-semibold text-slate-700 px-4 py-3 border-b border-slate-200">
                       Time
                     </th>
                     {dayOrder.map((day) => {
@@ -952,7 +952,7 @@ const RoutineView = () => {
                 </thead>
                 <tbody>
                   {weeklySlots.map((slot) => (
-                    <tr key={`row-${slot.timeLabel}`} className="align-top">
+                    <tr key={`row-${slot.timeLabel}`} className="align-center">
                       <td className="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100 bg-slate-50">
                         {slot.timeLabel}
                       </td>
