@@ -46,6 +46,7 @@ import StudentAnalyticsPortal from './StudentAnalyticsPortal';
 import AILearningPath from './AILearningPath';
 import TestTeacherPortal from './TestTeacherPortal';
 import AIPoweredTeaching from './AIPoweredTeaching';
+import GenerateAIPathPortal from './GenerateAIPathPortal';
 import MyWorkPortal from './MyWorkPortal';
 import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
@@ -376,18 +377,17 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }
 };
 
 const GLASS_CARD = {
-  background: 'rgba(140, 165, 225, 0.30)',
+  background: 'rgba(255, 255, 255, 0.35)',
   backdropFilter: 'blur(18px) saturate(180%)',
   WebkitBackdropFilter: 'blur(18px) saturate(180%)',
   boxShadow: '0 20px 40px -12px rgba(100, 120, 200, 0.15), 0 8px 24px -6px rgba(80, 100, 180, 0.06), inset 0 1px 2px rgba(255, 255, 255, 0.5)',
-  border: '1px solid rgba(255, 255, 255, 0.35)',
+  border: '1px solid #D7DCFF',
 };
 
 const GLASS_CONTROL = {
   background: 'rgba(255, 255, 255, 0.20)',
   backdropFilter: 'blur(4px)',
   WebkitBackdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.25)',
 };
 
 const ClassesHub = () => {
@@ -479,7 +479,7 @@ const ClassesHub = () => {
     <div >
       <label
         htmlFor={id}
-        className="mb-2 block text-[0.75rem] font-medium uppercase tracking-[0.04em] text-[#2c405e]/70"
+        className="mb-2 block text-[0.75rem] font-medium uppercase tracking-[0.04em] text-[#5363F5]/80"
       >
         {label}
       </label>
@@ -488,7 +488,7 @@ const ClassesHub = () => {
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-[60px] px-5 py-3 pr-10 text-base font-medium text-[#0b1a2b] transition-all duration-200 focus:outline-none"
+          className="w-full cursor-pointer appearance-none rounded-[60px] border border-[#D7DCFF] px-5 py-3 pr-10 text-base font-medium text-[#5363F5] transition-all duration-200 hover:border-[#C4CDFF] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40"
           style={GLASS_CONTROL}
         >
           {options.map((o) => (
@@ -502,7 +502,7 @@ const ClassesHub = () => {
             </option>
           )}
         </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[1.1rem] text-[#2c405e]/50">
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[1.1rem] text-[#5363F5]/70">
           ⌄
         </span>
       </div>
@@ -522,15 +522,15 @@ const ClassesHub = () => {
   return (
     <div className="flex min-h-full items-center justify-center bg-white rounded-[35px] p-6">
       <div
-        className="flex w-full max-w-[760px] flex-col rounded-[35px]"
+        className="flex w-full max-w-[760px] flex-col rounded-[35px] border border-[#D7DCFF] bg-white/35 transition-colors hover:border-[#C4CDFF]"
         style={{ ...GLASS_CARD, padding: '3.5rem 4rem 4rem' }}
       >
         {/* Title */}
-        <h1
-          className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#0b1a2b]"
-          style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)' }}
+          <h1
+          className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#5363F5]"
+          style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
         >
-          ✦ Select Class
+          Select Class
         </h1>
 
         {/* Class + Section */}
@@ -566,14 +566,14 @@ const ClassesHub = () => {
         {/* Selection preview */}
         <div
           className="flex flex-wrap items-center justify-center gap-3 rounded-[60px] px-5 py-2.5"
-          style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.10)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
         >
-          <span className="text-[0.7rem] uppercase tracking-[0.04em] text-[#2c405e]/50">Selected</span>
+          <span className="text-[0.7rem] uppercase tracking-[0.04em] text-[#5363F5]/70">Selected</span>
           {[selectedClass, selectedSection, selectedSubject].filter(Boolean).map((val) => (
             <span
               key={val}
-              className="rounded-[40px] px-5 py-1 text-[0.85rem] font-medium text-[#0b1a2b]"
-              style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid rgba(255,255,255,0.10)' }}
+              className="rounded-[40px] px-5 py-1 text-[0.85rem] font-medium text-[#5363F5]"
+              style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF' }}
             >
               {val}
             </span>
@@ -585,10 +585,10 @@ const ClassesHub = () => {
           type="button"
           onClick={handleGo}
           disabled={!selectedClass || !selectedSection}
-          className="mt-5 w-full rounded-[60px] py-3.5 text-base font-semibold text-[#0b1a2b] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_-10px_rgba(80,100,180,0.20)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: 'rgba(255,255,255,0.30)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.25)' }}
+          className="mt-5 w-full rounded-[60px] border border-[#D7DCFF] py-3.5 text-base font-semibold text-[#5363F5] transition-all duration-200 hover:-translate-y-1 hover:border-[#C4CDFF] hover:bg-[#C4CDFF]/20 hover:shadow-[0_12px_28px_-10px_rgba(80,100,180,0.20)] active:translate-y-0 active:border-[#B8C2F5] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: 'rgba(255,255,255,0.30)', backdropFilter: 'blur(4px)' }}
         >
-          → Go to the Class
+          Go to the Class
         </button>
       </div>
     </div>
@@ -602,8 +602,8 @@ const ClassesHub = () => {
  *   Tabs   : Overview | Students | Observations | AI  (4 tabs, pill bar, centered)
  *            Active = indigo fill (#4F46E5), inactive = dark text, no fill
  *   Caret  : small downward triangle below active tab, connecting to sub-bar
- *   Sub-bar: lavender pill (#EEF2FF / #C7D2FE), 3 items with indigo bullet dots
- *            Active sub-item = white pill inside
+ *   Sub-bar: soft purple pill (#F5F5FF / #D7DCFF), 3 items with purple bullet dots
+ *            Active sub-item = medium purple focus state inside
  */
 const CW_TABS = [
   {
@@ -789,9 +789,9 @@ const ClassWorkspace = () => {
         {/* ── Caret + Sub-tab bar ────────────────────────────
             Ref image: small downward-pointing triangle
             connecting active tab to the sub-bar below.
-            Sub-bar: rx=21.5, fill=#EEF2FF, stroke=#C7D2FE
+            Sub-bar: rx=21.5, fill=#F5F5FF, stroke=#D7DCFF
             Active sub-item: rx=16, fill=white, h=32
-            Items: indigo bullet dot + text
+            Items: soft purple bullet dot + text
         ──────────────────────────────────────────────────── */}
         {hasSubTabs && (
           <Motion.div
@@ -808,13 +808,13 @@ const ClassWorkspace = () => {
                 height: 0,
                 borderLeft: '10px solid transparent',
                 borderRight: '10px solid transparent',
-                borderTop: '10px solid #EEF2FF',
-                filter: 'drop-shadow(0 -1px 0 #C7D2FE)',
+                borderTop: '10px solid #F5F5FF',
+                filter: 'drop-shadow(0 -1px 0 #D7DCFF)',
               }}
             />
 
             {/* Sub-bar pill */}
-            <div className="inline-flex items-center gap-[5px] rounded-[22px] border border-[#C7D2FE] bg-[#EEF2FF] p-[5.5px]">
+            <div className="inline-flex items-center gap-[5px] rounded-[22px] border border-[#D7DCFF] bg-[#F5F5FF] p-[5.5px]">
               {activeTab.subTabs.map((sub, idx) => (
                 <NavLink
                   key={sub.path + idx}
@@ -824,13 +824,13 @@ const ClassWorkspace = () => {
                       'inline-flex items-center gap-1.5 rounded-[16px] px-3',
                       'h-8 text-[12.5px] font-semibold whitespace-nowrap transition-all duration-150',
                       ia
-                        ? 'bg-white text-[#0F172A] shadow-sm'
-                        : 'text-[#4338CA] hover:text-[#312E81]',
+                        ? 'bg-[#B8C2F5]/25 text-[#5363F5] shadow-sm ring-1 ring-[#B8C2F5]'
+                        : 'text-[#5363F5] hover:bg-[#C4CDFF]/35 hover:text-[#5363F5]',
                     ].join(' ')
                   }
                 >
                   {/* Indigo bullet dot — r=2.5 from SVG */}
-                  <span className="w-[5px] h-[5px] rounded-full bg-[#4F46E5] shrink-0" />
+                  <span className="w-[5px] h-[5px] rounded-full bg-[#5363F5] shrink-0" />
                   {sub.label}
                 </NavLink>
               ))}
@@ -1547,7 +1547,7 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/class-notes" element={<ClassNotes />} />
                 <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
                 <Route path="teaching/study-materials" element={<TeacherAlcove />} />
-                <Route path="teaching/ai-assistant" element={<AIPoweredTeaching />} />
+                <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
                 <Route path="assignments" element={<AssignmentPortal />} />
                 <Route
                   path="assessments"

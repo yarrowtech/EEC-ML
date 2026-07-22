@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
-  Brain,
   CheckCircle,
   Clock,
   GraduationCap,
@@ -18,7 +17,6 @@ import {
   Users,
   Zap,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 const students = [
   {
@@ -149,17 +147,6 @@ const tierBadge = {
   green: 'Final',
 };
 
-const roleStyles = {
-  teacher: {
-    header: 'Teacher',
-    body: 'Generate and publish AI paths from a class command center.',
-  },
-  student: {
-    header: 'Student',
-    body: 'Track the published journey and continue the next unlocked stop.',
-  },
-};
-
 const ringPath = 'M18 2.5a15.5 15.5 0 110 31 15.5 15.5 0 010-31';
 
 const overallMastery = (student) => Math.round(student.mastery.reduce((sum, [, value]) => sum + value, 0) / student.mastery.length);
@@ -170,15 +157,36 @@ const masteryClass = (value) => {
   return 'low';
 };
 
+const createDraft = (student, subject, focus, pace, notes) => {
+  const bp = blueprints[subject] || blueprints.Mathematics;
+  return {
+    student: student.id,
+    studentName: student.name,
+    cls: student.cls,
+    subject,
+    focus,
+    pace,
+    notes,
+    mastery: overallMastery(student),
+    nodes: bp.map(([title, bloom, tier, hasLesson], index) => ({
+      idx: index,
+      title,
+      bloom,
+      tier,
+      hasLesson,
+      status: index === 0 ? 'active' : 'locked',
+    })),
+  };
+};
+
 const GenerateAIPathPortal = () => {
-  const navigate = useNavigate();
-  const [role, setRole] = useState('teacher');
+  const [role] = useState('teacher');
   const [selectedId, setSelectedId] = useState('arjun');
   const [subject, setSubject] = useState('Mathematics');
   const [focus, setFocus] = useState('Fractions');
   const [pace, setPace] = useState('1 week');
   const [notes, setNotes] = useState('Struggles with fraction operations');
-  const [draft, setDraft] = useState(null);
+  const [draft, setDraft] = useState(() => createDraft(students[0], 'Mathematics', 'Fractions', '1 week', 'Struggles with fraction operations'));
   const [published, setPublished] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lessonState, setLessonState] = useState({ open: false, index: null });
@@ -197,26 +205,7 @@ const GenerateAIPathPortal = () => {
   };
 
   const buildDraft = () => {
-    const bp = blueprints[subject] || blueprints.Mathematics;
-    const mastery = overallMastery(selectedStudent);
-    return {
-      student: selectedStudent.id,
-      studentName: selectedStudent.name,
-      cls: selectedStudent.cls,
-      subject,
-      focus,
-      pace,
-      notes,
-      mastery,
-      nodes: bp.map(([title, bloom, tier, hasLesson], index) => ({
-        idx: index,
-        title,
-        bloom,
-        tier,
-        hasLesson,
-        status: index === 0 ? 'active' : 'locked',
-      })),
-    };
+    return createDraft(selectedStudent, subject, focus, pace, notes);
   };
 
   const generate = () => {
@@ -281,25 +270,13 @@ const GenerateAIPathPortal = () => {
         initial={{ opacity: 0, y: 18, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        className="mx-auto max-w-[1100px] rounded-[2.75rem] border border-white/60 bg-white/80 px-4 py-5 shadow-[0_24px_52px_-14px_rgba(0,20,40,.10)] backdrop-blur-xl sm:px-8 sm:py-7"
+        className="mx-auto max-w-[1100px] rounded-[44px] border border-white/50 bg-white/75 px-4 py-5 shadow-[0_24px_52px_-14px_rgba(0,20,40,.10)] backdrop-blur-xl sm:px-8 sm:py-7"
       >
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-
-          <div className="flex items-center gap-3">
-            <Motion.div
-              initial={{ scale: 0.85, rotate: -8 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-              className="flex size-10 items-center justify-center rounded-2xl bg-[#2d7aff] text-white shadow-sm"
-            >
-              <Brain className="size-5" />
-            </Motion.div>
-            <div>
-              
-              <h1 className="text-xl font-semibold tracking-[-0.02em] text-[#0b1c2f] sm:text-2xl">Generate AI Path</h1>
-              
-            </div>
-          </div>
+        <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
+          <h1 className="font-semibold tracking-[-0.02em] text-[#0b1c2f] text-[1.8rem]">AI Learning Path</h1>
+          <span className="rounded-full border border-[#e9edf4] bg-white px-[18px] py-1.5 text-[0.85rem] font-medium text-[#1f3a5f] shadow-sm">
+            {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+          </span>
         </div>
 
         <div className="space-y-5">
