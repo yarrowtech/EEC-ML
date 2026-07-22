@@ -158,7 +158,14 @@
       "Bash(mv /tmp/comm.jsx Communications.jsx)",
       "Bash(node -e \"require\\('fs'\\).readFileSync\\('PrincipalChatPanel.jsx','utf8'\\).length\")",
       "Bash(awk 'NR==324 || NR==339 {print; next} {gsub\\(/yellow-/,\"slate-\"\\); gsub\\(/amber-/,\"slate-\"\\); print}' NotificationCenter.jsx)",
-      "Bash(mv /tmp/nc.jsx NotificationCenter.jsx)"
+      "Bash(mv /tmp/nc.jsx NotificationCenter.jsx)",
+      "Bash(node -e \"require\\('./utils/teacherFeedbackNotify'\\); require\\('./utils/teacherFeedbackReminderScheduler'\\); console.log\\('modules load OK'\\)\")",
+      "Bash(node --check utils/teacherFeedbackNotify.js)",
+      "Bash(node --check utils/teacherFeedbackReminderScheduler.js)",
+      "Bash(node --check routes/adminFeedbackRoutes.js)",
+      "Bash(node --check index.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5000/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)"
     ],
     "additionalDirectories": [
       "/tmp"

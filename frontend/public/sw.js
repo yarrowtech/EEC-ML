@@ -23,7 +23,18 @@ self.addEventListener('push', (event) => {
   if (payload.icon) options.icon = payload.icon;
   if (payload.badge) options.badge = payload.badge;
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clientList) => {
+          clientList.forEach((client) => {
+            client.postMessage({ type: 'push-notification-received', data: payload.data || {} });
+          });
+        }),
+    ])
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {

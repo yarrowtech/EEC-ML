@@ -162,11 +162,34 @@ export const useNotifications = () => {
       fetchNotifications();
     }, POLLING_INTERVAL);
 
+    // Refetch immediately when the tab regains focus/visibility, since
+    // background tabs get their setInterval throttled by the browser and
+    // the 45s poll can otherwise take much longer than expected to catch up.
+    const onFocus = () => fetchNotifications();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchNotifications();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+
+    // Refetch instantly when a push notification actually arrives (sw.js
+    // postMessages every client on 'push'), so the badge updates live
+    // instead of waiting for the next poll tick.
+    const onServiceWorkerMessage = (event) => {
+      if (event?.data?.type === 'push-notification-received') {
+        fetchNotifications();
+      }
+    };
+    navigator.serviceWorker?.addEventListener?.('message', onServiceWorkerMessage);
+
     // Cleanup on unmount
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      navigator.serviceWorker?.removeEventListener?.('message', onServiceWorkerMessage);
     };
   }, [fetchNotifications]);
 

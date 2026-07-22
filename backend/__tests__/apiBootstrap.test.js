@@ -259,6 +259,10 @@ describe('backend API bootstrap', () => {
       startHolidayReminderScheduler: jest.fn(),
     }));
 
+    jest.doMock('../utils/teacherFeedbackReminderScheduler', () => ({
+      startTeacherFeedbackReminderScheduler: jest.fn(),
+    }));
+
     jest.doMock('../utils/passwordPolicy', () => ({
       isStrongPassword: jest.fn(() => true),
     }));

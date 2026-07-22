@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const TeacherFeedback = require('../models/TeacherFeedback');
 const School = require('../models/School');
+const { notifyTeacherFeedbackWindowStarted } = require('../utils/teacherFeedbackNotify');
 
 const router = express.Router();
 
@@ -76,6 +77,8 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'School not found' });
     }
 
+    const wasEnabled = Boolean(school.teacherFeedbackSettings?.enabled);
+
     school.teacherFeedbackSettings = {
       enabled,
       startDate: startDate || null,
@@ -83,6 +86,13 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
     };
 
     await school.save();
+
+    if (enabled && !wasEnabled) {
+      notifyTeacherFeedbackWindowStarted({ schoolId: school._id, startDate, endDate }).catch((err) => {
+        console.error('[teacher-feedback] failed to send start notifications:', err.message);
+      });
+    }
+
     return res.json({
       message: 'Teacher feedback settings updated',
       settings: normalizeTeacherFeedbackSettings(school),

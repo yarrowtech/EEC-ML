@@ -99,6 +99,7 @@ const principalDashboardRoutes = require('./routes/principalDashboardRoutes');
 const { getPresenceSnapshot, markUserOnline, markUserOffline } = require('./utils/chatPresence');
 const { syncAllocationGroupThreads } = require('./utils/chatGroupProvisioning');
 const { startHolidayReminderScheduler } = require('./utils/holidayNotificationScheduler');
+const { startTeacherFeedbackReminderScheduler } = require('./utils/teacherFeedbackReminderScheduler');
 
 const fixChatThreadIndexes = async () => {
   try {
@@ -395,6 +396,7 @@ mongoose
     await seedSuperAdmin();
     await seedPrincipal();
     startHolidayReminderScheduler();
+    startTeacherFeedbackReminderScheduler();
     try {
       const stats = await syncAllocationGroupThreads();
       console.log(`[chat] allocation group sync complete: ${stats.createdOrUpdated}/${stats.scanned}`);
