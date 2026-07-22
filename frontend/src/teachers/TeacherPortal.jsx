@@ -86,44 +86,29 @@ const studentsLinks = [
   { label: 'Student Analytics', to: 'students/analytics' },
 ];
 
-const teachingLinks = [
-  { label: 'Lesson Planner Wizard', to: 'teaching/lesson-planner-wizard' },
-  { label: 'Class Notes', to: 'teaching/class-notes' },
-  { label: 'Practice Questions', to: 'teaching/practice-questions' },
-  { label: 'Study Materials', to: 'teaching/study-materials' },
-  { label: 'AI Teaching Assistant', to: 'teaching/ai-assistant' },
-];
-
 const studentSectionLinks = studentsLinks.map((item) => ({
   ...item,
   to: item.to.replace(/^students\/?/, '') || '.',
 }));
 
-const teachingSectionLinks = teachingLinks.map((item) => ({
-  ...item,
-  to: item.to.replace(/^teaching\/?/, '') || '.',
-}));
-
-const assessmentLinks = [
-  { label: 'Exam', to: 'assessments/exam' },
+const teachingSectionLinks = [
+  { label: 'Lesson Planner Wizard', to: 'lesson-planner-wizard' },
+  { label: 'Class Notes', to: 'class-notes' },
+  { label: 'Practice Questions', to: 'practice-questions' },
+  { label: 'Study Materials', to: 'study-materials' },
+  { label: 'AI Teaching Assistant', to: 'ai-assistant' },
 ];
 
-const assessmentSectionLinks = assessmentLinks.map((item) => ({
-  ...item,
-  to: item.to.replace(/^assessments\/?/, '') || '.',
-}));
-
-const communicationLinks = [
-  { label: 'Chat', to: 'communication/chat' },
-  { label: 'Parent Meetings', to: 'communication/parent-meetings' },
-  { label: 'Student Feedback', to: 'communication/feedback' },
-  { label: 'Excuse Letters', to: 'communication/excuse-letters' },
+const assessmentSectionLinks = [
+  { label: 'Exam', to: 'exam' },
 ];
 
-const communicationSectionLinks = communicationLinks.map((item) => ({
-  ...item,
-  to: item.to.replace(/^communication\/?/, '') || '.',
-}));
+const communicationSectionLinks = [
+  { label: 'Chat', to: 'chat' },
+  { label: 'Parent Meetings', to: 'parent-meetings' },
+  { label: 'Student Feedback', to: 'feedback' },
+  { label: 'Excuse Letters', to: 'excuse-letters' },
+];
 
 const buildClassPath = (classId, section) =>
   `${PORTAL_BASE}/classes/${encodeURIComponent(classId || 'current')}${section ? `/${section}` : ''}`;
@@ -390,12 +375,31 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }
   );
 };
 
+const GLASS_CARD = {
+  background: 'rgba(140, 165, 225, 0.30)',
+  backdropFilter: 'blur(18px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+  boxShadow: '0 20px 40px -12px rgba(100, 120, 200, 0.15), 0 8px 24px -6px rgba(80, 100, 180, 0.06), inset 0 1px 2px rgba(255, 255, 255, 0.5)',
+  border: '1px solid rgba(255, 255, 255, 0.35)',
+};
+
+const GLASS_CONTROL = {
+  background: 'rgba(255, 255, 255, 0.20)',
+  backdropFilter: 'blur(4px)',
+  WebkitBackdropFilter: 'blur(4px)',
+  border: '1px solid rgba(255, 255, 255, 0.25)',
+};
+
 const ClassesHub = () => {
+  const navigate = useNavigate();
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
 
   useEffect(() => {
-    const loadClasses = async () => {
+    (async () => {
       setLoading(true);
       try {
         const token = localStorage.getItem('token');
@@ -409,95 +413,184 @@ const ClassesHub = () => {
       } finally {
         setLoading(false);
       }
-    };
-    loadClasses();
+    })();
   }, []);
 
-  const classes = useMemo(() => {
-    const grouped = new Map();
-
-    allocations.forEach((item, index) => {
-      const className = item?.classId?.name || item?.className || 'Class';
-      const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
-      const key = `${String(className).trim().toLowerCase()}::${String(sectionName).trim().toLowerCase()}`;
-      const subjectName = item?.subjectId?.name || item?.subjectName || item?.subject || 'Assigned subject';
-      const mongoId = item?.classId?._id || item?.classId?.id || '';
-      const slug = `${String(className).trim()}-${String(sectionName).trim()}`
-        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `class-${index + 1}`;
-
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          id: slug,
-          mongoId,
-          title: `${className} ${sectionName}`.trim(),
-          subjects: [],
-          isClassTeacher: false,
-        });
-      }
-
-      const entry = grouped.get(key);
-      if (subjectName && !entry.subjects.includes(subjectName)) {
-        entry.subjects.push(subjectName);
-      }
-      if (item?.isClassTeacher) {
-        entry.isClassTeacher = true;
-      }
-    });
-
-    return Array.from(grouped.values()).map((item) => ({
-      ...item,
-      subject:
-        item.subjects.length === 0
-          ? 'Assigned subject'
-          : item.subjects.length === 1
-            ? item.subjects[0]
-            : `${item.subjects.slice(0, 2).join(', ')}${item.subjects.length > 2 ? ` +${item.subjects.length - 2}` : ''}`,
-      role: item.isClassTeacher ? 'Class teacher' : 'Subject teacher',
-    }));
+  const classNames = useMemo(() => {
+    const seen = new Set();
+    return allocations
+      .map((a) => a?.classId?.name || a?.className || '')
+      .filter((n) => n && !seen.has(n) && seen.add(n));
   }, [allocations]);
 
-  return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Class-centric workspace</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">Classes</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Choose a class-section first. Everything inside this area is scoped to that class context: students, teaching, assignments, assessments, communication, and reports.
-        </p>
-      </div>
+  useEffect(() => {
+    if (classNames.length > 0 && !selectedClass) setSelectedClass(classNames[0]);
+  }, [classNames, selectedClass]);
 
-      {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500">Loading assigned classes...</div>
-      ) : classes.length === 0 ? (
-        <PlaceholderModule
-          icon={Users}
-          title="No assigned class-section found"
-          description="Your class allocations are not available yet. Use Current Class to continue working with the class-scoped tools."
-          actions={[{ label: 'Open Current Class', to: buildClassPath('current') }]}
+  const sections = useMemo(() => {
+    const seen = new Set();
+    return allocations
+      .filter((a) => (a?.classId?.name || a?.className || '') === selectedClass)
+      .map((a) => a?.sectionId?.name || a?.sectionName || '')
+      .filter((s) => s && !seen.has(s) && seen.add(s));
+  }, [allocations, selectedClass]);
+
+  useEffect(() => {
+    if (sections.length > 0) setSelectedSection(sections[0]);
+    else setSelectedSection('');
+  }, [sections]);
+
+  const subjects = useMemo(() => {
+    const seen = new Set();
+    return allocations
+      .filter(
+        (a) =>
+          (a?.classId?.name || a?.className || '') === selectedClass &&
+          (a?.sectionId?.name || a?.sectionName || '') === selectedSection,
+      )
+      .map((a) => a?.subjectId?.name || a?.subjectName || a?.subject || '')
+      .filter((s) => s && !seen.has(s) && seen.add(s));
+  }, [allocations, selectedClass, selectedSection]);
+
+  useEffect(() => {
+    if (subjects.length > 0) setSelectedSubject(subjects[0]);
+    else setSelectedSubject('');
+  }, [subjects]);
+
+  const handleGo = () => {
+    if (!selectedClass || !selectedSection) return;
+    const alloc = allocations.find(
+      (a) =>
+        (a?.classId?.name || a?.className || '') === selectedClass &&
+        (a?.sectionId?.name || a?.sectionName || '') === selectedSection,
+    );
+    const mongoId = alloc?.classId?._id || alloc?.classId?.id || '';
+    const slug =
+      `${selectedClass.trim()}-${selectedSection.trim()}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'current';
+    navigate(buildClassPath(slug), {
+      state: { className: `${selectedClass} ${selectedSection}`, classMongoId: mongoId },
+    });
+  };
+
+  const SelectField = ({ id, label, value, onChange, options }) => (
+    <div >
+      <label
+        htmlFor={id}
+        className="mb-2 block text-[0.75rem] font-medium uppercase tracking-[0.04em] text-[#2c405e]/70"
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full cursor-pointer appearance-none rounded-[60px] px-5 py-3 pr-10 text-base font-medium text-[#0b1a2b] transition-all duration-200 focus:outline-none"
+          style={GLASS_CONTROL}
+        >
+          {options.map((o) => (
+            <option key={o} value={o} style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
+              {o}
+            </option>
+          ))}
+          {options.length === 0 && (
+            <option value="" style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
+              —
+            </option>
+          )}
+        </select>
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[1.1rem] text-[#2c405e]/50">
+          ⌄
+        </span>
+      </div>
+    </div>
+  );
+
+  if (!loading && allocations.length === 0) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-white p-6 ">
+        <div className="w-full max-w-[520px] rounded-[40px] p-11 text-center" style={GLASS_CARD}>
+          <p className="text-sm text-[#2c405e]">No class allocations found. Contact your administrator.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-full items-center justify-center bg-white rounded-[35px] p-6">
+      <div
+        className="flex w-full max-w-[760px] flex-col rounded-[35px]"
+        style={{ ...GLASS_CARD, padding: '3.5rem 4rem 4rem' }}
+      >
+        {/* Title */}
+        <h1
+          className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#0b1a2b]"
+          style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(4px)' }}
+        >
+          ✦ Select Class
+        </h1>
+
+        {/* Class + Section */}
+        <div className="mb-6 grid grid-cols-2 gap-4">
+          <SelectField
+            id="classSelect"
+            label="Class"
+            value={selectedClass}
+            onChange={setSelectedClass}
+            options={classNames}
+          />
+          <SelectField
+            id="sectionSelect"
+            label="Section"
+            value={selectedSection}
+            onChange={setSelectedSection}
+            options={sections}
+          />
+        </div>
+
+        {/* Subject */}
+        <SelectField
+          id="subjectSelect"
+          label="Subject"
+          value={selectedSubject}
+          onChange={setSelectedSubject}
+          options={subjects}
         />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {classes.map((item) => (
-            <NavLink
-              key={item.id}
-              to={buildClassPath(item.id)}
-              state={{ className: item.title, classMongoId: item.mongoId }}
-              className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-indigo-200 hover:shadow-lg hover:shadow-slate-200/70"
+
+        {/* Divider */}
+        <div className="my-4 h-px w-full" style={{ background: 'rgba(255,255,255,0.15)' }} />
+
+        {/* Selection preview */}
+        <div
+          className="flex flex-wrap items-center justify-center gap-3 rounded-[60px] px-5 py-2.5"
+          style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.10)', backdropFilter: 'blur(4px)' }}
+        >
+          <span className="text-[0.7rem] uppercase tracking-[0.04em] text-[#2c405e]/50">Selected</span>
+          {[selectedClass, selectedSection, selectedSubject].filter(Boolean).map((val) => (
+            <span
+              key={val}
+              className="rounded-[40px] px-5 py-1 text-[0.85rem] font-medium text-[#0b1a2b]"
+              style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid rgba(255,255,255,0.10)' }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold text-slate-950">{item.title}</p>
-                  <p className="mt-1 text-sm text-slate-500">{item.subject}</p>
-                </div>
-                <ChevronRight size={18} className="text-slate-400" />
-              </div>
-              <span className="mt-4 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                {item.role}
-              </span>
-            </NavLink>
+              {val}
+            </span>
           ))}
         </div>
-      )}
+
+        {/* Go button */}
+        <button
+          type="button"
+          onClick={handleGo}
+          disabled={!selectedClass || !selectedSection}
+          className="mt-5 w-full rounded-[60px] py-3.5 text-base font-semibold text-[#0b1a2b] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_-10px_rgba(80,100,180,0.20)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: 'rgba(255,255,255,0.30)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.25)' }}
+        >
+          → Go to the Class
+        </button>
+      </div>
     </div>
   );
 };
@@ -517,11 +610,7 @@ const CW_TABS = [
     id: 'overview',
     label: 'Overview',
     icon: Home,
-    // Owns the index and the two overview/* alias routes
-    ownPaths: (rel) =>
-      rel === '' ||
-      rel === 'overview' ||
-      rel.startsWith('overview/'),
+    ownPaths: (rel) => rel.startsWith('overview/'),
     firstPath: 'overview/analytics',
     subTabs: [
       { label: 'Overall Class Analytics',  path: 'overview/analytics' },
@@ -676,9 +765,7 @@ const ClassWorkspace = () => {
             {CW_TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = tab.id === activeTab.id;
-              const to = tab.subTabs.length > 0
-                ? `${basePath}/${tab.firstPath}`
-                : `${basePath}/${tab.firstPath}`;
+              const to = `${basePath}/${tab.firstPath}`;
               return (
                 <NavLink
                   key={tab.id}
@@ -687,7 +774,7 @@ const ClassWorkspace = () => {
                     'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
                     'h-[37px] whitespace-nowrap transition-all duration-150',
                     isActive
-                      ? 'bg-white text-white shadow-sm'
+                      ? 'bg-[#4F46E5] text-white shadow-sm'
                       : 'text-[#475569] hover:text-[#1E293B]',
                   ].join(' ')}
                 >
@@ -1418,23 +1505,13 @@ const TeacherPortalShell = () => {
         </header>
 
         <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={isChatRoute ? 'h-full flex flex-col' : undefined}>
+          <div className={isChatRoute ? 'h-full flex flex-col' : 'p-6 h-full'}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
               <Route path="classes" element={<ClassesHub />} />
               <Route path="classes/:classId" element={<ClassWorkspace />}>
-                <Route
-                  index
-                  element={
-                    <PlaceholderModule
-                      icon={Home}
-                      title="Class Overview"
-                      description="A concise class command center for roster health, today's schedule, open work, recent notifications, and risk signals."
-                      actions={studentsLinks.slice(0, 3)}
-                    />
-                  }
-                />
+                <Route index element={<Navigate to="overview/analytics" replace />} />
                 <Route
                   path="students"
                   element={

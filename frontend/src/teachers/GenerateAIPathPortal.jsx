@@ -410,15 +410,22 @@ const GenerateAIPathPortal = () => {
                     </Field>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap gap-3">
+                  <div className="mt-5 flex justify-center">
                     <Motion.button
                       type="button"
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ scale: 1.04, boxShadow: '0 0 0 3px rgba(45,122,255,0.18), 0 8px 28px rgba(45,122,255,0.10)' }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={generate}
                       disabled={loading}
-                      className="inline-flex items-center gap-2 rounded-full bg-[linear-gradient(135deg,#2d7aff,#1a5fd9)] px-6 py-3 text-sm font-medium text-white shadow-[0_8px_24px_rgba(45,122,255,.22)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                      className="relative inline-flex items-center gap-2.5 overflow-hidden rounded-full border border-[#2d7aff] bg-transparent px-8 py-3 text-sm font-semibold text-[#2d7aff] transition-all duration-300 hover:border-[#1a5fd9] hover:text-[#1a5fd9] disabled:cursor-not-allowed disabled:opacity-50"
                     >
+                      <Motion.span
+                        className="pointer-events-none absolute inset-0 -translate-x-full skew-x-[-18deg] bg-[rgba(45,122,255,0.07)]"
+                        animate={loading ? {} : { translateX: ['−100%', '200%'] }}
+                        transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 1.2, ease: 'easeInOut' }}
+                      />
                       {loading ? <RefreshCw className="size-4 animate-spin" /> : <Zap className="size-4" />}
                       {loading ? 'Analyzing knowledge gaps...' : 'Generate AI Path'}
                     </Motion.button>

@@ -413,12 +413,12 @@ const StudentAnalyticsPortal = () => {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-full bg-[linear-gradient(145deg,#f0f6fb_0%,#e3ecf5_100%)] p-3 sm:p-5">
+    <div className="flex min-h-[calc(100vh-16rem)] items-center justify-center bg-[linear-gradient(145deg,#f0f6fb_0%,#e3ecf5_100%)] p-3 sm:p-5">
       <Motion.div
         initial={{ opacity: 0, y: 24, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-        className="mx-auto max-w-[1200px] rounded-[2rem] border border-white/40 bg-white/35 p-4 shadow-[0_24px_48px_-16px_rgba(0,30,50,0.2),0_8px_24px_-6px_rgba(0,0,0,0.04)] backdrop-blur-xl sm:rounded-[2.8rem] sm:p-8"
+        className="w-full max-w-[1200px] rounded-[35px] border border-white/40 bg-white/35 p-4 shadow-[0_24px_48px_-16px_rgba(0,30,50,0.2),0_8px_24px_-6px_rgba(0,0,0,0.04)] backdrop-blur-xl sm:p-8"
       >
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4 sm:mb-8">
           <div>
