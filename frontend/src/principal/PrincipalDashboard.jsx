@@ -23,15 +23,16 @@ import {
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 import PrincipalSidebar from './PrincipalSidebar';
 import PrincipalHeader from './PrincipalHeader';
-import SchoolOverview from './SchoolOverview';
 import AcademicAnalytics from './AcademicAnalytics';
 import StudentAnalytics from './StudentAnalytics';
 import StaffManagement from './StaffManagement';
 import FinancialDashboard from './FinancialDashboard';
 import NotificationCenter from './NotificationCenter';
-import QuickActions from './QuickActions';
 import Communications from './Communications';
 import OverviewPage from './OverviewPage';
+import FacilitiesPage from './FacilitiesPage';
+import ReportsPage from './ReportsPage';
+import CalendarPage from './CalendarPage';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 
@@ -474,25 +475,25 @@ const PrincipalDashboard = () => {
 
   return (
     <>
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Backdrop for mobile */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      
+
       {/* Sidebar */}
       <PrincipalSidebar
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
         principalProfile={principalProfile}
       />
-      
+
       {/* Main Content */}
       <div className={`transition-all duration-300 ${
-        sidebarOpen ? 'lg:ml-80' : 'lg:ml-20'
+        sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'
       }`}>
         {/* Header */}
         <div className="sticky top-0 z-30">
@@ -505,10 +506,10 @@ const PrincipalDashboard = () => {
         </div>
 
         {/* Main Dashboard Content */}
-        <main className="p-6 bg-gray-50 min-h-screen">
+        <main className="p-6 bg-slate-50 min-h-screen">
           {(isLoading || loadError) && (
             <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
-              loadError ? 'border-red-200 bg-red-50 text-red-700' : 'border-yellow-200 bg-yellow-50 text-yellow-800'
+              loadError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
             }`}>
               {isLoading ? 'Loading live dashboard data...' : loadError}
             </div>
@@ -520,6 +521,9 @@ const PrincipalDashboard = () => {
             <Route path="students" element={<StudentAnalytics />} />
             <Route path="staff" element={<StaffManagement />} />
             <Route path="finance" element={<FinancialDashboard />} />
+            <Route path="facilities" element={<FacilitiesPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="calendar" element={<CalendarPage />} />
             <Route
               path="notifications"
               element={(

@@ -174,7 +174,7 @@ const NotificationCenter = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-purple-600 rounded-3xl p-8 text-white shadow-lg">
+      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-white/80">Principal alerts hub</p>
@@ -203,14 +203,14 @@ const NotificationCenter = ({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-amber-100 p-5 shadow-sm">
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-amber-600 uppercase">Total notifications</p>
-              <p className="text-2xl font-bold text-amber-900">{sortedNotifications.length}</p>
+              <p className="text-xs text-slate-600 uppercase">Total notifications</p>
+              <p className="text-2xl font-bold text-slate-900">{sortedNotifications.length}</p>
             </div>
-            <div className="p-3 bg-amber-50 rounded-2xl">
-              <Bell className="w-6 h-6 text-amber-600" />
+            <div className="p-3 bg-slate-50 rounded-2xl">
+              <Bell className="w-6 h-6 text-slate-600" />
             </div>
           </div>
         </div>
@@ -225,14 +225,14 @@ const NotificationCenter = ({
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-2xl border border-amber-100 p-5 shadow-sm">
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-amber-600 uppercase">Medium priority</p>
-              <p className="text-2xl font-bold text-amber-600">{priorityStats.medium}</p>
+              <p className="text-xs text-slate-600 uppercase">Medium priority</p>
+              <p className="text-2xl font-bold text-slate-600">{priorityStats.medium}</p>
             </div>
-            <div className="p-3 bg-amber-50 rounded-2xl">
-              <Flag className="w-6 h-6 text-amber-600" />
+            <div className="p-3 bg-slate-50 rounded-2xl">
+              <Flag className="w-6 h-6 text-slate-600" />
             </div>
           </div>
         </div>
@@ -260,7 +260,7 @@ const NotificationCenter = ({
         </div>
       )}
 
-      <div className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-4">
         <div className="flex flex-wrap gap-2">
           {filterOptions.map((option) => (
             <button
@@ -268,7 +268,7 @@ const NotificationCenter = ({
               onClick={() => setFilter(option.key)}
               className={`px-4 py-1.5 rounded-full border text-sm font-medium flex items-center gap-2 ${
                 filter === option.key
-                  ? 'bg-amber-100 border-amber-200 text-amber-900'
+                  ? 'bg-slate-100 border-slate-200 text-slate-900'
                   : 'border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
             >
@@ -283,32 +283,32 @@ const NotificationCenter = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search notifications"
-            className="w-full border border-gray-200 rounded-2xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-400 text-sm"
+            className="w-full border border-gray-200 rounded-2xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm"
           />
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-3xl border border-amber-100 shadow-sm flex flex-col">
-          <div className="p-5 border-b border-amber-100 flex items-center justify-between">
+        <div className="xl:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-amber-900">Live notifications</h3>
-              <p className="text-xs text-amber-700">Click to expand details, mark read, or dismiss</p>
+              <h3 className="text-lg font-semibold text-slate-900">Live notifications</h3>
+              <p className="text-xs text-slate-700">Click to expand details, mark read, or dismiss</p>
             </div>
-            <div className="flex items-center gap-2 text-xs text-amber-700">
+            <div className="flex items-center gap-2 text-xs text-slate-700">
               <Clock className="w-4 h-4" />
               Updated {new Date().toLocaleTimeString()}
             </div>
           </div>
-          <div className="divide-y divide-amber-50 max-h-[600px] overflow-auto">
+          <div className="divide-y divide-slate-50 max-h-[600px] overflow-auto">
             {loading && (
-              <div className="p-6 flex items-center justify-center gap-2 text-amber-800">
+              <div className="p-6 flex items-center justify-center gap-2 text-slate-800">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Loading notifications...
               </div>
             )}
             {!loading && filteredNotifications.length === 0 && (
-              <div className="p-6 text-center text-amber-800 text-sm">No notifications match the selected filters.</div>
+              <div className="p-6 text-center text-slate-800 text-sm">No notifications match the selected filters.</div>
             )}
             {!loading && filteredNotifications.map((notification) => {
               const Icon = getNotificationIcon(notification.type);
@@ -331,7 +331,7 @@ const NotificationCenter = ({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className={`text-base font-semibold ${read ? 'text-gray-600' : 'text-amber-900'}`}>
+                        <p className={`text-base font-semibold ${read ? 'text-gray-600' : 'text-slate-900'}`}>
                           {notification.title || 'Notification'}
                         </p>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
@@ -384,11 +384,11 @@ const NotificationCenter = ({
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6 space-y-4">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-amber-700 uppercase">Department breakdown</p>
-                <h3 className="text-lg font-semibold text-amber-900">Which teams are posting</h3>
+                <p className="text-xs text-slate-700 uppercase">Department breakdown</p>
+                <h3 className="text-lg font-semibold text-slate-900">Which teams are posting</h3>
               </div>
             </div>
             <div className="space-y-3">
@@ -400,7 +400,7 @@ const NotificationCenter = ({
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2 mt-1">
                     <div
-                      className="h-2 rounded-full bg-amber-500"
+                      className="h-2 rounded-full bg-slate-500"
                       style={{ width: `${sortedNotifications.length ? Math.min(100, (dept.count / sortedNotifications.length) * 100) : 0}%` }}
                     />
                   </div>
@@ -411,11 +411,11 @@ const NotificationCenter = ({
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl border border-amber-100 shadow-sm p-6 space-y-3">
-            <p className="text-xs text-amber-700 uppercase">Latest high priority</p>
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-3">
+            <p className="text-xs text-slate-700 uppercase">Latest high priority</p>
             {recentHighPriority ? (
               <>
-                <p className="text-base font-semibold text-amber-900">{recentHighPriority.title}</p>
+                <p className="text-base font-semibold text-slate-900">{recentHighPriority.title}</p>
                 <p className="text-sm text-gray-600">{recentHighPriority.message}</p>
                 <p className="text-xs text-gray-500">{formatRelativeTime(recentHighPriority.createdAt || recentHighPriority.timestamp)}</p>
               </>

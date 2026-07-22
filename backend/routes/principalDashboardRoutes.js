@@ -11,9 +11,18 @@ const StudentProgress = require('../models/StudentProgress');
 const Exam = require('../models/Exam');
 const FeeInvoice = require('../models/FeeInvoice');
 const FeePayment = require('../models/FeePayment');
+const TeacherExpense = require('../models/TeacherExpense');
 const Notification = require('../models/Notification');
 const SupportRequest = require('../models/SupportRequest');
 const Issue = require('../models/Issue');
+const ExamResult = require('../models/ExamResult');
+const Holiday = require('../models/Holiday');
+const Building = require('../models/Building');
+const Floor = require('../models/Floor');
+const Room = require('../models/Room');
+const Timetable = require('../models/Timetable');
+
+const EXPENSE_CATEGORY_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
 
 const router = express.Router();
 
@@ -305,12 +314,6 @@ router.get('/staff/analytics', principalAuth, async (req, res) => {
       return new Date(teacher.lastLoginAt) >= last30;
     }).length;
 
-    const satisfactionScores = [
-      { name: 'Teachers', score: activeTeachers && teachers.length ? Number((4 + (activeTeachers / teachers.length)).toFixed(1)) : 4.0 },
-      { name: 'Support Staff', score: totalSupportStaff > 0 ? 4.2 : 0 },
-      { name: 'Admin', score: totalAdmins > 0 ? 4.1 : 0 },
-    ];
-
     res.json({
       summary: {
         totalTeachers: teachers.length,
@@ -325,7 +328,6 @@ router.get('/staff/analytics', principalAuth, async (req, res) => {
         { role: 'Admin', count: totalAdmins },
       ],
       teacherBySubject: Object.entries(teacherBySubject).map(([subject, count]) => ({ subject, count })),
-      satisfactionScores,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
@@ -626,24 +628,43 @@ router.get('/financial', principalAuth, async (req, res) => {
       }
     });
 
+    // Real expense data: approved teacher expense claims (the only expense ledger in this system)
+    const approvedExpenses = await TeacherExpense.find({ ...schoolFilter, status: 'Approved' }).lean();
+    const totalExpenses = approvedExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    approvedExpenses.forEach((expense) => {
+      const date = new Date(expense.expenseDate);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (monthlyData[key]) {
+        monthlyData[key].expenses += Number(expense.amount || 0);
+      }
+    });
+
     const revenueData = Object.values(monthlyData);
 
-    // Calculate expense breakdown (mock percentages for now, can be enhanced)
-    const expenseData = [
-      { name: 'Salaries', value: 45, color: '#3B82F6' },
-      { name: 'Infrastructure', value: 25, color: '#10B981' },
-      { name: 'Equipment', value: 15, color: '#F59E0B' },
-      { name: 'Utilities', value: 10, color: '#EF4444' },
-      { name: 'Others', value: 5, color: '#8B5CF6' },
-    ];
+    const expenseCategoryTotals = new Map();
+    approvedExpenses.forEach((expense) => {
+      const category = expense.category || 'Other';
+      expenseCategoryTotals.set(category, (expenseCategoryTotals.get(category) || 0) + Number(expense.amount || 0));
+    });
+
+    const expenseData = Array.from(expenseCategoryTotals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, amount], index) => ({
+        name,
+        amount: Math.round(amount),
+        value: totalExpenses > 0 ? Number(((amount / totalExpenses) * 100).toFixed(1)) : 0,
+        color: EXPENSE_CATEGORY_COLORS[index % EXPENSE_CATEGORY_COLORS.length],
+      }));
 
     res.json({
       totals: {
         totalRevenue: Math.round(totals.totalCollected),
-        totalExpenses: Math.round(totals.totalCollected * 0.6), // Estimate 60% as expenses
+        totalExpenses: Math.round(totalExpenses),
         totalInvoiced: Math.round(totals.totalInvoiced),
         totalOutstanding: Math.round(totals.totalOutstanding),
-        netProfit: Math.round(totals.totalCollected * 0.4), // 40% profit margin estimate
+        netProfit: Math.round(totals.totalCollected - totalExpenses),
         budgetUtilization: totals.totalInvoiced > 0
           ? Math.round((totals.totalCollected / totals.totalInvoiced) * 100)
           : 0,
@@ -651,7 +672,186 @@ router.get('/financial', principalAuth, async (req, res) => {
       },
       revenueData,
       expenseData,
+      expenseDataNote: 'Expense figures reflect approved teacher expense claims only; this system does not track payroll or infrastructure spend separately.',
       recentPayments,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/facilities', principalAuth, async (req, res) => {
+  // #swagger.tags = ['Principal Dashboard']
+  try {
+    const schoolFilter = getSchoolFilter(req);
+
+    const [buildings, floors, rooms] = await Promise.all([
+      Building.find(schoolFilter).sort({ order: 1, name: 1 }).lean(),
+      Floor.find(schoolFilter)
+        .populate('buildingId', 'name code order isActive')
+        .sort({ order: 1, name: 1 })
+        .lean(),
+      Room.find(schoolFilter)
+        .populate({
+          path: 'floorId',
+          select: 'name floorCode order isActive buildingId',
+          populate: { path: 'buildingId', select: 'name code' },
+        })
+        .sort({ roomNumber: 1 })
+        .lean(),
+    ]);
+
+    const roomIds = rooms.map((r) => r._id);
+    const [examRoomIds, timetableRoomIds] = await Promise.all([
+      roomIds.length
+        ? Exam.find({ ...schoolFilter, roomId: { $in: roomIds } }).distinct('roomId')
+        : [],
+      roomIds.length
+        ? Timetable.find({ ...schoolFilter, 'entries.roomId': { $in: roomIds } }).distinct('entries.roomId')
+        : [],
+    ]);
+    const occupiedRoomIds = new Set([
+      ...examRoomIds.map((id) => String(id)),
+      ...timetableRoomIds.map((id) => String(id)),
+    ]);
+
+    const roomsWithUsage = rooms.map((room) => ({
+      ...room,
+      inUse: occupiedRoomIds.has(String(room._id)),
+    }));
+
+    const floorsByBuilding = new Map();
+    floors.forEach((floor) => {
+      const buildingId = String(floor.buildingId?._id || floor.buildingId || '');
+      if (!floorsByBuilding.has(buildingId)) floorsByBuilding.set(buildingId, []);
+      floorsByBuilding.get(buildingId).push(floor);
+    });
+
+    const roomsByFloor = new Map();
+    roomsWithUsage.forEach((room) => {
+      const floorId = String(room.floorId?._id || room.floorId || '');
+      if (!roomsByFloor.has(floorId)) roomsByFloor.set(floorId, []);
+      roomsByFloor.get(floorId).push(room);
+    });
+
+    const buildingsWithHierarchy = buildings.map((building) => ({
+      ...building,
+      floors: (floorsByBuilding.get(String(building._id)) || []).map((floor) => ({
+        ...floor,
+        rooms: roomsByFloor.get(String(floor._id)) || [],
+      })),
+    }));
+
+    res.json({
+      summary: {
+        totalBuildings: buildings.length,
+        totalFloors: floors.length,
+        totalRooms: rooms.length,
+        occupiedRooms: roomsWithUsage.filter((r) => r.inUse).length,
+        freeRooms: roomsWithUsage.filter((r) => !r.inUse).length,
+      },
+      buildings: buildingsWithHierarchy,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/calendar', principalAuth, async (req, res) => {
+  // #swagger.tags = ['Principal Dashboard']
+  try {
+    const schoolFilter = getSchoolFilter(req);
+
+    const [holidays, exams] = await Promise.all([
+      Holiday.find(schoolFilter).lean(),
+      Exam.find(schoolFilter).lean(),
+    ]);
+
+    const events = [
+      ...holidays.map((h) => ({
+        id: `holiday-${h._id}`,
+        type: 'holiday',
+        title: h.name,
+        date: h.startDate || h.date,
+        endDate: h.endDate || h.startDate || h.date,
+      })),
+      ...exams.map((e) => ({
+        id: `exam-${e._id}`,
+        type: 'exam',
+        title: e.title || e.term || 'Exam',
+        date: e.date,
+        subject: e.subject || '',
+      })),
+    ]
+      .filter((event) => event.date)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    res.json({
+      events,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/reports', principalAuth, async (req, res) => {
+  // #swagger.tags = ['Principal Dashboard']
+  try {
+    const schoolFilter = getSchoolFilter(req);
+
+    const [students, examResults, feeSummary, approvedExpenses] = await Promise.all([
+      StudentUser.find(schoolFilter, 'attendance').lean(),
+      ExamResult.find(schoolFilter).lean(),
+      FeeInvoice.aggregate([
+        { $match: schoolFilter },
+        {
+          $group: {
+            _id: null,
+            totalAmount: { $sum: '$totalAmount' },
+            paidAmount: { $sum: '$paidAmount' },
+            balanceAmount: { $sum: '$balanceAmount' },
+          },
+        },
+      ]),
+      TeacherExpense.find({ ...schoolFilter, status: 'Approved' }, 'amount').lean(),
+    ]);
+
+    const attendanceTrend = buildAttendanceTrend(students, 6);
+
+    const gradedTotal = examResults.length || 1;
+    const passCount = examResults.filter((r) => r.status === 'pass').length;
+    const failCount = examResults.filter((r) => r.status === 'fail').length;
+    const absentCount = examResults.filter((r) => r.status === 'absent').length;
+
+    const gradeMap = examResults.reduce((acc, r) => {
+      const grade = r.grade || 'Ungraded';
+      acc[grade] = (acc[grade] || 0) + 1;
+      return acc;
+    }, {});
+
+    const feeTotals = feeSummary[0] || { totalAmount: 0, paidAmount: 0, balanceAmount: 0 };
+    const totalExpenses = approvedExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    res.json({
+      academic: {
+        totalResults: examResults.length,
+        passRate: Number(((passCount / gradedTotal) * 100).toFixed(1)),
+        failRate: Number(((failCount / gradedTotal) * 100).toFixed(1)),
+        absentRate: Number(((absentCount / gradedTotal) * 100).toFixed(1)),
+        gradeDistribution: Object.entries(gradeMap).map(([grade, count]) => ({ grade, count })),
+      },
+      attendance: {
+        trend: attendanceTrend,
+      },
+      financial: {
+        totalRevenue: Math.round(feeTotals.paidAmount || 0),
+        totalExpenses: Math.round(totalExpenses),
+        netProfit: Math.round((feeTotals.paidAmount || 0) - totalExpenses),
+        totalOutstanding: Math.round(feeTotals.balanceAmount || 0),
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

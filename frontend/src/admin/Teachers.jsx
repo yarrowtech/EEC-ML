@@ -433,12 +433,14 @@ const Teachers = ({setShowAdminHeader}) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Unable to load credentials');
+      const canCopy = !data?.lastLoginAt && data?.initialPassword; // canCopy is not used here, but it is in the JSX. Let's keep it.
       const principalResetAt = data?.lastLoginAt ? new Date(data.lastLoginAt) : null;
       const passwordValue = principalResetAt
         ? `Password reset by the principal at ${principalResetAt.toLocaleDateString()}`
         : (data?.initialPassword || 'Not available');
       setPrincipalCredentialView({
         name: data?.name || principal.name,
+        photo: resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(String(principal?.email || principal?.username || '').trim().toLowerCase()) || '',
         username: data.username || data.email || principal.email,
         email: data.email || principal.email,
         password: passwordValue
@@ -706,6 +708,7 @@ const Teachers = ({setShowAdminHeader}) => {
       const hasUserReset = Boolean(teacherResetAt);
       setCredentialView({
         id: teacherId,
+        photo: resolveImageUrl(teacher?.profilePic),
         name: data?.name || teacher.name,
         username: data?.username || teacher.username || teacher.employeeCode,
         employeeCode: data.employeeCode || data.username,
@@ -2298,7 +2301,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 </div>
                 <button
                   onClick={() => setCredentialView(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-all"
                 >
                   <XCircle size={18} />
                 </button>
@@ -2307,13 +2310,19 @@ const Teachers = ({setShowAdminHeader}) => {
 
             <div className="p-6 space-y-4">
               {/* Teacher identity */}
-              <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-xl">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${getAvatarColor(credentialView.name).bg} ${getAvatarColor(credentialView.name).text}`}>
-                  {(credentialView.name || 'T').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <p className="text-xs text-indigo-500 font-medium">Teacher</p>
+              <div className="flex flex-col justify center items-center gap-3 p-3 bg-indigo-50 rounded-lg">
+                {credentialView.photo ? (
+                  <img src={credentialView.photo} alt={credentialView.name} className="w-14 h-14 rounded-full object-cover flex-shrink-0 border-2 border-white" />
+                ) : (
+                  <div
+                    className={`w-14 h-14 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${getAvatarColor(credentialView.name).bg} ${getAvatarColor(credentialView.name).text}`}
+                  >
+                    {(credentialView.name || 'T').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="text-center">
                   <p className="text-sm font-semibold text-indigo-900">{credentialView.name || 'Teacher'}</p>
+                  <p className="text-xs text-indigo-500 font-medium">Teacher</p>
                 </div>
               </div>
 
@@ -2321,7 +2330,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 {/* Login ID */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Login ID</p>
-                  <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
                     <code className="text-sm font-mono text-gray-800">
                       {credentialView.employeeCode || credentialView.username}
                     </code>
@@ -2342,7 +2351,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 {/* Password */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Password</p>
-                  <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
                     <code className="text-sm font-mono text-gray-800">{credentialView.password}</code>
                     {credentialView.canCopyPassword && (
                       <button
@@ -2403,7 +2412,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 </div>
                 <button
                   onClick={() => setPrincipalCredentialView(null)}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-all"
                 >
                   <XCircle size={18} />
                 </button>
@@ -2412,13 +2421,19 @@ const Teachers = ({setShowAdminHeader}) => {
 
             <div className="p-6 space-y-4">
               {/* Principal identity */}
-              <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 ${getAvatarColor(principalCredentialView.name).bg} ${getAvatarColor(principalCredentialView.name).text}`}>
-                  {(principalCredentialView.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <p className="text-xs text-purple-500 font-medium">Principal</p>
+              <div className="flex flex-col items-center gap-3 p-3 bg-purple-50 rounded-lg">
+                {principalCredentialView.photo ? (
+                  <img src={principalCredentialView.photo} alt={principalCredentialView.name} className="w-14 h-14 border-2 border-white rounded-full object-cover flex-shrink-0" />
+                ) : (
+                  <div
+                    className={`w-14 h-14 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${getAvatarColor(principalCredentialView.name).bg} ${getAvatarColor(principalCredentialView.name).text}`}
+                  >
+                    {(principalCredentialView.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className='text-center'>
                   <p className="text-sm font-semibold text-purple-900">{principalCredentialView.name || 'Principal'}</p>
+                  <p className="text-xs text-purple-500 font-medium">Principal</p>
                 </div>
               </div>
 
@@ -2426,7 +2441,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 {/* Login ID / Email */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Login ID (Email)</p>
-                  <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center justify-between rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
                     <code className="text-sm font-mono text-gray-800">
                       {principalCredentialView.username || principalCredentialView.email}
                     </code>
@@ -2447,19 +2462,21 @@ const Teachers = ({setShowAdminHeader}) => {
                 {/* Password */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Password</p>
-                  <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                    <code className="text-sm font-mono text-gray-800">{principalCredentialView.password}</code>
-                    <button
-                      onClick={() => copyCredential(principalCredentialView.password, 'principal_pass')}
-                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
-                        copiedField === 'principal_pass'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-gray-200 hover:bg-purple-100 hover:text-purple-700 text-gray-600'
-                      }`}
-                    >
-                      {copiedField === 'principal_pass' ? <Check size={12} /> : <Copy size={12} />}
-                      {copiedField === 'principal_pass' ? 'Copied' : 'Copy'}
-                    </button>
+                  <div className="flex items-center justify-between rounded-full border border-gray-200 bg-gray-50 px-4 py-3">
+                    <code className="text-sm font-mono text-gray-800 break-all">{principalCredentialView.password}</code>
+                    {principalCredentialView.canCopy && (
+                      <button
+                        onClick={() => copyCredential(principalCredentialView.password, 'principal_pass')}
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
+                          copiedField === 'principal_pass'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-gray-200 hover:bg-purple-100 hover:text-purple-700 text-gray-600'
+                        }`}
+                      >
+                        {copiedField === 'principal_pass' ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedField === 'principal_pass' ? 'Copied' : 'Copy'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -73,11 +73,11 @@ const AcademicAnalytics = () => {
   return (
     <div className="space-y-6">
       {/* Header with Controls */}
-      <div className="bg-gradient-to-r from-yellow-400 via-amber-500 to-purple-600 rounded-2xl p-8 text-white">
+      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold mb-2">Academic Analytics</h1>
-            <p className="text-yellow-100">Comprehensive academic performance insights from your database</p>
+            <p className="text-slate-300">Comprehensive academic performance insights from your database</p>
           </div>
           <div className="flex items-center gap-4">
             <select 
@@ -94,8 +94,8 @@ const AcademicAnalytics = () => {
       </div>
 
       {loading && (
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-100 flex items-center justify-center">
-          <Loader className="w-6 h-6 animate-spin text-yellow-600 mr-2" />
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 flex items-center justify-center">
+          <Loader className="w-6 h-6 animate-spin text-slate-600 mr-2" />
           <span className="text-gray-600">Loading academic analytics...</span>
         </div>
       )}
@@ -111,74 +111,74 @@ const AcademicAnalytics = () => {
         <>
           {/* Academic Overview Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-100">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-yellow-100 rounded-lg">
-                  <Award className="w-6 h-6 text-yellow-600" />
+                <div className="p-3 bg-slate-100 rounded-lg">
+                  <Award className="w-6 h-6 text-slate-600" />
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-amber-900">{academicOverview.averageGPA}</div>
-                  <div className="text-sm text-amber-600">Average Percentage</div>
+                  <div className="text-2xl font-bold text-slate-900">{academicOverview.averageGPA}</div>
+                  <div className="text-sm text-slate-600">Average Percentage</div>
                 </div>
               </div>
-              <div className="w-full bg-yellow-200 rounded-full h-2">
+              <div className="w-full bg-slate-200 rounded-full h-2">
                 <div 
-                  className="bg-yellow-500 h-2 rounded-full" 
+                  className="bg-slate-500 h-2 rounded-full" 
                   style={{ width: `${academicOverview.averageGPA}` }}
                 />
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-100">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-amber-100 rounded-lg">
-                  <Target className="w-6 h-6 text-amber-600" />
+                <div className="p-3 bg-slate-100 rounded-lg">
+                  <Target className="w-6 h-6 text-slate-600" />
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-amber-900">{academicOverview.passRate}%</div>
-                  <div className="text-sm text-amber-600">Pass Rate</div>
+                  <div className="text-2xl font-bold text-slate-900">{academicOverview.passRate}%</div>
+                  <div className="text-sm text-slate-600">Pass Rate</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-amber-600 text-sm">
+              <div className="flex items-center gap-2 text-slate-600 text-sm">
                 <ArrowUp className="w-4 h-4" />
                 <span>Live from data</span>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-100">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-purple-100 rounded-lg">
                   <Users className="w-6 h-6 text-purple-600" />
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-amber-900">{academicOverview.honorsStudents}</div>
-                  <div className="text-sm text-amber-600">Honor Students</div>
+                  <div className="text-2xl font-bold text-slate-900">{academicOverview.honorsStudents}</div>
+                  <div className="text-sm text-slate-600">Honor Students</div>
                 </div>
               </div>
-              <div className="text-xs text-amber-600">A/A+ Performers</div>
+              <div className="text-xs text-slate-600">A/A+ Performers</div>
             </div>
 
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-yellow-100">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-blue-100 rounded-lg">
                   <Calendar className="w-6 h-6 text-blue-600" />
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-amber-900">{academicOverview.attendanceRate}%</div>
-                  <div className="text-sm text-amber-600">Avg Attendance</div>
+                  <div className="text-2xl font-bold text-slate-900">{academicOverview.attendanceRate}%</div>
+                  <div className="text-sm text-slate-600">Avg Attendance</div>
                 </div>
               </div>
-              <div className="text-xs text-amber-600">Academic session</div>
+              <div className="text-xs text-slate-600">Academic session</div>
             </div>
           </div>
 
           {/* Grade Distribution & Subject Performance */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Grade Distribution */}
-            <div className="bg-white rounded-xl shadow-sm border border-yellow-100">
-              <div className="p-6 border-b border-yellow-100">
-                <h3 className="text-lg font-semibold text-amber-900 flex items-center gap-2">
-                  <PieChart className="w-5 h-5 text-yellow-500" />
+            <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+              <div className="p-6 border-b border-slate-100">
+                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                  <PieChart className="w-5 h-5 text-slate-500" />
                   Grade Distribution
                 </h3>
               </div>
@@ -273,10 +273,10 @@ const AcademicAnalytics = () => {
           </div>
 
           {/* Class Analytics */}
-          <div className="bg-white rounded-xl shadow-sm border border-yellow-100">
-            <div className="p-6 border-b border-yellow-100">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+            <div className="p-6 border-b border-slate-100">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-amber-900 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-purple-500" />
                   Grade-wise Analytics
                 </h3>
@@ -284,25 +284,25 @@ const AcademicAnalytics = () => {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-yellow-50">
+                <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-amber-800">Grade</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-amber-800">Total Students</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-amber-800">Average Score</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-amber-800">Top Performers</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-amber-800">Needs Support</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-slate-800">Grade</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-slate-800">Total Students</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-slate-800">Average Score</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-slate-800">Top Performers</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-slate-800">Needs Support</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-yellow-200">
+                <tbody className="divide-y divide-slate-200">
                   {classAnalytics.length > 0 ? classAnalytics.map((classData, index) => (
-                    <tr key={index} className="hover:bg-yellow-50">
-                      <td className="px-6 py-4 font-medium text-amber-900">{classData.grade}</td>
-                      <td className="px-6 py-4 text-amber-700">{classData.totalStudents}</td>
+                    <tr key={index} className="hover:bg-slate-50">
+                      <td className="px-6 py-4 font-medium text-slate-900">{classData.grade}</td>
+                      <td className="px-6 py-4 text-slate-700">{classData.totalStudents}</td>
                       <td className="px-6 py-4">
-                        <span className="font-semibold text-amber-900">{classData.avgGPA}</span>
-                        <div className="w-16 bg-yellow-200 rounded-full h-1 mt-1">
+                        <span className="font-semibold text-slate-900">{classData.avgGPA}</span>
+                        <div className="w-16 bg-slate-200 rounded-full h-1 mt-1">
                           <div 
-                            className="bg-yellow-500 h-1 rounded-full"
+                            className="bg-slate-500 h-1 rounded-full"
                             style={{ width: `${(classData.avgGPA / 4.0) * 100}%` }}
                           />
                         </div>
@@ -329,10 +329,10 @@ const AcademicAnalytics = () => {
           </div>
 
           {/* Upcoming Exams */}
-          <div className="bg-white rounded-xl shadow-sm border border-yellow-100">
-            <div className="p-6 border-b border-yellow-100">
-              <h3 className="text-lg font-semibold text-amber-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-amber-500" />
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+            <div className="p-6 border-b border-slate-100">
+              <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-slate-500" />
                 Examination Schedule
               </h3>
             </div>

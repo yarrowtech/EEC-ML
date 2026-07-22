@@ -292,13 +292,13 @@ const PrincipalChatPanel = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h3 className="text-xl font-semibold text-amber-900">Direct Chat with Teachers</h3>
-          <p className="text-sm text-amber-700">Start secure 1:1 conversations with any teacher</p>
+          <h3 className="text-xl font-semibold text-slate-900">Direct Chat with Teachers</h3>
+          <p className="text-sm text-slate-700">Start secure 1:1 conversations with any teacher</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={refreshContacts}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-yellow-200 text-amber-700 hover:bg-yellow-50 disabled:opacity-60"
+            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             disabled={refreshingContacts || loadingThreads}
           >
             <RefreshCw className={`w-4 h-4 ${refreshingContacts ? 'animate-spin' : ''}`} />
@@ -306,7 +306,7 @@ const PrincipalChatPanel = () => {
           </button>
           <button
             onClick={refreshThreads}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-yellow-200 text-amber-700 hover:bg-yellow-50 disabled:opacity-60"
+            className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             disabled={refreshingThreads || loadingThreads}
           >
             <RefreshCw className={`w-4 h-4 ${refreshingThreads ? 'animate-spin' : ''}`} />
@@ -322,27 +322,27 @@ const PrincipalChatPanel = () => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-yellow-100 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-yellow-100">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 value={contactQuery}
                 onChange={(e) => setContactQuery(e.target.value)}
                 placeholder="Search teachers or conversations"
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
             </div>
           </div>
 
-          <div className="p-4 border-b border-yellow-100">
+          <div className="p-4 border-b border-slate-100">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-amber-900">Active Conversations</p>
-              {loadingThreads && <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />}
+              <p className="text-sm font-semibold text-slate-900">Active Conversations</p>
+              {loadingThreads && <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />}
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {filteredThreads.length === 0 && (
-                <p className="text-sm text-amber-700">No conversations yet.</p>
+                <p className="text-sm text-slate-700">No conversations yet.</p>
               )}
               {filteredThreads.map((thread) => (
                 <button
@@ -350,20 +350,20 @@ const PrincipalChatPanel = () => {
                   onClick={() => handleSelectThread(thread._id)}
                   className={`w-full text-left p-3 rounded-xl border transition-colors ${
                     String(thread._id) === String(activeThreadId)
-                      ? 'border-amber-300 bg-amber-50'
-                      : 'border-transparent hover:bg-yellow-50'
+                      ? 'border-slate-300 bg-slate-50'
+                      : 'border-transparent hover:bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-semibold">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-semibold">
                       {thread.otherParticipant?.name?.slice(0, 2).toUpperCase() || 'T'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-amber-900 truncate">
+                        <p className="font-medium text-slate-900 truncate">
                           {thread.otherParticipant?.name || 'Teacher'}
                         </p>
-                        <span className="text-xs text-amber-600 whitespace-nowrap">
+                        <span className="text-xs text-slate-600 whitespace-nowrap">
                           {thread.lastMessageAt
                             ? new Date(thread.lastMessageAt).toLocaleDateString(undefined, {
                                 month: 'short',
@@ -372,7 +372,7 @@ const PrincipalChatPanel = () => {
                             : ''}
                         </span>
                       </div>
-                      <p className="text-xs text-amber-700 truncate">
+                      <p className="text-xs text-slate-700 truncate">
                         {thread.lastMessage || 'Start a conversation'}
                       </p>
                     </div>
@@ -384,33 +384,33 @@ const PrincipalChatPanel = () => {
 
           <div className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-amber-900">Teacher Directory</p>
-              {refreshingContacts && <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />}
+              <p className="text-sm font-semibold text-slate-900">Teacher Directory</p>
+              {refreshingContacts && <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />}
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               {filteredContacts.length === 0 && (
-                <p className="text-sm text-amber-700">No teachers found.</p>
+                <p className="text-sm text-slate-700">No teachers found.</p>
               )}
               {filteredContacts.map((teacher) => (
                 <div
                   key={teacher._id}
-                  className="p-3 rounded-xl border border-yellow-100 bg-yellow-50 flex flex-col gap-1"
+                  className="p-3 rounded-xl border border-slate-100 bg-slate-50 flex flex-col gap-1"
                 >
                   <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-amber-600" />
-                    <span className="font-medium text-amber-900">{teacher.name}</span>
+                    <User className="w-4 h-4 text-slate-600" />
+                    <span className="font-medium text-slate-900">{teacher.name}</span>
                   </div>
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-slate-700">
                     {teacher.subtitle || 'Teacher'} {teacher.detail ? `• ${teacher.detail}` : ''}
                   </p>
                   <div className="flex items-center gap-2 mt-1">
                     {teacher.email && (
-                      <span className="text-[11px] text-amber-700 bg-white/60 px-2 py-0.5 rounded-lg">
+                      <span className="text-[11px] text-slate-700 bg-white/60 px-2 py-0.5 rounded-lg">
                         {teacher.email}
                       </span>
                     )}
                     {teacher.phone && (
-                      <span className="text-[11px] text-amber-700 bg-white/60 px-2 py-0.5 rounded-lg">
+                      <span className="text-[11px] text-slate-700 bg-white/60 px-2 py-0.5 rounded-lg">
                         {teacher.phone}
                       </span>
                     )}
@@ -418,7 +418,7 @@ const PrincipalChatPanel = () => {
                   <button
                     onClick={() => handleStartChat(teacher)}
                     disabled={contactButtonDisabled}
-                    className="mt-2 inline-flex items-center justify-center gap-1 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg px-3 py-1.5 disabled:opacity-60"
+                    className="mt-2 inline-flex items-center justify-center gap-1 text-sm font-medium text-white bg-slate-600 hover:bg-slate-700 rounded-lg px-3 py-1.5 disabled:opacity-60"
                   >
                     {connectingThread ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -433,23 +433,23 @@ const PrincipalChatPanel = () => {
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-yellow-100 shadow-sm flex flex-col min-h-[520px]">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col min-h-[520px]">
           {activeThread ? (
             <>
-              <div className="p-4 border-b border-yellow-100 flex items-center justify-between">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-amber-900">
+                  <p className="font-semibold text-slate-900">
                     {activeThread.otherParticipant?.name || 'Teacher'}
                   </p>
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-slate-700">
                     {activeThread.otherParticipant?.subtitle || 'Faculty'}
                   </p>
                 </div>
-                {loadingMessages && <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />}
+                {loadingMessages && <Loader2 className="w-4 h-4 text-slate-600 animate-spin" />}
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-yellow-50/30 to-white">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-slate-50/30 to-white">
                 {messages.length === 0 && !loadingMessages && (
-                  <p className="text-sm text-amber-700">No messages yet. Say hello!</p>
+                  <p className="text-sm text-slate-700">No messages yet. Say hello!</p>
                 )}
                 {messages.map((msg) => {
                   const isMine = String(msg.senderId) === String(meRef.current?.id);
@@ -458,12 +458,12 @@ const PrincipalChatPanel = () => {
                       <div
                         className={`max-w-md rounded-2xl px-4 py-2 text-sm shadow ${
                           isMine
-                            ? 'bg-amber-600 text-white rounded-br-sm'
-                            : 'bg-white border border-yellow-100 text-amber-900 rounded-bl-sm'
+                            ? 'bg-slate-600 text-white rounded-br-sm'
+                            : 'bg-white border border-slate-100 text-slate-900 rounded-bl-sm'
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{msg.text || 'Encrypted message'}</p>
-                        <span className={`text-[10px] block mt-1 ${isMine ? 'text-amber-100' : 'text-amber-500'}`}>
+                        <span className={`text-[10px] block mt-1 ${isMine ? 'text-slate-100' : 'text-slate-500'}`}>
                           {msg.createdAt
                             ? new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             : ''}
@@ -474,32 +474,32 @@ const PrincipalChatPanel = () => {
                 })}
                 <div ref={messagesEndRef} />
               </div>
-              <div className="p-4 border-t border-yellow-100">
+              <div className="p-4 border-t border-slate-100">
                 <div className="flex items-end gap-3">
                   <textarea
                     rows={2}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder="Type a message..."
-                    className="flex-1 resize-none border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="flex-1 resize-none border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   />
                   <button
                     onClick={sendMessage}
                     disabled={!draft.trim() || sending}
-                    className="h-10 w-10 rounded-full bg-amber-600 text-white flex items-center justify-center disabled:opacity-60"
+                    className="h-10 w-10 rounded-full bg-slate-600 text-white flex items-center justify-center disabled:opacity-60"
                     title="Send"
                   >
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-[11px] text-amber-600 mt-1">Messages are end-to-end encrypted when possible.</p>
+                <p className="text-[11px] text-slate-600 mt-1">Messages are end-to-end encrypted when possible.</p>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3 text-amber-700">
-              <MessageSquare className="w-10 h-10 text-amber-500" />
-              <p className="font-semibold text-amber-900">Select a teacher to start chatting</p>
-              <p className="text-sm text-amber-700">
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-3 text-slate-700">
+              <MessageSquare className="w-10 h-10 text-slate-500" />
+              <p className="font-semibold text-slate-900">Select a teacher to start chatting</p>
+              <p className="text-sm text-slate-700">
                 Choose an existing conversation or open the teacher directory to begin.
               </p>
             </div>

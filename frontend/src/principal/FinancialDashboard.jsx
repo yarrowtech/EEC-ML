@@ -54,7 +54,7 @@ const FinancialDashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <Loader className="w-8 h-8 animate-spin text-green-600" />
+        <Loader className="w-8 h-8 animate-spin text-slate-700" />
         <span className="ml-3 text-gray-600">Loading financial data...</span>
       </div>
     );
@@ -70,13 +70,13 @@ const FinancialDashboard = () => {
 
   if (!financialData) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-        <p className="text-yellow-700">No financial data available</p>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+        <p className="text-slate-700">No financial data available</p>
       </div>
     );
   }
 
-  const { totals, revenueData, expenseData, recentPayments } = financialData;
+  const { totals, revenueData, expenseData, expenseDataNote, recentPayments } = financialData;
 
   // Format revenue data for charts
   const formattedRevenueData = revenueData || [];
@@ -87,9 +87,9 @@ const FinancialDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-8 text-white">
+      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
         <h1 className="text-3xl font-bold mb-2">Financial Dashboard</h1>
-        <p className="text-green-100">Comprehensive financial overview and budget management</p>
+        <p className="text-slate-300">Fee revenue, approved teacher expenses, and collection performance</p>
       </div>
       
       {/* Key Metrics Cards */}
@@ -119,7 +119,7 @@ const FinancialDashboard = () => {
               </div>
               <div className="text-sm text-gray-500">Total Expenses</div>
               <div className="flex items-center mt-2 text-blue-600">
-                <span className="text-xs font-medium">Estimated</span>
+                <span className="text-xs font-medium">Approved claims</span>
               </div>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
@@ -152,10 +152,10 @@ const FinancialDashboard = () => {
               <div className="text-2xl font-bold text-gray-900">
                 ₹{(totals.netProfit / 10000000).toFixed(1)} Cr
               </div>
-              <div className="text-sm text-gray-500">Net Profit</div>
+              <div className="text-sm text-gray-500">Net (Revenue − Expenses)</div>
               <div className="flex items-center mt-2 text-green-600">
                 <TrendingUp className="w-4 h-4" />
-                <span className="text-xs font-medium">Estimated</span>
+                <span className="text-xs font-medium">Live</span>
               </div>
             </div>
             <div className="p-3 bg-purple-100 rounded-lg">
@@ -206,24 +206,38 @@ const FinancialDashboard = () => {
         {/* Expense Breakdown Pie Chart */}
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Expense Breakdown</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <RechartsPieChart>
-              <Tooltip formatter={(value) => [`${value}%`, '']} />
-              <Pie data={expenseData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={120}>
-                {expenseData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+          {expenseData && expenseData.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={300}>
+                <RechartsPieChart>
+                  <Tooltip formatter={(value, name, entry) => [`₹${(entry.payload.amount || 0).toLocaleString('en-IN')}`, name]} />
+                  <Pie data={expenseData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={120}>
+                    {expenseData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </RechartsPieChart>
+              </ResponsiveContainer>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {expenseData.map((item, index) => (
+                  <div key={index} className="flex items-center">
+                    <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: item.color }}></div>
+                    <span className="text-sm text-gray-600">{item.name}: ₹{(item.amount || 0).toLocaleString('en-IN')}</span>
+                  </div>
                 ))}
-              </Pie>
-            </RechartsPieChart>
-          </ResponsiveContainer>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {expenseData.map((item, index) => (
-              <div key={index} className="flex items-center">
-                <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: item.color }}></div>
-                <span className="text-sm text-gray-600">{item.name}: {item.value}%</span>
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <PieChart className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-sm">No approved teacher expense claims yet</p>
+              </div>
+            </div>
+          )}
+          {expenseDataNote && (
+            <p className="mt-4 text-xs text-slate-400">{expenseDataNote}</p>
+          )}
         </div>
       </div>
 

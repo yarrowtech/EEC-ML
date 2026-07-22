@@ -196,7 +196,7 @@ const StudentAnalytics = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-sky-500 via-indigo-500 to-purple-500 rounded-3xl p-8 text-white shadow-lg">
+      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
             <p className="text-xs uppercase tracking-widest text-white/80 mb-2">Principal insight</p>

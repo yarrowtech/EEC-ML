@@ -173,6 +173,15 @@ const tryParent = async ({ user, password, rememberMe }) => {
 const tryPrincipal = async ({ principal, password, rememberMe }) => {
   if (!principal) return null;
   if (!(await bcrypt.compare(password, principal.password))) return null;
+  if (!principal.lastLoginAt) {
+    return {
+      requiresPasswordReset: true,
+      username: principal.username,
+      userType: 'Principal',
+      resetTenantToken: signFirstLoginTenantToken(principal),
+    };
+  }
+
   runInBackground(() =>
     Principal.updateOne({ _id: principal._id }, { $set: { lastLoginAt: new Date() } })
   );

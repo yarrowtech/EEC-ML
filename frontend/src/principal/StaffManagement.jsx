@@ -10,7 +10,7 @@ import {
   Activity,
   Target
 } from 'lucide-react';
-import { Pie, Bar } from 'react-chartjs-2';
+import { Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -62,7 +62,6 @@ const StaffManagement = () => {
 
   const summary = staffData?.summary || {};
   const staffRoles = Array.isArray(staffData?.staffRoles) ? staffData.staffRoles : [];
-  const satisfactionScores = Array.isArray(staffData?.satisfactionScores) ? staffData.satisfactionScores : [];
   const teacherBySubject = Array.isArray(staffData?.teacherBySubject) ? staffData.teacherBySubject : [];
 
   const totalTeachers = summary.totalTeachers || 0;
@@ -80,14 +79,6 @@ const StaffManagement = () => {
     : 0;
   const coverageShare = totalTeamMembers
     ? Number((((supportStaff + admins) / totalTeamMembers) * 100).toFixed(1))
-    : 0;
-  const satisfactionAverage = satisfactionScores.length
-    ? Number(
-        (
-          satisfactionScores.reduce((sum, row) => sum + Number(row.score || 0), 0) /
-          satisfactionScores.length
-        ).toFixed(1)
-      )
     : 0;
 
   const roleColors = [
@@ -165,11 +156,6 @@ const StaffManagement = () => {
       value: `${coverageShare.toFixed(1)}%`,
       detail: `${supportStaff + admins} support/admin`,
     },
-    {
-      label: 'Avg satisfaction',
-      value: `${satisfactionAverage.toFixed(1)}/5`,
-      detail: `${satisfactionScores.length || 0} cohorts surveyed`,
-    },
   ];
 
   const staffRolesChartData = {
@@ -195,21 +181,20 @@ const StaffManagement = () => {
     ]
   };
 
-  const satisfactionChartData = {
-    labels: satisfactionScores.map((d) => d.name),
+  const teacherActivityChartData = {
+    labels: ['Active (30d)', 'Inactive'],
     datasets: [
       {
-        label: 'Score',
-        data: satisfactionScores.map((d) => Number(d.score || 0)),
-        backgroundColor: 'rgba(99, 102, 241, 0.7)',
-        borderRadius: 8,
+        data: [activeTeachers, onLeaveTeachers],
+        backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(148, 163, 184, 0.6)'],
+        borderWidth: 0,
       }
     ]
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 rounded-3xl p-8 text-white shadow-lg">
+      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-white/70">Faculty operations</p>
@@ -396,48 +381,36 @@ const StaffManagement = () => {
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Well-being</p>
-                  <h3 className="text-lg font-semibold text-gray-900">Staff satisfaction</h3>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Engagement</p>
+                  <h3 className="text-lg font-semibold text-gray-900">Teacher activity (last 30 days)</h3>
                 </div>
-                {satisfactionScores.length > 0 && (
-                  <span className="text-sm text-gray-500">{satisfactionAverage.toFixed(1)}/5 avg score</span>
+                {totalTeachers > 0 && (
+                  <span className="text-sm text-gray-500">{activeRate.toFixed(1)}% active</span>
                 )}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="flex items-center justify-center min-h-[220px]">
-                  {satisfactionScores.length ? (
-                    <Bar
-                      data={satisfactionChartData}
-                      options={{
-                        responsive: true,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                          y: {
-                            min: 0,
-                            max: 5,
-                            title: { display: true, text: 'Score (out of 5)' },
-                          },
-                        },
-                      }}
-                    />
+                  {totalTeachers ? (
+                    <Pie data={teacherActivityChartData} />
                   ) : (
-                    <p className="text-sm text-gray-500">No satisfaction score data.</p>
+                    <p className="text-sm text-gray-500">No teacher login data available.</p>
                   )}
                 </div>
                 <div className="space-y-3">
-                  {satisfactionScores.length ? (
-                    satisfactionScores.map((row) => (
-                      <div key={row.name} className="p-3 bg-gray-50 rounded-2xl">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold text-gray-900">{row.name}</p>
-                          <span className="text-lg font-bold text-gray-900">{row.score}</span>
-                        </div>
-                        <p className="text-xs text-gray-500">Average satisfaction score</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">Survey results will appear here.</p>
-                  )}
+                  <div className="p-3 bg-gray-50 rounded-2xl">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-900">Active teachers</p>
+                      <span className="text-lg font-bold text-gray-900">{activeTeachers}</span>
+                    </div>
+                    <p className="text-xs text-gray-500">Signed in within the last 30 days</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-2xl">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-900">Inactive teachers</p>
+                      <span className="text-lg font-bold text-gray-900">{onLeaveTeachers}</span>
+                    </div>
+                    <p className="text-xs text-gray-500">No login recorded in the last 30 days</p>
+                  </div>
                 </div>
               </div>
             </div>

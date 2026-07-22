@@ -102,6 +102,18 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    if (!principal.lastLoginAt) {
+      logAuthEvent(req, {
+        action: 'login.first_login_required',
+        outcome: 'success',
+        userType: 'principal',
+        identifier,
+        userId: principal._id,
+        schoolId: principal.schoolId,
+        campusId: principal.campusId,
+      });
+      return res.json({ requiresPasswordReset: true, username: principal.username });
+    }
     principal.lastLoginAt = new Date();
     await principal.save();
 

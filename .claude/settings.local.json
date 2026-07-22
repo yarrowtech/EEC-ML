@@ -150,7 +150,15 @@
       "Bash(patch -o /tmp/step1_out.txt /tmp/step1.txt)",
       "Bash(echo \"applied1: exit=$?\")",
       "Bash(grep -n \"^@@\" /tmp/full.patch)",
-      "Bash(cat -A /tmp/hunk_04 | head -3 *)"
+      "Bash(cat -A /tmp/hunk_04 | head -3 *)",
+      "Bash(node -c routes/principalDashboardRoutes.js)",
+      "Bash(awk 'NR==194 || NR==212 {print; next} {gsub\\(/yellow-/,\"slate-\"\\); gsub\\(/amber-/,\"slate-\"\\); print}' AcademicAnalytics.jsx)",
+      "Bash(mv /tmp/aa.jsx AcademicAnalytics.jsx)",
+      "Bash(awk 'NR==218 {print; next} {gsub\\(/yellow-/,\"slate-\"\\); gsub\\(/amber-/,\"slate-\"\\); print}' Communications.jsx)",
+      "Bash(mv /tmp/comm.jsx Communications.jsx)",
+      "Bash(node -e \"require\\('fs'\\).readFileSync\\('PrincipalChatPanel.jsx','utf8'\\).length\")",
+      "Bash(awk 'NR==324 || NR==339 {print; next} {gsub\\(/yellow-/,\"slate-\"\\); gsub\\(/amber-/,\"slate-\"\\); print}' NotificationCenter.jsx)",
+      "Bash(mv /tmp/nc.jsx NotificationCenter.jsx)"
     ],
     "additionalDirectories": [
       "/tmp"

@@ -175,25 +175,22 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
 
   return (
     <div className="space-y-8 animate-fadeIn">
-      {/* Modern Welcome Header */}
-      <div className="relative bg-white rounded-3xl p-8 border border-gray-100 shadow-sm overflow-hidden">
-        {/* Subtle gradient overlay */}
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-indigo-50/50 to-transparent pointer-events-none"></div>
-
+      {/* Welcome Header */}
+      <div className="relative bg-slate-950 rounded-2xl p-8 border border-slate-200 shadow-xl overflow-hidden text-white">
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2">
-            <h1 className="text-4xl font-bold text-gray-900">
-              {getGreeting()}, <span className="text-indigo-600">Principal</span>
+            <h1 className="text-3xl font-semibold">
+              {getGreeting()}, Principal
             </h1>
-            <p className="text-gray-500 text-lg">
+            <p className="text-slate-300 text-base">
               Overview of {schoolName || 'your institution'}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-200">
-              <Calendar className="w-5 h-5 text-gray-600" />
-              <span className="text-sm font-medium text-gray-700">
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-white/10 rounded-xl border border-white/15">
+              <Calendar className="w-5 h-5 text-slate-200" />
+              <span className="text-sm font-medium text-slate-100">
                 {new Date().toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',
@@ -204,13 +201,13 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
 
             <button
               onClick={onRefreshOverview}
-              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors duration-200 shadow-sm hover:shadow-md"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-900 rounded-xl transition-colors duration-200 shadow-sm hover:shadow-md"
             >
               <RefreshCw className="w-4 h-4" />
               <span className="text-sm font-semibold">Refresh</span>
             </button>
 
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:border-gray-300 text-gray-700 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md">
+            <button className="flex items-center gap-2 px-4 py-2.5 bg-white/10 border border-white/15 hover:bg-white/15 text-slate-100 rounded-xl transition-all duration-200">
               <Download className="w-4 h-4" />
               <span className="text-sm font-semibold">Export</span>
             </button>
@@ -232,9 +229,9 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-900">Attendance Overview</h3>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-lg">
-              <TrendingUp className="w-4 h-4 text-indigo-600" />
-              <span className="text-sm font-semibold text-indigo-600">Last 6 Months</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-slate-700" />
+              <span className="text-sm font-semibold text-slate-700">Last 6 Months</span>
             </div>
           </div>
           <div className="h-80">
@@ -255,9 +252,9 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
         <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-900">Performance Distribution</h3>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
-              <GraduationCap className="w-4 h-4 text-purple-600" />
-              <span className="text-sm font-semibold text-purple-600">Current Term</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+              <GraduationCap className="w-4 h-4 text-slate-700" />
+              <span className="text-sm font-semibold text-slate-700">Current Term</span>
             </div>
           </div>
           <div className="h-80 flex items-center justify-center">
