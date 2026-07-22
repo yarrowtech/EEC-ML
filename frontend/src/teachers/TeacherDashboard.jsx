@@ -1,16 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion as framerMotion, useReducedMotion } from 'framer-motion';
 
 import {
   Activity,
   AlertCircle,
-  AlertTriangle,
   ArrowUpRight,
   BarChart3,
   Bell,
   BookOpen,
-  Bot,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -18,20 +16,13 @@ import {
   Clock,
   Eye,
   FileText,
-  MessageSquare,
-  PanelRightOpen,
   Sparkles,
-  TimerReset,
-  TrendingDown,
-  TrendingUp,
   Users,
-  X,
   Zap,
 } from 'lucide-react';
 
 const MotionSection = framerMotion.section;
 const MotionDiv = framerMotion.div;
-const MotionAside = framerMotion.aside;
 
 const getAcademicYearId = (item = {}) =>
   String(item?.classId?.academicYearId?._id || item?.classId?.academicYearId || '').trim();
@@ -124,20 +115,6 @@ const Progress = ({ value, tone = 'emerald' }) => {
   );
 };
 
-const Sparkline = ({ values = [18, 34, 28, 46, 42, 58, 68], tone = 'emerald' }) => {
-  const max = Math.max(...values, 1);
-  const points = values
-    .map((value, index) => `${(index / Math.max(values.length - 1, 1)) * 100},${32 - (value / max) * 28}`)
-    .join(' ');
-  const color = tone === 'rose' ? '#e11d48' : tone === 'amber' ? '#d97706' : tone === 'violet' ? '#7c3aed' : tone === 'sky' ? '#0284c7' : '#059669';
-
-  return (
-    <svg viewBox="0 0 100 36" className="h-10 w-24" aria-hidden="true">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-};
-
 const EmptyState = ({ icon: Icon, title, description }) => (
   <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
     <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 ring-1 ring-slate-200">
@@ -145,23 +122,6 @@ const EmptyState = ({ icon: Icon, title, description }) => (
     </div>
     <p className="font-semibold text-slate-950">{title}</p>
     <p className="mt-1 max-w-xs text-sm leading-5 text-slate-500">{description}</p>
-  </div>
-);
-
-const UtilityBlock = ({ icon: Icon, title, items }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-    <div className="mb-3 flex items-center gap-2">
-      {React.createElement(Icon, { size: 17, className: 'text-slate-500' })}
-      <p className="font-semibold text-slate-950">{title}</p>
-    </div>
-    <div className="space-y-2">
-      {items.map((item) => (
-        <div key={item} className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-          <span>{item}</span>
-        </div>
-      ))}
-    </div>
   </div>
 );
 
@@ -181,7 +141,6 @@ const TeacherDashboard = () => {
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [activeTimeframe, setActiveTimeframe] = useState('weekly');
-  const [utilityOpen, setUtilityOpen] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(new Date()), 1000);
@@ -279,7 +238,6 @@ const TeacherDashboard = () => {
 
   const upcomingClasses = dashboardData?.upcomingClasses || [];
   const performanceMetrics = dashboardData?.performanceMetrics || [];
-  const topStudents = useMemo(() => dashboardData?.topStudents || [], [dashboardData?.topStudents]);
   const upcomingDeadlines = dashboardData?.upcomingDeadlines || [];
   const recentActivities = (dashboardData?.recentActivities || []).map((activity) => ({
     ...activity,
@@ -293,46 +251,30 @@ const TeacherDashboard = () => {
     {
       label: 'Total Students',
       value: stats.totalStudents ?? 0,
-      change: '+12.5%',
-      trend: 'up',
-      insight: 'Across active teaching allocations',
       icon: Users,
       path: '/teacher/classes',
       tone: 'sky',
-      sparkline: [24, 29, 31, 38, 42, 46, 52],
     },
     {
       label: 'Attendance Rate',
       value: `${stats.attendanceRate ?? 0}%`,
-      change: '+3.2%',
-      trend: 'up',
-      insight: '4% higher than last week',
       icon: Activity,
       path: '/teacher/classes/current/students/attendance',
       tone: 'emerald',
-      sparkline: [48, 52, 50, 61, 64, 66, 72],
     },
     {
       label: 'Pending Tasks',
       value: pendingTasks,
-      change: '-8.1%',
-      trend: 'down',
-      insight: pendingTasks > 0 ? 'Prioritize evaluations and grading' : 'No urgent evaluations',
       icon: FileText,
       path: '/teacher/classes/current/assignments',
       tone: pendingTasks > 8 ? 'rose' : 'amber',
-      sparkline: [64, 58, 62, 47, 42, 36, 31],
     },
     {
       label: 'Upcoming Events',
       value: stats.upcomingEvents ?? 0,
-      change: '+2',
-      trend: 'up',
-      insight: 'Meetings, school events, reminders',
       icon: Calendar,
       path: '/teacher/calendar',
       tone: 'violet',
-      sparkline: [15, 22, 18, 35, 29, 44, 40],
     },
   ];
 
@@ -355,61 +297,14 @@ const TeacherDashboard = () => {
   ];
 
   const analyticsSnapshot = [
-    { label: 'Attendance trend', value: `${stats.attendanceRate ?? 0}%`, helper: 'Active class average', progress: stats.attendanceRate ?? 0, tone: 'emerald' },
-    { label: 'Students needing attention', value: Math.max(0, Math.round((Number(stats.totalStudents ?? 0) || 0) * 0.08)), helper: 'Attendance or assessment signals', progress: 28, tone: 'rose' },
-    { label: 'Assignment completion', value: `${Math.max(0, 100 - pendingTasks * 4)}%`, helper: 'Estimated from open tasks', progress: Math.max(0, 100 - pendingTasks * 4), tone: 'sky' },
-    { label: 'Average performance', value: performanceMetrics[0]?.average ? `${performanceMetrics[0].average}%` : 'Pending', helper: performanceMetrics[0]?.subject || 'Available after grading', progress: performanceMetrics[0]?.average || 0, tone: 'violet' },
-  ];
-
-  const studentAlerts = useMemo(() => [
-    {
-      name: topStudents[0]?.name || 'Aarav Sharma',
-      issue: 'Missed two assignment submissions this week',
-      severity: 'High',
-      tone: 'rose',
-      icon: AlertTriangle,
-      path: '/teacher/classes/current/students/observations',
-    },
-    {
-      name: 'Meera Nair',
-      issue: 'Attendance dropped below 75% in the last 10 days',
-      severity: 'Medium',
-      tone: 'amber',
-      icon: TimerReset,
-      path: '/teacher/classes/current/students/attendance',
-    },
-    {
-      name: 'Kabir Khan',
-      issue: 'Needs revision support in Algebra fundamentals',
-      severity: 'AI insight',
-      tone: 'sky',
-      icon: Sparkles,
-      path: '/teacher/classes/current/students/analytics',
-    },
-  ], [topStudents]);
-
-  const aiSuggestions = [
-    {
-      title: 'Generate worksheet for mixed ability groups',
-      description: 'Use current assignment gaps to create three practice levels for the next class.',
-      action: 'Generate worksheet',
-      path: '/teacher/classes/current/teaching/practice-questions',
-      chips: ['Differentiated', '10 questions', 'Answer key'],
-    },
-    {
-      title: 'Students struggling in Algebra',
-      description: 'Review patterns from recent scores and open a focused revision plan.',
-      action: 'Open insight',
-      path: '/teacher/classes/current/students/analytics',
-      chips: ['7 students', 'Algebra', 'Revision'],
-    },
-    {
-      title: 'Optimize tomorrow\'s lesson sequence',
-      description: 'AI can convert your plan into warm-up, instruction, practice, and exit ticket blocks.',
-      action: 'Optimize plan',
-      path: '/teacher/classes/current/teaching/ai-assistant',
-      chips: ['Lesson flow', 'Exit ticket', 'Activities'],
-    },
+    { label: 'Attendance rate', value: `${stats.attendanceRate ?? 0}%`, helper: 'Current teacher scope', progress: stats.attendanceRate ?? 0, tone: 'emerald' },
+    ...performanceMetrics.slice(0, 3).map((metric) => ({
+      label: `${metric.subject} average`,
+      value: `${metric.average}%`,
+      helper: 'Current performance data',
+      progress: metric.average,
+      tone: 'violet',
+    })),
   ];
 
   const pageVariants = reduceMotion ? {} : {
@@ -463,7 +358,6 @@ const TeacherDashboard = () => {
               <MotionSection variants={itemVariants} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {insightCards.map((stat, index) => {
                   const Icon = stat.icon;
-                  const Trend = stat.trend === 'up' ? TrendingUp : TrendingDown;
                   return (
                     <Link key={stat.label} to={stat.path} className="group">
                       <CardShell delay={index * 0.03} className="h-full p-5 transition hover:-translate-y-1 hover:border-slate-300 hover:shadow-lg">
@@ -471,15 +365,12 @@ const TeacherDashboard = () => {
                           <div className={cx('rounded-2xl p-3', stat.tone === 'rose' ? 'bg-rose-50 text-rose-600' : stat.tone === 'amber' ? 'bg-amber-50 text-amber-600' : stat.tone === 'violet' ? 'bg-violet-50 text-violet-600' : stat.tone === 'sky' ? 'bg-sky-50 text-sky-600' : 'bg-emerald-50 text-emerald-600')}>
                             <Icon size={21} />
                           </div>
-                          <Sparkline values={stat.sparkline} tone={stat.tone} />
                         </div>
                         <div className="mt-5">
                           <div className="flex items-end justify-between gap-3">
                             <p className="text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</p>
-                            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600"><Trend size={14} />{stat.change}</span>
                           </div>
                           <p className="mt-1 text-sm font-medium text-slate-700">{stat.label}</p>
-                          <p className="mt-2 text-sm text-slate-500">{stat.insight}</p>
                         </div>
                       </CardShell>
                     </Link>
@@ -539,22 +430,6 @@ const TeacherDashboard = () => {
                   </CardShell>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                  <CardShell>
-                    <SectionHeader icon={AlertTriangle} title="Student Alerts" subtitle="AI assisted attention queue." action={<Badge tone="rose">{studentAlerts.length} alerts</Badge>} />
-                    <div className="space-y-3 p-5">
-                      {studentAlerts.map((alert) => <StudentAlert key={`${alert.name}-${alert.issue}`} alert={alert} />)}
-                    </div>
-                  </CardShell>
-
-                  <CardShell>
-                    <SectionHeader icon={Sparkles} title="AI Suggestions" subtitle="Copilot-style teaching recommendations." action={<Badge tone="violet">AI native</Badge>} />
-                    <div className="grid gap-3 p-5">
-                      {aiSuggestions.map((suggestion, index) => <AISuggestion key={suggestion.title} suggestion={suggestion} index={index} reduceMotion={reduceMotion} />)}
-                    </div>
-                  </CardShell>
-                </div>
-
                 <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                   <CardShell>
                     <SectionHeader icon={Bell} title="Recent Activity" subtitle="Interactive timeline of relevant classroom updates." action={<Badge tone="neutral">{recentActivities.length} updates</Badge>} />
@@ -576,12 +451,6 @@ const TeacherDashboard = () => {
                 </div>
               </div>
 
-              {utilityOpen && <UtilityPanel currentDateTime={currentDateTime} reduceMotion={reduceMotion} onClose={() => setUtilityOpen(false)} />}
-              {!utilityOpen && (
-                <button type="button" onClick={() => setUtilityOpen(true)} className="fixed bottom-5 right-5 z-20 inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-xl shadow-slate-300">
-                  <PanelRightOpen size={17} /> Utility panel
-                </button>
-              )}
             </MotionSection>
           </MotionDiv>
       </div>
@@ -649,39 +518,6 @@ const TimeframeToggle = ({ activeTimeframe, setActiveTimeframe }) => (
   </div>
 );
 
-const StudentAlert = ({ alert }) => {
-  const Icon = alert.icon;
-  return (
-    <Link to={alert.path} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:bg-slate-50">
-      <div className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', alert.tone === 'rose' ? 'bg-rose-50 text-rose-600' : alert.tone === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-sky-50 text-sky-600')}>
-        {React.createElement(Icon, { size: 18 })}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-semibold text-slate-950">{alert.name}</p>
-          <Badge tone={alert.tone}>{alert.severity}</Badge>
-        </div>
-        <p className="mt-1 text-sm leading-5 text-slate-500">{alert.issue}</p>
-      </div>
-      <ChevronRight size={18} className="mt-2 text-slate-400" />
-    </Link>
-  );
-};
-
-const AISuggestion = ({ suggestion, index, reduceMotion }) => (
-  <MotionDiv initial={reduceMotion ? false : { opacity: 0, y: 10 }} animate={reduceMotion ? undefined : { opacity: 1, y: 0 }} transition={{ duration: 0.25, delay: index * 0.05 }} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
-    <div className="flex items-start gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white"><Sparkles size={19} /></div>
-      <div className="min-w-0 flex-1">
-        <h3 className="font-semibold text-slate-950">{suggestion.title}</h3>
-        <p className="mt-1 text-sm leading-5 text-slate-500">{suggestion.description}</p>
-        <div className="mt-3 flex flex-wrap gap-2">{suggestion.chips.map((chip) => <Badge key={chip} tone="neutral">{chip}</Badge>)}</div>
-      </div>
-    </div>
-    <Link to={suggestion.path} className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white transition hover:-translate-y-0.5">{suggestion.action} <ArrowUpRight size={15} /></Link>
-  </MotionDiv>
-);
-
 const ActivityItem = ({ activity, index, total }) => (
   <div className="grid grid-cols-[auto_1fr_auto] gap-3 rounded-2xl p-3 transition hover:bg-slate-50">
     <div className="relative">
@@ -709,43 +545,6 @@ const DeadlineTask = ({ task, index }) => (
       <Link to="/teacher/classes/current/assignments" className="inline-flex h-8 items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white">Open task</Link>
     </div>
   </div>
-);
-
-const UtilityPanel = ({ currentDateTime, reduceMotion, onClose }) => (
-  <MotionAside initial={reduceMotion ? false : { opacity: 0, x: 18 }} animate={reduceMotion ? undefined : { opacity: 1, x: 0 }} className="hidden space-y-4 2xl:block">
-    <CardShell>
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-        <div>
-          <h2 className="font-semibold text-slate-950">Utility Panel</h2>
-          <p className="mt-1 text-sm text-slate-500">Calendar, reminders, notes, AI chat.</p>
-        </div>
-        <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close utility panel"><X size={16} /></button>
-      </div>
-      <div className="space-y-4 p-5">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <p className="font-semibold text-slate-950">{currentDateTime.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
-            <Calendar size={18} className="text-slate-500" />
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day) => <span key={day}>{day}</span>)}
-            {Array.from({ length: 35 }).map((_, index) => {
-              const day = index - 2;
-              const active = day === currentDateTime.getDate();
-              return <span key={index} className={cx('rounded-lg py-1.5', day > 0 ? 'text-slate-700' : 'text-transparent', active && 'bg-slate-950 font-semibold text-white')}>{day > 0 && day <= 31 ? day : '0'}</span>;
-            })}
-          </div>
-        </div>
-        <UtilityBlock icon={Bell} title="Reminders" items={['Review Grade 8 submissions', 'Parent meeting at 3:30 PM', 'Upload revision worksheet']} />
-        <UtilityBlock icon={MessageSquare} title="Quick Notes" items={['Add observations after period 4', 'Check low attendance alerts']} />
-        <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
-          <div className="mb-3 flex items-center gap-2"><Bot size={18} /><p className="font-semibold">AI assistant</p></div>
-          <p className="text-sm leading-5 text-slate-300">Ask for lesson ideas, quiz drafts, student interventions, or report summaries.</p>
-          <Link to="/teacher/lesson-plan" className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-slate-950">Open AI <ArrowUpRight size={15} /></Link>
-        </div>
-      </div>
-    </CardShell>
-  </MotionAside>
 );
 
 export default TeacherDashboard;
