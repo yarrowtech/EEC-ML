@@ -82,6 +82,22 @@ const weaknessAnalysisSchema = new mongoose.Schema({
 const aiLearningPathSchema = new mongoose.Schema({
   subject: String,
   currentTopic: String,
+  focus: String,
+  pace: String,
+  notes: String,
+  cls: String,
+  publishedByTeacher: { type: Boolean, default: false },
+  teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser' },
+  teacherName: String,
+  publishedAt: Date,
+  nodes: [{
+    idx: Number,
+    title: String,
+    bloom: String,
+    tier: String,
+    hasLesson: Boolean,
+    status: { type: String, enum: ['active', 'locked', 'done'], default: 'locked' },
+  }],
   completedTopics: [String],
   recommendedResources: [{
     title: String,
@@ -91,7 +107,7 @@ const aiLearningPathSchema = new mongoose.Schema({
     },
     url: String,
     difficulty: String,
-    estimatedTime: Number // in minutes
+    estimatedTime: Number
   }],
   progress: {
     type: Number,

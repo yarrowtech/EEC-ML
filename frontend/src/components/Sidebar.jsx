@@ -17,7 +17,7 @@ const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replac
 const LEARNING_HUB_VIEWS = [
   'learning', 'smart-learning', 'smart-learning-courses',
   'smart-learning-courses-reference', 'smart-learning-tutor',
-  'study-materials', 'practice-papers',
+  'study-materials', 'practice-papers', 'my-paths',
 ];
 
 const MENU_ITEMS = [

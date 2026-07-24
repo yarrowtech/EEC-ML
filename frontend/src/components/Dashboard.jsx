@@ -32,7 +32,7 @@ import HolidayListView from './HolidayListView';
 const LEARNING_HUB_VIEWS = [
   'learning', 'smart-learning', 'smart-learning-courses',
   'smart-learning-courses-reference', 'smart-learning-tutor',
-  'study-materials', 'practice-papers',
+  'study-materials', 'practice-papers', 'my-paths',
 ];
 
 const normalizeViewFromPath = (pathname) => {
@@ -134,6 +134,7 @@ const Dashboard = () => {
     'assignments-academic-alcove': (props) => <AcademicAlcove {...props} />,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,
+    'my-paths': LearningHub,
     courses: CoursesView,
     results: ResultsView,
     communication: StudentChat,

@@ -64,6 +64,7 @@ const studentSections = [
   "achievements",
   "profile",
   "themecustomizer",
+  "my-paths",
 ];
 
 const studentBasePaths = ["/student", "/dashboard"];

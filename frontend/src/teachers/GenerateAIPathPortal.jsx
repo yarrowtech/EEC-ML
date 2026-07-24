@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
+import { useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,7 +19,9 @@ import {
   Zap,
 } from 'lucide-react';
 
-const students = [
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const FALLBACK_STUDENTS = [
   {
     id: 'arjun',
     name: 'Arjun Singh',
@@ -180,18 +183,53 @@ const createDraft = (student, subject, focus, pace, notes) => {
 };
 
 const GenerateAIPathPortal = () => {
+  const { classId } = useParams();
   const [role] = useState('teacher');
-  const [selectedId, setSelectedId] = useState('arjun');
+  const [students, setStudents] = useState(FALLBACK_STUDENTS);
+  const [selectedId, setSelectedId] = useState(FALLBACK_STUDENTS[0].id);
   const [subject, setSubject] = useState('Mathematics');
   const [focus, setFocus] = useState('Fractions');
   const [pace, setPace] = useState('1 week');
   const [notes, setNotes] = useState('Struggles with fraction operations');
-  const [draft, setDraft] = useState(() => createDraft(students[0], 'Mathematics', 'Fractions', '1 week', 'Struggles with fraction operations'));
+  const [draft, setDraft] = useState(() => createDraft(FALLBACK_STUDENTS[0], 'Mathematics', 'Fractions', '1 week', 'Struggles with fraction operations'));
   const [published, setPublished] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishStatus, setPublishStatus] = useState(null); // 'success' | 'error' | null
   const [loading, setLoading] = useState(false);
   const [lessonState, setLessonState] = useState({ open: false, index: null });
   const [studentProgress, setStudentProgress] = useState(null);
-  const selectedStudent = useMemo(() => students.find((item) => item.id === selectedId) || students[0], [selectedId]);
+  const selectedStudent = useMemo(() => students.find((item) => item.id === selectedId) || students[0], [selectedId, students]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_BASE}/api/teacher/dashboard/students`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        const list = data?.students || [];
+        if (!list.length) return;
+        const mapped = list.map((s) => ({
+          id: s._id || s.id,
+          name: s.name || 'Student',
+          cls: [s.grade || s.className, s.section || s.sectionName].filter(Boolean).join('-'),
+          subject: 'Mathematics',
+          focus: 'General',
+          status: 'yellow',
+          mastery: [
+            ['Concept understanding', 50],
+            ['Problem solving', 50],
+            ['Application', 50],
+            ['Speed & accuracy', 50],
+          ],
+        }));
+        setStudents(mapped);
+        setSelectedId(mapped[0].id);
+        setDraft(createDraft(mapped[0], 'Mathematics', 'General', '1 week', ''));
+      })
+      .catch(() => {});
+  }, []);
 
   const teacherCount = students.filter((item) => item.status === 'red' || item.status === 'yellow').length;
   const subjectLessons = lessons[subject] || lessons.Mathematics;
@@ -233,11 +271,43 @@ const GenerateAIPathPortal = () => {
     });
   };
 
-  const publish = () => {
+  const publish = async () => {
     if (!draft) return;
-    const next = JSON.parse(JSON.stringify(draft));
-    setPublished(next);
-    setStudentProgress(next);
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setPublishStatus('error');
+      return;
+    }
+    setPublishing(true);
+    setPublishStatus(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/learning-paths/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          studentId: selectedStudent.id,
+          subject: draft.subject,
+          focus: draft.focus,
+          pace: draft.pace,
+          notes: draft.notes,
+          cls: draft.cls,
+          nodes: draft.nodes,
+        }),
+      });
+      if (res.ok) {
+        const next = JSON.parse(JSON.stringify(draft));
+        setPublished(next);
+        setStudentProgress(next);
+        setPublishStatus('success');
+      } else {
+        setPublishStatus('error');
+      }
+    } catch {
+      setPublishStatus('error');
+    } finally {
+      setPublishing(false);
+      window.setTimeout(() => setPublishStatus(null), 4000);
+    }
   };
 
   const completeTeacherStep = (index) => {
@@ -531,9 +601,25 @@ const GenerateAIPathPortal = () => {
                       </div>
 
                       <div className="mt-5 flex flex-wrap gap-3 border-t border-[#eef2f9] pt-5">
-                        <ActionButton onClick={publish} label={published?.student === draft.student ? 'Re-publish' : 'Publish to student'} tone="primary" icon={ArrowRight} />
+                        <ActionButton
+                          onClick={publish}
+                          label={publishing ? 'Publishing…' : published?.student === draft.student ? 'Re-publish' : 'Publish to student'}
+                          tone="primary"
+                          icon={publishing ? RefreshCw : ArrowRight}
+                          disabled={publishing}
+                        />
                         <ActionButton onClick={regenerate} label="Regenerate" tone="ghost" icon={RefreshCw} />
                         <ActionButton onClick={resetProgress} label="Reset progress" tone="ghost" icon={RefreshCw} />
+                        {publishStatus === 'success' && (
+                          <span className="flex items-center gap-1.5 rounded-full bg-[#e6f4ea] px-3 py-1.5 text-sm font-medium text-[#1e7e34]">
+                            <CheckCircle className="size-4" /> Published — student can now see this path
+                          </span>
+                        )}
+                        {publishStatus === 'error' && (
+                          <span className="flex items-center gap-1.5 rounded-full bg-[#fde8e8] px-3 py-1.5 text-sm font-medium text-[#a53e3e]">
+                            Failed to publish. Please try again.
+                          </span>
+                        )}
                       </div>
                     </Motion.section>
                   )}
@@ -782,8 +868,8 @@ const Badge = ({ tone, children }) => {
   return <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] ${toneClass}`}>{children}</span>;
 };
 
-const ActionButton = ({ onClick, label, tone, icon: Icon }) => {
-  const base = 'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition';
+const ActionButton = ({ onClick, label, tone, icon: Icon, disabled = false }) => {
+  const base = 'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed';
   const toneClass =
     tone === 'primary'
       ? 'bg-[#2d7aff] text-white shadow-sm hover:bg-[#1a5fd9]'
@@ -791,8 +877,8 @@ const ActionButton = ({ onClick, label, tone, icon: Icon }) => {
         ? 'bg-[#1e7e34] text-white hover:bg-[#166b2b]'
         : 'border border-[#e3ebf6] bg-transparent text-[#1f3a5f] hover:bg-[#f0f6fe]';
   return (
-    <button type="button" onClick={onClick} className={`${base} ${toneClass}`}>
-      {Icon && <Icon className="size-4" />}
+    <button type="button" onClick={onClick} disabled={disabled} className={`${base} ${toneClass}`}>
+      {Icon && <Icon className={`size-4 ${disabled && tone === 'primary' ? 'animate-spin' : ''}`} />}
       {label}
     </button>
   );

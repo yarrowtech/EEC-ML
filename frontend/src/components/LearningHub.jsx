@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
-import { Bot, GraduationCap, ClipboardList, BookOpen, Play } from 'lucide-react';
+import { Bot, GraduationCap, ClipboardList, BookOpen, Play, Route } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AiTutorPanel } from './AITutorHomeScreen';
 import AILearningCoursesLanding from './AILearningCoursesLanding';
 import PracticePapersPortal from './PracticePapersPortal';
 import StudyMaterials from './StudyMaterials';
+import TeacherLearningPaths from './TeacherLearningPaths';
 import {
   saveLearningActivity,
   getLearningActivity,
@@ -49,6 +50,14 @@ const TABS = [
     icon: BookOpen,
     path: '/student/study-materials',
     matches: ['study-materials'],
+  },
+  {
+    key: 'paths',
+    label: 'My Paths',
+    hint: 'Teacher learning paths',
+    icon: Route,
+    path: '/student/my-paths',
+    matches: ['my-paths'],
   },
 ];
 
@@ -116,7 +125,7 @@ const LearningHub = () => {
           <div
             role="tablist"
             aria-label="Learning sections"
-            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-4 sm:gap-3 sm:p-2.5 lg:gap-4 lg:p-3"
+            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-5 sm:gap-3 sm:p-2.5 lg:gap-4 lg:p-3"
           >
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -219,6 +228,21 @@ const LearningHub = () => {
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
           <StudyMaterials />
+        </Motion.div>
+      )}
+      {activeTab.key === 'paths' && (
+        <Motion.div
+          key="paths"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          className="mx-auto w-full max-w-6xl px-4 pb-8 sm:px-6 lg:px-8"
+        >
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">Assigned by your teacher</p>
+            <h2 className="font-[Nunito] text-xl font-extrabold text-[#26332E] sm:text-2xl">My Learning Paths</h2>
+          </div>
+          <TeacherLearningPaths />
         </Motion.div>
       )}
     </div>
