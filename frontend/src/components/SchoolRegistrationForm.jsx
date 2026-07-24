@@ -34,10 +34,12 @@ const isValidURL = (url) => {
 };
 
 const STEPS = [
-  { id: 1, label: 'School Info',  shortLabel: 'Info',    icon: School },
-  { id: 2, label: 'Contact',      shortLabel: 'Contact',  icon: ClipboardList },
-  { id: 3, label: 'Details',      shortLabel: 'Details',  icon: Info },
-  { id: 4, label: 'Files',        shortLabel: 'Files',    icon: FolderOpen },
+  { id: 1, label: 'School Name',    shortLabel: 'Name',    icon: School },
+  { id: 2, label: 'Campus Details', shortLabel: 'Campus',  icon: Building2 },
+  { id: 3, label: 'School Type',    shortLabel: 'Type',    icon: ClipboardList },
+  { id: 4, label: 'Contact',        shortLabel: 'Contact', icon: User },
+  { id: 5, label: 'Details',        shortLabel: 'Details', icon: Info },
+  { id: 6, label: 'Files',          shortLabel: 'Files',   icon: FolderOpen },
 ];
 
 const FEATURE_HIGHLIGHTS = [
@@ -84,7 +86,7 @@ const InputWithIcon = ({ icon, error, children }) => (
       size: 17,
     })}
     {React.cloneElement(children, {
-      className: `${children.props.className || ''} w-full pl-10 pr-4 py-2.5 sm:py-3 border rounded-xl text-sm transition-all duration-150 focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
+      className: `${children.props.className || ''} w-full pl-10 pr-4 py-2.5 sm:py-3 border rounded-full text-sm transition-all duration-150 focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
         error
           ? 'border-red-400 bg-red-50'
           : 'border-gray-200 bg-white hover:border-amber-300'
@@ -113,7 +115,7 @@ const TextareaWithIcon = ({ icon, error, children }) => (
 const SchoolRegistrationForm = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
-  const totalSteps = 4;
+  const totalSteps = 6;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -156,15 +158,19 @@ const SchoolRegistrationForm = () => {
 
   const getStepForErrors = (serverErrors = {}) => {
     const keys = Object.keys(serverErrors || {});
-    const step4Fields = new Set(['logo', 'verificationDocs']);
-    const step3Fields = new Set(['websiteURL', 'estimatedUsers']);
-    const step2Fields = new Set(['contactPersonName', 'contactPhone', 'officialEmail', 'address']);
-    const step1Fields = new Set(['name', 'campuses', 'schoolType', 'board', 'boardOther', 'academicYearStructure']);
+    const step6Fields = new Set(['logo', 'verificationDocs']);
+    const step5Fields = new Set(['websiteURL', 'estimatedUsers']);
+    const step4Fields = new Set(['contactPersonName', 'contactPhone', 'officialEmail', 'address']);
+    const step3Fields = new Set(['schoolType', 'board', 'boardOther', 'academicYearStructure']);
+    const step2Fields = new Set(['campuses']);
+    const step1Fields = new Set(['name']);
 
+    if (keys.some((key) => step6Fields.has(key))) return 6;
+    if (keys.some((key) => step5Fields.has(key))) return 5;
     if (keys.some((key) => step4Fields.has(key))) return 4;
     if (keys.some((key) => step3Fields.has(key))) return 3;
-    if (keys.some((key) => step2Fields.has(key))) return 2;
-    if (keys.some((key) => step1Fields.has(key) || key.startsWith('campus_'))) return 1;
+    if (keys.some((key) => step2Fields.has(key) || key.startsWith('campus_'))) return 2;
+    if (keys.some((key) => step1Fields.has(key))) return 1;
     return 1;
   };
 
@@ -208,7 +214,12 @@ const SchoolRegistrationForm = () => {
     const e = {};
     if (!formData.name.trim())                 e.name = 'School name is required';
     else if (formData.name.trim().length < 3)  e.name = 'School name must be at least 3 characters';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
+  const validateStep2 = () => {
+    const e = {};
     if (!formData.campuses?.length) {
       e.campuses = 'At least one campus is required';
     } else {
@@ -223,7 +234,12 @@ const SchoolRegistrationForm = () => {
           e[`campus_${i}_contactPhone`] = 'Please enter a valid 10-digit Indian phone number';
       });
     }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
+  const validateStep3 = () => {
+    const e = {};
     if (!formData.schoolType)
       e.schoolType = 'Please select a school type';
 
@@ -239,7 +255,7 @@ const SchoolRegistrationForm = () => {
     return Object.keys(e).length === 0;
   };
 
-  const validateStep2 = () => {
+  const validateStep4 = () => {
     const e = {};
     if (!formData.contactPersonName.trim())
       e.contactPersonName = 'Contact person name is required';
@@ -267,7 +283,7 @@ const SchoolRegistrationForm = () => {
     return Object.keys(e).length === 0;
   };
 
-  const validateStep3 = () => {
+  const validateStep5 = () => {
     const e = {};
     if (formData.websiteURL?.trim() && !isValidURL(formData.websiteURL.trim()))
       e.websiteURL = 'Please enter a valid URL (e.g. https://example.com)';
@@ -277,7 +293,7 @@ const SchoolRegistrationForm = () => {
     return Object.keys(e).length === 0;
   };
 
-  const validateStep4 = () => {
+  const validateStep6 = () => {
     const e = {};
     if (!formData.logo)
       e.logo = 'School logo is required';
@@ -357,7 +373,14 @@ const SchoolRegistrationForm = () => {
   };
 
   /* ── navigation ── */
-  const validators = { 1: validateStep1, 2: validateStep2, 3: validateStep3, 4: validateStep4 };
+  const validators = {
+    1: validateStep1,
+    2: validateStep2,
+    3: validateStep3,
+    4: validateStep4,
+    5: validateStep5,
+    6: validateStep6,
+  };
 
   const handleNext = () => {
     if (validators[currentStep]() && currentStep < totalSteps) {
@@ -376,7 +399,7 @@ const SchoolRegistrationForm = () => {
   /* ── submit ── */
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validateStep4()) return;
+    if (!validateStep6()) return;
     setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/school-registration`, {
@@ -417,7 +440,7 @@ const SchoolRegistrationForm = () => {
 
   /* ── select class helper ── */
   const selectCls = (field) =>
-    `w-full px-4 py-2.5 sm:py-3 border rounded-xl text-sm transition-all duration-150 focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
+    `w-full px-4 py-2.5 sm:py-3 border rounded-full text-sm transition-all duration-150 focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
       errors[field]
         ? 'border-red-400 bg-red-50'
         : 'border-gray-200 bg-white hover:border-amber-300'
@@ -445,7 +468,13 @@ const SchoolRegistrationForm = () => {
               </InputWithIcon>
               <FieldError msg={errors.name} />
             </div>
+          </div>
+        );
 
+      /* ─── STEP 2 ─── */
+      case 2:
+        return (
+          <div className="space-y-5">
             {/* Campuses */}
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -458,7 +487,7 @@ const SchoolRegistrationForm = () => {
                 <button
                   type="button"
                   onClick={addCampus}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold hover:bg-amber-100 hover:border-amber-300 active:scale-95 transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-semibold hover:bg-amber-100 hover:border-amber-300 active:scale-95 transition-all"
                 >
                   <Plus size={13} /> Add Campus
                 </button>
@@ -497,7 +526,7 @@ const SchoolRegistrationForm = () => {
                             value={campus.name}
                             onChange={(e) => handleCampusChange(idx, 'name', e.target.value)}
                             placeholder="e.g. Main Campus"
-                            className={`w-full px-3 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
+                            className={`w-full px-3 py-2.5 border rounded-full text-sm transition-all focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
                               errors[`campus_${idx}_name`] ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'
                             }`}
                           />
@@ -510,7 +539,7 @@ const SchoolRegistrationForm = () => {
                         <select
                           value={campus.campusType}
                           onChange={(e) => handleCampusChange(idx, 'campusType', e.target.value)}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-full text-sm bg-white shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all"
                         >
                           {campusTypes.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
@@ -539,7 +568,7 @@ const SchoolRegistrationForm = () => {
                           value={campus.contactPerson}
                           onChange={(e) => handleCampusChange(idx, 'contactPerson', e.target.value)}
                           placeholder="Campus coordinator"
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-full text-sm bg-white shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all"
                         />
                       </div>
                       <div>
@@ -552,7 +581,7 @@ const SchoolRegistrationForm = () => {
                           maxLength={10}
                           pattern="[0-9]{10}"
                           placeholder="9876543210"
-                          className={`w-full px-3 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
+                          className={`w-full px-3 py-2.5 border rounded-full text-sm transition-all focus:outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 shadow-sm ${
                             errors[`campus_${idx}_contactPhone`] ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'
                           }`}
                         />
@@ -564,7 +593,13 @@ const SchoolRegistrationForm = () => {
               </div>
               <FieldError msg={errors.campuses} />
             </div>
+          </div>
+        );
 
+      /* ─── STEP 3 ─── */
+      case 3:
+        return (
+          <div className="space-y-5">
             {/* School Type + Board */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -611,8 +646,8 @@ const SchoolRegistrationForm = () => {
           </div>
         );
 
-      /* ─── STEP 2 ─── */
-      case 2:
+      /* ─── STEP 4 ─── */
+      case 4:
         return (
           <div className="space-y-5">
             <div>
@@ -677,8 +712,8 @@ const SchoolRegistrationForm = () => {
           </div>
         );
 
-      /* ─── STEP 3 ─── */
-      case 3:
+      /* ─── STEP 5 ─── */
+      case 5:
         return (
           <div className="space-y-5">
             <div>
@@ -717,8 +752,8 @@ const SchoolRegistrationForm = () => {
           </div>
         );
 
-      /* ─── STEP 4 ─── */
-      case 4:
+      /* ─── STEP 6 ─── */
+      case 6:
         return (
           <div className="space-y-6">
             {/* Logo */}
@@ -934,12 +969,12 @@ const SchoolRegistrationForm = () => {
               className="relative z-10 shrink-0"
             >
               <div className='flex flex-wrap items-center gap-3 mb-3'>
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-lg shadow-orange-200 border border-amber-100 p-2.5">
+                <img src="/logo_new.png" alt="EEC" className="w-full h-full object-contain" />
+              </div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">
                 <Sparkles className="w-3.5 h-3.5" />
                 New School Registration
-              </div>
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full shadow-lg shadow-orange-200 border border-amber-100 p-2.5">
-                <img src="/logo_new.png" alt="EEC" className="w-full h-full object-contain" />
               </div>
               </div>
               <h1 className="text-3xl 2xl:text-4xl font-bold text-gray-800 leading-tight">
@@ -1008,12 +1043,12 @@ const SchoolRegistrationForm = () => {
             {/* ── Step Indicator ── */}
             <div className="mb-6 sm:mb-8 xl:mb-5">
               {/* Progress bar */}
-              <div className="relative flex items-start justify-between mb-3">
+              <div className="relative flex items-start mb-3">
                 {/* background track — vertically centered through the step circles (h-9/h-10) */}
-                <div className="absolute left-0 right-0 top-[18px] sm:top-5 -translate-y-1/2 h-1 bg-gray-200/80 rounded-full z-0 ml-3" />
+                <div className="absolute left-0 right-0 top-[18px] sm:top-5 -translate-y-1/2 h-1 bg-gray-200/80 rounded-full z-0 ml-8 mr-8" />
                 {/* filled track */}
                 <motion.div
-                  className="absolute left-0 top-[18px] sm:top-5 -translate-y-1/2 h-1 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full z-0"
+                  className="absolute left-0 top-[18px] sm:top-5 -translate-y-1/2 h-1 bg-gradient-to-r from-amber-400 to-orange-500 rounded-full z-0 ml-8"
                   initial={false}
                   animate={{ width: `${((currentStep - 1) / (totalSteps - 1)) * 100}%` }}
                   transition={{ duration: 0.35, ease: 'easeInOut' }}
@@ -1022,7 +1057,7 @@ const SchoolRegistrationForm = () => {
                   const done    = step.id < currentStep;
                   const active  = step.id === currentStep;
                   return (
-                    <div key={step.id} className="relative z-10 flex flex-col items-center gap-1.5">
+                    <div key={step.id} className="relative z-10 flex-1 flex flex-col items-center gap-1.5 min-w-0">
                       <motion.div
                         animate={active ? { scale: [1, 1.12, 1] } : { scale: 1 }}
                         transition={{ duration: 0.4 }}
@@ -1086,7 +1121,7 @@ const SchoolRegistrationForm = () => {
                       whileTap={{ scale: 0.97 }}
                       type="button"
                       onClick={handlePrevious}
-                      className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-100 transition shadow-sm"
+                      className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-100 transition shadow-sm"
                     >
                       <ChevronLeft size={16} />
                       <span className="hidden sm:inline">Previous</span>
@@ -1101,7 +1136,7 @@ const SchoolRegistrationForm = () => {
                       whileTap={{ scale: 0.97 }}
                       type="button"
                       onClick={handleNext}
-                      className="flex items-center gap-2 px-5 sm:px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-sm font-semibold hover:from-amber-600 hover:to-orange-600 transition shadow-md shadow-amber-200 ml-auto"
+                      className="flex items-center gap-2 px-5 sm:px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-full text-sm font-semibold hover:from-amber-600 hover:to-orange-600 transition shadow-md shadow-amber-200 ml-auto"
                     >
                       Next
                       <ChevronRight size={16} />
