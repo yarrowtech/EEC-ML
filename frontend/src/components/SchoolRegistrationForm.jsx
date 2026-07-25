@@ -972,8 +972,13 @@ const SchoolRegistrationForm = () => {
         </div>
       </div>
 
-      <div className="relative xl:h-screen xl:overflow-hidden">
-        <div className="max-w-6xl 2xl:max-w-7xl mx-auto px-4 py-8 sm:py-12 lg:py-16 xl:px-0 xl:py-0 xl:h-full xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-0">
+      <div className="relative xl:h-screen xl:overflow-hidden xl:flex xl:items-center xl:justify-center">
+        {/* On very tall/large monitors, h-screen alone would let this panel
+            stretch far taller than its (capped) width — shrinking the
+            width-bound illustration and stretching the gap between the
+            fixed-position chips. Capping the height at 2xl+ and centering
+            it in the viewport keeps the proportions sane on big screens. */}
+        <div className="max-w-6xl 2xl:max-w-7xl w-full mx-auto px-4 py-8 sm:py-12 lg:py-16 xl:px-0 xl:py-0 xl:h-full 2xl:max-h-[880px] xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:gap-0">
 
           {/* ── Left brand panel (xl and up only) ── */}
           <div className="hidden xl:flex xl:flex-col xl:h-full relative overflow-hidden px-10 2xl:px-14 pt-6 2xl:pt-8">
@@ -992,10 +997,10 @@ const SchoolRegistrationForm = () => {
                 New School Registration
               </div>
               </div>
-              <h1 className="text-3xl 2xl:text-4xl font-bold text-gray-800 leading-tight">
+              <h1 className="text-3xl xl:text-4xl 2xl:text-5xl font-bold text-gray-800 leading-tight">
                 Bring your school<br />online with <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-orange-500">EEC</span>
               </h1>
-              <p className="text-base text-gray-500 mt-3 leading-relaxed max-w-md">
+              <p className="text-base 2xl:text-lg text-gray-500 mt-3 leading-relaxed max-w-md">
                 Join hundreds of schools managing academics, attendance, fees and communication in one secure platform.
               </p>
             </motion.div>
