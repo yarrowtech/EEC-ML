@@ -891,18 +891,33 @@ const SchoolRegistrationForm = () => {
           50% { transform: translate(24px, -18px) scale(1.06); }
         }
         .eec-reg-bg {
+          background: #fffbeb;
+        }
+        /* Pinned to the viewport (not the full scrollable page) and animated
+           via background-position on a small, fixed-size layer — animating
+           background-position on the full (very tall) page was forcing a
+           repaint of the entire document every frame, which stole main-thread
+           time from other animations (e.g. the floating chips) and made them
+           look like they were stuttering/freezing instead of gliding. */
+        .eec-reg-bg-anim {
+          position: fixed;
+          inset: 0;
           background: linear-gradient(120deg, #fffbeb, #fff7ed, #fefce8, #fff7ed, #fffbeb);
           background-size: 300% 300%;
           animation: eecGradientPan 16s ease-in-out infinite;
+          pointer-events: none;
+          z-index: 0;
         }
         .eec-blob-float { animation: eecBlobFloat 10s ease-in-out infinite; }
         .eec-blob-float-slow { animation: eecBlobFloat 14s ease-in-out infinite; }
         .eec-wave-track { animation: eecWaveDrift 22s linear infinite; }
         .eec-wave-track-slow { animation: eecWaveDrift 34s linear infinite reverse; }
         @media (prefers-reduced-motion: reduce) {
-          .eec-reg-bg, .eec-blob-float, .eec-blob-float-slow, .eec-wave-track, .eec-wave-track-slow { animation: none; }
+          .eec-reg-bg-anim, .eec-blob-float, .eec-blob-float-slow, .eec-wave-track, .eec-wave-track-slow { animation: none; }
         }
       `}</style>
+
+      <div className="eec-reg-bg-anim" />
 
       {/* shared SVG wave gradients */}
       <svg width="0" height="0" className="absolute">
@@ -985,41 +1000,52 @@ const SchoolRegistrationForm = () => {
               </p>
             </motion.div>
 
-            {/* Feature list sits in its own lane, left of the illustration —
-                a real flex row (not absolute positioning) so the two can
-                never overlap, and the image gets the rest of the panel's
-                height/width to grow as large as its own aspect ratio allows.
-                Negative margins let the image bleed past the panel's own
-                padding so it reaches the true edges of the column. */}
+            {/* Illustration lane fills the rest of the panel; the 4 feature
+                chips float on top of it (absolute + z-20) at scattered
+                corners, each with its own gentle bobbing animation, rather
+                than sitting beside it in their own column. */}
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="relative z-10 mt-0.5 flex-1 min-h-0 flex items-end gap-4 -mx-10 2xl:-mx-14"
+              className="relative z-10 mt-0.5 flex-1 min-h-0 -mx-20 2xl:-mx-14"
             >
-              {/* <div className="flex flex-col gap-3 w-[150px] shrink-0 pb-2 pl-10 2xl:pl-14">
-                {FEATURE_HIGHLIGHTS.map((f) => (
-                  <div key={f.title} className="flex items-start gap-2.5 bg-white/70 backdrop-blur-sm rounded-xl p-2.5 shadow-sm border border-amber-100/70">
-                    <div className="w-9 h-9 rounded-xl bg-amber-50 shadow-sm border border-amber-100 flex items-center justify-center shrink-0">
-                      <f.icon className="w-4.5 h-4.5 text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-800">{f.title}</p>
-                      <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{f.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div> */}
-
-              <div className="flex-1 min-w-0 h-full">
-                {/* object-cover (not contain) so height is driven by the
-                    lane's full height, not capped by the image's landscape
-                    aspect ratio — this crops the sides instead of shrinking. */}
+              <div className="relative w-full h-full">
+                {/* object-contain, not cover — cover crops by whichever axis
+                    the lane's aspect ratio forces, which varies across
+                    screen sizes and can crop into the characters themselves
+                    on some widths/heights. Contain always shows the full
+                    image, bottom-anchored so it still sits flush with the
+                    panel's bottom edge. */}
                 <img
                   src="/register-left.png"
                   alt="School Registration"
-                  className="pointer-events-none select-none w-full h-full object-cover object-[center_bottom]"
+                  className="pointer-events-none select-none w-full h-full object-contain object-bottom relative z-0"
                 />
+
+                {[
+                  { ...FEATURE_HIGHLIGHTS[0], pos: 'top-16 left-10', duration: 4,   delay: 0 },
+                  { ...FEATURE_HIGHLIGHTS[1], pos: 'top-8 right-28', duration: 4.6, delay: 0.5 },
+                  { ...FEATURE_HIGHLIGHTS[2], pos: 'bottom-16 -translate-y-1/2 left-12', duration: 3.8, delay: 1 },
+                  { ...FEATURE_HIGHLIGHTS[3], pos: 'bottom-10 right-12', duration: 4.3, delay: 1.5 },
+                ].map((chip) => (
+                  <motion.div
+                    key={chip.title}
+                    initial={{ opacity: 0, y: 12, scale: 0.9 }}
+                    animate={{ opacity: 1, y: [0, -10, 0], scale: 1 }}
+                    transition={{
+                      opacity: { duration: 0.5, delay: chip.delay },
+                      scale: { duration: 0.5, delay: chip.delay },
+                      y: { duration: chip.duration, repeat: Infinity, ease: 'easeInOut', delay: chip.delay },
+                    }}
+                    className={`absolute z-20 ${chip.pos} flex items-center gap-2 bg-white/85 backdrop-blur-md rounded-full pl-2 pr-3.5 py-2 shadow-lg border border-white/60`}
+                  >
+                    <div className="w-7 h-7 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                      <chip.icon className="w-3.5 h-3.5 text-amber-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-800 whitespace-nowrap">{chip.title}</span>
+                  </motion.div>
+                ))}
               </div>
             </motion.div>
           </div>
@@ -1160,9 +1186,12 @@ const SchoolRegistrationForm = () => {
               </form>
             </div>
 
-            <p className="text-center text-xs text-gray-400 mt-6 xl:hidden">
+            <p className="text-center text-xs text-gray-700 mt-6">
               Your information is encrypted and reviewed securely by our team.
             </p>
+            {/* <p className="text-center text-xs font-bold text-gray-700 mt-2">
+              Powered By: EEC - Electronic Educare
+            </p> */}
           </div>
         </div>
       </div>
