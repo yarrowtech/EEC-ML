@@ -52,7 +52,7 @@ describe('LoginForm Component', () => {
     test('displays welcome message in login mode', () => {
       renderWithRouter(<LoginForm />);
       expect(screen.getByText(/Welcome back!/i)).toBeInTheDocument();
-      expect(screen.getByText(/Sign in to access your dashboard/i)).toBeInTheDocument();
+      expect(screen.getByText(/Sign in to continue to/i)).toBeInTheDocument();
     });
 
     test('renders password visibility toggle button', () => {
