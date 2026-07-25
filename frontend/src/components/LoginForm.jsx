@@ -360,8 +360,8 @@ const LoginForm = () => {
           backgroundImage: 'url(/login-blue.png)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          background: `linear-gradient(160deg, ${colors.secondary || '#071A52'} 0%, ${colors.primary || '#0A2D8A'} 55%, #0E52FF 100%), url(/login-blue.png)`,
-          backgroundBlendMode: 'overlay',
+          background: `linear-gradient(160deg, ${colors.secondary || '#1E3A8A'} 0%, ${colors.primary || '#2563EB'} 55%, #3B82F6 100%), url(/login-blue.png)`,
+          backgroundBlendMode: 'screen',
         }}
       >
         {/* Fine grid texture */}
