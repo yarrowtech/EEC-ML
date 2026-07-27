@@ -16,6 +16,7 @@ const principalSchema = new mongoose.Schema({
   initialPassword: { type: String, default: '' },
   lastLoginAt: { type: Date, default: null },
   name: String,
+  avatar: { type: String, default: '' },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
   campusId: { type: String, default: null },
   campusName: { type: String, default: null },

@@ -11,6 +11,7 @@ import {
   ChevronDown,
   X,
   ChevronRight,
+  UserCog,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
@@ -83,9 +84,17 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
       ...prev,
       name: principalProfile.name || prev.name,
       email: principalProfile.email || prev.email,
+      avatar: principalProfile.avatar || prev.avatar,
       schoolName: principalProfile.schoolName || principalProfile.campusName || prev.schoolName,
     }));
   }, [principalProfile]);
+
+  const hasAvatar = typeof principalDetails.avatar === 'string' && principalDetails.avatar.trim() !== '';
+  const nameParts = (principalDetails.name || '').trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length >= 2
+    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
+    : (nameParts[0]?.[0] || 'P');
+  const initialsLabel = initials.toUpperCase();
 
   const urgentNotifications = notifications.filter((n) => n.priority === 'high');
   const totalNotifications = notifications.length;
@@ -118,9 +127,9 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="flex h-16 items-center justify-between px-4 sm:px-6">
+      <div className="flex h-16 items-center px-4 sm:px-6">
         {/* Left Section */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 md:hidden"
@@ -139,7 +148,7 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 placeholder="Search Principal portal..."
-                className="w-48 rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-8 transition-all duration-200 focus:border-transparent focus:bg-white focus:ring-2 focus:ring-slate-900 sm:w-64 md:w-80"
+                className="w-full rounded-full border border-slate-200 bg-slate-50 py-2 pl-10 pr-8 transition-all duration-200 focus:border-transparent focus:bg-white focus:ring-2 focus:ring-slate-900 sm:w-64 md:w-80"
               />
               {searchQuery && (
                 <button
@@ -178,7 +187,7 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
         </div>
 
         {/* Center Section - Current Time & Date */}
-        <div className="hidden items-center gap-4 text-sm text-slate-600 md:flex">
+        <div className="hidden shrink-0 items-center gap-4 text-sm text-slate-600 md:flex">
           <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
             <Clock className="h-4 w-4 text-slate-500" />
             <span>{now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
@@ -190,7 +199,7 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
         </div>
 
         {/* Right Section */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
           {/* Notifications */}
           <div className="relative" ref={notificationsRef}>
             <button
@@ -288,15 +297,20 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
               className="flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-slate-100"
               aria-label="Profile menu"
             >
-              <img
-                src={principalDetails.avatar}
-                alt="Principal"
-                className="h-8 w-8 rounded-full border-2 border-slate-100 object-cover"
-                onError={(e) => {
-                  e.target.src =
-                    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'%3E%3C/path%3E%3Ccircle cx='12' cy='7' r='4'%3E%3C/circle%3E%3C/svg%3E";
-                }}
-              />
+              {hasAvatar ? (
+                <img
+                  src={principalDetails.avatar}
+                  alt="Principal"
+                  className="h-8 w-8 rounded-full border-2 border-slate-100 object-cover"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-purple-500 text-xs font-bold text-white shadow-sm">
+                  {initialsLabel}
+                </div>
+              )}
               <div className="hidden text-left md:block">
                 <p className="max-w-[120px] truncate text-sm font-medium text-slate-900">
                   {principalDetails.name}
@@ -314,15 +328,20 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
               <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
                 <div className="border-b border-slate-100 bg-slate-50 p-4">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={principalDetails.avatar}
-                      alt="Principal"
-                      className="h-10 w-10 rounded-full border-2 border-white shadow-sm"
-                      onError={(e) => {
-                        e.target.src =
-                          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'%3E%3C/path%3E%3Ccircle cx='12' cy='7' r='4'%3E%3C/circle%3E%3C/svg%3E";
-                      }}
-                    />
+                    {hasAvatar ? (
+                      <img
+                        src={principalDetails.avatar}
+                        alt="Principal"
+                        className="h-10 w-10 rounded-full border-2 border-white object-cover shadow-sm"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-indigo-500 to-purple-500 text-sm font-bold text-white shadow-sm">
+                        {initialsLabel}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="truncate font-medium text-slate-900">{principalDetails.name}</p>
                       <p className="truncate text-sm text-slate-500">
@@ -334,6 +353,16 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
                 </div>
 
                 <div className="py-1">
+                  <button
+                    className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-slate-50"
+                    onClick={() => {
+                      setShowProfile(false);
+                      navigate('/principal/profile');
+                    }}
+                  >
+                    <UserCog className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                    <span className="text-sm text-slate-700">Edit Profile</span>
+                  </button>
                   <button
                     className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-slate-50"
                     onClick={() => {

@@ -185,7 +185,13 @@
       "Bash(echo \"curl backend exit: $?\")",
       "Bash(echo \"5173 listening check: $?\")",
       "Bash(echo \"5000 \\(backend\\) listening check: $?\")",
-      "Bash(curl -sf -m 5 -X POST http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"__nonexistent__\",\"password\":\"wrongpassword\"}' -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")"
+      "Bash(curl -sf -m 5 -X POST http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"__nonexistent__\",\"password\":\"wrongpassword\"}' -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\")",
+      "Bash(echo \"backend running: $?\")",
+      "Bash(curl -sf -m 5 http://localhost:5000/api/docs -o /dev/null -w \"docs status: %{http_code}\\\\n\")",
+      "Bash(curl -s -m 5 -o /dev/null -w \"principal profile \\(no auth\\) status: %{http_code}\\\\n\" http://localhost:5000/api/principal/auth/profile)",
+      "Bash(node test_principal.mjs)",
+      "Bash(node -c routes/principalRoutes.js)",
+      "Bash(echo \"backend alive: $?\")"
     ],
     "additionalDirectories": [
       "/tmp"

@@ -3,8 +3,10 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const Principal = require('../models/Principal');
 const School = require('../models/School');
+const TeacherUser = require('../models/TeacherUser');
 const rateLimit = require('../middleware/rateLimit');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const adminAuth = require('../middleware/adminAuth');
@@ -12,6 +14,9 @@ const principalAuth = require('../middleware/principalAuth');
 const { logAuthEvent } = require('../utils/authEventLogger');
 
 const normalize = (value = '') => String(value).trim().toLowerCase();
+
+// In-memory storage for avatar uploads (embedded as base64 data URI, no external storage needed)
+const avatarUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } });
 
 router.post('/register', adminAuth, async (req, res) => {
   // #swagger.tags = ['Principals']
@@ -205,6 +210,20 @@ router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 10, k
   }
 });
 
+// Principals are sometimes promoted from an existing teacher account (admin/Teachers.jsx
+// cross-references the two by email/username). When the principal record itself has no
+// avatar of its own, fall back to that linked teacher's profilePic so the same photo shown
+// in the admin portal also shows in the principal's own dashboard.
+const resolveLinkedTeacherAvatar = async (principal) => {
+  const identity = normalize(principal.email || principal.username || '');
+  if (!identity) return '';
+  const teacher = await TeacherUser.findOne({
+    organizationId: principal.organizationId,
+    $or: [{ email: identity }, { username: identity }],
+  }).select('profilePic').lean();
+  return teacher?.profilePic || '';
+};
+
 router.get('/profile', principalAuth, async (req, res) => {
   try {
     const principalId = req.principal?.id || req.principal?._id;
@@ -225,11 +244,55 @@ router.get('/profile', principalAuth, async (req, res) => {
       schoolLogo = school?.logo?.secure_url || '';
     }
 
+    const avatar = principal.avatar || await resolveLinkedTeacherAvatar(principal);
+
     res.json({
       ...principal,
+      avatar,
       schoolName,
       schoolLogo,
     });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/profile/update', principalAuth, avatarUpload.single('avatar'), async (req, res) => {
+  // #swagger.tags = ['Principals']
+  try {
+    const principalId = req.principal?.id || req.principal?._id;
+    if (!principalId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const updates = {};
+    if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+      updates.name = req.body.name.trim();
+    }
+    if (req.file) {
+      updates.avatar = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
+
+    const principal = await Principal.findByIdAndUpdate(principalId, updates, {
+      new: true,
+      runValidators: true,
+    }).select('-password').lean();
+
+    if (!principal) {
+      return res.status(404).json({ error: 'Principal not found' });
+    }
+
+    let schoolName = '';
+    let schoolLogo = '';
+    if (principal.schoolId) {
+      const school = await School.findById(principal.schoolId).select('name logo').lean();
+      schoolName = school?.name || '';
+      schoolLogo = school?.logo?.secure_url || '';
+    }
+
+    const avatar = principal.avatar || await resolveLinkedTeacherAvatar(principal);
+
+    res.json({ ...principal, avatar, schoolName, schoolLogo });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

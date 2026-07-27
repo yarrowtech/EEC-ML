@@ -1251,7 +1251,7 @@ const Teachers = ({setShowAdminHeader}) => {
                               <img
                                 src={teacher.profilePic}
                                 alt={teacher.name || 'Teacher'}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover rounded-full"
                               />
                             ) : (
                               teacherInitials

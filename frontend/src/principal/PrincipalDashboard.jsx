@@ -29,6 +29,7 @@ import StaffManagement from './StaffManagement';
 import FinancialDashboard from './FinancialDashboard';
 import NotificationCenter from './NotificationCenter';
 import Communications from './Communications';
+import PrincipalProfile from './PrincipalProfile';
 import OverviewPage from './OverviewPage';
 import FacilitiesPage from './FacilitiesPage';
 import ReportsPage from './ReportsPage';
@@ -538,6 +539,15 @@ const PrincipalDashboard = () => {
               )}
             />
             <Route path="communications" element={<Communications />} />
+            <Route
+              path="profile"
+              element={(
+                <PrincipalProfile
+                  principalDetails={principalProfile}
+                  onProfileUpdated={setPrincipalProfile}
+                />
+              )}
+            />
             <Route path="*" element={overviewElement} />
           </Routes>
         </main>
