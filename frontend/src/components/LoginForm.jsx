@@ -385,7 +385,7 @@ const LoginForm = () => {
           className="relative z-10 flex items-center gap-3"
         >
           <div className="w-11 h-11 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center overflow-hidden shrink-0">
-            <img src={logo || '/logo_new.png'} alt="" className="w-8 h-8 object-contain" />
+            <img src={logo || '/logo_new.png'} loading='lazy' alt="" className="w-8 h-8 object-contain" />
           </div>
           <div>
             <div className="text-lg font-black text-white leading-none">EEC</div>
@@ -456,6 +456,7 @@ const LoginForm = () => {
             alt="Students, teachers and parents using Electronic Educare"
             className="relative w-[72%] sm:w-[62%] lg:w-auto lg:h-[26vh] lg:max-h-[100vh] xl:h-[100vh] xl:max-h-[50vh] max-w-full object-contain select-none pointer-events-none top-12"
             animate={{ y: [0, -12, 0] }}
+            loading='lazy'
             // transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
           />
         </div>
