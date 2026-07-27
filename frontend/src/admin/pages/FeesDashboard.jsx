@@ -11,6 +11,7 @@ import {
   Clock,
   IndianRupee,
   CreditCard,
+  X,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -29,6 +30,10 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState('30d');
+  const [selectedSession, setSelectedSession] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
+  const [selectedPayment, setSelectedPayment] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,13 +103,73 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
     });
   }, [recentPayments, rangeStart]);
 
+  const sessionOptions = useMemo(() => {
+    const values = new Set();
+    paymentsByDateRange.forEach((payment) => {
+      values.add(payment.session || 'Unassigned');
+    });
+    return Array.from(values).sort();
+  }, [paymentsByDateRange]);
+
+  const classOptions = useMemo(() => {
+    const values = new Set();
+    paymentsByDateRange.forEach((payment) => {
+      if (selectedSession && (payment.session || 'Unassigned') !== selectedSession) return;
+      values.add(payment.className || 'Unassigned');
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  }, [paymentsByDateRange, selectedSession]);
+
+  const sectionOptions = useMemo(() => {
+    const values = new Set();
+    paymentsByDateRange.forEach((payment) => {
+      const sessionLabel = payment.session || 'Unassigned';
+      const classLabel = payment.className || 'Unassigned';
+      if (selectedSession && sessionLabel !== selectedSession) return;
+      if (selectedClass && classLabel !== selectedClass) return;
+      values.add(payment.section || 'Unassigned');
+    });
+    return Array.from(values).sort();
+  }, [paymentsByDateRange, selectedSession, selectedClass]);
+
+  useEffect(() => {
+    if (selectedSession && !sessionOptions.includes(selectedSession)) {
+      setSelectedSession('');
+      setSelectedClass('');
+      setSelectedSection('');
+    }
+  }, [sessionOptions, selectedSession]);
+
+  useEffect(() => {
+    if (selectedClass && !classOptions.includes(selectedClass)) {
+      setSelectedClass('');
+      setSelectedSection('');
+    }
+  }, [classOptions, selectedClass]);
+
+  useEffect(() => {
+    if (selectedSection && !sectionOptions.includes(selectedSection)) {
+      setSelectedSection('');
+    }
+  }, [sectionOptions, selectedSection]);
+
   const filteredPayments = useMemo(() => {
-    return paymentsByDateRange.filter(
-      (payment) =>
-        (payment.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (payment.className || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [paymentsByDateRange, searchTerm]);
+    const term = searchTerm.trim().toLowerCase();
+    return paymentsByDateRange.filter((payment) => {
+      const sessionLabel = payment.session || 'Unassigned';
+      const classLabel = payment.className || 'Unassigned';
+      const sectionLabel = payment.section || 'Unassigned';
+      const matchesSearch =
+        !term ||
+        [payment.studentName, payment.username, payment.transactionId, payment.admissionNo, payment.className, payment.section, payment.status]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term));
+      const matchesSession = !selectedSession || sessionLabel === selectedSession;
+      const matchesClass = !selectedClass || classLabel === selectedClass;
+      const matchesSection = !selectedSection || sectionLabel === selectedSection;
+      return matchesSearch && matchesSession && matchesClass && matchesSection;
+    });
+  }, [paymentsByDateRange, searchTerm, selectedSession, selectedClass, selectedSection]);
 
   const formatCurrency = (amount = 0) =>
     new Intl.NumberFormat('en-IN', {
@@ -114,8 +179,18 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
   const getStatusColor = (status) =>
     status === 'Paid'
-      ? 'bg-green-100 text-green-800'
-      : 'bg-gray-100 text-gray-800';
+      ? 'bg-emerald-100 text-emerald-700'
+      : status === 'Partial'
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-slate-100 text-slate-600';
+
+  const openPaymentDetails = (payment) => {
+    setSelectedPayment(payment);
+  };
+
+  const closePaymentDetails = () => {
+    setSelectedPayment(null);
+  };
 
   const collectionTrend = useMemo(() => {
     const today = new Date();
@@ -351,39 +426,83 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
             {/* ── Recent Payments ── */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                    <CreditCard size={16} className="text-indigo-500" /> Recent Payments
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Payments logged from fee invoices</p>
+              <div className="px-5 py-4 border-b border-slate-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                      <CreditCard size={16} className="text-indigo-500" /> Recent Payments
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">Payments logged from fee invoices</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={dateRange}
+                      onChange={(e) => setDateRange(e.target.value)}
+                      className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
+                    >
+                      {DATE_RANGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={generateReport}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                      <Download size={13} /> Report
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Search students…"
-                      className="text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none w-40"
+                      placeholder="Search student, username, transaction ID..."
+                      className="w-full text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
                     />
                   </div>
                   <select
-                    value={dateRange}
-                    onChange={(e) => setDateRange(e.target.value)}
-                    className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
+                    value={selectedSession}
+                    onChange={(e) => {
+                      setSelectedSession(e.target.value);
+                      setSelectedClass('');
+                      setSelectedSection('');
+                    }}
+                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
                   >
-                    {DATE_RANGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
+                    <option value="">All Sessions</option>
+                    {sessionOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
-                  <button
-                    onClick={generateReport}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => {
+                      setSelectedClass(e.target.value);
+                      setSelectedSection('');
+                    }}
+                    disabled={!selectedSession && sessionOptions.length > 0}
+                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                   >
-                    <Download size={13} /> Report
-                  </button>
+                    <option value="">All Classes</option>
+                    {classOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedSection}
+                    onChange={(e) => setSelectedSection(e.target.value)}
+                    disabled={!selectedClass && classOptions.length > 0}
+                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    <option value="">All Sections</option>
+                    {sectionOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -399,9 +518,14 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredPayments.map((payment, idx) => (
-                        <tr key={`${payment.studentName}-${idx}`} className="hover:bg-slate-50/70 transition-colors">
+                        <tr
+                          key={`${payment.studentName}-${payment.transactionId || idx}`}
+                          onClick={() => openPaymentDetails(payment)}
+                          className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                        >
                           <td className="px-4 py-3">
                             <p className="font-semibold text-slate-800 text-sm">{payment.studentName || '—'}</p>
+                            <p className="text-[11px] text-slate-400">{payment.username || '—'}</p>
                           </td>
                           <td className="px-4 py-3 text-slate-500 text-xs">
                             {payment.className || '—'}{payment.section ? ` · ${payment.section}` : ''}
@@ -412,7 +536,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                           </td>
                           <td className="px-4 py-3 text-slate-500 text-xs capitalize">{payment.method || '—'}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${payment.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
                               {payment.status || 'Paid'}
                             </span>
                           </td>
@@ -508,6 +632,100 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
           </div>
         </div>
       </div>
+
+      {selectedPayment ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-3 py-3 sm:px-4 sm:py-4"
+          onClick={closePaymentDetails}
+        >
+          <div
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">Payment Details</p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">{selectedPayment.studentName || 'Student'}</h3>
+                <p className="text-sm text-slate-500">
+                  {selectedPayment.className || '—'}
+                  {selectedPayment.section ? ` · ${selectedPayment.section}` : ''}
+                  {selectedPayment.session ? ` · ${selectedPayment.session}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentDetails}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                aria-label="Close payment details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid flex-1 gap-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Student Name', selectedPayment.studentName || '—'],
+                  ['Username', selectedPayment.username || '—'],
+                  ['Admission / SID', selectedPayment.admissionNo || '—'],
+                  ['Class', selectedPayment.className || '—'],
+                  ['Section', selectedPayment.section || '—'],
+                  ['Session', selectedPayment.session || '—'],
+                  ['Amount', formatCurrency(selectedPayment.amount)],
+                  ['Transaction Date & Time', selectedPayment.paidOnLabel || '—'],
+                  ['Transaction ID', selectedPayment.transactionId || '—'],
+                  ['Payment Method', selectedPayment.method || '—'],
+                  ['Invoice Status', selectedPayment.invoiceStatus || '—'],
+                  ['Gateway Payment ID', selectedPayment.gatewayPaymentId || '—'],
+                  ['Gateway Order ID', selectedPayment.gatewayOrderId || '—'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 sm:rounded-2xl sm:px-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 break-words leading-5">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4 sm:rounded-3xl sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Payment Status</p>
+                    <p className="mt-1 text-lg font-bold text-slate-900">{selectedPayment.status || 'Paid'}</p>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(selectedPayment.status)}`}>
+                    {selectedPayment.status || 'Paid'}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Notes</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600 whitespace-pre-line">
+                    {selectedPayment.notes || 'No additional notes available for this payment.'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Summary</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-600">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Paid amount</span>
+                      <span className="font-semibold text-slate-900">{formatCurrency(selectedPayment.amount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Receipt date</span>
+                      <span className="font-semibold text-slate-900">{selectedPayment.paidOnLabel || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Transaction reference</span>
+                      <span className="font-semibold text-slate-900">{selectedPayment.transactionId || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

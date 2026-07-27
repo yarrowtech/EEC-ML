@@ -1236,7 +1236,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       studentFilter.campusId = req.campusId;
     }
     const students = await StudentUser.find(studentFilter)
-      .select('name grade section roll admissionNumber')
+      .select('name grade section roll admissionNumber username academicYear studentCode')
       .lean();
     const studentIds = students.map((s) => s._id);
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
@@ -1314,20 +1314,38 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       percentage: Math.round((row.amount / totalOutstanding) * 100),
     }));
 
+    const invoiceMap = new Map(invoices.map((inv) => [String(inv._id), inv]));
     const payments = await FeePayment.find(invoiceFilter)
       .sort({ createdAt: -1 })
       .limit(10)
       .lean();
     const recentPayments = payments.map((payment) => {
       const student = studentMap.get(String(payment.studentId));
+      const invoice = invoiceMap.get(String(payment.invoiceId));
+      const paymentStatus = Number(payment.amount || 0) <= 0
+        ? 'Unpaid'
+        : Number(invoice?.balanceAmount || 0) > 0
+          ? 'Partial'
+          : 'Paid';
+      const paymentDate = payment.paidOn || payment.createdAt;
       return {
+        studentId: payment.studentId,
         studentName: student?.name || 'Student',
+        username: student?.username || '',
         className: student?.grade || '',
         section: student?.section || '',
+        session: student?.academicYear || '',
+        admissionNo: student?.studentCode || student?.admissionNumber || '',
         amount: payment.amount,
-        paidOn: payment.paidOn || payment.createdAt,
+        paidOn: paymentDate,
+        paidOnLabel: paymentDate ? new Date(paymentDate).toLocaleString('en-IN') : '',
+        transactionId: payment.transactionId || payment.gatewayPaymentId || payment.gatewayOrderId || '',
         method: payment.method || 'cash',
-        status: 'Paid',
+        status: paymentStatus,
+        invoiceStatus: invoice?.status || '',
+        gatewayPaymentId: payment.gatewayPaymentId || '',
+        gatewayOrderId: payment.gatewayOrderId || '',
+        notes: payment.notes || '',
       };
     });
 
