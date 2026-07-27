@@ -99,6 +99,96 @@ const buildPaymentsByInvoice = (payments = []) => {
   }, {});
 };
 
+const formatReceiptDateTime = (value) => {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
+const buildReceiptPayload = async ({ payment, invoice, schoolId, campusId = null, parentName = '' }) => {
+  const [student, school, academicYear] = await Promise.all([
+    StudentUser.findOne({ _id: payment.studentId, schoolId })
+      .select('name username grade section roll admissionNumber studentCode fatherName motherName guardianName guardianPhone guardianEmail mobile email academicYear')
+      .lean(),
+    School.findById(schoolId)
+      .select('name address contactEmail contactPhone officialEmail websiteURL logo campuses')
+      .lean(),
+    invoice.academicYearId
+      ? AcademicYear.findOne({ _id: invoice.academicYearId, schoolId }).select('name startDate endDate').lean()
+      : null,
+  ]);
+
+  const campusInfo = school?.campuses?.find(
+    (campus) =>
+      String(campus?._id || '') === String(campusId || '') ||
+      String(campus?.name || '').toLowerCase() === String(student?.campusName || '').toLowerCase()
+  );
+
+  const className = invoice.className || student?.grade || '';
+  const section = invoice.section || student?.section || '';
+  const classSection = [className, section].filter(Boolean).join(' - ');
+  const transactionDate = payment.paidOn || payment.createdAt || new Date();
+  const dateObject = new Date(transactionDate);
+  const transactionTime = Number.isNaN(dateObject.getTime())
+    ? '-'
+    : dateObject.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+
+  const notes = [
+    'In case of any discrepancy, contact the school fees office within 7 days.',
+    'This receipt is valid only after successful realization of payment.',
+    'Preserve this receipt for school and audit records.',
+  ];
+
+  return {
+    receipt: {
+      paymentId: payment._id,
+      transactionId: payment.transactionId || payment.gatewayPaymentId || '',
+      receiptNo: payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
+      sid: student?.studentCode || student?.admissionNumber || '',
+      childName: student?.name || '',
+      username: student?.username || '',
+      date: transactionDate,
+      transactionDate: formatReceiptDateTime(transactionDate),
+      transactionTime,
+      payMode: payment.method || '',
+      className,
+      section,
+      classSection,
+      session: academicYear?.name || student?.academicYear || '',
+      parentName: parentName || student?.guardianName || '',
+      fatherName: student?.fatherName || '',
+      motherName: student?.motherName || '',
+      guardianName: student?.guardianName || '',
+      notes,
+      generatedAt: new Date().toISOString(),
+    },
+    payment,
+    invoice,
+    student: student || null,
+    school: school
+      ? {
+          name: school.name || '',
+          address: campusInfo?.address || school.address || '',
+          contactPhone: campusInfo?.contactPhone || school.contactPhone || '',
+          contactEmail: school.contactEmail || school.officialEmail || '',
+          websiteURL: school.websiteURL || '',
+          logoUrl: school.logo?.secure_url || '',
+        }
+      : null,
+  };
+};
+
 const normalizeFeeHeads = (feeHeads) => {
   if (!Array.isArray(feeHeads)) return [];
   return feeHeads
@@ -864,67 +954,65 @@ router.get('/payments/:paymentId/receipt', adminAuth, async (req, res) => {
       return res.status(403).json({ error: 'Payment not available for this campus' });
     }
 
-    const [student, school, academicYear] = await Promise.all([
-      StudentUser.findOne({ _id: payment.studentId, schoolId })
-        .select(
-          'name grade section roll admissionNumber studentCode fatherName motherName guardianName guardianPhone guardianEmail mobile email'
-        )
-        .lean(),
-      School.findById(schoolId)
-        .select(
-          'name address contactEmail contactPhone officialEmail websiteURL logo campuses'
-        )
-        .lean(),
-      invoice.academicYearId
-        ? AcademicYear.findOne({ _id: invoice.academicYearId, schoolId }).select('name startDate endDate').lean()
-        : null,
-    ]);
-
-    const campusInfo = school?.campuses?.find(
-      (campus) =>
-        String(campus?._id || '') === String(req.campusId || '') ||
-        String(campus?.name || '').toLowerCase() === String(student?.campusName || '').toLowerCase()
-    );
-
-    const classSection = [invoice.className || student?.grade || '', invoice.section || student?.section || '']
-      .filter(Boolean)
-      .join(' - ');
-    const notes = [
-      'In case of any discrepancy, contact the school fees office within 7 days.',
-      'This receipt is valid only after successful realization of payment.',
-      'Preserve this receipt for school and audit records.',
-    ];
-
-    res.json({
-      receipt: {
-        paymentId: payment._id,
-        transactionId: payment.transactionId || '',
-        receiptNo: payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
-        sid: student?.studentCode || student?.admissionNumber || '',
-        date: payment.paidOn || payment.createdAt || new Date(),
-        payMode: payment.method || '',
-        classSection,
-        academicYear: academicYear?.name || '',
-        fatherName: student?.fatherName || '',
-        motherName: student?.motherName || '',
-        guardianName: student?.guardianName || '',
-        notes,
-        generatedAt: new Date().toISOString(),
-      },
+    const payload = await buildReceiptPayload({
       payment,
       invoice,
-      student: student || null,
-      school: school
-        ? {
-            name: school.name || '',
-            address: campusInfo?.address || school.address || '',
-            contactPhone: campusInfo?.contactPhone || school.contactPhone || '',
-            contactEmail: school.contactEmail || school.officialEmail || '',
-            websiteURL: school.websiteURL || '',
-            logoUrl: school.logo?.secure_url || '',
-          }
-        : null,
+      schoolId,
+      campusId: req.campusId,
     });
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load payment receipt' });
+  }
+});
+
+router.get('/parent/payments/:paymentId/receipt', authParent, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  // #swagger.summary = 'Fetch Parent Fees / Payments / Receipt'
+  // #swagger.description = 'Fetch a detailed fee payment receipt payload for parent portal PDF generation.'
+  try {
+    const parent = await ParentUser.findById(req.user.id)
+      .select('name childrenIds children schoolId campusId')
+      .lean();
+    if (!parent) {
+      return res.status(404).json({ error: 'Parent not found' });
+    }
+
+    const schoolId = parent.schoolId || req.schoolId || null;
+    if (!schoolId) {
+      return res.status(400).json({ error: 'schoolId is required' });
+    }
+
+    const paymentId = req.params.paymentId;
+    if (!paymentId || !mongoose.isValidObjectId(paymentId)) {
+      return res.status(400).json({ error: 'Valid paymentId is required' });
+    }
+
+    const payment = await FeePayment.findOne({ _id: paymentId, schoolId }).lean();
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const invoice = await FeeInvoice.findOne({ _id: payment.invoiceId, schoolId }).lean();
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found for this payment' });
+    }
+
+    const campusId = parent.campusId || req.campusId || null;
+    const students = await resolveParentStudents({ parent, schoolId, campusId });
+    const hasAccess = students.some((item) => String(item._id) === String(invoice.studentId));
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Payment not linked to this parent' });
+    }
+
+    const payload = await buildReceiptPayload({
+      payment,
+      invoice,
+      schoolId,
+      campusId,
+      parentName: parent.name || '',
+    });
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load payment receipt' });
   }

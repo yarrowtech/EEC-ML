@@ -14,6 +14,31 @@ const formatDate = (value) => {
   return dt.toLocaleDateString('en-IN');
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '-';
+  return dt.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
+const formatTime = (value) => {
+  if (!value) return '-';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '-';
+  return dt.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
 const toSafeText = (value, fallback = '-') => {
   const text = String(value || '').trim();
   return text || fallback;
@@ -76,25 +101,23 @@ export const downloadFeeReceiptPdf = async ({
   const x = 10;
   const w = pageW - 20;
   const borderBlue = [28, 84, 163];
-  const headerYellow = [245, 199, 52];
-  const lightYellow = [247, 242, 224];
+  const headerBlue = [28, 84, 163];
+  const accentYellow = [245, 199, 52];
+  const lightBlue = [240, 246, 255];
 
   const resolvedSchoolName = school?.name || schoolName;
   const resolvedDate = receipt?.date || payment.paidOn || payment.createdAt;
+  const resolvedDateTime = receipt?.transactionDate || formatDateTime(resolvedDate);
+  const resolvedTime = receipt?.transactionTime || formatTime(resolvedDate);
   const resolvedPayMode = receipt?.payMode || payment.method || '-';
-  const resolvedClassSec =
-    receipt?.classSection ||
-    [invoice.className || student?.grade || '', invoice.section || student?.section || '']
-      .filter(Boolean)
-      .join(' - ');
-  const resolvedAcademicYear = receipt?.academicYear || invoice?.academicYearName || '-';
   const resolvedReceiptNo =
     receipt?.receiptNo || payment.transactionId || payment.gatewayPaymentId || payment._id || '';
   const resolvedSid = receipt?.sid || student?.studentCode || student?.admissionNumber || '-';
+  const resolvedChildName = receipt?.childName || student?.name || '-';
+  const resolvedUsername = receipt?.username || student?.username || '-';
+  const resolvedSession = receipt?.session || student?.academicYear || '-';
+  const resolvedParentName = receipt?.parentName || student?.guardianName || '-';
   const resolvedTxn = payment.gatewayPaymentId || payment.transactionId || '-';
-  const resolvedFather = receipt?.fatherName || student?.fatherName || '-';
-  const resolvedMother = receipt?.motherName || student?.motherName || '-';
-  const resolvedGuardian = receipt?.guardianName || student?.guardianName || '-';
   const notes =
     Array.isArray(receipt?.notes) && receipt.notes.length
       ? receipt.notes
@@ -110,55 +133,69 @@ export const downloadFeeReceiptPdf = async ({
   doc.setLineWidth(0.5);
   doc.rect(7, 7, pageW - 14, pageH - 14);
 
-  doc.setFillColor(...headerYellow);
+  doc.setFillColor(...headerBlue);
   doc.setDrawColor(...borderBlue);
-  doc.rect(x, 12, w, 18, 'FD');
+  doc.rect(x, 10, w, 30, 'FD');
 
   const logoData = await loadImageAsDataUrl(school?.logoUrl);
   if (logoData) {
     try {
-      doc.addImage(logoData, 'PNG', 12, 13.2, 12, 12);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(12, 13, 18, 18, 2, 2, 'F');
+      doc.addImage(logoData, 'PNG', 13, 14, 16, 16);
     } catch {
       // ignore logo draw failures
     }
   }
 
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text(clipText(doc, String(resolvedSchoolName).toUpperCase(), 146), pageW / 2, 18.4, {
+  doc.setFontSize(14);
+  doc.text(clipText(doc, String(resolvedSchoolName).toUpperCase(), 140), pageW / 2, 18.2, {
     align: 'center',
   });
-  doc.setFontSize(9.5);
+  doc.setFontSize(8.6);
   doc.setFont('helvetica', 'normal');
-  doc.text(clipText(doc, schoolSubtitle, 146), pageW / 2, 24.2, { align: 'center' });
-
-  if (school?.address || school?.contactPhone || school?.contactEmail) {
-    doc.setFontSize(8);
-    const contactLine = [school?.address, school?.contactPhone, school?.contactEmail]
-      .filter(Boolean)
-      .join(' | ');
-    doc.text(clipText(doc, contactLine, 185), pageW / 2, 28.2, { align: 'center' });
+  const headerLine = [school?.address || '', school?.contactPhone ? `Contact: ${school.contactPhone}` : '']
+    .filter(Boolean)
+    .join(' | ');
+  if (headerLine) {
+    doc.text(clipText(doc, headerLine, 185), pageW / 2, 24.2, { align: 'center' });
   }
+  doc.text(clipText(doc, schoolSubtitle, 185), pageW / 2, 28.2, { align: 'center' });
 
-  const infoTop = 34;
-  doc.setFillColor(...lightYellow);
-  doc.rect(x, infoTop, w, 41, 'FD');
+  doc.setTextColor(30, 41, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('FEE PAYMENT RECEIPT', pageW / 2, 45, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Transaction Date: ${resolvedDateTime}`, pageW / 2, 50, {
+    align: 'center',
+  });
 
-  drawKV(doc, 'Receipt No', resolvedReceiptNo, 14, 41.5, 66);
-  drawKV(doc, 'Date', formatDate(resolvedDate), 108, 41.5, 66);
-  drawKV(doc, 'Name', student?.name || '-', 14, 47.5, 66);
-  drawKV(doc, 'SID', resolvedSid, 108, 47.5, 66);
-  drawKV(doc, 'Father Name', resolvedFather, 14, 53.5, 66);
-  drawKV(doc, 'Mother Name', resolvedMother, 108, 53.5, 66);
-  drawKV(doc, 'Guardian', resolvedGuardian, 14, 59.5, 66);
-  drawKV(doc, 'Pay Mode', String(resolvedPayMode).toUpperCase(), 108, 59.5, 66);
-  drawKV(doc, 'Class - Sec', resolvedClassSec || '-', 14, 65.5, 66);
-  drawKV(doc, 'Academic Yr', resolvedAcademicYear, 108, 65.5, 66);
-  drawKV(doc, 'Txn ID', resolvedTxn, 14, 71.5, 160);
+  const infoTop = 56;
+  doc.setFillColor(...lightBlue);
+  doc.rect(x, infoTop, w, 48, 'FD');
+  doc.setDrawColor(191, 219, 254);
+  doc.rect(x, infoTop, w, 48);
+
+  drawKV(doc, 'Receipt No', resolvedReceiptNo, 14, 63, 66);
+  drawKV(doc, 'Transaction ID', resolvedTxn, 108, 63, 66);
+  drawKV(doc, 'Date', formatDate(resolvedDate), 14, 69, 66);
+  drawKV(doc, 'Time', resolvedTime, 108, 69, 66);
+  drawKV(doc, 'Child Name', resolvedChildName, 14, 75, 66);
+  drawKV(doc, 'Username', resolvedUsername, 108, 75, 66);
+  drawKV(doc, 'Class', invoice.className || student?.grade || '-', 14, 81, 66);
+  drawKV(doc, 'Section', invoice.section || student?.section || '-', 108, 81, 66);
+  drawKV(doc, 'Session', resolvedSession, 14, 87, 66);
+  drawKV(doc, 'Parent Name', resolvedParentName, 108, 87, 66);
+  drawKV(doc, 'SID', resolvedSid, 14, 93, 66);
+  drawKV(doc, 'Pay Mode', String(resolvedPayMode).toUpperCase(), 108, 93, 66);
 
   const tableX = x;
-  const tableY = 80;
+  const tableY = 110;
   const tableW = w;
   const headerH = 8;
   const rowH = 9;
@@ -172,7 +209,7 @@ export const downloadFeeReceiptPdf = async ({
     col1 - 3
   );
 
-  doc.setFillColor(...headerYellow);
+  doc.setFillColor(...accentYellow);
   doc.rect(tableX, tableY, tableW, headerH, 'FD');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
@@ -181,7 +218,7 @@ export const downloadFeeReceiptPdf = async ({
   doc.text('PAYABLE', tableX + col1 + col2 + 2, tableY + 5.3);
   doc.text('AMOUNT', tableX + col1 + col2 + col3 + 2, tableY + 5.3);
 
-  doc.setFillColor(...lightYellow);
+  doc.setFillColor(...lightBlue);
   doc.rect(tableX, tableY + headerH, tableW, rowH * 2, 'FD');
   doc.line(tableX + col1, tableY, tableX + col1, tableY + headerH + rowH * 2);
   doc.line(tableX + col1 + col2, tableY, tableX + col1 + col2, tableY + headerH + rowH * 2);
@@ -199,7 +236,7 @@ export const downloadFeeReceiptPdf = async ({
   doc.text('ONE TIME', tableX + col1 + 2, tableY + headerH + 5.8);
   doc.text('AT PAYMENT', tableX + col1 + col2 + 2, tableY + headerH + 5.8);
   doc.text(
-    String(Math.round(Number(payment.amount || 0))),
+    `Rs. ${String(Math.round(Number(payment.amount || 0)))}`,
     tableX + col1 + col2 + col3 + 2,
     tableY + headerH + 5.8
   );
@@ -207,7 +244,7 @@ export const downloadFeeReceiptPdf = async ({
   doc.setFont('helvetica', 'bold');
   doc.text('TOTAL FEES PAID', tableX + 2, tableY + headerH + rowH + 5.8);
   doc.text(
-    String(Math.round(Number(payment.amount || 0))),
+    `Rs. ${String(Math.round(Number(payment.amount || 0)))}`,
     tableX + col1 + col2 + col3 + 2,
     tableY + headerH + rowH + 5.8
   );
@@ -216,14 +253,14 @@ export const downloadFeeReceiptPdf = async ({
   let currentY = tableY + headerH + rowH * 2 + 6;
 
   if (feeHeads.length) {
-    doc.setFillColor(...headerYellow);
+    doc.setFillColor(...accentYellow);
     doc.rect(tableX, currentY, tableW, 8, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('FEE BREAKUP', pageW / 2, currentY + 5.4, { align: 'center' });
 
     currentY += 8;
-    doc.setFillColor(...lightYellow);
+    doc.setFillColor(...lightBlue);
     doc.rect(tableX, currentY, tableW, 8, 'FD');
     doc.setFontSize(8.7);
     doc.text('PARTICULARS', tableX + 2, currentY + 5.3);
@@ -235,7 +272,7 @@ export const downloadFeeReceiptPdf = async ({
       doc.line(tableX + tableW - 30, currentY, tableX + tableW - 30, currentY + 8);
       doc.setFont('helvetica', 'normal');
       doc.text(clipText(doc, head.label || '-', tableW - 36), tableX + 2, currentY + 5.3);
-      doc.text(String(Math.round(Number(head.amount || 0))), tableX + tableW - 28, currentY + 5.3);
+      doc.text(`Rs. ${String(Math.round(Number(head.amount || 0)))}`, tableX + tableW - 28, currentY + 5.3);
       currentY += 8;
     });
   }
@@ -271,17 +308,17 @@ export const downloadFeeReceiptPdf = async ({
     doc.setFont('helvetica', 'normal');
     doc.text('TRANSPORT FEE', tableX + 2, currentY + 5.3);
     doc.text('QUARTERLY', tableX + 72, currentY + 5.3);
-    doc.text(String(monthly), tableX + 128, currentY + 5.3);
-    doc.text(String(quarterly), tableX + 161, currentY + 5.3);
+    doc.text(`Rs. ${String(monthly)}`, tableX + 128, currentY + 5.3);
+    doc.text(`Rs. ${String(quarterly)}`, tableX + 161, currentY + 5.3);
     currentY += 8;
   }
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(70, 70, 70);
   doc.setFontSize(9);
-  doc.text(`Amount Received: ${formatCurrency(payment.amount)}`, 14, currentY + 7);
+  doc.text(`Amount Received: Rs. ${formatCurrency(payment.amount)}`, 14, currentY + 7);
   doc.text(
-    `Outstanding Balance: ${formatCurrency(
+    `Outstanding Balance: Rs. ${formatCurrency(
       Math.max(
         0,
         Number(invoice.totalAmount || 0) -
@@ -302,12 +339,12 @@ export const downloadFeeReceiptPdf = async ({
     doc.text(`${idx + 1}. ${clipText(doc, note, 174)}`, 18, currentY + 6 + idx * 5.5);
   });
 
-  doc.setDrawColor(140, 140, 140);
-  doc.line(pageW - 70, currentY + 22, pageW - 20, currentY + 22);
-  doc.setFontSize(9);
-  doc.text(signatureLabel, pageW - 45, currentY + 27, { align: 'center' });
+  // doc.setDrawColor(140, 140, 140);
+  // doc.line(pageW - 70, currentY + 22, pageW - 20, currentY + 22);
+  // doc.setFontSize(9);
+  // doc.text(signatureLabel, pageW - 45, currentY + 27, { align: 'center' });
 
-  doc.setFillColor(...lightYellow);
+  doc.setFillColor(...lightBlue);
   doc.setDrawColor(...borderBlue);
   doc.rect(10, pageH - 20, pageW - 20, 10, 'FD');
   doc.setFontSize(8.2);

@@ -14,6 +14,7 @@ See [multi-tenant Razorpay payments](../docs/multi-tenant-payments.md) for per-s
    - `ALLOW_SHARED_DOMAIN_TENANT_LOGIN=true` to let tenant users authenticate
      through localhost or a LAN IP during development (ignored in production)
    - `STUDENT_DATA_ENCRYPTION_KEY` (32-byte key, use `hex:<64-char-hex>` or `base64:<44-char-base64>`)
+   - `PAYMENT_ENCRYPTION_KEY` (32-byte key for Razorpay secrets, use `hex:<64-char-hex>` or `base64:<44-char-base64>`; if omitted, the app derives a fallback key from an existing env secret in development)
 
 ## Install
 

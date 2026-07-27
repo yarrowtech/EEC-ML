@@ -2,12 +2,44 @@ const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
 const VERSION = 'v1';
+let warnedDerivedEncryptionKey = false;
 
 const getEncryptionKey = () => {
   const value = String(process.env.PAYMENT_ENCRYPTION_KEY || '').trim();
+  if (!value) {
+    const fallbackSecret = String(
+      process.env.JWT_SECRET
+      || process.env.SUPER_ADMIN_INCOMING_SECRET
+      || process.env.MONGODB_URL
+      || process.env.MONGODB_URI
+      || ''
+    ).trim();
+    if (!fallbackSecret) {
+      const error = new Error('PAYMENT_ENCRYPTION_KEY must be set to a 32-byte base64 value or 64-character hex value');
+      error.code = 'PAYMENT_ENCRYPTION_KEY_INVALID';
+      throw error;
+    }
+    if (!warnedDerivedEncryptionKey) {
+      warnedDerivedEncryptionKey = true;
+      console.warn('[payment encryption] PAYMENT_ENCRYPTION_KEY not set. Using a derived fallback key from existing env secret. Set PAYMENT_ENCRYPTION_KEY explicitly for production key management.');
+    }
+    return crypto.createHash('sha256').update(fallbackSecret).digest();
+  }
+
   let key;
 
-  if (/^[a-f\d]{64}$/i.test(value)) {
+  if (value.startsWith('hex:')) {
+    const keyHex = value.slice(4);
+    if (keyHex.length === 64) {
+      key = Buffer.from(keyHex, 'hex');
+    }
+  } else if (value.startsWith('base64:')) {
+    const keyB64 = value.slice(7);
+    const buf = Buffer.from(keyB64, 'base64');
+    if (buf.length === 32) {
+      key = buf;
+    }
+  } else if (/^[a-f\d]{64}$/i.test(value)) {
     key = Buffer.from(value, 'hex');
   } else {
     try {

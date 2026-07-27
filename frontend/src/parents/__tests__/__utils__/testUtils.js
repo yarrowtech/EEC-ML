@@ -176,6 +176,9 @@ export function createMockJsPDF() {
     this.setLineWidth = jest.fn();
     this.setDrawColor = jest.fn();
     this.setTextColor = jest.fn();
+    this.setFillColor = jest.fn();
+    this.roundedRect = jest.fn();
+    this.splitTextToSize = jest.fn((value) => [value]);
     this.getTextWidth = jest.fn(() => 50);
   });
 
