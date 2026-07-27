@@ -19,6 +19,7 @@ const isMainHostname = (hostname, rootDomain = getRootDomain()) => (
   || hostname === 'localhost'
   || hostname === '127.0.0.1'
   || hostname === '::1'
+  || hostname === `api.${rootDomain}`
 );
 
 const resolveSlug = (hostname, rootDomain = getRootDomain()) => {
