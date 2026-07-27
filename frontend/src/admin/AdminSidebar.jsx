@@ -179,6 +179,7 @@ const AdminSidebar = ({
                             <NavLink
                               key={subKey}
                               to={sub.path}
+                              end
                               onClick={() => { onMenuItemClick(sub.label); onMobileClose?.(); }}
                             >
                               {({ isActive }) => (

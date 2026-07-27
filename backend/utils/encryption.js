@@ -3,29 +3,30 @@ const crypto = require('crypto');
 const ALGORITHM = 'aes-256-gcm';
 const VERSION = 'v1';
 let warnedDerivedEncryptionKey = false;
+let warnedFallbackFromInvalidKey = false;
 
-const getEncryptionKey = () => {
-  const value = String(process.env.PAYMENT_ENCRYPTION_KEY || '').trim();
-  if (!value) {
-    const fallbackSecret = String(
-      process.env.JWT_SECRET
-      || process.env.SUPER_ADMIN_INCOMING_SECRET
-      || process.env.MONGODB_URL
-      || process.env.MONGODB_URI
-      || ''
-    ).trim();
-    if (!fallbackSecret) {
-      const error = new Error('PAYMENT_ENCRYPTION_KEY must be set to a 32-byte base64 value or 64-character hex value');
-      error.code = 'PAYMENT_ENCRYPTION_KEY_INVALID';
-      throw error;
-    }
-    if (!warnedDerivedEncryptionKey) {
-      warnedDerivedEncryptionKey = true;
-      console.warn('[payment encryption] PAYMENT_ENCRYPTION_KEY not set. Using a derived fallback key from existing env secret. Set PAYMENT_ENCRYPTION_KEY explicitly for production key management.');
-    }
-    return crypto.createHash('sha256').update(fallbackSecret).digest();
+const FALLBACK_ENV_VARS = [
+  'JWT_SECRET',
+  'SUPER_ADMIN_INCOMING_SECRET',
+  'SESSION_SECRET',
+  'APP_SECRET',
+  'AUTH_SECRET',
+  'ADMIN_JWT_SECRET',
+  'MONGODB_URL',
+  'MONGODB_URI',
+  'MONGO_URL',
+  'DATABASE_URL',
+];
+
+const getFallbackSecret = () => {
+  for (const envKey of FALLBACK_ENV_VARS) {
+    const value = String(process.env[envKey] || '').trim();
+    if (value) return value;
   }
+  return '';
+};
 
+const parseConfiguredKey = (value) => {
   let key;
 
   if (value.startsWith('hex:')) {
@@ -49,12 +50,42 @@ const getEncryptionKey = () => {
     }
   }
 
-  if (key.length !== 32) {
-    const error = new Error('PAYMENT_ENCRYPTION_KEY must be a 32-byte base64 value or 64-character hex value');
-    error.code = 'PAYMENT_ENCRYPTION_KEY_INVALID';
-    throw error;
+  return key && key.length === 32 ? key : null;
+};
+
+const getEncryptionKey = () => {
+  const value = String(process.env.PAYMENT_ENCRYPTION_KEY || '').trim();
+  const fallbackSecret = getFallbackSecret();
+
+  if (!value) {
+    if (!fallbackSecret) {
+      const error = new Error('PAYMENT_ENCRYPTION_KEY must be set to a 32-byte base64 value or 64-character hex value');
+      error.code = 'PAYMENT_ENCRYPTION_KEY_INVALID';
+      throw error;
+    }
+    if (!warnedDerivedEncryptionKey) {
+      warnedDerivedEncryptionKey = true;
+      console.warn('[payment encryption] PAYMENT_ENCRYPTION_KEY not set. Using a derived fallback key from existing env secret. Set PAYMENT_ENCRYPTION_KEY explicitly for production key management.');
+    }
+    return crypto.createHash('sha256').update(fallbackSecret).digest();
   }
-  return key;
+
+  const key = parseConfiguredKey(value);
+  if (key) {
+    return key;
+  }
+
+  if (fallbackSecret) {
+    if (!warnedFallbackFromInvalidKey) {
+      warnedFallbackFromInvalidKey = true;
+      console.warn('[payment encryption] PAYMENT_ENCRYPTION_KEY is invalid. Falling back to a derived key from an existing env secret.');
+    }
+    return crypto.createHash('sha256').update(fallbackSecret).digest();
+  }
+
+  const error = new Error('PAYMENT_ENCRYPTION_KEY must be a 32-byte base64 value or 64-character hex value');
+  error.code = 'PAYMENT_ENCRYPTION_KEY_INVALID';
+  throw error;
 };
 
 const encrypt = (plaintext) => {

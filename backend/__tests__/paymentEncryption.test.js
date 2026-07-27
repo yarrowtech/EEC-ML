@@ -4,6 +4,17 @@ const { decrypt, encrypt } = require('../utils/encryption');
 describe('payment credential encryption', () => {
   const originalKey = process.env.PAYMENT_ENCRYPTION_KEY;
   const originalJwtSecret = process.env.JWT_SECRET;
+  const fallbackEnvKeys = [
+    'SUPER_ADMIN_INCOMING_SECRET',
+    'SESSION_SECRET',
+    'APP_SECRET',
+    'AUTH_SECRET',
+    'ADMIN_JWT_SECRET',
+    'MONGODB_URL',
+    'MONGODB_URI',
+    'MONGO_URL',
+    'DATABASE_URL',
+  ];
 
   beforeEach(() => {
     process.env.PAYMENT_ENCRYPTION_KEY = crypto.randomBytes(32).toString('base64');
@@ -33,6 +44,10 @@ describe('payment credential encryption', () => {
 
   test('requires exactly 256 bits of key material', () => {
     process.env.PAYMENT_ENCRYPTION_KEY = Buffer.from('too-short').toString('base64');
+    process.env.JWT_SECRET = '';
+    fallbackEnvKeys.forEach((key) => {
+      delete process.env[key];
+    });
     expect(() => encrypt('secret')).toThrow('PAYMENT_ENCRYPTION_KEY');
   });
 
