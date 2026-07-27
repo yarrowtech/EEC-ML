@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, ChevronDown, LogOut, X } from 'lucide-react';
 import { ADMIN_MENU_ITEMS } from './adminConstants';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 const AdminSidebar = ({
   onMenuItemClick,
@@ -16,6 +16,7 @@ const AdminSidebar = ({
 }) => {
   const [expandedMenus, setExpandedMenus] = useState({});
   const [skeletonTimedOut, setSkeletonTimedOut] = useState(false);
+  const location = useLocation();
 
   // Close mobile sidebar on Escape key
   useEffect(() => {
@@ -42,6 +43,13 @@ const AdminSidebar = ({
   const footerName    = adminUser?.name || 'Admin User';
   const footerRole    = adminUser?.role || 'Administrator';
   const showSkeleton = profileLoading && !skeletonTimedOut;
+  const currentPath = location.pathname.replace(/\/$/, '') || '/';
+
+  const isRouteActive = (path) => {
+    const normalizedPath = String(path || '').replace(/\/$/, '');
+    if (!normalizedPath) return false;
+    return currentPath === normalizedPath || currentPath.startsWith(`${normalizedPath}/`);
+  };
 
   const toggleSubmenu = (label) => {
     setExpandedMenus((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -138,7 +146,10 @@ const AdminSidebar = ({
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-0.5">
           {menuItems.map((item, idx) => {
             const Icon = item.icon;
-            const isExpanded = expandedMenus[item.label];
+            const hasActiveSubroute = Boolean(item.hasSubmenu) && (
+              isRouteActive(item.path) || (item.submenu || []).some((sub) => isRouteActive(sub.path))
+            );
+            const isExpanded = expandedMenus[item.label] || hasActiveSubroute;
             const itemKey = `${item.label}:${item.path || 'root'}`;
 
             return (

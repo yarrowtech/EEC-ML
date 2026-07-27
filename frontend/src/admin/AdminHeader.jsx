@@ -168,7 +168,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
       title.includes('issue resolved') ||
       title.includes('support request resolved')
     ) return '/admin/support#recent-requests';
-    return '/admin/notices';
+    return '/admin/notices/view';
   }, []);
   const {
     showPermissionModal,
@@ -216,7 +216,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
       { label: 'Fees Collection', hint: 'Collect & track fees',          path: '/admin/fees/collection',keys: ['fees', 'payment', 'collection'] },
       { label: 'HR',              hint: 'Staff & leave management',      path: '/admin/hr',             keys: ['hr', 'leave', 'staff'] },
       { label: 'Parents',         hint: 'Parent records',                path: '/admin/parents',        keys: ['parent'] },
-      { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices',        keys: ['notice', 'notification'] },
+      { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices/view',    keys: ['notice', 'notification'] },
       { label: 'Holidays',        hint: 'Holiday calendar',              path: '/admin/holidays',       keys: ['holiday'] },
       { label: 'Settings',        hint: 'Account & app settings',        path: '/admin/settings',       keys: ['setting', 'profile'] },
     ];

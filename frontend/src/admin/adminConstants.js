@@ -22,7 +22,9 @@ import {
   Bell,
   ArrowUpCircle,
   CalendarDays,
-  CreditCard
+  CreditCard,
+  Plus,
+  Eye
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -63,7 +65,20 @@ export const ADMIN_MENU_ITEMS = [
   {
     icon: Bell,
     label: 'Notices',
-    path: '/admin/notices'
+    path: '/admin/notices',
+    hasSubmenu: true,
+    submenu: [
+      {
+        icon: Plus,
+        label: 'Post Notice',
+        path: '/admin/notices/post'
+      },
+      {
+        icon: Eye,
+        label: 'View Notices',
+        path: '/admin/notices/view'
+      }
+    ]
   },
   {
     icon: CalendarDays,

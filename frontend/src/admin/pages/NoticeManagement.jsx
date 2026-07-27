@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell, Plus, Trash2,
-  Send, Eye, Clock, FileText, X, Search, Users, Tag, AlertCircle, CheckCircle2
+  Send, Eye, Clock, FileText, X, Search, Users, Tag
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -33,8 +33,9 @@ const AUDIENCE_STYLES = {
   Teacher: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 
-const NoticeManagement = ({ setShowAdminHeader }) => {
+const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   const [loading, setLoading]           = useState(false);
+  const [academicYears, setAcademicYears] = useState([]);
   const [classes, setClasses]           = useState([]);
   const [sections, setSections]         = useState([]);
   const [notices, setNotices]           = useState([]);
@@ -42,6 +43,9 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
   const [isUploading, setIsUploading]   = useState(false);
   const [form, setForm]                 = useState(DEFAULT_FORM);
   const [searchQuery, setSearchQuery]   = useState('');
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('');
+  const isPostView = viewMode === 'post';
+  const isViewPage = viewMode === 'view';
 
   const currentAdminId = useMemo(() => {
     try {
@@ -76,11 +80,13 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [classData, sectionData, noticeData] = await Promise.all([
+      const [yearData, classData, sectionData, noticeData] = await Promise.all([
+        apiRequest('/api/academic/years'),
         apiRequest('/api/academic/classes'),
         apiRequest('/api/academic/sections'),
         apiRequest('/api/notifications'),
       ]);
+      setAcademicYears(Array.isArray(yearData) ? yearData : []);
       setClasses(Array.isArray(classData) ? classData : []);
       setSections(Array.isArray(sectionData) ? sectionData : []);
       setNotices(Array.isArray(noticeData) ? noticeData : []);
@@ -96,10 +102,43 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
     loadData();
   }, [setShowAdminHeader]);
 
+  useEffect(() => {
+    if (!academicYears.length) return;
+    const activeYear = academicYears.find((year) => Boolean(year?.isActive));
+    const preferredYearId = activeYear?._id || academicYears[0]?._id || '';
+    setSelectedAcademicYearId((current) => current || String(preferredYearId));
+  }, [academicYears]);
+
+  const selectedAcademicYear = useMemo(
+    () => academicYears.find((year) => String(year._id) === String(selectedAcademicYearId)) || null,
+    [academicYears, selectedAcademicYearId]
+  );
+
+  const classOptions = useMemo(() => {
+    const source = selectedAcademicYearId
+      ? classes.filter((cls) => String(cls.academicYearId || '') === String(selectedAcademicYearId))
+      : classes;
+    return source.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'en', { numeric: true }));
+  }, [classes, selectedAcademicYearId]);
+
   const sectionOptions = useMemo(() => {
     if (!form.classId) return [];
     return sections.filter((sec) => String(sec.classId) === String(form.classId));
   }, [sections, form.classId]);
+
+  useEffect(() => {
+    if (!selectedAcademicYearId) return;
+    if (!classOptions.some((cls) => String(cls._id) === String(form.classId))) {
+      setForm((current) => ({ ...current, classId: '', sectionId: '' }));
+    }
+  }, [classOptions, form.classId, selectedAcademicYearId]);
+
+  useEffect(() => {
+    if (!form.classId) return;
+    if (!sectionOptions.some((sec) => String(sec._id) === String(form.sectionId))) {
+      setForm((current) => ({ ...current, sectionId: '' }));
+    }
+  }, [form.classId, form.sectionId, sectionOptions]);
 
   const filteredNotices = useMemo(() => {
     return notices.filter((n) => {
@@ -127,17 +166,6 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
         n.message?.toLowerCase().includes(q)
     );
   }, [filteredNotices, searchQuery]);
-
-  const stats = useMemo(() => ({
-    total: filteredNotices.length,
-    high: filteredNotices.filter(n => n.priority === 'high').length,
-    today: filteredNotices.filter(n => {
-      if (!n.createdAt) return false;
-      const d = new Date(n.createdAt);
-      const now = new Date();
-      return d.toDateString() === now.toDateString();
-    }).length,
-  }), [filteredNotices]);
 
   const resetForm = () => {
     setForm({ ...DEFAULT_FORM, type: 'notice', audience: 'All' });
@@ -247,27 +275,12 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
               <Bell className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Notice Management</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Publish and manage school announcements</p>
-            </div>
-          </div>
-
-          {/* Stat chips */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm px-4 py-2">
-              <Bell className="h-4 w-4 text-indigo-300" />
-              <span className="text-sm font-bold text-white">{stats.total}</span>
-              <span className="text-xs text-slate-400">Total</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm px-4 py-2">
-              <AlertCircle className="h-4 w-4 text-red-400" />
-              <span className="text-sm font-bold text-white">{stats.high}</span>
-              <span className="text-xs text-slate-400">High Priority</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm px-4 py-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              <span className="text-sm font-bold text-white">{stats.today}</span>
-              <span className="text-xs text-slate-400">Today</span>
+              <h1 className="text-xl font-bold text-white tracking-tight">
+                {isPostView ? 'New Notice' : 'Published Notices'}
+              </h1>
+              <p className="text-sm text-slate-400 mt-0.5">
+                {isPostView ? 'Create and publish a new notice' : 'Review notices already published'}
+              </p>
             </div>
           </div>
         </div>
@@ -275,11 +288,10 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
 
       {/* ── Main content ── */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-
-          {/* ── Compose form (2/5) ── */}
-          <form onSubmit={submitNotice} className="lg:col-span-2">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {isPostView ? (
+          <div className="mx-auto max-w-4xl">
+            <form onSubmit={submitNotice}>
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
               {/* Form header */}
               <div className="px-5 py-4 bg-linear-to-r from-indigo-600 to-indigo-500 flex items-center gap-3">
@@ -293,6 +305,34 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
               </div>
 
               <div className="px-5 py-5 space-y-4">
+
+                {/* Session */}
+                <div>
+                  <label className={labelCls}>Session</label>
+                  <select
+                    className={inputCls}
+                    value={selectedAcademicYearId}
+                    onChange={(e) => {
+                      setSelectedAcademicYearId(e.target.value);
+                      setForm((current) => ({ ...current, classId: '', sectionId: '' }));
+                    }}
+                  >
+                    {academicYears.length === 0 ? (
+                      <option value="">No sessions found</option>
+                    ) : (
+                      academicYears.map((year) => (
+                        <option key={year._id} value={year._id}>
+                          {year.name}{year.isActive ? ' (active)' : ''}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {selectedAcademicYear && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Showing classes from {selectedAcademicYear.name}
+                    </p>
+                  )}
+                </div>
 
                 {/* Title */}
                 <div>
@@ -350,17 +390,27 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelCls}>Class</label>
-                    <select className={inputCls} value={form.classId} onChange={(e) => setForm((p) => ({ ...p, classId: e.target.value, sectionId: '' }))}>
-                      <option value="">All classes</option>
-                      {classes.map((cls) => (
+                    <select
+                      className={inputCls}
+                      value={form.classId}
+                      onChange={(e) => setForm((p) => ({ ...p, classId: e.target.value, sectionId: '' }))}
+                      disabled={!selectedAcademicYearId}
+                    >
+                      <option value="">{selectedAcademicYearId ? 'All classes' : 'Select session first'}</option>
+                      {classOptions.map((cls) => (
                         <option key={cls._id} value={cls._id}>{cls.name}</option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className={labelCls}>Section</label>
-                    <select className={inputCls} value={form.sectionId} onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}>
-                      <option value="">All sections</option>
+                    <select
+                      className={inputCls}
+                      value={form.sectionId}
+                      onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
+                      disabled={!form.classId}
+                    >
+                      <option value="">{form.classId ? 'All sections' : 'Select class first'}</option>
                       {sectionOptions.map((sec) => (
                         <option key={sec._id} value={sec._id}>{sec.name}</option>
                       ))}
@@ -464,10 +514,12 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
                 </button>
               </div>
             </div>
-          </form>
+            </form>
+          </div>
+        ) : null}
 
-          {/* ── Published list (3/5) ── */}
-          <div className="lg:col-span-3">
+        {isViewPage ? (
+          <div className="mx-auto max-w-5xl">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
               {/* List header */}
@@ -612,8 +664,7 @@ const NoticeManagement = ({ setShowAdminHeader }) => {
               )}
             </div>
           </div>
-
-        </div>
+        ) : null}
       </div>
     </div>
   );

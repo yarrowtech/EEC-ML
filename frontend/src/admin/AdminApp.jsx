@@ -360,7 +360,9 @@ const AdminApp = () => {
           <Route path="fees/student-details" element={<StudentFeeDetails setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="hr" element={<HR setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="support" element={<Support setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="notices" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="notices" element={<Navigate to="/admin/notices/view" replace />} />
+          <Route path="notices/post" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="post" />} />
+          <Route path="notices/view" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="view" />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
