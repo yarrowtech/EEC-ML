@@ -410,7 +410,7 @@ mongoose
 // Health
 app.get("/", (req, res) => {
   // #swagger.tags = ['System']
-  res.send("Welcome to the Electronic Educare API ..");
+  res.send("B2B Api is Running 😻");
 });
 app.get("/health", (req, res) => {
   // #swagger.tags = ['System']

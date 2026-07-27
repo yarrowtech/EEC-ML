@@ -160,8 +160,8 @@ const masteryClass = (value) => {
   return 'low';
 };
 
-const createDraft = (student, subject, focus, pace, notes) => {
-  const bp = blueprints[subject] || blueprints.Mathematics;
+const createDraft = (student, subject, focus, pace, notes, aiNodes = null) => {
+  const bp = aiNodes || (blueprints[subject] || blueprints.Mathematics).map(([title, bloom, tier, hasLesson]) => ({ title, bloom, tier, hasLesson }));
   return {
     student: student.id,
     studentName: student.name,
@@ -171,12 +171,12 @@ const createDraft = (student, subject, focus, pace, notes) => {
     pace,
     notes,
     mastery: overallMastery(student),
-    nodes: bp.map(([title, bloom, tier, hasLesson], index) => ({
+    nodes: bp.map((node, index) => ({
       idx: index,
-      title,
-      bloom,
-      tier,
-      hasLesson,
+      title: node.title,
+      bloom: node.bloom,
+      tier: node.tier,
+      hasLesson: node.hasLesson ?? (index < 2),
       status: index === 0 ? 'active' : 'locked',
     })),
   };
@@ -196,6 +196,7 @@ const GenerateAIPathPortal = () => {
   const [publishing, setPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState(null); // 'success' | 'error' | null
   const [loading, setLoading] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
   const [lessonState, setLessonState] = useState({ open: false, index: null });
   const [studentProgress, setStudentProgress] = useState(null);
   const selectedStudent = useMemo(() => students.find((item) => item.id === selectedId) || students[0], [selectedId, students]);
@@ -242,23 +243,40 @@ const GenerateAIPathPortal = () => {
     setFocus(next.focus);
   };
 
-  const buildDraft = () => {
-    return createDraft(selectedStudent, subject, focus, pace, notes);
-  };
-
-  const generate = () => {
+  const generate = async () => {
     setLoading(true);
-    window.setTimeout(() => {
-      setDraft(buildDraft());
-      setLoading(false);
+    setGenerateError(null);
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API_BASE}/api/learning-paths/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          studentName: selectedStudent.name,
+          subject,
+          focus,
+          pace,
+          notes,
+          gradeLevel: selectedStudent.cls || undefined,
+          mastery: selectedStudent.mastery.map(([name, value]) => ({ name, value })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'AI generation failed');
+      setDraft(createDraft(selectedStudent, subject, focus, pace, notes, data.nodes));
       requestAnimationFrame(() => {
         document.getElementById('path-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
-    }, 1400);
+    } catch (err) {
+      setGenerateError(err.message || 'Failed to generate path. Using fallback.');
+      setDraft(createDraft(selectedStudent, subject, focus, pace, notes));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const regenerate = () => {
-    setDraft(buildDraft());
+    generate();
   };
 
   const resetProgress = () => {
@@ -486,7 +504,17 @@ const GenerateAIPathPortal = () => {
                         exit={{ opacity: 0, y: -8 }}
                         className="mt-4 rounded-2xl border border-[#dbe7fe] bg-[#f0f7ff] px-4 py-3 text-sm text-[#1f4b8a]"
                       >
-                        Sequencing prerequisite nodes and drafting the path...
+                        Analysing mastery scores and sequencing nodes with the LLM…
+                      </Motion.div>
+                    )}
+                    {!loading && generateError && (
+                      <Motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="mt-4 rounded-2xl border border-[#fcd9d9] bg-[#fff5f5] px-4 py-3 text-sm text-[#a53e3e]"
+                      >
+                        {generateError}
                       </Motion.div>
                     )}
                   </AnimatePresence>

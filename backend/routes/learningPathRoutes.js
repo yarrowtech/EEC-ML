@@ -15,6 +15,7 @@
 
 const express = require('express');
 const mongoose = require('mongoose');
+const axios = require('axios');
 const router = express.Router();
 
 const authTeacher = require('../middleware/authTeacher');
@@ -23,6 +24,8 @@ const TeacherLearningPath = require('../models/TeacherLearningPath');
 const TeacherUser = require('../models/TeacherUser');
 const StudentUser = require('../models/StudentUser');
 const { logger } = require('../utils/logger');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,39 @@ const recalcProgress = (nodes = []) => {
 const validateObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // ─── TEACHER ROUTES ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/learning-paths/generate
+ * Body: { studentName, subject, focus, pace, notes, gradeLevel, mastery[] }
+ *
+ * Proxies to the Python AI service which uses Ollama to generate a personalised
+ * sequence of learning nodes for a student.
+ */
+router.post('/generate', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Learning Paths']
+  try {
+    const { studentName, subject, focus, pace, notes, gradeLevel, mastery } = req.body;
+
+    if (!subject || !focus) {
+      return res.status(400).json({ error: 'subject and focus are required' });
+    }
+
+    const aiRes = await axios.post(
+      `${AI_SERVICE_URL}/generate/learning-path`,
+      { studentName, subject, focus, pace, notes, gradeLevel, mastery },
+      { timeout: 60000 }
+    );
+
+    return res.json({ success: true, nodes: aiRes.data.nodes, model: aiRes.data.model });
+  } catch (err) {
+    const status = err?.response?.status;
+    const detail = err?.response?.data?.detail || err.message || 'AI service error';
+    logger.error({ err }, 'Error generating AI learning path');
+    if (status === 422) return res.status(422).json({ error: detail });
+    if (status === 502) return res.status(502).json({ error: detail });
+    return res.status(500).json({ error: detail });
+  }
+});
 
 /**
  * POST /api/learning-paths/publish
