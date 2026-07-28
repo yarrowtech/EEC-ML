@@ -1488,6 +1488,8 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         id: inv._id,
         invoiceId: inv._id,
         studentId: inv.studentId,
+        academicYearId: inv.academicYearId || null,
+        feeStructureId: inv.feeStructureId || null,
         studentName: student?.name || 'Student',
         admissionNumber: student?.admissionNumber || '',
         roll: student?.roll || '',
@@ -1498,6 +1500,8 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         totalAmount: inv.totalAmount,
         paidAmount: inv.paidAmount,
         balanceAmount: inv.balanceAmount,
+        feeHeadsSnapshot: Array.isArray(inv.feeHeadsSnapshot) ? inv.feeHeadsSnapshot : [],
+        installmentsSnapshot: Array.isArray(inv.installmentsSnapshot) ? inv.installmentsSnapshot : [],
         status: inv.status,
         dueDate: inv.dueDate,
         updatedAt: inv.updatedAt,
@@ -1802,6 +1806,7 @@ router.get('/parent/invoices', authParent, async (req, res) => {
       schoolId,
       studentId,
     })
+      .populate('academicYearId', 'name startDate endDate isActive')
       .sort({ createdAt: -1 })
       .lean();
 

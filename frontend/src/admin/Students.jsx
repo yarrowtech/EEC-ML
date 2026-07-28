@@ -259,6 +259,15 @@ const Students = ({ setShowAdminHeader }) => {
         .filter(Boolean),
     [academicYears]
   );
+  const academicYearNameById = useMemo(
+    () =>
+      new Map(
+        academicYears
+          .map((year) => [String(year?._id || "").trim(), String(year?.name || "").trim()])
+          .filter(([id, name]) => id && name)
+      ),
+    [academicYears]
+  );
 
   useEffect(() => {
     if (!sessionOptions.length) return;
@@ -413,6 +422,8 @@ const Students = ({ setShowAdminHeader }) => {
         return "bg-green-100 text-green-800";
       case "partial":
         return "bg-yellow-100 text-yellow-800";
+      case "N/A":
+        return "bg-gray-100 text-gray-600";
       case "due":
       default:
         return "bg-red-100 text-red-800";
@@ -421,6 +432,57 @@ const Students = ({ setShowAdminHeader }) => {
 
   const formatCurrency = (value = 0) =>
     `₹${Number(value || 0).toLocaleString()}`;
+
+  const getSessionLabel = useCallback(
+    (academicYearId, fallback = "-") => {
+      const key = String(academicYearId || "").trim();
+      return academicYearNameById.get(key) || fallback;
+    },
+    [academicYearNameById]
+  );
+
+  const getStudentFeeSessionSummary = useCallback(
+    (student) => {
+      const invoices = Array.isArray(student?.feeInvoices) ? student.feeInvoices : [];
+      if (!invoices.length) return null;
+
+      const currentSessionName = String(student?.academicYear || "").trim();
+      const currentSessionIds = academicYears
+        .filter((year) => String(year?.name || "").trim() === currentSessionName)
+        .map((year) => String(year?._id || "").trim())
+        .filter(Boolean);
+
+      const grouped = invoices.reduce((acc, invoice) => {
+        const sessionKey = String(invoice?.academicYearId || "").trim() || "unassigned";
+        if (!acc.has(sessionKey)) {
+          acc.set(sessionKey, {
+            academicYearId: invoice?.academicYearId || null,
+            sessionLabel: getSessionLabel(invoice?.academicYearId, currentSessionName || "Current Session"),
+            totalAmount: 0,
+            paidAmount: 0,
+            balanceAmount: 0,
+            invoices: [],
+          });
+        }
+        const entry = acc.get(sessionKey);
+        entry.totalAmount += Number(invoice?.totalAmount || 0);
+        entry.paidAmount += Number(invoice?.paidAmount || 0);
+        entry.balanceAmount += Number(invoice?.balanceAmount || 0);
+        entry.invoices.push(invoice);
+        return acc;
+      }, new Map());
+
+      const sessionGroups = Array.from(grouped.values()).sort((a, b) => {
+        const aMatch = currentSessionIds.includes(String(a.academicYearId || ""));
+        const bMatch = currentSessionIds.includes(String(b.academicYearId || ""));
+        if (aMatch !== bMatch) return aMatch ? -1 : 1;
+        return String(a.sessionLabel || "").localeCompare(String(b.sessionLabel || ""));
+      });
+
+      return sessionGroups[0] || null;
+    },
+    [academicYears, getSessionLabel]
+  );
 
   const extractLinkedStudentId = (childRef) => {
     if (!childRef) return "";
@@ -588,12 +650,17 @@ const Students = ({ setShowAdminHeader }) => {
     setParentDirectory(parents);
 
     const feeSummaryByStudentId = new Map();
+    const feeInvoicesByStudentId = new Map();
     invoices.forEach((invoice) => {
       const key = String(invoice?.studentId || "");
       if (!key) return;
       const total = Number(invoice?.totalAmount || 0);
       const paid = Number(invoice?.paidAmount || 0);
       const balance = Number(invoice?.balanceAmount || 0);
+      if (!feeInvoicesByStudentId.has(key)) {
+        feeInvoicesByStudentId.set(key, []);
+      }
+      feeInvoicesByStudentId.get(key).push(invoice);
       if (!feeSummaryByStudentId.has(key)) {
         feeSummaryByStudentId.set(key, {
           totalFee: 0,
@@ -616,6 +683,7 @@ const Students = ({ setShowAdminHeader }) => {
         };
         return {
           ...student,
+          feeInvoices: feeInvoicesByStudentId.get(String(student?._id || "")) || [],
           feeSummary: {
             ...fee,
             status: fee.totalFee === 0
@@ -675,11 +743,12 @@ const Students = ({ setShowAdminHeader }) => {
               : "due",
       };
 
-      if (!parent) return { ...student, feeSummary };
+      if (!parent) return { ...student, feeSummary, feeInvoices: feeInvoicesByStudentId.get(studentId || "") || [] };
 
       return {
         ...student,
         feeSummary,
+        feeInvoices: feeInvoicesByStudentId.get(studentId || "") || [],
         parent,
         guardianName: student.guardianName || parent.name || student.guardianName,
         guardianEmail: student.guardianEmail || parent.email || student.guardianEmail,
@@ -3215,21 +3284,40 @@ const Students = ({ setShowAdminHeader }) => {
                           {/* Fees */}
                           <td className="border-b border-gray-100 px-2 py-2.5">
                             <div className="text-xs">
-                              <div className="text-gray-600">
-                                {formatCurrency(student.feeSummary?.paidAmount)}/{formatCurrency(student.feeSummary?.totalFee)}
-                              </div>
-                              <div className="flex items-center gap-1 mt-1">
-                                <span
-                                  className={`inline-flex px-1.5 py-0.5 text-xs rounded ${getFeeStatusClass(
-                                    student.feeSummary?.status
-                                  )}`}
-                                >
-                                  {student.feeSummary?.status || "N/A"}
-                                </span>
-                                <span className="text-xs text-red-600 font-semibold">
-                                  {formatCurrency(student.feeSummary?.dueAmount)}
-                                </span>
-                              </div>
+                              {(() => {
+                                const sessionFee = getStudentFeeSessionSummary(student);
+                                const paidAmount = sessionFee?.paidAmount ?? student.feeSummary?.paidAmount ?? 0;
+                                const totalAmount = sessionFee?.totalAmount ?? student.feeSummary?.totalFee ?? 0;
+                                const balanceAmount = sessionFee?.balanceAmount ?? student.feeSummary?.dueAmount ?? 0;
+                                const sessionLabel = sessionFee?.sessionLabel || student.academicYear || "-";
+                                const status = totalAmount === 0
+                                  ? "N/A"
+                                  : balanceAmount <= 0
+                                    ? "paid"
+                                    : paidAmount > 0
+                                      ? "partial"
+                                      : "due";
+                                return (
+                                  <>
+                                    <div className="text-gray-600">
+                                      <div className="font-medium">Session: {sessionLabel}</div>
+                                      <div className="text-gray-500">
+                                        {formatCurrency(paidAmount)}/{formatCurrency(totalAmount)}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <span
+                                        className={`inline-flex px-1.5 py-0.5 text-xs rounded ${getFeeStatusClass(status)}`}
+                                      >
+                                        {status}
+                                      </span>
+                                      <span className="text-xs text-red-600 font-semibold">
+                                        {formatCurrency(balanceAmount)}
+                                      </span>
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </td>
 
@@ -4738,33 +4826,136 @@ const Students = ({ setShowAdminHeader }) => {
                   <div className="space-y-4">
                     {viewFees.length > 0 ? (
                       <>
-                        {/* Fee Summary */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {/* Session-wise Fee Summary */}
+                        <div className="space-y-3">
                           {(() => {
-                            const totalInvoiced = viewFees.reduce((s, i) => s + (i.totalAmount || 0), 0);
-                            const totalPaid = viewFees.reduce((s, i) => s + (i.paidAmount || 0), 0);
-                            const totalBalance = viewFees.reduce((s, i) => s + (i.balanceAmount || 0), 0);
-                            const paidCount = viewFees.filter((i) => i.status === "paid").length;
-                            return (
-                              <>
-                                <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 text-center">
-                                  <p className="text-xs text-gray-400 font-medium">Total Invoiced</p>
-                                  <p className="text-xl font-bold text-gray-800">₹{totalInvoiced.toLocaleString("en-IN")}</p>
+                            const currentSessionName = String(viewStudent?.academicYear || "").trim();
+                            const currentSessionIds = academicYears
+                              .filter((year) => String(year?.name || "").trim() === currentSessionName)
+                              .map((year) => String(year?._id || "").trim())
+                              .filter(Boolean);
+
+                            const grouped = viewFees.reduce((acc, invoice) => {
+                              const sessionId = String(invoice?.academicYearId || "").trim() || "unassigned";
+                              if (!acc.has(sessionId)) {
+                                acc.set(sessionId, {
+                                  sessionId: invoice?.academicYearId || null,
+                                  sessionLabel: getSessionLabel(invoice?.academicYearId, currentSessionName || "Current Session"),
+                                  totalInvoiced: 0,
+                                  totalPaid: 0,
+                                  totalBalance: 0,
+                                  invoices: [],
+                                });
+                              }
+                              const entry = acc.get(sessionId);
+                              entry.totalInvoiced += Number(invoice?.totalAmount || 0);
+                              entry.totalPaid += Number(invoice?.paidAmount || 0);
+                              entry.totalBalance += Number(invoice?.balanceAmount || 0);
+                              entry.invoices.push(invoice);
+                              return acc;
+                            }, new Map());
+
+                            const sessionGroups = Array.from(grouped.values()).sort((a, b) => {
+                              const aMatch = currentSessionIds.includes(String(a.sessionId || ""));
+                              const bMatch = currentSessionIds.includes(String(b.sessionId || ""));
+                              if (aMatch !== bMatch) return aMatch ? -1 : 1;
+                              return String(a.sessionLabel || "").localeCompare(String(b.sessionLabel || ""));
+                            });
+
+                            if (sessionGroups.length === 0) {
+                              return (
+                                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                                  No session-wise fee structure found for this student.
                                 </div>
-                                <div className="rounded-xl bg-green-50 border border-green-100 p-3 text-center">
-                                  <p className="text-xs text-green-500 font-medium">Paid</p>
-                                  <p className="text-xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
+                              );
+                            }
+
+                            return sessionGroups.map((group) => {
+                              const firstInvoice = group.invoices[0] || {};
+                              const heads = Array.isArray(firstInvoice.feeHeadsSnapshot) ? firstInvoice.feeHeadsSnapshot : [];
+                              const installments = Array.isArray(firstInvoice.installmentsSnapshot) ? firstInvoice.installmentsSnapshot : [];
+                              const status = group.totalInvoiced === 0
+                                ? "N/A"
+                                : group.totalBalance <= 0
+                                  ? "paid"
+                                  : group.totalPaid > 0
+                                    ? "partial"
+                                    : "due";
+                              return (
+                                <div key={String(group.sessionId || group.sessionLabel)} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Session</p>
+                                      <h4 className="text-base font-bold text-gray-800">{group.sessionLabel}</h4>
+                                      <p className="mt-0.5 text-xs text-gray-500">
+                                        {group.invoices.length} invoice{group.invoices.length === 1 ? "" : "s"} assigned
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Structure Total</p>
+                                      <p className="text-lg font-bold text-gray-900">₹{group.totalInvoiced.toLocaleString("en-IN")}</p>
+                                      <span className={`mt-1 inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                        status === "paid"
+                                          ? "bg-green-50 text-green-700"
+                                          : status === "partial"
+                                          ? "bg-amber-50 text-amber-700"
+                                          : status === "due"
+                                          ? "bg-red-50 text-red-700"
+                                          : "bg-gray-100 text-gray-600"
+                                      }`}>
+                                        {status}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <div className="rounded-xl bg-green-50 p-3">
+                                      <p className="text-xs text-green-500 font-medium">Paid</p>
+                                      <p className="text-lg font-bold text-green-700">₹{group.totalPaid.toLocaleString("en-IN")}</p>
+                                    </div>
+                                    <div className="rounded-xl bg-red-50 p-3">
+                                      <p className="text-xs text-red-500 font-medium">Outstanding</p>
+                                      <p className="text-lg font-bold text-red-700">₹{group.totalBalance.toLocaleString("en-IN")}</p>
+                                    </div>
+                                    <div className="rounded-xl bg-gray-50 p-3">
+                                      <p className="text-xs text-gray-500 font-medium">Invoices</p>
+                                      <p className="text-lg font-bold text-gray-800">{group.invoices.length}</p>
+                                    </div>
+                                  </div>
+
+                                  {(heads.length > 0 || installments.length > 0) && (
+                                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                      {heads.length > 0 && (
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Fee Heads</p>
+                                          <div className="mt-2 space-y-1.5">
+                                            {heads.map((head, idx) => (
+                                              <div key={`${head?.label || "head"}-${idx}`} className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-600">{head?.label || "Head"}</span>
+                                                <span className="font-semibold text-gray-900">₹{Number(head?.amount || 0).toLocaleString("en-IN")}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {installments.length > 0 && (
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Installments</p>
+                                          <div className="mt-2 space-y-1.5">
+                                            {installments.map((installment, idx) => (
+                                              <div key={`${installment?.label || "installment"}-${idx}`} className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-600">{installment?.label || "Installment"}</span>
+                                                <span className="font-semibold text-gray-900">₹{Number(installment?.amount || 0).toLocaleString("en-IN")}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-center">
-                                  <p className="text-xs text-red-500 font-medium">Outstanding</p>
-                                  <p className="text-xl font-bold text-red-700">₹{totalBalance.toLocaleString("en-IN")}</p>
-                                </div>
-                                <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-center">
-                                  <p className="text-xs text-amber-500 font-medium">Invoices Paid</p>
-                                  <p className="text-2xl font-bold text-amber-700">{paidCount}/{viewFees.length}</p>
-                                </div>
-                              </>
-                            );
+                              );
+                            });
                           })()}
                         </div>
 
@@ -4773,6 +4964,7 @@ const Students = ({ setShowAdminHeader }) => {
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-gray-50">
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Session</th>
                                 <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Title</th>
                                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Total</th>
                                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Paid</th>
@@ -4783,7 +4975,10 @@ const Students = ({ setShowAdminHeader }) => {
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                               {viewFees.map((invoice) => (
-                                <tr key={invoice._id} className="hover:bg-gray-50">
+                                <tr key={invoice._id || invoice.invoiceId || `${invoice.title || "invoice"}-${invoice.updatedAt || ""}`} className="hover:bg-gray-50">
+                                  <td className="px-4 py-2.5 text-gray-600">
+                                    {getSessionLabel(invoice.academicYearId, viewStudent?.academicYear || "-")}
+                                  </td>
                                   <td className="px-4 py-2.5 text-gray-800 font-medium">{invoice.title || "-"}</td>
                                   <td className="px-4 py-2.5 text-right text-gray-700">₹{(invoice.totalAmount || 0).toLocaleString("en-IN")}</td>
                                   <td className="px-4 py-2.5 text-right text-green-700">₹{(invoice.paidAmount || 0).toLocaleString("en-IN")}</td>

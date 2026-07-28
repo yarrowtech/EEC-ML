@@ -1,17 +1,43 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
+  Bus,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
   CreditCard,
   Download,
   FileText,
+  GraduationCap,
+  Layers,
   Loader2,
+  Lock,
+  Palette,
   RefreshCw,
-  Wallet,
-  Users,
+  RotateCcw,
+  ShieldCheck,
+  User,
+  Zap,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { downloadFeeReceiptPdf } from '../utils/feeReceiptPdf';
+import { downloadFeesStructurePdf } from '../utils/feesStructurePdf';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const AVATAR_COLORS = [
+  'bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500',
+  'bg-teal-500', 'bg-orange-500', 'bg-pink-500', 'bg-blue-500',
+];
+
+const DEFAULT_PDF_SCHOOL = {
+  schoolName: '',
+  schoolAddressLine: '',
+  schoolContactLine: '',
+  logoUrl: '',
+  logoUrlOverride: '',
+  accentColor: '#0f172a',
+};
 
 const formatCurrency = (value) => {
   const amount = Number(value || 0);
@@ -20,6 +46,79 @@ const formatCurrency = (value) => {
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(amount);
+};
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const getInvoiceSessionLabel = (invoice) => {
+  const year = invoice?.academicYearId;
+  if (year && typeof year === 'object' && year.name) return year.name;
+  return 'Other Session';
+};
+
+// FeePayment records only carry a lump amount against the invoice, not a
+// specific installment, so "which installment is paid" is derived here by
+// walking installmentsSnapshot in order and consuming invoice.paidAmount
+// cumulatively. An installment unlocks only once every prior one is fully paid.
+// `paymentsAsc` (oldest first) is walked the same way to attribute the payment
+// that completed each installment, purely so a receipt can be offered for it.
+const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
+  const installments = Array.isArray(invoice?.installmentsSnapshot) ? invoice.installmentsSnapshot : [];
+  if (!installments.length) return [];
+
+  let remainingPaid = Number(invoice.paidAmount || 0);
+  let priorFullyPaid = true;
+  let cumulativeThreshold = 0;
+  let runningPaymentTotal = 0;
+  let paymentPtr = 0;
+
+  return installments.map((installment, index) => {
+    const amount = Number(installment?.amount || 0);
+    const paidTowards = Math.max(0, Math.min(amount, remainingPaid));
+    const isPaid = amount > 0 && paidTowards >= amount;
+    const isLocked = !priorFullyPaid;
+    const progressPct = amount > 0 ? Math.round((paidTowards / amount) * 100) : 0;
+
+    remainingPaid = Math.max(0, remainingPaid - amount);
+    priorFullyPaid = isPaid;
+    cumulativeThreshold += amount;
+
+    let receiptPayment = null;
+    if (isPaid) {
+      while (paymentPtr < paymentsAsc.length && runningPaymentTotal < cumulativeThreshold) {
+        runningPaymentTotal += Number(paymentsAsc[paymentPtr]?.amount || 0);
+        receiptPayment = paymentsAsc[paymentPtr];
+        paymentPtr += 1;
+      }
+    }
+
+    return {
+      id: installment?._id || `${invoice._id}-installment-${index}`,
+      index,
+      label: installment?.label || `Installment ${index + 1}`,
+      amount,
+      dueDate: installment?.dueDate,
+      paidTowards,
+      remaining: Math.max(0, amount - paidTowards),
+      isPaid,
+      isLocked,
+      progressPct,
+      receiptPayment,
+    };
+  });
+};
+
+const feeIconFor = (title = '') => {
+  const t = title.toLowerCase();
+  if (t.includes('transport') || t.includes('bus')) return Bus;
+  if (t.includes('activity') || t.includes('art') || t.includes('craft')) return Palette;
+  if (t.includes('tuition')) return GraduationCap;
+  return FileText;
 };
 
 const loadRazorpayScript = () =>
@@ -59,25 +158,96 @@ const getStoredToken = () => {
   return '';
 };
 
+const ChildAvatar = ({ name, size = 'md' }) => {
+  const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
+  const color = AVATAR_COLORS[(name || '').charCodeAt(0) % AVATAR_COLORS.length || 0];
+  const dimensions = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
+  return (
+    <span className={`inline-flex ${dimensions} shrink-0 items-center justify-center rounded-full ${color} font-bold text-white`}>
+      {initial}
+    </span>
+  );
+};
+
+const StatTile = ({ icon, label, value, subtitle, subtitleAction, iconColor, iconBg }) => {
+  const Icon = icon;
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+          <Icon className={`h-5 w-5 ${iconColor}`} />
+        </span>
+        <span className="text-sm text-gray-500">{label}</span>
+      </div>
+      <p className="mt-3 text-2xl font-bold text-gray-900">{value}</p>
+      {subtitleAction ? (
+        <button type="button" onClick={subtitleAction.onClick} className="mt-1 text-xs font-semibold text-amber-600 hover:text-amber-700">
+          {subtitle}
+        </button>
+      ) : (
+        <p className="mt-1 text-xs text-gray-400">{subtitle}</p>
+      )}
+    </div>
+  );
+};
+
+const InfoTile = ({ icon, title, copy, iconColor, iconBg }) => {
+  const Icon = icon;
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        <Icon className={`h-4.5 w-4.5 ${iconColor}`} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-gray-800">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{copy}</p>
+      </div>
+    </div>
+  );
+};
+
 const FeesPayment = () => {
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('');
+  const [childPickerOpen, setChildPickerOpen] = useState(false);
   const [loadingChildren, setLoadingChildren] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState('');
   const [invoices, setInvoices] = useState([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({});
   const [amounts, setAmounts] = useState({});
+  const [sessionFilter, setSessionFilter] = useState('');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
   const [processingInvoiceId, setProcessingInvoiceId] = useState('');
   const [downloadingReceiptId, setDownloadingReceiptId] = useState('');
+  const [showFeeBreakdown, setShowFeeBreakdown] = useState(false);
+  const [pdfSchool, setPdfSchool] = useState(DEFAULT_PDF_SCHOOL);
+  const [downloadingFeesCardId, setDownloadingFeesCardId] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const childPickerRef = useRef(null);
 
   const buildChildKey = (child) => (child.id ? `id:${child.id}` : `name:${child.name || ''}`);
+
+  const showError = (message) => {
+    const text = message || 'Something went wrong';
+    setError(text);
+    toast.error(text);
+  };
 
   const selectedChild = useMemo(
     () => children.find((child) => buildChildKey(child) === selectedChildId) || null,
     [children, selectedChildId]
   );
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (childPickerRef.current && !childPickerRef.current.contains(event.target)) {
+        setChildPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchChildren = async () => {
     const token = getStoredToken();
@@ -102,7 +272,7 @@ const FeesPayment = () => {
         setSelectedChildId(buildChildKey(list[0]));
       }
     } catch (err) {
-      setError(err.message || 'Unable to load children');
+      showError(err.message || 'Unable to load children');
     } finally {
       setLoadingChildren(false);
     }
@@ -138,7 +308,7 @@ const FeesPayment = () => {
       });
       setAmounts(nextAmounts);
     } catch (err) {
-      setError(err.message || 'Unable to load invoices');
+      showError(err.message || 'Unable to load invoices');
     } finally {
       setLoadingInvoices(false);
     }
@@ -147,7 +317,7 @@ const FeesPayment = () => {
   const handleDownloadReceipt = async (payment, invoice) => {
     const token = getStoredToken();
     if (!payment?._id) {
-      setError('Receipt not available for this payment');
+      showError('Receipt not available for this payment');
       return;
     }
 
@@ -176,14 +346,68 @@ const FeesPayment = () => {
       });
       setSuccessMessage('Receipt downloaded successfully.');
     } catch (err) {
-      setError(err.message || 'Unable to download receipt');
+      showError(err.message || 'Unable to download receipt');
     } finally {
       setDownloadingReceiptId('');
     }
   };
 
+  const fetchPdfSchool = async () => {
+    const token = getStoredToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/reports/report-cards/parent`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      const template = res.ok ? data?.template : null;
+      if (template && typeof template === 'object') {
+        setPdfSchool({
+          schoolName: String(template.schoolName || '').trim(),
+          schoolAddressLine: String(template.schoolAddressLine || '').trim(),
+          schoolContactLine: String(template.schoolContactLine || '').trim(),
+          logoUrl: String(template.logoUrl || '').trim(),
+          logoUrlOverride: String(template.logoUrlOverride || '').trim(),
+          accentColor: String(template.accentColor || '#0f172a').trim() || '#0f172a',
+        });
+      }
+    } catch {
+      // Keep default branding if the template can't be loaded.
+    }
+  };
+
+  const handleDownloadFeesCard = async (invoice) => {
+    if (!invoice) return;
+    setDownloadingFeesCardId(invoice._id);
+    setError('');
+    setSuccessMessage('');
+    try {
+      await downloadFeesStructurePdf({
+        structure: {
+          className: invoice.className || selectedChild?.grade || '',
+          board: 'GENERAL',
+          academicYearName: getInvoiceSessionLabel(invoice),
+          name: invoice.title || 'Fee Invoice',
+          feeHeads: Array.isArray(invoice.feeHeadsSnapshot) ? invoice.feeHeadsSnapshot : [],
+          installments: Array.isArray(invoice.installmentsSnapshot) ? invoice.installmentsSnapshot : [],
+          totalAmount: invoice.totalAmount,
+          lateFeeAmount: invoice.lateFeeRuleSnapshot?.amount || 0,
+        },
+        school: pdfSchool,
+      });
+      setSuccessMessage('Fees card downloaded successfully.');
+    } catch {
+      showError('Unable to generate fees card PDF');
+    } finally {
+      setDownloadingFeesCardId('');
+    }
+  };
+
   useEffect(() => {
     fetchChildren();
+    fetchPdfSchool();
   }, []);
 
   useEffect(() => {
@@ -195,13 +419,13 @@ const FeesPayment = () => {
     }
   }, [selectedChild?.id]);
 
-  const handlePayNow = async (invoice) => {
+  const handlePayNow = async (invoice, amountOverride) => {
     const token = getStoredToken();
     setProcessingInvoiceId(invoice._id);
     setError('');
     setSuccessMessage('');
     try {
-      const paymentAmount = Number(amounts[invoice._id]);
+      const paymentAmount = Number(amountOverride ?? amounts[invoice._id]);
       if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
         throw new Error('Enter a valid amount');
       }
@@ -259,7 +483,7 @@ const FeesPayment = () => {
             setSuccessMessage('Payment successful. Invoice updated.');
             await fetchInvoices(selectedChild.id);
           } catch (verifyErr) {
-            setError(verifyErr.message || 'Unable to verify payment');
+            showError(verifyErr.message || 'Unable to verify payment');
           } finally {
             setProcessingInvoiceId('');
           }
@@ -278,13 +502,54 @@ const FeesPayment = () => {
       const razorpay = new window.Razorpay(options);
       razorpay.open();
     } catch (err) {
-      setError(err.message || 'Payment failed');
+      showError(err.message || 'Payment failed');
       setProcessingInvoiceId('');
     }
   };
 
+  // Sessions come from each invoice's academic year, so fees never get lumped
+  // into one cross-year total — the parent picks a session and only that
+  // session's invoices feed the totals, list, and payment panel below.
+  const sessionOptions = useMemo(() => {
+    const map = new Map();
+    invoices.forEach((invoice) => {
+      const year = invoice?.academicYearId;
+      const label = getInvoiceSessionLabel(invoice);
+      if (!map.has(label)) {
+        map.set(label, {
+          label,
+          isActive: Boolean(year && typeof year === 'object' && year.isActive),
+          sortKey: year && typeof year === 'object' && year.startDate ? new Date(year.startDate).getTime() : 0,
+        });
+      }
+    });
+    return [...map.values()].sort((a, b) => b.sortKey - a.sortKey);
+  }, [invoices]);
+
+  useEffect(() => {
+    if (!sessionOptions.length) {
+      setSessionFilter('');
+      return;
+    }
+    const stillValid = sessionOptions.some((option) => option.label === sessionFilter);
+    if (!stillValid) {
+      const active = sessionOptions.find((option) => option.isActive);
+      setSessionFilter(active?.label || sessionOptions[0].label);
+    }
+  }, [sessionOptions, sessionFilter]);
+
+  const sessionInvoices = useMemo(
+    () => invoices.filter((invoice) => getInvoiceSessionLabel(invoice) === sessionFilter),
+    [invoices, sessionFilter]
+  );
+
+  useEffect(() => {
+    const firstPending = sessionInvoices.find((invoice) => Number(invoice.balanceAmount || 0) > 0);
+    setSelectedInvoiceId(firstPending?._id || sessionInvoices[0]?._id || '');
+  }, [sessionInvoices]);
+
   const totals = useMemo(() => {
-    return invoices.reduce(
+    return sessionInvoices.reduce(
       (acc, invoice) => {
         acc.total += Number(invoice.totalAmount || 0);
         acc.paid += Number(invoice.paidAmount || 0);
@@ -293,252 +558,638 @@ const FeesPayment = () => {
       },
       { total: 0, paid: 0, balance: 0 }
     );
-  }, [invoices]);
+  }, [sessionInvoices]);
+
+  const pendingInvoices = useMemo(
+    () => sessionInvoices.filter((invoice) => Number(invoice.balanceAmount || 0) > 0),
+    [sessionInvoices]
+  );
+
+  const nearestDueDate = useMemo(() => {
+    const dated = pendingInvoices
+      .map((invoice) => invoice.dueDate)
+      .filter(Boolean)
+      .map((value) => new Date(value))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .sort((a, b) => a - b);
+    return dated[0] || null;
+  }, [pendingInvoices]);
+
+  const selectedInvoice = useMemo(
+    () => sessionInvoices.find((invoice) => invoice._id === selectedInvoiceId) || null,
+    [sessionInvoices, selectedInvoiceId]
+  );
+
+  const installmentBreakdown = useMemo(() => {
+    if (!selectedInvoice) return [];
+    // paymentsByInvoice is sorted newest-first (for the Recent Payments list);
+    // installment attribution needs oldest-first to walk amounts in order.
+    const paymentsAsc = [...(paymentsByInvoice[selectedInvoice._id] || [])].reverse();
+    return getInstallmentBreakdown(selectedInvoice, paymentsAsc);
+  }, [selectedInvoice, paymentsByInvoice]);
+  const hasInstallments = installmentBreakdown.length > 0;
+
+  useEffect(() => {
+    setShowFeeBreakdown(false);
+  }, [selectedInvoiceId]);
+
+  const handlePayInstallment = (invoice, installment) => {
+    setAmounts((prev) => ({ ...prev, [invoice._id]: installment.remaining }));
+    handlePayNow(invoice, installment.remaining);
+  };
+
+  const isProcessingSelected = selectedInvoice && processingInvoiceId === selectedInvoice._id;
+  const selectedAmount = selectedInvoice ? Number(amounts[selectedInvoice._id] ?? selectedInvoice.balanceAmount ?? 0) : 0;
+  const canPaySelected = Boolean(selectedInvoice) && selectedAmount > 0;
 
   return (
-    <div className="w-full p-2 sm:p-3 md:p-4 space-y-4">
-      <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-4 sm:p-6 text-white">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2">Fees Payment</h1>
-        <p className="text-yellow-100 text-sm sm:text-base">Manage invoices and pay online</p>
-        <p className="text-yellow-50 text-xs sm:text-sm mt-1">Secure checkout powered by Razorpay</p>
+    <div className="w-full space-y-5 p-3 pb-8 sm:p-4 md:p-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Make a Payment</h1>
+        <p className="mt-1 text-sm text-gray-500">Select a child and choose the fees you want to pay</p>
       </div>
 
-      <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-        <div className="flex items-center gap-3 mb-3">
-          <Users className="w-5 h-5 text-yellow-600" />
-          <h3 className="text-base sm:text-lg font-semibold text-gray-800">Select Child</h3>
-          <button
-            onClick={fetchChildren}
-            className="ml-auto flex items-center gap-2 text-xs text-gray-500 hover:text-gray-800"
-            type="button"
-          >
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
+      {/* Select Child */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-amber-900">Select Child</h3>
+              <button
+                onClick={fetchChildren}
+                className="ml-1 flex items-center gap-1 text-[11px] font-medium text-amber-700/80 hover:text-amber-900"
+                type="button"
+              >
+                <RefreshCw className="h-3 w-3" /> Refresh
+              </button>
+            </div>
+            <p className="mt-0.5 text-xs text-amber-700/80">Choose a child to view their pending fees</p>
+          </div>
+
+          <div className="relative w-full sm:w-72" ref={childPickerRef}>
+            <button
+              type="button"
+              disabled={loadingChildren || children.length === 0}
+              onClick={() => setChildPickerOpen((open) => !open)}
+              className="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {selectedChild ? (
+                <>
+                  <ChildAvatar name={selectedChild.name} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-gray-800">{selectedChild.name || 'Child'}</span>
+                    <span className="block truncate text-xs text-gray-500">
+                      {selectedChild.grade ? `Class ${selectedChild.grade}${selectedChild.section ? ` - ${selectedChild.section}` : ''}` : 'Not linked'}
+                    </span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+                    <User className="h-5 w-5" />
+                  </span>
+                  <span className="flex-1 text-sm text-gray-500">
+                    {loadingChildren ? 'Loading children…' : 'Select a child'}
+                  </span>
+                </>
+              )}
+              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${childPickerOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {childPickerOpen && children.length > 0 && (
+              <div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg">
+                {children.map((child) => (
+                  <button
+                    key={buildChildKey(child)}
+                    type="button"
+                    onClick={() => {
+                      setSelectedChildId(buildChildKey(child));
+                      setChildPickerOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-amber-50 ${
+                      buildChildKey(child) === selectedChildId ? 'bg-amber-50' : ''
+                    }`}
+                  >
+                    <ChildAvatar name={child.name} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-gray-800">{child.name || 'Child'}</span>
+                      <span className="block truncate text-xs text-gray-500">
+                        {child.grade ? `Class ${child.grade}${child.section ? ` - ${child.section}` : ''}` : 'Not linked'}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <select
-          value={selectedChildId}
-          onChange={(e) => setSelectedChildId(e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-sm sm:text-base"
-          disabled={loadingChildren}
-        >
-          <option value="">Select a child</option>
-          {children.map((child) => (
-            <option key={child.id || child.name} value={buildChildKey(child)}>
-              {child.name || 'Child'} {child.grade ? `- ${child.grade}` : ''}
-            </option>
-          ))}
-        </select>
-        {loadingChildren && (
-          <p className="text-sm text-gray-500 mt-2 flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading children...
-          </p>
-        )}
+
         {selectedChild && !selectedChild.id && (
-          <p className="text-sm text-amber-600 mt-2">
+          <p className="mt-3 text-sm text-amber-700">
             This child is not linked to a student record yet. Please contact the school office.
           </p>
         )}
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-        {successMessage && <p className="text-sm text-emerald-700 mt-2">{successMessage}</p>}
+        {error && (
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+          </p>
+        )}
+        {successMessage && <p className="mt-3 text-sm text-emerald-700">{successMessage}</p>}
       </div>
 
       {selectedChild?.id ? (
         <>
+          {/* Stat tiles */}
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-              <div className="flex items-center gap-3 text-gray-600 text-sm">
-                <FileText className="w-4 h-4 text-blue-500" />
-                Total Fees
-              </div>
-              <div className="text-2xl font-semibold text-gray-900 mt-2">
-                {formatCurrency(totals.total)}
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-              <div className="flex items-center gap-3 text-gray-600 text-sm">
-                <Wallet className="w-4 h-4 text-emerald-500" />
-                Paid
-              </div>
-              <div className="text-2xl font-semibold text-gray-900 mt-2">
-                {formatCurrency(totals.paid)}
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-              <div className="flex items-center gap-3 text-gray-600 text-sm">
-                <AlertCircle className="w-4 h-4 text-amber-500" />
-                Balance Due
-              </div>
-              <div className="text-2xl font-semibold text-gray-900 mt-2">
-                {formatCurrency(totals.balance)}
-              </div>
-            </div>
+            <StatTile
+              icon={GraduationCap}
+              iconColor="text-blue-600"
+              iconBg="bg-blue-50"
+              label="Total Pending"
+              value={formatCurrency(totals.balance)}
+              subtitle={`${pendingInvoices.length} pending fee${pendingInvoices.length === 1 ? '' : 's'}`}
+            />
+            <StatTile
+              icon={CalendarDays}
+              iconColor="text-amber-600"
+              iconBg="bg-amber-50"
+              label="Due Date"
+              value={nearestDueDate ? formatDate(nearestDueDate) : 'No dues'}
+              subtitle={nearestDueDate ? 'Upcoming deadline' : 'All fees settled'}
+            />
+            <StatTile
+              icon={CheckCircle2}
+              iconColor="text-emerald-600"
+              iconBg="bg-emerald-50"
+              label="Total Paid"
+              value={formatCurrency(totals.paid)}
+              subtitle="Across all fees"
+            />
           </div>
 
-          <div className="bg-white rounded-xl p-4 sm:p-6 border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Invoices</h3>
-              {loadingInvoices && (
-                <span className="text-sm text-gray-500 flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading...
-                </span>
-              )}
-            </div>
-
-            {invoices.length === 0 && !loadingInvoices ? (
-              <div className="text-center py-8 text-gray-500">
-                No invoices found for this student.
+          <div className="grid gap-4 lg:grid-cols-3">
+            {/* Pending Fees */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5 lg:col-span-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-gray-800 sm:text-lg">Fees Overview</h3>
+                  <p className="mt-0.5 text-xs text-gray-500">Upcoming fees and past payments for this session</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {loadingInvoices && (
+                    <span className="flex items-center gap-2 text-xs text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                    </span>
+                  )}
+                  {sessionOptions.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor="fees-session-filter" className="text-xs font-semibold text-gray-500">
+                        Session
+                      </label>
+                      <select
+                        id="fees-session-filter"
+                        value={sessionFilter}
+                        onChange={(e) => setSessionFilter(e.target.value)}
+                        className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                      >
+                        {sessionOptions.map((option) => (
+                          <option key={option.label} value={option.label}>
+                            {option.label}
+                            {option.isActive ? ' (Active)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                {invoices.map((invoice) => {
-                  const payments = paymentsByInvoice[invoice._id] || [];
-                  const balance = Number(invoice.balanceAmount || 0);
-                  const canPay = balance > 0;
-                  const isProcessing = processingInvoiceId === invoice._id;
-                  return (
-                    <div
-                      key={invoice._id}
-                      className="border border-gray-100 rounded-xl p-4 sm:p-5 bg-gray-50/40"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div>
-                          <h4 className="text-base font-semibold text-gray-800">
-                            {invoice.title || 'Fee Invoice'}
-                          </h4>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Status: <span className="capitalize">{invoice.status}</span>
-                            {invoice.dueDate && (
-                              <span className="ml-2">
-                                Due {new Date(invoice.dueDate).toLocaleDateString()}
-                              </span>
+
+              {sessionInvoices.length === 0 && !loadingInvoices ? (
+                <div className="py-8 text-center text-sm text-gray-500">
+                  {invoices.length === 0 ? 'No invoices found for this student.' : 'No fees found for this session.'}
+                </div>
+              ) : (
+                <div className="mt-3 divide-y divide-gray-100">
+                  {sessionInvoices.map((invoice) => {
+                    const balance = Number(invoice.balanceAmount || 0);
+                    const isPending = balance > 0;
+                    const isPaid = !isPending;
+                    const isPartial = isPending && Number(invoice.paidAmount || 0) > 0;
+                    const isOverdue = isPending && invoice.dueDate && new Date(invoice.dueDate) < new Date();
+                    const latestPayment = (paymentsByInvoice[invoice._id] || [])[0] || null;
+                    const Icon = feeIconFor(invoice.title);
+                    const isSelected = selectedInvoiceId === invoice._id;
+                    const badge = isPaid
+                      ? { label: 'Paid', className: 'bg-emerald-50 text-emerald-700' }
+                      : isOverdue
+                      ? { label: 'Overdue', className: 'bg-red-50 text-red-600' }
+                      : isPartial
+                      ? { label: 'Partial', className: 'bg-amber-50 text-amber-700' }
+                      : { label: 'Upcoming', className: 'bg-blue-50 text-blue-600' };
+                    return (
+                      <div
+                        key={invoice._id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedInvoiceId(invoice._id)}
+                        onKeyDown={(e) => (e.key === 'Enter' ? setSelectedInvoiceId(invoice._id) : null)}
+                        className={`flex w-full cursor-pointer items-center gap-3 rounded-lg py-3 text-left transition hover:bg-amber-50/60 ${
+                          isSelected ? 'bg-amber-50/80' : ''
+                        } -mx-1 px-1`}
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                            isSelected ? 'border-amber-500 bg-amber-500' : 'border-gray-300'
+                          }`}
+                        >
+                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gray-500">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="truncate text-sm font-semibold text-gray-800">{invoice.title || 'Fee Invoice'}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                          </span>
+                          <span className="block truncate text-xs text-gray-500">
+                            {invoice.className ? `Class ${invoice.className}${invoice.section ? ` - ${invoice.section}` : ''}` : (isPaid ? 'Fully paid' : 'Due soon')}
+                          </span>
+                        </span>
+                        <span className="hidden shrink-0 text-xs text-gray-500 sm:block">
+                          {isPaid ? 'Paid on' : 'Due'} {formatDate(isPaid ? (latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt) : invoice.dueDate)}
+                        </span>
+                        <span className={`shrink-0 text-sm font-bold ${isPending ? 'text-gray-900' : 'text-emerald-600'}`}>
+                          {formatCurrency(isPending ? balance : invoice.totalAmount)}
+                        </span>
+                        {isPaid && latestPayment && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadReceipt(latestPayment, invoice);
+                            }}
+                            disabled={downloadingReceiptId === latestPayment._id}
+                            className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            title="Download receipt"
+                          >
+                            {downloadingReceiptId === latestPayment._id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
                             )}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">Balance</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {formatCurrency(balance)}
-                          </p>
-                        </div>
+                            <span className="hidden sm:inline">Receipt</span>
+                          </button>
+                        )}
                       </div>
+                    );
+                  })}
+                </div>
+              )}
 
-                      <div className="grid gap-3 sm:grid-cols-3 mt-4">
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <p className="text-xs text-gray-500">Total</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatCurrency(invoice.totalAmount)}
-                          </p>
+              {selectedInvoice && (
+                <div
+                  className={`mt-4 rounded-xl border px-4 py-3 ${
+                    selectedInvoice.balanceAmount > 0 ? 'border-amber-100 bg-amber-50' : 'border-emerald-100 bg-emerald-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-sm font-semibold ${selectedInvoice.balanceAmount > 0 ? 'text-amber-900' : 'text-emerald-800'}`}>
+                      {selectedInvoice.balanceAmount > 0 ? 'Total Amount Due' : 'Amount Paid'}
+                    </span>
+                    <span className={`text-lg font-bold ${selectedInvoice.balanceAmount > 0 ? 'text-amber-900' : 'text-emerald-800'}`}>
+                      {formatCurrency(selectedInvoice.balanceAmount > 0 ? selectedAmount : selectedInvoice.totalAmount)}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    {Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowFeeBreakdown((v) => !v)}
+                        className={`text-xs font-semibold underline-offset-2 hover:underline ${
+                          selectedInvoice.balanceAmount > 0 ? 'text-amber-700' : 'text-emerald-700'
+                        }`}
+                      >
+                        {showFeeBreakdown ? 'Hide Fees Breakdown' : 'View Fees Breakdown'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadFeesCard(selectedInvoice)}
+                      disabled={downloadingFeesCardId === selectedInvoice._id}
+                      className={`inline-flex items-center gap-1.5 text-xs font-semibold underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 ${
+                        selectedInvoice.balanceAmount > 0 ? 'text-amber-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      {downloadingFeesCardId === selectedInvoice._id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Layers className="h-3 w-3" />
+                      )}
+                      Download Fees Card
+                    </button>
+                  </div>
+
+                  {Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && showFeeBreakdown && (
+                    <div className="mt-2 space-y-1 rounded-lg border border-white/60 bg-white/70 p-2.5">
+                      {selectedInvoice.feeHeadsSnapshot.map((head, headIdx) => (
+                        <div key={`${head.label}-${headIdx}`} className="flex items-center justify-between text-xs text-gray-600">
+                          <span>{head.label}</span>
+                          <span className="font-semibold text-gray-800">{formatCurrency(head.amount)}</span>
                         </div>
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <p className="text-xs text-gray-500">Paid</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatCurrency(invoice.paidAmount)}
-                          </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Installment breakdown for the selected invoice */}
+              {hasInstallments && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-semibold text-gray-600">Installment Breakdown</p>
+                  <div className="space-y-3">
+                    {installmentBreakdown.map((installment) => {
+                      const isCurrent = !installment.isPaid && !installment.isLocked;
+                      const cardColor = installment.isPaid
+                        ? 'border-emerald-100 bg-emerald-50/50'
+                        : installment.isLocked
+                        ? 'border-gray-100 bg-gray-50/60'
+                        : 'border-amber-200 bg-amber-50/50';
+                      const badgeColor = installment.isPaid
+                        ? 'bg-emerald-500 text-white'
+                        : installment.isLocked
+                        ? 'bg-gray-300 text-white'
+                        : 'bg-amber-500 text-white';
+                      const barColor = installment.isPaid ? 'bg-emerald-500' : 'bg-amber-500';
+                      const isProcessingThis = processingInvoiceId === selectedInvoice._id && isCurrent;
+                      return (
+                        <div key={installment.id} className={`rounded-xl border p-3.5 sm:p-4 ${cardColor}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${badgeColor}`}>
+                                {installment.isPaid ? <CheckCircle2 className="h-4 w-4" /> : installment.isLocked ? <Lock className="h-3.5 w-3.5" /> : installment.index + 1}
+                              </span>
+                              <div>
+                                <p className="text-sm font-bold text-gray-800">{installment.label}</p>
+                                <p className="text-xs text-gray-500">Due: {formatDate(installment.dueDate)}</p>
+                              </div>
+                            </div>
+                            <p className="shrink-0 text-sm font-bold text-gray-900">{formatCurrency(installment.amount)}</p>
+                          </div>
+
+                          {installment.isLocked ? (
+                            <p className="mt-3 text-xs font-medium text-gray-400">
+                              Locked until {installmentBreakdown[installment.index - 1]?.label || 'the previous installment'} is paid
+                            </p>
+                          ) : (
+                            <>
+                              <div className="mt-3">
+                                <div className="flex items-center justify-between text-[11px] text-gray-500">
+                                  <span>Progress</span>
+                                  <span>{installment.progressPct}%</span>
+                                </div>
+                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white">
+                                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${installment.progressPct}%` }} />
+                                </div>
+                              </div>
+
+                              {isCurrent && (
+                                <div className="mt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayInstallment(selectedInvoice, installment)}
+                                    disabled={isProcessingThis}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isProcessingThis ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…
+                                      </>
+                                    ) : (
+                                      <>Pay {formatCurrency(installment.remaining)}</>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+
+                              {installment.isPaid && installment.receiptPayment && (
+                                <div className="mt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadReceipt(installment.receiptPayment, selectedInvoice)}
+                                    disabled={downloadingReceiptId === installment.receiptPayment._id}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {downloadingReceiptId === installment.receiptPayment._id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Download className="h-3.5 w-3.5" />
+                                    )}
+                                    Download Receipt
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
-                        <div className="bg-white rounded-lg p-3 border border-gray-100">
-                          <p className="text-xs text-gray-500">Balance</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatCurrency(balance)}
-                          </p>
+                      );
+                    })}
+                  </div>
+
+                  {(() => {
+                    const totalAmount = Number(selectedInvoice.totalAmount || 0);
+                    const paidAmount = Number(selectedInvoice.paidAmount || 0);
+                    const paidPct = totalAmount > 0 ? Math.min(100, Math.round((paidAmount / totalAmount) * 100)) : 0;
+                    return (
+                      <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-gray-700">Amount Paid</span>
+                          <span className="font-bold text-gray-900">
+                            {formatCurrency(paidAmount)} <span className="font-medium text-gray-400">of {formatCurrency(totalAmount)}</span>
+                          </span>
                         </div>
+                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidPct}%` }} />
+                        </div>
+                        <p className="mt-1 text-right text-[11px] text-gray-400">{paidPct}% paid</p>
                       </div>
+                    );
+                  })()}
+                </div>
+              )}
 
-                      <div className="mt-4 flex flex-col md:flex-row md:items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={amounts[invoice._id] ?? ''}
-                            onChange={(e) =>
-                              setAmounts((prev) => ({
-                                ...prev,
-                                [invoice._id]: e.target.value,
-                              }))
-                            }
-                            className="w-36 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                            disabled={!canPay}
-                          />
-                          <span className="text-xs text-gray-500">Amount</span>
+              {/* Recent payments for the selected invoice */}
+              {/* {selectedInvoice && (paymentsByInvoice[selectedInvoice._id] || []).length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-semibold text-gray-600">Recent Payments</p>
+                  <div className="space-y-2">
+                    {(paymentsByInvoice[selectedInvoice._id] || []).slice(0, 3).map((payment) => (
+                      <div
+                        key={payment._id}
+                        className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2 text-xs text-gray-600"
+                      >
+                        <div className="min-w-0">
+                          <span className="block truncate">
+                            {new Date(payment.paidOn || payment.createdAt).toLocaleDateString()}
+                            {' - '}
+                            {payment.method || 'cash'}
+                            {payment.transactionId ? ` - Ref ${payment.transactionId}` : ''}
+                          </span>
+                          <span className="mt-0.5 block font-semibold text-gray-800">{formatCurrency(payment.amount)}</span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => handlePayNow(invoice)}
-                          disabled={!canPay || isProcessing}
-                          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
-                            canPay
-                              ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                              : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                          }`}
+                          onClick={() => handleDownloadReceipt(payment, selectedInvoice)}
+                          disabled={downloadingReceiptId === payment._id}
+                          className="ml-3 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          title="Download receipt"
                         >
-                          {isProcessing ? (
+                          {downloadingReceiptId === payment._id ? (
                             <>
-                              <Loader2 className="w-4 h-4 animate-spin" /> Processing
+                              <Loader2 className="h-3 w-3 animate-spin" /> PDF
                             </>
                           ) : (
                             <>
-                              <CreditCard className="w-4 h-4" /> Pay Now
+                              <Download className="h-3 w-3" /> Receipt
                             </>
                           )}
                         </button>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )} */}
+            </div>
 
-                      {payments.length > 0 && (
-                        <div className="mt-4">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">
-                            Recent Payments
-                          </p>
-                          <div className="space-y-2">
-                            {payments.slice(0, 3).map((payment) => (
-                              <div
-                                key={payment._id}
-                                className="bg-white border border-gray-100 rounded-lg px-3 py-2 flex items-center justify-between text-xs text-gray-600"
-                              >
-                                <div className="min-w-0">
-                                  <span className="block truncate">
-                                    {new Date(payment.paidOn || payment.createdAt).toLocaleDateString()}
-                                    {' - '}
-                                    {payment.method || 'cash'}
-                                    {payment.transactionId ? ` - Ref ${payment.transactionId}` : ''}
-                                  </span>
-                                  <span className="block mt-0.5 font-semibold text-gray-800">
-                                    {formatCurrency(payment.amount)}
-                                  </span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDownloadReceipt(payment, invoice)}
-                                  disabled={downloadingReceiptId === payment._id}
-                                  className="ml-3 inline-flex items-center gap-1 rounded-md border border-yellow-200 bg-yellow-50 px-2.5 py-1 text-[11px] font-semibold text-yellow-700 hover:bg-yellow-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                  title="Download receipt"
-                                >
-                                  {downloadingReceiptId === payment._id ? (
-                                    <>
-                                      <Loader2 className="w-3 h-3 animate-spin" /> PDF
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Download className="w-3 h-3" /> Receipt
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+            {/* Payment summary / pay action */}
+            {/* <div className="h-fit rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+              <h3 className="text-base font-bold text-gray-800">Payment Summary</h3>
+              <p className="mt-0.5 text-xs text-gray-500">Choose your payment option on the secure checkout screen</p>
+
+              {selectedInvoice && selectedInvoice.balanceAmount <= 0 ? (
+                <div className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-6 text-center">
+                  <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                  <p className="text-sm font-bold text-emerald-800">Fully Paid</p>
+                  <p className="text-xs text-emerald-700">{selectedInvoice.title}</p>
+                  <p className="text-lg font-bold text-emerald-900">{formatCurrency(selectedInvoice.totalAmount)}</p>
+                  {(paymentsByInvoice[selectedInvoice._id] || [])[0] && (
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadReceipt((paymentsByInvoice[selectedInvoice._id] || [])[0], selectedInvoice)}
+                      disabled={downloadingReceiptId === (paymentsByInvoice[selectedInvoice._id] || [])[0]?._id}
+                      className="mt-2 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {downloadingReceiptId === (paymentsByInvoice[selectedInvoice._id] || [])[0]?._id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
                       )}
+                      Download Receipt
+                    </button>
+                  )}
+                </div>
+              ) : selectedInvoice && hasInstallments ? (
+                <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/60 p-4 text-center">
+                  <p className="text-sm font-semibold text-amber-900">This fee is split into installments</p>
+                  <p className="mt-1 text-xs leading-relaxed text-amber-700">
+                    Pay each installment in order from the breakdown on the left. Balance due: {formatCurrency(selectedInvoice.balanceAmount)}
+                  </p>
+                </div>
+              ) : selectedInvoice ? (
+                <>
+                  <div className="mt-4 space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Fee</span>
+                      <span className="max-w-[60%] truncate text-right font-medium text-gray-800">{selectedInvoice.title}</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Due Date</span>
+                      <span className="font-medium text-gray-800">{formatDate(selectedInvoice.dueDate)}</span>
+                    </div>
+                  </div>
+
+                  <label className="mt-3 block text-xs font-semibold text-gray-500">Amount to pay</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    max={selectedInvoice.balanceAmount}
+                    value={amounts[selectedInvoice._id] ?? ''}
+                    onChange={(e) =>
+                      setAmounts((prev) => ({
+                        ...prev,
+                        [selectedInvoice._id]: e.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => handlePayNow(selectedInvoice)}
+                    disabled={!canPaySelected || isProcessingSelected}
+                    className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition ${
+                      canPaySelected
+                        ? 'bg-amber-500 text-white shadow-sm shadow-amber-200 hover:bg-amber-600'
+                        : 'cursor-not-allowed bg-gray-200 text-gray-500'
+                    }`}
+                  >
+                    {isProcessingSelected ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Processing…
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-3.5 w-3.5" /> Pay {formatCurrency(selectedAmount)}
+                      </>
+                    )}
+                  </button>
+                  <p className="mt-2 text-center text-[11px] text-gray-400">
+                    You'll be redirected to a secure Razorpay checkout page.
+                  </p>
+                </>
+              ) : (
+                <div className="mt-6 flex flex-col items-center gap-2 py-6 text-center text-sm text-gray-400">
+                  <CreditCard className="h-8 w-8 text-gray-300" />
+                  {sessionInvoices.length === 0 ? 'No fees for this session.' : 'All fees are fully paid. Nothing due.'}
+                </div>
+              )}
+            </div> */}
           </div>
         </>
       ) : (
-        <div className="bg-white rounded-xl p-6 border border-gray-100 text-center text-gray-500">
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center text-gray-500 shadow-sm">
           Please select a child to view fee details.
         </div>
       )}
+
+      {/* Info strip */}
+      {/* <div className="grid gap-3 sm:grid-cols-3">
+        <InfoTile
+          icon={ShieldCheck}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+          title="Safe & Secure"
+          copy="Your payments are protected with 256-bit encryption."
+        />
+        <InfoTile
+          icon={Zap}
+          iconColor="text-blue-600"
+          iconBg="bg-blue-50"
+          title="Instant Confirmation"
+          copy="Get an instant receipt after successful payment."
+        />
+        <InfoTile
+          icon={RotateCcw}
+          iconColor="text-violet-600"
+          iconBg="bg-violet-50"
+          title="Easy Refunds"
+          copy="Refunds are processed quickly and easily."
+        />
+      </div> */}
     </div>
   );
 };

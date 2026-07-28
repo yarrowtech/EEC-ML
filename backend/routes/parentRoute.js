@@ -3,6 +3,7 @@ const router = express.Router();
 const ParentUser = require('../models/ParentUser');
 const StudentUser = require('../models/StudentUser');
 const ClassModel = require('../models/Class');
+const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
 const ExamResult = require('../models/ExamResult');
 const StudentProgress = require('../models/StudentProgress');
@@ -180,7 +181,14 @@ const formatComplaintResponse = (complaint) => {
   };
 };
 
-const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
+const getActiveAcademicYear = async (schoolId) => {
+  if (!schoolId) return null;
+  return AcademicYear.findOne({ schoolId, isActive: true })
+    .select('_id name startDate endDate')
+    .lean();
+};
+
+const buildStudentSchedule = async ({ student, schoolId, campusId, activeYear = null }) => {
   const resolvedGrade = String(student?.grade || '').trim();
   const resolvedSection = String(student?.section || '').trim();
 
@@ -188,6 +196,8 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
     return {
       className: '',
       sectionName: resolvedSection,
+      academicYearId: activeYear?._id || null,
+      academicYearName: activeYear?.name || '',
       schedule: {},
       hasRoutine: false,
     };
@@ -201,7 +211,18 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
     classFilter.campusId = campusId;
   }
 
-  let classDoc = await ClassModel.findOne(classFilter).lean();
+  let classDoc = null;
+  if (activeYear?._id) {
+    classDoc = await ClassModel.findOne({
+      ...classFilter,
+      academicYearId: activeYear._id,
+    }).lean();
+  }
+
+  if (!classDoc) {
+    classDoc = await ClassModel.findOne(classFilter).lean();
+  }
+
   if (!classDoc) {
     classDoc = await ClassModel.findOne({
       ...classFilter,
@@ -213,6 +234,8 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
     return {
       className: resolvedGrade,
       sectionName: resolvedSection,
+      academicYearId: activeYear?._id || null,
+      academicYearName: activeYear?.name || '',
       schedule: {},
       hasRoutine: false,
     };
@@ -236,6 +259,8 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
     return {
       className: classDoc.name,
       sectionName: resolvedSection,
+      academicYearId: classDoc.academicYearId || activeYear?._id || null,
+      academicYearName: activeYear?.name || '',
       schedule: {},
       hasRoutine: false,
     };
@@ -258,6 +283,8 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
     return {
       className: classDoc.name,
       sectionName: timetable?.sectionId?.name || resolvedSection,
+      academicYearId: classDoc.academicYearId || activeYear?._id || null,
+      academicYearName: activeYear?.name || '',
       schedule: {},
       hasRoutine: false,
     };
@@ -288,6 +315,8 @@ const buildStudentSchedule = async ({ student, schoolId, campusId }) => {
   return {
     className: classDoc.name,
     sectionName: resolvedSectionName,
+    academicYearId: classDoc.academicYearId || activeYear?._id || null,
+    academicYearName: activeYear?.name || '',
     schedule: scheduleByDay,
     hasRoutine: true,
   };
@@ -484,6 +513,8 @@ router.get('/routine', authParent, async (req, res) => {
       return res.status(400).json({ error: 'schoolId is required' });
     }
 
+    const activeYear = await getActiveAcademicYear(schoolId);
+
     const studentFilter = { schoolId };
     if (campusId) {
       studentFilter.campusId = campusId;
@@ -524,6 +555,7 @@ router.get('/routine', authParent, async (req, res) => {
         student,
         schoolId,
         campusId,
+        activeYear,
       });
 
       childRoutines.push({
@@ -537,6 +569,8 @@ router.get('/routine', authParent, async (req, res) => {
         section: student.section || '',
         className: routine.className || '',
         sectionName: routine.sectionName || '',
+        academicYearId: routine.academicYearId || null,
+        academicYearName: routine.academicYearName || '',
         schedule: routine.schedule || {},
         hasRoutine: Boolean(routine.hasRoutine),
       });
@@ -551,6 +585,8 @@ router.get('/routine', authParent, async (req, res) => {
       meta: {
         childCount: childRoutines.length,
         withRoutine,
+        activeAcademicYearId: activeYear?._id || null,
+        activeAcademicYearName: activeYear?.name || '',
       },
     });
   } catch (err) {
