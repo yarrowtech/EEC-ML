@@ -759,7 +759,7 @@ const RoutineView = () => {
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
                 <Calendar className="h-5.5 w-5.5 text-white" />
               </div>
-              <h1 className="text-xl font-bold text-white sm:text-2xl">Daily Routine</h1>
+              <h1 className="text-xl font-bold text-white sm:text-2xl">Class Routine</h1>
             </div>
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/80">
               {/* <span>Student view only</span> */}

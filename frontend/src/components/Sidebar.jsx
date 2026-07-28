@@ -43,7 +43,7 @@ const MENU_ITEMS = [
     id: 'schedule', name: 'Schedule', icon: Calendar,
     iconColor: 'text-orange-600', iconBg: 'bg-orange-100',
     children: [
-      { id: 'routine',             name: 'Weekly Routine',  icon: Calendar  },
+      { id: 'routine',             name: 'Class Routine',  icon: Calendar  },
       { id: 'exams',               name: 'Exams',           icon: FileText  },
       { id: 'holidays',            name: 'Holiday List',    icon: Bell      },
       { id: 'attendance',          name: 'Attendance',      icon: Users     },
