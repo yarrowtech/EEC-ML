@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import WelcomeCard from './WelcomeCard';
 import CourseProgress from './CourseProgress';
 import AchievementCard from './AchievementCard';
@@ -7,6 +8,66 @@ import QuickStats from './QuickStats';
 import TestPetButton from './TestPetButton';
 import DashboardPet from './DashboardPet';
 import { useStudentDashboard } from './StudentDashboardContext';
+
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+
+const ProgressTrendChart = () => {
+  const [chartData, setChartData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) { setLoading(false); return; }
+    fetch(`${API_BASE}/api/exam/results/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((payload) => {
+        const results = payload?.data || [];
+        const sorted = [...results]
+          .filter((r) => r.marks != null && r.examId?.date)
+          .sort((a, b) => new Date(a.examId.date) - new Date(b.examId.date))
+          .slice(-10)
+          .map((r) => ({
+            name: r.examId?.title
+              ? r.examId.title.slice(0, 12)
+              : new Date(r.examId.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            marks: Number(r.marks),
+            subject: r.examId?.subject || '',
+          }));
+        setChartData(sorted);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || chartData.length < 2) return null;
+
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
+      <p className="mb-3 text-sm font-black text-indigo-900">Score Trend</p>
+      <ResponsiveContainer width="100%" height={140}>
+        <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6366f1' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#6366f1' }} domain={[0, 100]} />
+          <ReTooltip
+            contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e0e7ff' }}
+            formatter={(v) => [`${v} marks`, 'Score']}
+          />
+          <Line
+            type="monotone"
+            dataKey="marks"
+            stroke="#6366f1"
+            strokeWidth={2.5}
+            dot={{ r: 4, fill: '#6366f1', strokeWidth: 0 }}
+            activeDot={{ r: 6 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 const computeStreak = (recentAttendance) => {
   if (!Array.isArray(recentAttendance) || recentAttendance.length === 0) return 0;
@@ -157,6 +218,9 @@ const DashboardHome = () => {
 
       {/* Streak Tracker */}
       <StreakTracker />
+
+      {/* Progress Trend */}
+      <ProgressTrendChart />
 
       {/* Quick Stats */}
       <QuickStats />

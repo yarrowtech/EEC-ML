@@ -33,6 +33,22 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "to students. Never write questions about pedagogical methods, repetition counts, audio resources, "
         "teacher suggestions, or anything that belongs in a 'Note to the Teacher' section."
     ),
+    "misconception": (
+        "A student answered a quiz question incorrectly. Your job is to:\n"
+        "1. Gently acknowledge the mistake without making the student feel bad.\n"
+        "2. Explain WHY the wrong answer seems attractive (common misconception or reasoning trap).\n"
+        "3. Clearly explain the correct concept using a simple analogy or real-world example from the material.\n"
+        "4. Give one follow-up tip so the student remembers the correct answer in future.\n"
+        "Keep the tone warm, encouraging, and concise — no more than 4 short paragraphs."
+    ),
+    "real_world": (
+        "Show the student how the topic they are learning connects to real everyday life. "
+        "Using ONLY details from the retrieved material:\n"
+        "1. Give 3 concrete real-world examples or applications of the concept.\n"
+        "2. For each example, write one sentence explaining the connection to the topic.\n"
+        "3. End with a fun 'Did you know?' fact or a question that makes the student curious.\n"
+        "Keep language simple, vivid, and exciting — suitable for a school student."
+    ),
     "homework_help": (
         "You are a Socratic tutor. Your ONLY job is to ask questions that lead the student to discover the answer themselves. "
         "STRICT RULES — never break these:\n"
@@ -183,6 +199,16 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     else:
         system = base_system
 
+    # For quiz mode, prepend difficulty level to instruction when provided.
+    if req.mode == "quiz" and req.difficulty:
+        diff = req.difficulty.strip().lower()
+        difficulty_note = {
+            "easy": "Focus on basic recall and comprehension — suitable for beginners.",
+            "medium": "Mix recall with some application and inference questions.",
+            "hard": "Emphasise analysis, critical thinking, and inference. Avoid trivially obvious questions.",
+        }.get(diff, f"Difficulty level: {req.difficulty}.")
+        instruction = f"{instruction} {difficulty_note}"
+
     location = " > ".join(filter(None, [req.subject, req.chapterTitle or req.topic, req.subTopic]))
     parts = [
         f"Topic: {location}",
@@ -191,4 +217,9 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     ]
     if req.mode == "homework_help" and req.question:
         parts.append(f"Student's question:\n{req.question.strip()}")
+    if req.mode == "misconception" and req.wrongAnswer and req.question:
+        parts.append(
+            f"Quiz question the student got wrong:\n{req.question.strip()}\n"
+            f"Student's wrong answer: {req.wrongAnswer.strip()}"
+        )
     return system, "\n\n".join(parts)

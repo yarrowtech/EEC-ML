@@ -102,6 +102,7 @@ const CHIP_MODES = {
   'Mind Map': 'mind_map',
   Flashcards: 'flashcards',
   'Homework Help': 'homework_help',
+  'Real World': 'real_world',
 };
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
@@ -118,6 +119,8 @@ const GENERATED_MODE_META = {
   notes: { label: 'Notes', icon: NotebookPen },
   explain: { label: 'Explanation', icon: Lightbulb },
   homework_help: { label: 'Homework help', icon: MessageCircleQuestion },
+  real_world: { label: 'Real world', icon: Globe2 },
+  misconception: { label: 'Misconception explainer', icon: BrainCircuit },
 };
 
 const getGeneratedModeMeta = (mode) => GENERATED_MODE_META[mode] || { label: 'Tutor answer', icon: Bot };
@@ -335,7 +338,7 @@ function parseFlashcards(text) {
 // Quiz UI
 // ---------------------------------------------------------------------------
 
-function QuizUI({ text }) {
+function QuizUI({ text, onMisconception }) {
   const questions = useMemo(() => parseQuiz(text), [text]);
   const [idx, setIdx] = useState(0);
   const [picks, setPicks] = useState({});
@@ -434,7 +437,7 @@ function QuizUI({ text }) {
         })}
       </div>
 
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         {!isShown ? (
           <button
             disabled={!picked}
@@ -450,6 +453,14 @@ function QuizUI({ text }) {
             )}>
               {isCorrect ? '✓ Correct!' : `✗ Answer: ${q.answer}`}
             </span>
+            {!isCorrect && onMisconception && (
+              <button
+                onClick={() => onMisconception(q.question, picked, q.answer)}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+              >
+                Explain my mistake
+              </button>
+            )}
             <button
               onClick={() => idx < questions.length - 1 ? setIdx(i => i + 1) : setDone(true)}
               className="rounded-xl bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-900 transition-colors"
@@ -1817,8 +1828,8 @@ function ExplainUI({ text }) {
 // Response dispatcher — picks the right UI for each mode
 // ---------------------------------------------------------------------------
 
-function TutorResponseRenderer({ text, mode }) {
-  if (mode === 'quiz') return <QuizUI text={text} />;
+function TutorResponseRenderer({ text, mode, onMisconception }) {
+  if (mode === 'quiz') return <QuizUI text={text} onMisconception={onMisconception} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
@@ -2024,6 +2035,7 @@ const COMPANION_CHIPS = [
   { label: 'Mind Map', icon: Network },
   { label: 'Flashcards', icon: Layers3 },
   { label: 'Homework Help', icon: MessageCircleQuestion },
+  { label: 'Real World', icon: Globe2 },
 ];
 
 // Chat history panel shows this many conversations before a "See more" toggle.
@@ -2769,6 +2781,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const [topicTitle, setTopicTitle] = useState('');
   const [question, setQuestion] = useState('');
   const [activeChip, setActiveChip] = useState(COMPANION_CHIPS[0].label);
+  const [quizDifficulty, setQuizDifficulty] = useState('medium');
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [attachmentName, setAttachmentName] = useState('');
@@ -3047,7 +3060,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
 
   const handleSend = async (opts = {}) => {
     const chipLabel = (typeof opts?.chip === 'string' && opts.chip) || activeChip;
-    const mode = CHIP_MODES[chipLabel];
+    const mode = CHIP_MODES[chipLabel] || (opts?.mode);
     const outgoing = (typeof opts?.text === 'string' ? opts.text : question).trim();
     if (!mode) {
       setMessages((prev) => [...prev, { role: 'assistant', error: true, text: `${chipLabel} isn't available yet.` }]);
@@ -3081,6 +3094,8 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
           topic: topicTitle,
           question: outgoing,
           chapterTitle: chapterTitle || '',
+          difficulty: mode === 'quiz' ? quizDifficulty : undefined,
+          wrongAnswer: opts?.wrongAnswer || undefined,
         }),
       });
       const payload = await res.json();
@@ -3114,6 +3129,15 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
       setSending(false);
       setQuestion('');
     }
+  };
+
+  const handleMisconception = (questionText, wrongAnswer, correctAnswer) => {
+    handleSend({
+      mode: 'misconception',
+      chip: 'Misconception Explainer',
+      text: questionText,
+      wrongAnswer,
+    });
   };
 
   return (
@@ -3372,7 +3396,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                 <>
                                   {msg.streaming
                                     ? <TutorMessageContent text={msg.text} />
-                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} />
                                   }
                                   {msg.streaming && (
                                     <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#F59E0B] align-middle" />
@@ -3550,6 +3574,36 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               </button>
             )}
           </div>
+
+          <AnimatePresence>
+            {activeChip === 'Create Quiz' && (
+              <Motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-2 flex items-center gap-2 overflow-hidden"
+              >
+                <span className="text-[11px] font-bold text-[#78827B]">Difficulty:</span>
+                {['easy', 'medium', 'hard'].map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setQuizDifficulty(level)}
+                    className={cn(
+                      'rounded-full border px-3 py-1 text-[11px] font-semibold capitalize transition-colors',
+                      quizDifficulty === level
+                        ? level === 'easy' ? 'border-emerald-400 bg-emerald-500 text-white'
+                          : level === 'hard' ? 'border-rose-400 bg-rose-500 text-white'
+                          : 'border-[#F59E0B] bg-[#F59E0B] text-white'
+                        : 'border-[#E7E3D9] bg-white text-[#5c655f] hover:bg-slate-50'
+                    )}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </Motion.div>
+            )}
+          </AnimatePresence>
 
           <input
             ref={attachmentInputRef}

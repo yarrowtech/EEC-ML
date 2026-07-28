@@ -7,7 +7,7 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards'];
+const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world'];
 
 const MAX_MATERIALS = 50;
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -141,7 +141,7 @@ router.post('/generate', authStudent, async (req, res) => {
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
-    const { subject, topic, subTopic, mode, question, chapterTitle } = req.body || {};
+    const { subject, topic, subTopic, mode, question, chapterTitle, difficulty, wrongAnswer } = req.body || {};
     const normalizedMode = normalizeString(mode);
     if (!ALLOWED_MODES.includes(normalizedMode)) {
       return res.status(400).json({ error: `mode must be one of: ${ALLOWED_MODES.join(', ')}` });
@@ -219,6 +219,8 @@ router.post('/generate', authStudent, async (req, res) => {
       classId: student.classId ? String(student.classId) : null,
       sectionId: student.sectionId ? String(student.sectionId) : null,
       chapterTitle: resolvedChapterTitle,
+      difficulty: normalizeString(difficulty) || null,
+      wrongAnswer: normalizeString(wrongAnswer) || null,
     }, { timeout: 180000 });
 
     return res.json({

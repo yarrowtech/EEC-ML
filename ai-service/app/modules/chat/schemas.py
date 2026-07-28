@@ -18,6 +18,8 @@ class TutorGenerateRequest(BaseModel):
     classId: str | None = None
     sectionId: str | None = None
     chapterTitle: str | None = None
+    difficulty: str | None = None
+    wrongAnswer: str | None = None
 
 
 class MasteryDimension(BaseModel):
