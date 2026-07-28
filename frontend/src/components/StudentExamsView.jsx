@@ -432,7 +432,7 @@ const StudentExamsView = () => {
             return (
               <div
                 key={group._id}
-                className={`overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm border-t-4 ${
+                className={`w-full md:w-[48%] overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm border-t-4 self-start ${
                   isCompleted ? 'border-t-emerald-400' : 'border-t-indigo-400'
                 }`}
               >

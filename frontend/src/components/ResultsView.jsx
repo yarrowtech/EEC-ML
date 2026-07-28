@@ -68,8 +68,8 @@ const Ring = ({ pct = 0, size = 104, stroke = 10, color = '#10b981', bg = '#e5e7
 const scoreTier = (pct) => pct >= 80
   ? { ring: '#10b981', text: 'text-emerald-600', soft: 'bg-emerald-50', border: 'border-emerald-200', bar: 'bg-emerald-500' }
   : pct >= 60
-  ? { ring: '#f59e0b', text: 'text-amber-600', soft: 'bg-amber-50', border: 'border-amber-200', bar: 'bg-amber-500' }
-  : { ring: '#ef4444', text: 'text-rose-600', soft: 'bg-rose-50', border: 'border-rose-200', bar: 'bg-rose-500' };
+    ? { ring: '#f59e0b', text: 'text-amber-600', soft: 'bg-amber-50', border: 'border-amber-200', bar: 'bg-amber-500' }
+    : { ring: '#ef4444', text: 'text-rose-600', soft: 'bg-rose-50', border: 'border-rose-200', bar: 'bg-rose-500' };
 
 const AVATAR_COLORS = [
   'bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500',
@@ -666,11 +666,10 @@ const ResultsView = () => {
                     key={idx}
                     type="button"
                     onClick={() => setPage(idx + 1)}
-                    className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-bold transition-colors ${
-                      page === idx + 1
-                        ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-sm'
-                        : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
-                    }`}
+                    className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-bold transition-colors ${page === idx + 1
+                      ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-sm'
+                      : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
+                      }`}
                   >
                     {idx + 1}
                   </button>
@@ -772,9 +771,9 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
   const classSize = exam.classSize;
 
   return (
-    <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
+    <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-200 border-t-4 self-start ${tier.border} overflow-hidden`}>
       <div className="p-4 md:p-5">
-        <div className="flex items-center justify-between gap-4">
+        {/* <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
             <h3 className="text-base md:text-lg font-semibold text-gray-900 leading-snug">{exam.examName || 'Exam'}</h3>
             {(exam.startDate || exam.endDate) ? (
@@ -848,6 +847,69 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
                 {percentage.toFixed(0)}<span className="text-xs font-semibold">%</span>
               </p>
               {exam.grade && <p className={`mt-1 text-xs font-bold ${tier.text}`}>{exam.grade}</p>}
+            </div>
+          </div>
+        </div> */}
+        <div>
+          <div className="text-center">
+            <h3 className="text-base md:text-lg font-extrabold text-gray-900 leading-snug">{exam.examName || 'Exam'}</h3>
+            {(exam.startDate || exam.endDate) ? (
+              <div className="flex items-center gap-1 text-xs text-gray-400 mt-1.5 justify-center">
+                <Calendar size={11} /> 
+                <span className='font-bold text-gray-500'>Date: </span>
+                {formatDate(exam.startDate) || '-'} → {formatDate(exam.endDate) || '-'}
+              </div>
+            ) : exam.date && (
+              <div className="flex items-center gap-1 text-xs text-gray-400 mt-1.5 justify-center">
+                <Calendar size={11} />
+                <span className='font-bold text-gray-500'>Date: </span>
+                {formatDate(exam.date)}
+              </div>
+            )}
+          </div>
+          <div className='flex justify-between items-center gap-4 md:gap-0'>
+            <div>
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <StatPill label="Total" value={exam.totalMarks ?? 0} />
+                <StatPill label="Obtained" value={exam.obtainedMarks ?? 0} highlight={tier.text} />
+                {exam.status && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${String(exam.status).toLowerCase() === 'pass' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                      }`}
+                  >
+                    {String(exam.status).toLowerCase() === 'pass' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                    {exam.status}
+                  </span>
+                )}
+              </div>
+              {exam.remarks && (
+                <div className="w-auto mt-3 p-3 rounded-xl border-l-4 bg-amber-50 border-amber-400">
+                  <p className="text-xs font-semibold mb-0.5 text-amber-900">Result</p>
+                  <p className="text-xs leading-relaxed text-amber-800">{exam.remarks}</p>
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="relative shrink-0 flex items-center justify-center">
+                <Ring pct={percentage} color={tier.ring} size={104} stroke={10} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <p className={`text-xl font-black leading-none ${tier.text}`}>
+                    {percentage.toFixed(0)}<span className="text-xs font-semibold">%</span>
+                  </p>
+                  {exam.grade && <p className={`mt-1 text-xs font-bold ${tier.text}`}>{exam.grade}</p>}
+                </div>
+              </div>
+              {showDownload && (
+              <button
+                type="button"
+                onClick={onDownload}
+                disabled={downloadingReportCard}
+                className="mt-3 flex items-center gap-1.5 text-[7px] md:text-xs font-semibold text-white bg-linear-to-r from-indigo-500 to-purple-600 rounded-full px-3.5 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-60 shadow-sm shadow-indigo-200"
+              >
+                <Download size={12} />
+                {downloadingReportCard ? 'Downloading...' : 'Download Grade Card'}
+              </button>
+            )}
             </div>
           </div>
         </div>
