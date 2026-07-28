@@ -65,6 +65,7 @@ const studentSections = [
   "profile",
   "themecustomizer",
   "my-paths",
+  "notifications",
 ];
 
 const studentBasePaths = ["/student", "/dashboard"];

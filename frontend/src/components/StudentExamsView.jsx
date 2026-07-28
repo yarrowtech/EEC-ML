@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, Users, Search as SearchIcon } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, Users, Search as SearchIcon, Timer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { fetchCachedJson } from '../utils/studentApiCache';
@@ -30,6 +30,40 @@ const daysUntil = (value) => {
   today.setHours(0, 0, 0, 0);
   d.setHours(0, 0, 0, 0);
   return Math.round((d - today) / 86400000);
+};
+
+const calcTimeLeft = (targetDate) => {
+  const diff = new Date(targetDate).getTime() - Date.now();
+  if (diff <= 0) return null;
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+  };
+};
+
+const useCountdown = (targetDate) => {
+  const compute = useCallback(() => calcTimeLeft(targetDate), [targetDate]);
+  const [timeLeft, setTimeLeft] = useState(compute);
+  useEffect(() => {
+    setTimeLeft(compute());
+    const timer = setInterval(() => setTimeLeft(compute()), 1000);
+    return () => clearInterval(timer);
+  }, [compute]);
+  return timeLeft;
+};
+
+const CountdownBadge = ({ date }) => {
+  const t = useCountdown(date);
+  if (!t) return <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Started</span>;
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 border border-amber-200">
+      <Timer size={11} className="text-amber-500" />
+      {t.days > 0 ? `${t.days}d ` : ''}{pad(t.hours)}:{pad(t.minutes)}:{pad(t.seconds)}
+    </span>
+  );
 };
 
 const SUBJECT_PALETTE = [
@@ -179,7 +213,7 @@ const StudentExamsView = () => {
           icon={Sparkles}
           label="Next Exam"
           value={stats.upcoming ? (stats.upcoming.group.title || stats.upcoming.group.term || 'Exam') : 'None'}
-          sub={stats.upcoming ? (stats.upcoming.days === 0 ? 'Starts today' : `In ${stats.upcoming.days} day${stats.upcoming.days === 1 ? '' : 's'}`) : 'No upcoming exam'}
+          sub={stats.upcoming ? (stats.upcoming.days === 0 ? 'Starts today' : `In ${stats.upcoming.days}d`) : 'No upcoming exam'}
           grad="from-purple-500 to-fuchsia-600"
           shadow="shadow-purple-200/60"
         />
@@ -270,9 +304,7 @@ const StudentExamsView = () => {
                         {statusLabel}
                       </span>
                       {!isCompleted && days !== null && days >= 0 && (
-                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
-                          {days === 0 ? 'Starts today' : `In ${days}d`}
-                        </span>
+                        <CountdownBadge date={group?.startDate} />
                       )}
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
                         {subjects.length} Subjects

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import WelcomeCard from './WelcomeCard';
 import CourseProgress from './CourseProgress';
 import AchievementCard from './AchievementCard';
@@ -6,6 +6,88 @@ import CalendarWidget from './CalendarWidget';
 import QuickStats from './QuickStats';
 import TestPetButton from './TestPetButton';
 import DashboardPet from './DashboardPet';
+import { useStudentDashboard } from './StudentDashboardContext';
+
+const computeStreak = (recentAttendance) => {
+  if (!Array.isArray(recentAttendance) || recentAttendance.length === 0) return 0;
+  const sorted = [...recentAttendance].sort((a, b) => new Date(b.date) - new Date(a.date));
+  let streak = 0;
+  for (const record of sorted) {
+    if (record.status === 'present') streak++;
+    else break;
+  }
+  return streak;
+};
+
+const STREAK_MILESTONES = [3, 5, 7, 10];
+
+const StreakTracker = () => {
+  const { recentAttendance, stats, loading } = useStudentDashboard();
+  const streak = useMemo(() => computeStreak(recentAttendance), [recentAttendance]);
+  const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) || null;
+  const attPct = stats?.attendancePercentage ?? null;
+
+  if (loading) return null;
+  if (!recentAttendance?.length) return null;
+
+  const dots = recentAttendance
+    .slice()
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(-7);
+
+  const streakLabel = streak === 0
+    ? 'Start your streak today!'
+    : streak === 1
+    ? '1 day streak 🔥'
+    : `${streak} day streak 🔥`;
+
+  return (
+    <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
+      {/* Streak badge */}
+      <div className="flex items-center gap-3">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-200/60">
+          <span className="text-2xl leading-none select-none">{streak >= 7 ? '🏆' : streak >= 3 ? '🔥' : '✨'}</span>
+        </div>
+        <div>
+          <p className="font-black text-lg text-amber-900 leading-tight">{streakLabel}</p>
+          <p className="text-xs text-amber-700/70">
+            {nextMilestone
+              ? `${nextMilestone - streak} more day${nextMilestone - streak !== 1 ? 's' : ''} to reach ${nextMilestone}-day milestone`
+              : 'Incredible consistency! Keep it up!'}
+          </p>
+        </div>
+      </div>
+
+      {/* Day dots */}
+      <div className="flex items-center gap-1.5 sm:ml-auto">
+        {dots.map((record, i) => {
+          const isPresent = record.status === 'present';
+          const isLeave = record.status === 'leave';
+          return (
+            <div
+              key={record.date || i}
+              title={`${new Date(record.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — ${record.status}`}
+              className={`h-7 w-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
+                isPresent
+                  ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-200'
+                  : isLeave
+                  ? 'bg-blue-200 border-blue-300 text-blue-700'
+                  : 'bg-white border-red-200 text-red-400'
+              }`}
+            >
+              {isPresent ? '✓' : isLeave ? 'L' : '✗'}
+            </div>
+          );
+        })}
+        {attPct !== null && (
+          <span className="ml-1 rounded-full bg-amber-100 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-800">
+            {attPct}%
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const DashboardHome = () => {
   const [pets, setPets] = useState([]);
@@ -72,7 +154,10 @@ const DashboardHome = () => {
     >
       {/* Welcome Section */}
       <WelcomeCard />
-      
+
+      {/* Streak Tracker */}
+      <StreakTracker />
+
       {/* Quick Stats */}
       <QuickStats />
       

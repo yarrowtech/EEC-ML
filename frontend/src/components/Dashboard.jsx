@@ -24,6 +24,7 @@ import StudentExamsView from './StudentExamsView';
 import { StudentDashboardProvider } from './StudentDashboardContext';
 import MobileBottomNav from './MobileBottomNav';
 import HolidayListView from './HolidayListView';
+import StudentNotificationCenter from './StudentNotificationCenter';
 
 // All of these views render the same LearningHub component (it owns an
 // internal tab bar). Treat them as one logical page so switching tabs inside
@@ -145,6 +146,7 @@ const Dashboard = () => {
     wellness: StudentWellbeing,
     wellbeing: StudentWellbeing,
     achievements: AchievementsView,
+    notifications: StudentNotificationCenter,
     profile: ProfileUpdate,
     themecustomizer: ThemeCustomizer,
   };

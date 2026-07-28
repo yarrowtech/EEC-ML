@@ -455,11 +455,11 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                       type="button"
                       onClick={() => {
                         setShowNotifications(false);
-                        navigate('/student/noticeboard');
+                        navigate('/student/notifications');
                       }}
                       className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-semibold text-center py-1"
                     >
-                      View all notices →
+                      View all notifications →
                     </button>
                   </div>
                 </div>
