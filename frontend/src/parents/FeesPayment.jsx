@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CreditCard,
   Download,
+  DownloadIcon,
   FileText,
   GraduationCap,
   Layers,
@@ -17,6 +18,7 @@ import {
   RotateCcw,
   ShieldCheck,
   User,
+  X,
   Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -817,6 +819,35 @@ const FeesPayment = () => {
                           <span className="block truncate text-xs text-gray-500">
                             {invoice.className ? `Class ${invoice.className}${invoice.section ? ` - ${invoice.section}` : ''}` : (isPaid ? 'Fully paid' : 'Due soon')}
                           </span>
+                          {isSelected && (
+                            <span
+                              className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {Array.isArray(invoice.feeHeadsSnapshot) && invoice.feeHeadsSnapshot.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowFeeBreakdown(true)}
+                                  className="text-xs font-semibold text-amber-700 underline-offset-2 hover:underline"
+                                >
+                                  View Fees Breakdown
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadFeesCard(invoice)}
+                                disabled={downloadingFeesCardId === invoice._id}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {downloadingFeesCardId === invoice._id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <DownloadIcon className="h-3 w-3" />
+                                )}
+                                Download Fees Card
+                              </button>
+                            </span>
+                          )}
                         </span>
                         <span className="hidden shrink-0 text-xs text-gray-500 sm:block">
                           {isPaid ? 'Paid on' : 'Due'} {formatDate(isPaid ? (latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt) : invoice.dueDate)}
@@ -863,46 +894,6 @@ const FeesPayment = () => {
                       {formatCurrency(selectedInvoice.balanceAmount > 0 ? selectedAmount : selectedInvoice.totalAmount)}
                     </span>
                   </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                    {Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowFeeBreakdown((v) => !v)}
-                        className={`text-xs font-semibold underline-offset-2 hover:underline ${
-                          selectedInvoice.balanceAmount > 0 ? 'text-amber-700' : 'text-emerald-700'
-                        }`}
-                      >
-                        {showFeeBreakdown ? 'Hide Fees Breakdown' : 'View Fees Breakdown'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadFeesCard(selectedInvoice)}
-                      disabled={downloadingFeesCardId === selectedInvoice._id}
-                      className={`inline-flex items-center gap-1.5 text-xs font-semibold underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 ${
-                        selectedInvoice.balanceAmount > 0 ? 'text-amber-700' : 'text-emerald-700'
-                      }`}
-                    >
-                      {downloadingFeesCardId === selectedInvoice._id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Layers className="h-3 w-3" />
-                      )}
-                      Download Fees Card
-                    </button>
-                  </div>
-
-                  {Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && showFeeBreakdown && (
-                    <div className="mt-2 space-y-1 rounded-lg border border-white/60 bg-white/70 p-2.5">
-                      {selectedInvoice.feeHeadsSnapshot.map((head, headIdx) => (
-                        <div key={`${head.label}-${headIdx}`} className="flex items-center justify-between text-xs text-gray-600">
-                          <span>{head.label}</span>
-                          <span className="font-semibold text-gray-800">{formatCurrency(head.amount)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1190,6 +1181,44 @@ const FeesPayment = () => {
           copy="Refunds are processed quickly and easily."
         />
       </div> */}
+
+      {showFeeBreakdown && selectedInvoice && Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowFeeBreakdown(false)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-gray-100 bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-800">Fees Breakdown</h3>
+                <p className="mt-0.5 text-xs text-gray-500">{selectedInvoice.title || 'Fee Invoice'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFeeBreakdown(false)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-1.5">
+              {selectedInvoice.feeHeadsSnapshot.map((head, headIdx) => (
+                <div
+                  key={`${head.label}-${headIdx}`}
+                  className="flex items-center justify-between rounded-lg bg-gray-50/60 px-3 py-2 text-sm text-gray-600"
+                >
+                  <span>{head.label}</span>
+                  <span className="font-semibold text-gray-800">{formatCurrency(head.amount)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
+              <span className="text-sm font-semibold text-gray-700">Total</span>
+              <span className="text-base font-bold text-gray-900">{formatCurrency(selectedInvoice.totalAmount)}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
