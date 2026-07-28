@@ -530,11 +530,10 @@ const StudentExamsView = () => {
                         )}
                       </div>
                     </CardContent>
-                  </Card>
-                </Motion.div>
+                  </div>
+                </div>
               );
             })}
-          </AnimatePresence>
         </div>
       )}
     </div>
