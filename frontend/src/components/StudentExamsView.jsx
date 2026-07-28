@@ -263,7 +263,7 @@ const StudentExamsView = () => {
           No exams found for your schedule.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 flex justify-center flex-wrap gap-4">
           {filteredGroups.map((group) => {
             const classLabel = group?.classId?.name || group?.grade || '—';
             const sectionLabel = group?.sectionId?.name || group?.section || '—';
@@ -279,7 +279,7 @@ const StudentExamsView = () => {
             return (
               <div
                 key={group._id}
-                className={`overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm border-t-4 ${
+                className={`w-full md:w-[48%] overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm border-t-4 ${
                   isCompleted ? 'border-t-emerald-400' : 'border-t-indigo-400'
                 }`}
               >
