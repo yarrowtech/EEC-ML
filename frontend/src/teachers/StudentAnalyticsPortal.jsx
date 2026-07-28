@@ -72,7 +72,7 @@ const StudentAnalyticsPortal = () => {
   const navigate = useNavigate();
   const { classId = 'current' } = useParams();
   const classLabel = formatClassLabel(classId);
-  const [activeTab, setActiveTab] = useState('progress'); // 'progress' or 'intervention'
+  const [activeTab, setActiveTab] = useState('progress'); // 'progress' | 'intervention' | 'misconceptions' | 'gaps' | 'forecast' | 'mastery-growth'
 
   // ─────────────────────────────────────────────────────────────────────────
   // PROGRESS TAB STATE
@@ -161,6 +161,36 @@ const StudentAnalyticsPortal = () => {
   const [interventionLogs, setInterventionLogs] = useState([]);
   const [outcomeModal, setOutcomeModal] = useState(null); // { interventionId }
   const [outcomeForm, setOutcomeForm] = useState({ outcome: '', improvement: '' });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MISCONCEPTIONS TAB STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  const [misconceptions, setMisconceptions] = useState([]);
+  const [loadingMisconceptions, setLoadingMisconceptions] = useState(false);
+  const [misconceptionFilters, setMisconceptionFilters] = useState({ grade: '', section: '', subject: '' });
+  const [aiMisconceptionReport, setAiMisconceptionReport] = useState('');
+  const [generatingMisconceptionReport, setGeneratingMisconceptionReport] = useState(false);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS GAPS TAB STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  const [classGaps, setClassGaps] = useState([]);
+  const [loadingGaps, setLoadingGaps] = useState(false);
+  const [gapFilters, setGapFilters] = useState({ grade: '', section: '', subject: '' });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 7-DAY FORECAST TAB STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  const [forecast7d, setForecast7d] = useState([]);
+  const [loadingForecast, setLoadingForecast] = useState(false);
+  const [forecastFilters, setForecastFilters] = useState({ grade: '', section: '' });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MASTERY GROWTH TAB STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  const [masteryStudentId, setMasteryStudentId] = useState('');
+  const [masteryGrowthData, setMasteryGrowthData] = useState(null);
+  const [loadingMastery, setLoadingMastery] = useState(false);
 
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH WEAK STUDENTS — server-side composite at-risk scoring
@@ -311,6 +341,82 @@ const StudentAnalyticsPortal = () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // FETCH: MISCONCEPTIONS
+  // ─────────────────────────────────────────────────────────────────────────
+  const fetchMisconceptions = useCallback(async () => {
+    setLoadingMisconceptions(true);
+    try {
+      const params = new URLSearchParams();
+      if (misconceptionFilters.grade) params.set('className', misconceptionFilters.grade);
+      if (misconceptionFilters.section) params.set('section', misconceptionFilters.section);
+      if (misconceptionFilters.subject) params.set('subject', misconceptionFilters.subject);
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/misconceptions?${params}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setMisconceptions(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingMisconceptions(false); }
+  }, [misconceptionFilters]);
+
+  const generateAIMisconceptionReport = async () => {
+    if (!misconceptions.length) { return; }
+    setGeneratingMisconceptionReport(true);
+    try {
+      const patterns = misconceptions.slice(0, 10).map((m) => ({
+        topic: m.topic,
+        wrongAnswer: m.topWrongAnswers?.[0]?.answer || '(unknown)',
+        count: m.totalWrong,
+        pct: m.pct,
+      }));
+      const res = await fetch(`${API_BASE}/api/ai-teacher/misconception-report`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ subject: misconceptionFilters.subject || 'All Subjects', wrongAnswerPatterns: patterns }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setAiMisconceptionReport(data?.data?.content || '');
+    } catch { /* silent */ } finally { setGeneratingMisconceptionReport(false); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FETCH: CLASS GAPS
+  // ─────────────────────────────────────────────────────────────────────────
+  const fetchClassGaps = useCallback(async () => {
+    setLoadingGaps(true);
+    try {
+      const params = new URLSearchParams();
+      if (gapFilters.grade) params.set('className', gapFilters.grade);
+      if (gapFilters.section) params.set('section', gapFilters.section);
+      if (gapFilters.subject) params.set('subject', gapFilters.subject);
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingGaps(false); }
+  }, [gapFilters]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FETCH: 7-DAY FORECAST
+  // ─────────────────────────────────────────────────────────────────────────
+  const fetchForecast7d = useCallback(async () => {
+    setLoadingForecast(true);
+    try {
+      const params = new URLSearchParams();
+      if (forecastFilters.grade) params.set('className', forecastFilters.grade);
+      if (forecastFilters.section) params.set('section', forecastFilters.section);
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/at-risk-7day?${params}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setForecast7d(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingForecast(false); }
+  }, [forecastFilters]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // FETCH: MASTERY GROWTH
+  // ─────────────────────────────────────────────────────────────────────────
+  const fetchMasteryGrowth = async () => {
+    if (!masteryStudentId.trim()) return;
+    setLoadingMastery(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/mastery-growth/${masteryStudentId.trim()}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setMasteryGrowthData(d.data || null); }
+    } catch { /* silent */ } finally { setLoadingMastery(false); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // FILTERED DATA
   // ─────────────────────────────────────────────────────────────────────────
   const filteredStudents = useMemo(() =>
@@ -359,21 +465,24 @@ const StudentAnalyticsPortal = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="inline-flex rounded-full border border-blue-300 bg-blue-100 p-1 backdrop-blur-sm">
-              <button
-                type="button"
-                onClick={() => setActiveTab('progress')}
-                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition ${activeTab === 'progress' ? 'bg-white/70 text-[#0a2f42] shadow-sm' : 'text-[#1f4359] hover:bg-white/40'}`}
-              >
-                <TrendingUpIcon className="size-3.5" /> Overview
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('intervention')}
-                className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition ${activeTab === 'intervention' ? 'bg-white/70 text-[#0a2f42] shadow-sm' : 'text-[#1f4359] hover:bg-white/40'}`}
-              >
-                <Target className="size-3.5" /> Intervention
-              </button>
+            <div className="inline-flex flex-wrap rounded-full border border-blue-300 bg-blue-100 p-1 backdrop-blur-sm gap-0.5">
+              {[
+                { key: 'progress',      label: 'Overview',        icon: TrendingUpIcon },
+                { key: 'intervention',  label: 'Intervention',    icon: Target         },
+                { key: 'misconceptions',label: 'Misconceptions',  icon: Brain          },
+                { key: 'gaps',          label: 'Class Gaps',      icon: AlertCircle    },
+                { key: 'forecast',      label: '7-Day Forecast',  icon: Activity       },
+                { key: 'mastery-growth',label: 'Mastery Growth',  icon: Star           },
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${activeTab === key ? 'bg-white/70 text-[#0a2f42] shadow-sm' : 'text-[#1f4359] hover:bg-white/40'}`}
+                >
+                  <Icon className="size-3.5" /> {label}
+                </button>
+              ))}
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/25 px-4 py-2 text-xs font-medium text-[#1a4055] backdrop-blur-sm">
               <Filter className="size-3.5" /> Filter
@@ -436,6 +545,45 @@ const StudentAnalyticsPortal = () => {
                 outcomeForm={outcomeForm}
                 setOutcomeForm={setOutcomeForm}
                 recordOutcome={recordOutcome}
+              />
+            )}
+            {activeTab === 'misconceptions' && (
+              <MisconceptionsTab
+                data={misconceptions}
+                loading={loadingMisconceptions}
+                filters={misconceptionFilters}
+                setFilters={setMisconceptionFilters}
+                onFetch={fetchMisconceptions}
+                aiReport={aiMisconceptionReport}
+                generatingReport={generatingMisconceptionReport}
+                onGenerateReport={generateAIMisconceptionReport}
+              />
+            )}
+            {activeTab === 'gaps' && (
+              <ClassGapsTab
+                data={classGaps}
+                loading={loadingGaps}
+                filters={gapFilters}
+                setFilters={setGapFilters}
+                onFetch={fetchClassGaps}
+              />
+            )}
+            {activeTab === 'forecast' && (
+              <ForecastTab
+                data={forecast7d}
+                loading={loadingForecast}
+                filters={forecastFilters}
+                setFilters={setForecastFilters}
+                onFetch={fetchForecast7d}
+              />
+            )}
+            {activeTab === 'mastery-growth' && (
+              <MasteryGrowthTab
+                studentId={masteryStudentId}
+                setStudentId={setMasteryStudentId}
+                data={masteryGrowthData}
+                loading={loadingMastery}
+                onFetch={fetchMasteryGrowth}
               />
             )}
           </Motion.div>
@@ -1202,6 +1350,239 @@ const WeakStudentDetailModal = ({ student, onClose, generateLearningPath }) => (
         </div>
       </div>
     </div>
+  </div>
+);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MISCONCEPTIONS TAB
+// ═════════════════════════════════════════════════════════════════════════════
+const MisconceptionsTab = ({ data, loading, filters, setFilters, onFetch, aiReport, generatingReport, onGenerateReport }) => (
+  <div className="p-4 space-y-4">
+    <div className="flex flex-wrap gap-3 mb-2">
+      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
+      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
+      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Subject" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
+      <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Load
+      </button>
+    </div>
+    {loading ? (
+      <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+    ) : data.length === 0 ? (
+      <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No misconception data found. Load class data to analyse wrong answers.</div>
+    ) : (
+      <>
+        <div className="grid gap-3">
+          {data.slice(0, 15).map((m, i) => (
+            <div key={i} className="rounded-xl border border-rose-100 bg-rose-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">{m.topic}</p>
+                  <p className="mt-1 text-sm text-slate-800">{m.question}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-rose-200 px-2.5 py-1 text-xs font-bold text-rose-800">{m.pct}% wrong</span>
+              </div>
+              {m.topWrongAnswers?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {m.topWrongAnswers.map((wa, j) => (
+                    <span key={j} className="rounded bg-white px-2 py-0.5 text-xs text-slate-600 border border-rose-200">
+                      "{wa.answer}" × {wa.count}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <button onClick={onGenerateReport} disabled={generatingReport} className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+          {generatingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+          {generatingReport ? 'Analysing…' : 'Generate AI Misconception Report'}
+        </button>
+        {aiReport && (
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+            {aiReport}
+          </div>
+        )}
+      </>
+    )}
+  </div>
+);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CLASS GAPS TAB
+// ═════════════════════════════════════════════════════════════════════════════
+const ClassGapsTab = ({ data, loading, filters, setFilters, onFetch }) => {
+  const severityColor = (s) => s === 'critical' ? 'bg-red-500' : s === 'high' ? 'bg-orange-400' : 'bg-amber-300';
+  const severityBg = (s) => s === 'critical' ? 'border-red-200 bg-red-50' : s === 'high' ? 'border-orange-200 bg-orange-50' : 'border-amber-200 bg-amber-50';
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex flex-wrap gap-3 mb-2">
+        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
+        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
+        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Subject" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
+        <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Load
+        </button>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+      ) : data.length === 0 ? (
+        <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No mastery data found. Students must attempt practice questions for gap data to appear.</div>
+      ) : (
+        <div className="grid gap-3">
+          {data.map((gap, i) => (
+            <div key={i} className={`rounded-xl border p-4 ${severityBg(gap.gapSeverity)}`}>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <p className="text-xs text-slate-500">{gap.subject} {gap.chapterTitle ? `· ${gap.chapterTitle}` : ''}</p>
+                  <p className="font-semibold text-slate-800 text-sm">{gap.topicTitle}</p>
+                </div>
+                <span className="text-lg font-bold text-slate-800">{gap.avgMastery}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 rounded-full bg-white/60">
+                  <div className={`h-2 rounded-full ${severityColor(gap.gapSeverity)}`} style={{ width: `${gap.avgMastery}%` }} />
+                </div>
+                <span className="text-xs text-slate-500">{gap.studentsBelow50} students below 50%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 7-DAY FORECAST TAB
+// ═════════════════════════════════════════════════════════════════════════════
+const ForecastTab = ({ data, loading, filters, setFilters, onFetch }) => {
+  const levelColor = (l) => l === 'critical' ? 'text-red-700 bg-red-50 border-red-200' : l === 'high' ? 'text-orange-700 bg-orange-50 border-orange-200' : 'text-amber-700 bg-amber-50 border-amber-200';
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+        <strong>7-Day Forecast</strong> — identifies students whose attendance or scores in the last 7 days show a deteriorating trend.
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
+        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
+        <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Refresh
+        </button>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+      ) : data.length === 0 ? (
+        <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No at-risk students detected in the last 7 days. Load data above.</div>
+      ) : (
+        <div className="grid gap-3">
+          {data.map((s, i) => (
+            <div key={i} className={`rounded-xl border p-4 ${levelColor(s.forecastLevel)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-sm">{s.name} <span className="text-xs font-normal opacity-70">{s.grade} {s.section}</span></p>
+                  <div className="flex flex-wrap gap-3 mt-1 text-xs opacity-80">
+                    {s.attPct7d !== null && <span>7-day att: {s.attPct7d}%</span>}
+                    {s.avgScore7d !== null && <span>7-day avg: {s.avgScore7d}%</span>}
+                    {s.examCount7d > 0 && <span>Exams: {s.examCount7d}</span>}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-bold capitalize border" style={{ textTransform: 'uppercase' }}>{s.forecastLevel}</span>
+              </div>
+              {s.signals?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {s.signals.map((sig, j) => (
+                    <span key={j} className="rounded bg-white/60 px-2 py-0.5 text-xs border">
+                      {sig.type.replace(/_/g, ' ')}: {sig.value}{sig.type.includes('att') || sig.type.includes('score') ? '%' : 'pt'}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MASTERY GROWTH TAB
+// ═════════════════════════════════════════════════════════════════════════════
+const MasteryGrowthTab = ({ studentId, setStudentId, data, loading, onFetch }) => (
+  <div className="p-4 space-y-4">
+    <p className="text-sm text-slate-500">Enter a student ID to view their mastery growth report, time-series scores, and time-to-mastery forecasts.</p>
+    <div className="flex gap-3">
+      <input className="flex-1 rounded-lg border px-3 py-2 text-sm" placeholder="Student ID (MongoDB ObjectId)" value={studentId} onChange={(e) => setStudentId(e.target.value)} />
+      <button onClick={onFetch} disabled={loading || !studentId.trim()} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Load
+      </button>
+    </div>
+    {loading ? (
+      <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+    ) : !data ? null : (
+      <div className="space-y-4">
+        {/* Summary cards */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-emerald-50 p-4 text-center border border-emerald-100">
+            <p className="text-2xl font-bold text-emerald-700">{data.masteredTopics}</p>
+            <p className="text-xs text-emerald-600">Topics Mastered (≥90%)</p>
+          </div>
+          <div className="rounded-xl bg-blue-50 p-4 text-center border border-blue-100">
+            <p className="text-2xl font-bold text-blue-700">{data.totalTopics}</p>
+            <p className="text-xs text-blue-600">Total Topics Attempted</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 p-4 text-center border border-amber-100">
+            <p className="text-2xl font-bold text-amber-700">{data.totalTopics > 0 ? Math.round((data.masteredTopics / data.totalTopics) * 100) : 0}%</p>
+            <p className="text-xs text-amber-600">Mastery Rate</p>
+          </div>
+        </div>
+
+        {/* Subject summaries */}
+        {data.subjectSummary?.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Subject Performance</h3>
+            <div className="grid gap-2">
+              {data.subjectSummary.map((s, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-800">{s.subject}</p>
+                    <p className="text-xs text-slate-500">{s.topicCount} topics</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-slate-700">{s.avgMastery}%</p>
+                    <p className={`text-xs font-medium ${s.trend > 0 ? 'text-emerald-600' : s.trend < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                      {s.trend > 0 ? `+${s.trend}` : s.trend} pts trend
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Time-to-mastery forecast */}
+        {data.topicsNearMastery?.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Time-to-Mastery Forecast</h3>
+            <div className="grid gap-2">
+              {data.topicsNearMastery.map((t, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg border border-purple-100 bg-purple-50 p-3">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-800">{t.topicTitle}</p>
+                    <p className="text-xs text-slate-500">{t.subject} · current: {t.currentScore}%</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-purple-700">~{t.estimatedAttemptsToMastery} attempt{t.estimatedAttemptsToMastery !== 1 ? 's' : ''}</p>
+                    <p className="text-xs text-purple-500">to reach 90%</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )}
   </div>
 );
 

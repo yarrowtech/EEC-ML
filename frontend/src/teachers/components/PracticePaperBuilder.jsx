@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Copy, Loader, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Copy, Loader, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
@@ -32,6 +32,9 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
 
   const [expandedQuestion, setExpandedQuestion] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiSubject, setAiSubject] = useState('');
+  const [aiTopic, setAiTopic] = useState('');
 
   // Fetch practice sections
   useEffect(() => {
@@ -122,6 +125,42 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
     ));
   };
 
+  // AI question generation
+  const generateAIQuestions = async () => {
+    const subject = aiSubject.trim() || title.trim() || 'General';
+    const topic = aiTopic.trim() || chapter.trim() || title.trim() || 'General Topic';
+    if (!topic) { toast.error('Enter a topic or chapter name first'); return; }
+    setAiGenerating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/quiz-generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject, topic, difficulty, count: 5 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Generation failed');
+      const aiQuestions = (data?.data?.questions || []);
+      if (!aiQuestions.length) { toast.error('AI returned no questions. Try a more specific topic.'); return; }
+      const nextId = Math.max(...questions.map((q) => q.id), -1) + 1;
+      const mapped = aiQuestions.map((q, i) => ({
+        id: nextId + i,
+        questionText: q.questionText || '',
+        questionType: 'mcq',
+        options: (q.options || []).map((o) => ({ text: o.text || '', isCorrect: !!o.isCorrect })),
+        correctAnswer: '',
+        explanation: q.explanation || '',
+        marks: 1,
+        difficulty: q.difficulty || difficulty,
+      }));
+      setQuestions((prev) => [...prev, ...mapped]);
+      toast.success(`${mapped.length} AI questions added!`);
+    } catch (err) {
+      toast.error(err?.message || 'AI generation failed');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   // Validate form
   const validateForm = () => {
     if (!title.trim()) {
@@ -197,7 +236,43 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-2xl font-bold mb-6">Create Practice Paper</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Create Practice Paper</h2>
+      </div>
+
+      {/* AI Question Generator */}
+      <div className="mb-6 rounded-xl border border-purple-200 bg-purple-50 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-purple-600" />
+          <span className="text-sm font-semibold text-purple-800">Generate Questions with AI</span>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <input
+            type="text"
+            value={aiSubject}
+            onChange={(e) => setAiSubject(e.target.value)}
+            placeholder="Subject (e.g. Mathematics)"
+            className="flex-1 min-w-[140px] px-3 py-2 text-sm border border-purple-200 rounded-lg bg-white"
+          />
+          <input
+            type="text"
+            value={aiTopic}
+            onChange={(e) => setAiTopic(e.target.value)}
+            placeholder="Topic (e.g. Fractions)"
+            className="flex-1 min-w-[140px] px-3 py-2 text-sm border border-purple-200 rounded-lg bg-white"
+          />
+          <button
+            type="button"
+            onClick={generateAIQuestions}
+            disabled={aiGenerating}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 disabled:opacity-50"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            {aiGenerating ? 'Generating…' : 'Generate 5 Questions'}
+          </button>
+        </div>
+        <p className="text-xs text-purple-600 mt-2">AI will generate 5 MCQ questions. You can edit or delete them before saving.</p>
+      </div>
 
       {/* Basic Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

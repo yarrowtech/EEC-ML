@@ -47,6 +47,7 @@ import AILearningPath from './AILearningPath';
 import TestTeacherPortal from './TestTeacherPortal';
 import AIPoweredTeaching from './AIPoweredTeaching';
 import GenerateAIPathPortal from './GenerateAIPathPortal';
+import TeacherAIToolsPanel from './TeacherAIToolsPanel';
 import MyWorkPortal from './MyWorkPortal';
 import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
@@ -74,6 +75,7 @@ const portalNavigation = [
   { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
   { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
+  { icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
   { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
   { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
   { icon: ThumbsUp, label: 'Student Feedback', path: `${PORTAL_BASE}/classes/current/communication/feedback` },
@@ -1599,6 +1601,7 @@ const TeacherPortalShell = () => {
               />
               <Route path="resource-library" element={<TeacherAlcove />} />
               <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+              <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
               <Route path="ptm" element={<ParentMeetings />} />
               <Route path="settings" element={<MyWorkPortal />} />
               <Route path="test" element={<TestTeacherPortal />} />

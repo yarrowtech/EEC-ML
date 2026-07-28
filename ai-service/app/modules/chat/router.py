@@ -10,7 +10,7 @@ from langchain_core.runnables import Runnable
 from langchain_ollama import ChatOllama
 
 from app.core.config import settings
-from app.modules.chat.schemas import LearningPathRequest, TutorGenerateRequest
+from app.modules.chat.schemas import LearningPathRequest, TeacherAIRequest, TutorGenerateRequest
 from app.modules.chat.service import NOT_FOUND_MESSAGE, build_prompt, retrieve_relevant_chunks
 from app.modules.parser.cleaner import _strip_teacher_notes
 
@@ -195,3 +195,51 @@ async def generate_learning_path(req: LearningPathRequest) -> dict:
         raise HTTPException(status_code=422, detail="LLM returned empty node list")
 
     return {"nodes": nodes, "model": settings.ollama_model}
+
+
+_TEACHER_MODES = {
+    "lesson_content", "hinge_question", "class_performance_summary",
+    "parent_report", "exit_ticket_grade", "idoweedo", "quiz_generate",
+    "differentiated_plan", "misconception_report",
+}
+
+_TEACHER_LONG_OUTPUT_MODES = {
+    "lesson_content", "idoweedo", "differentiated_plan",
+    "class_performance_summary", "misconception_report",
+}
+
+
+@router.post("/teacher")
+async def generate_teacher_content(req: TeacherAIRequest) -> dict:
+    """Teacher-only AI generation — no RAG; caller supplies context directly."""
+    from app.modules.chat.service import MODE_INSTRUCTIONS
+
+    if req.mode not in _TEACHER_MODES:
+        raise HTTPException(status_code=400, detail=f"Unsupported teacher mode: {req.mode}")
+
+    instruction = MODE_INSTRUCTIONS.get(req.mode, "")
+    grade = req.gradeLevel or "school"
+
+    system = (
+        f"You are an expert AI assistant helping a {grade} teacher with {req.subject}. "
+        "Follow the task instructions precisely. Be specific, actionable, and professional."
+    )
+
+    context_block = f"\nContext / Data:\n{req.context}" if req.context else ""
+    question_block = f"\nAdditional details:\n{req.question}" if req.question else ""
+    user_prompt = (
+        f"Subject: {req.subject}\nTopic: {req.topic}\n"
+        f"Task: {instruction}"
+        f"{context_block}{question_block}"
+    )
+
+    chain = _create_chain(mode=req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain")
+    try:
+        content = chain.invoke([
+            SystemMessage(content=system),
+            HumanMessage(content=user_prompt),
+        ])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+
+    return {"mode": req.mode, "model": settings.ollama_model, "content": content}

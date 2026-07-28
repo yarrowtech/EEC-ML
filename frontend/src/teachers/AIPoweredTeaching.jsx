@@ -596,11 +596,37 @@ const AIPoweredTeaching = () => {
     updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: (chapter.worksheetFiles || []).filter((file) => file.id !== fileId) }));
   };
 
-  const applyAiSuggestion = (chapterId) => {
+  const applyAiSuggestion = async (chapterId) => {
     if (!chapterId) return;
-    const aiText = '<ul><li>Connect topic with real-life examples.</li><li>Ask one diagnostic question before explanation.</li><li>Conclude with a quick reflective exit ticket.</li></ul>';
-    updateChapter(chapterId, (chapter) => ({ ...chapter, introductionText: aiText }));
-    toast.success('AI lesson suggestion applied');
+    const chapter = chapters.find((ch) => ch.id === chapterId);
+    if (!chapter) return;
+
+    const subject = localStorage.getItem('selectedSubjectName') || selectedSubject || 'General';
+    const topic = chapter.title || 'Lesson Topic';
+
+    const toastId = toast.loading('Generating AI lesson content…');
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/lesson-content`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ subject, topic, gradeLevel: null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'AI generation failed');
+
+      const htmlContent = (data?.data?.content || '')
+        .replace(/^#{1,3}\s*/gm, '<strong>')
+        .replace(/\n(?=<strong>)/g, '</strong>\n')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '<br/><br/>')
+        .replace(/\n- /g, '<br/>• ')
+        .replace(/\n/g, '<br/>');
+
+      updateChapter(chapterId, (ch) => ({ ...ch, introductionText: htmlContent || data?.data?.content || '' }));
+      toast.success('AI lesson content applied!', { id: toastId });
+    } catch (err) {
+      toast.error(err?.message || 'AI generation failed', { id: toastId });
+    }
   };
 
   const saveVersion = (chapterId) => {

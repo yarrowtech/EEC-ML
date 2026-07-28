@@ -85,6 +85,9 @@ const SectionTitle = ({ icon, iconColor, children }) => (
   </p>
 );
 
+const API_BASE = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+const authHdrs = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
+
 const DrawerModal = ({
   open,
   chapter,
@@ -113,6 +116,52 @@ const DrawerModal = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
+  const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
+
+  const generateIdoWeeDo = async () => {
+    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const topic = chapter?.title || 'Lesson Topic';
+    setIdoweEdoLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/idoweedo`, {
+        method: 'POST',
+        headers: authHdrs(),
+        body: JSON.stringify({ subject, topic, gradeLevel: null, totalMinutes: 60 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Generation failed');
+      const text = data?.data?.content || '';
+      // Parse phases from LLM markdown output
+      const phaseMap = {
+        HOOK: { id: 'hook', phase: 'THE HOOK', duration: '10' },
+        'I DO': { id: 'instruct', phase: 'I DO', duration: '15' },
+        'WE DO': { id: 'practice', phase: 'WE DO', duration: '20' },
+        'YOU DO': { id: 'synthesis', phase: 'YOU DO', duration: '15' },
+      };
+      const lines = text.split('\n');
+      let currentPhase = null;
+      const descriptions = {};
+      lines.forEach((line) => {
+        const stripped = line.replace(/^#+\s*\*?\*?/, '').replace(/\*?\*?\s*\(.*?\)/, '').trim().toUpperCase();
+        for (const [key] of Object.entries(phaseMap)) {
+          if (stripped.startsWith(key)) { currentPhase = key; descriptions[key] = descriptions[key] || ''; return; }
+        }
+        if (currentPhase && line.trim() && !line.startsWith('#')) {
+          descriptions[currentPhase] = (descriptions[currentPhase] || '') + line.trim() + ' ';
+        }
+      });
+      const updatedFlow = Object.entries(phaseMap).map(([key, base]) => ({
+        ...base,
+        description: (descriptions[key] || base.phase + ' phase').slice(0, 120).trim(),
+      }));
+      onUpdate({ ...chapter, instructionalFlow: updatedFlow, explanation: text });
+      toast.success('I Do / We Do / You Do generated!');
+    } catch (err) {
+      toast.error(err?.message || 'AI generation failed');
+    } finally {
+      setIdoweEdoLoading(false);
+    }
+  };
 
   const goToStep = (nextStep) => {
     setCurrentStep((previous) => {
@@ -319,7 +368,15 @@ const DrawerModal = ({
             <Card>
               <div className="mb-3 flex items-center justify-between">
                 <SectionTitle icon={ListChecks} iconColor="text-green-500">Instructional Flow</SectionTitle>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500">Suggested breakdown — edit as needed</span>
+                <button
+                  type="button"
+                  onClick={generateIdoWeeDo}
+                  disabled={idoweEdoLoading}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                >
+                  <Sparkles className="size-3.5" />
+                  {idoweEdoLoading ? 'Generating…' : 'I Do / We Do / You Do'}
+                </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {flow.map((phase) => (

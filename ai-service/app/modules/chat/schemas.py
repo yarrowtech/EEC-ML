@@ -35,3 +35,12 @@ class LearningPathRequest(BaseModel):
     notes: str = ""
     gradeLevel: str | None = None
     mastery: list[MasteryDimension] = []
+
+
+class TeacherAIRequest(BaseModel):
+    mode: str
+    subject: str
+    topic: str
+    gradeLevel: str | None = None
+    context: str | None = None   # caller-supplied text context (not from RAG)
+    question: str | None = None  # extra prompt detail / data blob
