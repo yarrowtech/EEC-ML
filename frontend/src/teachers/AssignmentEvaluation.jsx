@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   FileText,
@@ -20,7 +21,10 @@ import {
   Sparkles,
   Target,
   ListChecks,
-  Activity
+  Activity,
+  Brain,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -36,6 +40,17 @@ const AssignmentEvaluation = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+
+  // rubric
+  const [rubrics, setRubrics] = useState([]);
+  const [selectedRubricId, setSelectedRubricId] = useState('');
+  const [criterionScores, setCriterionScores] = useState({});
+  const [showRubric, setShowRubric] = useState(false);
+
+  // AI feedback
+  const [aiFeedback, setAiFeedback] = useState('');
+  const [aiFeedbackLoading, setAiFeedbackLoading] = useState(false);
+  const [showAiFeedback, setShowAiFeedback] = useState(false);
 
   // filter bar
   const [search, setSearch] = useState('');
@@ -61,6 +76,12 @@ const AssignmentEvaluation = () => {
   };
 
   useEffect(() => { fetchSubmissions(); }, []);
+
+  useEffect(() => {
+    axios.get(`${API_BASE}/api/rubrics`, { headers: { Authorization: `Bearer ${token()}` } })
+      .then((r) => setRubrics(r.data?.data || []))
+      .catch(() => {});
+  }, []);
 
   // ── derived lists ─────────────────────────────────────────────────────────
   const assignmentTitles = ['all', ...new Set(submissions.map(s => s.assignmentTitle))];
@@ -98,6 +119,11 @@ const AssignmentEvaluation = () => {
     setFeedback(sub.feedback || '');
     setSaveError('');
     setShowPdfPreview(false);
+    setSelectedRubricId('');
+    setCriterionScores({});
+    setShowRubric(false);
+    setAiFeedback('');
+    setShowAiFeedback(false);
   };
 
   const closePanel = () => {
@@ -154,6 +180,40 @@ const AssignmentEvaluation = () => {
       setSaveError(err.response?.data?.error || 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── rubric scoring ────────────────────────────────────────────────────────
+  const activeRubric = rubrics.find((r) => r._id === selectedRubricId) || null;
+
+  const applyRubricScore = () => {
+    if (!activeRubric) return;
+    const total = activeRubric.criteria.reduce((sum, c, i) => sum + (Number(criterionScores[i]) || 0), 0);
+    setMarks(String(total));
+  };
+
+  // ── AI feedback ───────────────────────────────────────────────────────────
+  const generateAiFeedback = async () => {
+    if (!selected) return;
+    setAiFeedbackLoading(true);
+    setShowAiFeedback(true);
+    try {
+      const { data } = await axios.post(
+        `${API_BASE}/api/ai-tutor/assignment-feedback`,
+        {
+          submissionText: selected.submissionText || '(no text — see attached file)',
+          subject: selected.subject,
+          assignmentTitle: selected.assignmentTitle,
+          studentName: selected.studentName,
+        },
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      setAiFeedback(data?.data?.content || 'No feedback generated.');
+      if (!feedback) setFeedback(data?.data?.content || '');
+    } catch {
+      setAiFeedback('Could not generate AI feedback. Please try again.');
+    } finally {
+      setAiFeedbackLoading(false);
     }
   };
 
@@ -589,6 +649,108 @@ const AssignmentEvaluation = () => {
                       No text submitted.
                     </div>
                   ) : null}
+
+                  {/* AI Feedback */}
+                  {(selected.submissionText) && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Feedback</h3>
+                        <button
+                          type="button"
+                          onClick={generateAiFeedback}
+                          disabled={aiFeedbackLoading}
+                          className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
+                        >
+                          <Brain className="w-3.5 h-3.5" />
+                          {aiFeedbackLoading ? 'Generating…' : 'Generate AI Feedback'}
+                        </button>
+                      </div>
+                      <AnimatePresence>
+                        {showAiFeedback && (
+                          <Motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-gray-700 whitespace-pre-line max-h-40 overflow-y-auto">
+                              {aiFeedbackLoading ? (
+                                <span className="text-indigo-500 animate-pulse">Analysing submission…</span>
+                              ) : aiFeedback}
+                            </div>
+                            {!aiFeedbackLoading && aiFeedback && (
+                              <button
+                                type="button"
+                                onClick={() => setFeedback(aiFeedback)}
+                                className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+                              >
+                                Copy to feedback box
+                              </button>
+                            )}
+                          </Motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* Rubric */}
+                  {rubrics.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rubric scoring</h3>
+                        <button type="button" onClick={() => setShowRubric((v) => !v)}
+                          className="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1">
+                          {showRubric ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {showRubric ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                      <AnimatePresence>
+                        {showRubric && (
+                          <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden space-y-3">
+                            <select
+                              value={selectedRubricId}
+                              onChange={(e) => { setSelectedRubricId(e.target.value); setCriterionScores({}); }}
+                              className="w-full rounded-xl border border-purple-200 px-3 py-2 text-sm focus:border-purple-400 focus:outline-none"
+                            >
+                              <option value="">— Select a rubric template —</option>
+                              {rubrics.map((r) => <option key={r._id} value={r._id}>{r.title} ({r.totalScore} pts)</option>)}
+                            </select>
+                            {activeRubric && (
+                              <div className="space-y-2">
+                                {activeRubric.criteria.map((c, ci) => (
+                                  <div key={ci} className="rounded-xl border border-purple-100 p-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-semibold text-gray-700">{c.name}</span>
+                                      <span className="text-xs text-gray-400">/ {c.maxScore}</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {c.levels.map((lv, li) => (
+                                        <button key={li} type="button"
+                                          onClick={() => setCriterionScores((s) => ({ ...s, [ci]: lv.score }))}
+                                          title={lv.descriptor}
+                                          className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                                            criterionScores[ci] === lv.score
+                                              ? 'bg-purple-600 text-white border-purple-600'
+                                              : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
+                                          }`}
+                                        >
+                                          {lv.label} ({lv.score})
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                                <button type="button" onClick={applyRubricScore}
+                                  className="w-full rounded-xl border border-purple-400 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50">
+                                  Apply rubric total to marks
+                                </button>
+                              </div>
+                            )}
+                          </Motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">

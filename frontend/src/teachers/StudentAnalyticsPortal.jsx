@@ -153,139 +153,52 @@ const StudentAnalyticsPortal = () => {
   }, [filters]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // IDENTIFY WEAK STUDENTS (Students with overall score < 60%)
+  // INTERVENTION OUTCOME STATE
   // ─────────────────────────────────────────────────────────────────────────
-  const identifyWeakStudents = useCallback((studentsList) => {
-    const weak = studentsList
-      .map(student => {
-        const metrics = student.progressMetrics || [];
-
-        // Calculate overall score
-        const overallScore = metrics.length > 0
-          ? Math.round(metrics.reduce((sum, m) => sum + (m.averageScore || 0), 0) / metrics.length)
-          : 0;
-
-        // Only include students with score < 60%
-        if (overallScore >= 60) return null;
-
-        // Determine intervention level based on score
-        let interventionLevel = 'low';
-        if (overallScore < 35) {
-          interventionLevel = 'critical'; // < 35% = Critical
-        } else if (overallScore < 45) {
-          interventionLevel = 'high'; // 35-45% = High
-        } else if (overallScore < 60) {
-          interventionLevel = 'medium'; // 45-60% = Medium
-        }
-
-        // Calculate consistency score (based on variation in subject scores)
-        const scores = metrics.map(m => m.averageScore || 0);
-        const avgScore = scores.reduce((sum, s) => sum + s, 0) / (scores.length || 1);
-        const variance = scores.reduce((sum, s) => sum + Math.pow(s - avgScore, 2), 0) / (scores.length || 1);
-        const consistencyScore = Math.max(0, 100 - Math.sqrt(variance));
-
-        // Identify weak areas (subjects with score < 60%)
-        const weakAreas = metrics
-          .filter(m => (m.averageScore || 0) < 60)
-          .map(m => m.subject);
-
-        // Find focus subject (subject with lowest score)
-        const focusSubject = metrics.length > 0
-          ? metrics.reduce((lowest, m) =>
-              (m.averageScore || 0) < (lowest.averageScore || 0) ? m : lowest
-            ).subject
-          : 'General';
-
-        // Generate recommended topics based on weak subjects
-        const recommendedTopics = weakAreas.slice(0, 3).map(subject =>
-          `${subject} - Fundamental Concepts`
-        );
-
-        return {
-          _id: student._id,
-          studentId: student.studentId,
-          interventionLevel,
-          consistencyScore: Math.round(consistencyScore),
-          focusSubject,
-          weakAreas: weakAreas.length > 0 ? weakAreas : ['Needs comprehensive review'],
-          recommendedTopics: recommendedTopics.length > 0 ? recommendedTopics : ['General academic support needed'],
-          hasAIPath: false,
-          overallScore
-        };
-      })
-      .filter(Boolean); // Remove null values
-
-    return weak;
-  }, []);
+  const [interventionModal, setInterventionModal] = useState(null); // { studentId, studentName, riskLevel, weakAreas }
+  const [interventionForm, setInterventionForm] = useState({ action: '', notes: '', scheduledDate: '' });
+  const [savingIntervention, setSavingIntervention] = useState(false);
+  const [interventionLogs, setInterventionLogs] = useState([]);
+  const [outcomeModal, setOutcomeModal] = useState(null); // { interventionId }
+  const [outcomeForm, setOutcomeForm] = useState({ outcome: '', improvement: '' });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FETCH WEAK STUDENTS
+  // FETCH WEAK STUDENTS — server-side composite at-risk scoring
   // ─────────────────────────────────────────────────────────────────────────
   const fetchWeakStudents = useCallback(async () => {
     try {
       setLoadingWeak(true);
+      const params = new URLSearchParams();
+      if (interventionFilters.grade) params.set('grade', interventionFilters.grade);
+      if (interventionFilters.section) params.set('section', interventionFilters.section);
+      if (interventionFilters.subject) params.set('subject', interventionFilters.subject);
+      if (interventionFilters.interventionLevel) params.set('level', interventionFilters.interventionLevel);
 
-      // Fetch students data if not already available
-      if (students.length === 0) {
-        const params = new URLSearchParams();
-        if (interventionFilters.grade) params.set('grade', interventionFilters.grade);
-        if (interventionFilters.section) params.set('section', interventionFilters.section);
-        if (interventionFilters.subject) params.set('subject', interventionFilters.subject);
-
-        const studentsRes = await fetch(`${API_BASE}/api/progress/students?${params}`, {
-          headers: authHeaders()
-        });
-
-        if (studentsRes.ok) {
-          const data = await studentsRes.json();
-          const studentsList = Array.isArray(data) ? data : [];
-          const weak = identifyWeakStudents(studentsList);
-
-          // Apply intervention level filter if set
-          const filteredWeak = interventionFilters.interventionLevel
-            ? weak.filter(s => s.interventionLevel === interventionFilters.interventionLevel)
-            : weak;
-
-          setWeakStudents(filteredWeak);
-        } else {
-          // Fallback to empty array if API fails
-          setWeakStudents([]);
-        }
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/at-risk?${params}`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        setWeakStudents(payload.data || []);
       } else {
-        // Use existing students data
-        let weak = identifyWeakStudents(students);
-
-        // Apply filters
-        if (interventionFilters.grade) {
-          weak = weak.filter(s =>
-            String(s.studentId?.grade || '').toLowerCase() === interventionFilters.grade.toLowerCase()
-          );
-        }
-        if (interventionFilters.section) {
-          weak = weak.filter(s =>
-            String(s.studentId?.section || '').toLowerCase() === interventionFilters.section.toLowerCase()
-          );
-        }
-        if (interventionFilters.subject) {
-          weak = weak.filter(s =>
-            s.weakAreas.some(area =>
-              area.toLowerCase().includes(interventionFilters.subject.toLowerCase())
-            )
-          );
-        }
-        if (interventionFilters.interventionLevel) {
-          weak = weak.filter(s => s.interventionLevel === interventionFilters.interventionLevel);
-        }
-
-        setWeakStudents(weak);
+        setWeakStudents([]);
       }
-    } catch (error) {
-      console.error('Error identifying weak students:', error);
+    } catch {
       setWeakStudents([]);
     } finally {
       setLoadingWeak(false);
     }
-  }, [students, interventionFilters, identifyWeakStudents]);
+  }, [interventionFilters]);
+
+  const fetchInterventionLogs = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/interventions`, { headers: authHeaders() });
+      if (res.ok) {
+        const payload = await res.json();
+        setInterventionLogs(payload.data || []);
+      }
+    } catch { /* silent */ }
+  }, []);
 
   useEffect(() => {
     fetchProgressData();
@@ -295,38 +208,53 @@ const StudentAnalyticsPortal = () => {
     fetchWeakStudents();
   }, [fetchWeakStudents]);
 
-  // Re-identify weak students whenever students data changes
   useEffect(() => {
-    if (students.length > 0 && activeTab === 'intervention') {
-      const weak = identifyWeakStudents(students);
+    if (activeTab === 'intervention') fetchInterventionLogs();
+  }, [activeTab, fetchInterventionLogs]);
 
-      // Apply filters
-      let filteredWeak = weak;
-      if (interventionFilters.grade) {
-        filteredWeak = filteredWeak.filter(s =>
-          String(s.studentId?.grade || '').toLowerCase() === interventionFilters.grade.toLowerCase()
-        );
-      }
-      if (interventionFilters.section) {
-        filteredWeak = filteredWeak.filter(s =>
-          String(s.studentId?.section || '').toLowerCase() === interventionFilters.section.toLowerCase()
-        );
-      }
-      if (interventionFilters.subject) {
-        filteredWeak = filteredWeak.filter(s =>
-          s.weakAreas.some(area =>
-            area.toLowerCase().includes(interventionFilters.subject.toLowerCase())
-          )
-        );
-      }
-      if (interventionFilters.interventionLevel) {
-        filteredWeak = filteredWeak.filter(s => s.interventionLevel === interventionFilters.interventionLevel);
-      }
-
-      setWeakStudents(filteredWeak);
-      setLoadingWeak(false);
+  // ─────────────────────────────────────────────────────────────────────────
+  // INTERVENTION ACTIONS
+  // ─────────────────────────────────────────────────────────────────────────
+  const logIntervention = async () => {
+    if (!interventionModal || !interventionForm.action.trim()) return;
+    setSavingIntervention(true);
+    try {
+      await fetch(`${API_BASE}/api/teacher-analytics/interventions`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studentId: interventionModal.studentId,
+          studentName: interventionModal.studentName,
+          riskLevel: interventionModal.riskLevel,
+          reason: (interventionModal.weakAreas || []).join(', ') || 'At-risk composite score',
+          ...interventionForm,
+        }),
+      });
+      setInterventionModal(null);
+      setInterventionForm({ action: '', notes: '', scheduledDate: '' });
+      fetchInterventionLogs();
+    } catch { /* silent */ } finally {
+      setSavingIntervention(false);
     }
-  }, [students, activeTab, interventionFilters, identifyWeakStudents]);
+  };
+
+  const recordOutcome = async () => {
+    if (!outcomeModal) return;
+    try {
+      await fetch(`${API_BASE}/api/teacher-analytics/interventions/${outcomeModal.interventionId}/outcome`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          outcome: outcomeForm.outcome,
+          improvement: Number(outcomeForm.improvement) || 0,
+          status: 'completed',
+        }),
+      });
+      setOutcomeModal(null);
+      setOutcomeForm({ outcome: '', improvement: '' });
+      fetchInterventionLogs();
+    } catch { /* silent */ }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // ANALYZE STUDENT WEAKNESS
@@ -496,6 +424,18 @@ const StudentAnalyticsPortal = () => {
                 generateLearningPath={generateLearningPath}
                 navigate={navigate}
                 classLabel={classLabel}
+                interventionModal={interventionModal}
+                setInterventionModal={setInterventionModal}
+                interventionForm={interventionForm}
+                setInterventionForm={setInterventionForm}
+                savingIntervention={savingIntervention}
+                logIntervention={logIntervention}
+                interventionLogs={interventionLogs}
+                outcomeModal={outcomeModal}
+                setOutcomeModal={setOutcomeModal}
+                outcomeForm={outcomeForm}
+                setOutcomeForm={setOutcomeForm}
+                recordOutcome={recordOutcome}
               />
             )}
           </Motion.div>
@@ -734,7 +674,10 @@ const InterventionTab = ({
   filteredWeakStudents, interventionFilters, setInterventionFilters,
   interventionSearch, setInterventionSearch, loadingWeak, analyzing,
   selectedWeakStudent, setSelectedWeakStudent, analyzeStudentWeakness,
-  generateLearningPath, navigate, classLabel
+  generateLearningPath, navigate, classLabel,
+  interventionModal, setInterventionModal, interventionForm, setInterventionForm,
+  savingIntervention, logIntervention, interventionLogs,
+  outcomeModal, setOutcomeModal, outcomeForm, setOutcomeForm, recordOutcome,
 }) => {
   const priorityStats = [
     { key: 'critical', label: 'Critical Students', icon: AlertTriangle, iconClass: 'bg-[#fce8e8] text-[#b13a3a]' },
@@ -818,18 +761,21 @@ const InterventionTab = ({
           <p className="mt-1 text-sm text-[#5a7a8e]">No students currently need immediate intervention.</p>
         </div>
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2">
           {filteredWeakStudents.map((student, index) => {
-            const level = student.interventionLevel || 'medium';
+            const level = student.riskLevel || student.interventionLevel || 'medium';
             const priorityClass = level === 'critical'
               ? 'bg-[#fce8e8] text-[#b13a3a]'
               : level === 'high'
                 ? 'bg-[#f5ede4] text-[#b57a3a]'
                 : 'bg-[#e4edf2] text-[#3a7a94]';
-            const studentId = student.studentId?._id || student.studentId?.id;
+            const studentId = student.studentId;
+            const studentName = student.studentName || student.studentId?.name || 'Unknown';
+            const trend = student.scoreTrend;
             return (
               <Motion.article
-                key={student._id}
+                key={student.studentId || index}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.045 }}
@@ -838,8 +784,11 @@ const InterventionTab = ({
               >
                 <div className="mb-2 flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-[#1a2e3f]">{student.studentId?.name || 'Unknown'}</p>
-                    <span className="mt-1 inline-flex rounded-full bg-[#f0f4f8] px-2.5 py-0.5 text-[10px] text-[#5a7a8e]">{classLabel} · Roll {student.studentId?.roll || '—'}</span>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{studentName}</p>
+                    <span className="mt-1 inline-flex rounded-full bg-[#f0f4f8] px-2.5 py-0.5 text-[10px] text-[#5a7a8e]">
+                      {student.grade ? `Grade ${student.grade}` : classLabel}
+                      {student.section ? ` · ${student.section}` : ''}
+                    </span>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] ${priorityClass}`}>
                     <span className="mr-1">●</span>{level}
@@ -847,28 +796,35 @@ const InterventionTab = ({
                 </div>
 
                 <div className="my-2 flex flex-wrap gap-x-5 gap-y-2 border-y border-[#eaedf0] py-2">
-                  <div><p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Consistency</p><p className="text-sm font-semibold text-[#b13a3a]">{student.consistencyScore || 0}%</p></div>
-                  <div><p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Focus Subject</p><p className="text-sm font-semibold text-[#1a2e3f]">{student.focusSubject || 'General'}</p></div>
+                  <div>
+                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Attendance</p>
+                    <p className="text-sm font-semibold text-[#b13a3a]">{student.attPct != null ? `${student.attPct}%` : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Avg Score</p>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{student.avgScore != null ? `${student.avgScore}%` : '—'}</p>
+                  </div>
+                  {trend != null && (
+                    <div>
+                      <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Trend</p>
+                      <p className={`text-sm font-semibold ${trend > 0 ? 'text-emerald-600' : trend < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {trend > 0 ? `+${trend}` : trend}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                <span className="inline-flex max-w-full items-center rounded-full bg-[#f0f4f8] px-3 py-1 text-[11px] text-[#4a6a7e]">
-                  <AlertCircle className="mr-1.5 size-3 text-[#b13a3a]" />
-                  <span className="truncate">{student.weakAreas?.slice(0, 2).join(', ') || 'Needs comprehensive review'}</span>
-                </span>
-
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  <button type="button" onClick={() => studentId && analyzeStudentWeakness(studentId, student.focusSubject || 'Mathematics')} disabled={analyzing || !studentId} className={actionClass}>
-                    <RefreshCcw className={`size-3 ${analyzing ? 'animate-spin' : ''}`} /> {analyzing ? 'Analyzing...' : 'Re-analyze'}
+                  <button
+                    type="button"
+                    onClick={() => setInterventionModal({ studentId, studentName, riskLevel: level, attPct: student.attPct, avgScore: student.avgScore, scoreTrend: trend })}
+                    className={`${actionClass} bg-[#e4edf2] text-[#2a5a72] hover:bg-[#d4e0e8]`}
+                  >
+                    <ArrowRight className="size-3" /> Log Intervention
                   </button>
-                  <button type="button" onClick={() => studentId && generateLearningPath(studentId, student.focusSubject || 'Mathematics', student.weakAreas || [], 'basic')} disabled={!studentId} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5] hover:bg-[#e4dcee]`}>
-                    <Brain className="size-3" /> Generate AI Path
-                  </button>
-                  <button type="button" onClick={() => setSelectedWeakStudent(student)} className={`${actionClass} bg-[#e4edf2] text-[#2a5a72] hover:bg-[#d4e0e8]`}>
-                    <ChevronRight className="size-3" /> View
-                  </button>
-                  {student.hasAIPath && studentId && (
-                    <button type="button" onClick={() => navigate(`/teacher/classes/current/students/${studentId}/ai-learning/${student.focusSubject || 'Mathematics'}`)} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5]`}>
-                      <Play className="size-3" /> AI Path
+                  {studentId && (
+                    <button type="button" onClick={() => generateLearningPath(studentId, 'General', [], 'basic')} disabled={!studentId} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5] hover:bg-[#e4dcee]`}>
+                      <Brain className="size-3" /> AI Path
                     </button>
                   )}
                 </div>
@@ -876,6 +832,112 @@ const InterventionTab = ({
             );
           })}
         </div>
+
+        {/* Intervention logs */}
+        {interventionLogs.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-sm font-bold text-[#1a2e3f] mb-3">Recent Interventions</h3>
+            <div className="space-y-2">
+              {interventionLogs.slice(0, 6).map((log) => (
+                <div key={log._id} className="flex items-center justify-between gap-3 rounded-xl border border-[#eaedf0] bg-white px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#1a2e3f] truncate">{log.studentName}</p>
+                    <p className="text-xs text-[#5a7a8e] truncate">{log.action}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                      log.status === 'completed' ? 'bg-emerald-50 text-emerald-700' :
+                      log.status === 'in_progress' ? 'bg-amber-50 text-amber-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{log.status}</span>
+                    {log.status !== 'completed' && (
+                      <button type="button"
+                        onClick={() => { setOutcomeModal({ interventionId: log._id }); setOutcomeForm({ outcome: '', improvement: '' }); }}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+                      >
+                        Record Outcome
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Log intervention modal */}
+        <AnimatePresence>
+          {interventionModal && (
+            <Motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Motion.div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-gray-900">Log Intervention — {interventionModal.studentName}</h3>
+                  <button onClick={() => setInterventionModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Action Taken *</label>
+                    <input value={interventionForm.action} onChange={(e) => setInterventionForm((f) => ({ ...f, action: e.target.value }))}
+                      placeholder="e.g. One-on-one session scheduled"
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
+                    <textarea value={interventionForm.notes} onChange={(e) => setInterventionForm((f) => ({ ...f, notes: e.target.value }))}
+                      rows={2} placeholder="Additional context…"
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none resize-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scheduled Date</label>
+                    <input type="date" value={interventionForm.scheduledDate} onChange={(e) => setInterventionForm((f) => ({ ...f, scheduledDate: e.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                </div>
+                <button onClick={logIntervention} disabled={savingIntervention || !interventionForm.action.trim()}
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 text-sm">
+                  {savingIntervention ? 'Saving…' : 'Save Intervention'}
+                </button>
+              </Motion.div>
+            </Motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Outcome modal */}
+        <AnimatePresence>
+          {outcomeModal && (
+            <Motion.div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Motion.div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl space-y-4"
+                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-gray-900">Record Outcome</h3>
+                  <button onClick={() => setOutcomeModal(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Outcome</label>
+                    <textarea value={outcomeForm.outcome} onChange={(e) => setOutcomeForm((f) => ({ ...f, outcome: e.target.value }))}
+                      rows={2} placeholder="What happened as a result?"
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none resize-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Score Improvement (%)</label>
+                    <input type="number" value={outcomeForm.improvement} onChange={(e) => setOutcomeForm((f) => ({ ...f, improvement: e.target.value }))}
+                      placeholder="e.g. 12"
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none" />
+                  </div>
+                </div>
+                <button onClick={recordOutcome}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 text-sm">
+                  Save Outcome
+                </button>
+              </Motion.div>
+            </Motion.div>
+          )}
+        </AnimatePresence>
+        </>
       )}
 
       {selectedWeakStudent && (
