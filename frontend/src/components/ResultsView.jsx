@@ -772,8 +772,8 @@ const TermTimeline = ({ cards }) => {
               transition={{ delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
               className={`w-10 rounded-t-xl ${d.pct >= 80 ? 'bg-emerald-500' : d.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
             />
-            <span className="text-[10px] text-indigo-500/80 text-center leading-tight">{d.session}</span>
             <span className="text-[10px] text-indigo-600/70 text-center leading-tight">{d.name}</span>
+            <span className="text-[10px] text-indigo-500/80 text-center leading-tight">{d.session}</span>
           </div>
         ))}
       </div>
