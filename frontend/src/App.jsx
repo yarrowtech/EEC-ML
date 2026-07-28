@@ -68,6 +68,7 @@ const studentSections = [
   "notifications",
   "learning-path-map",
   "mastery",
+  "error-analysis",
 ];
 
 const studentBasePaths = ["/student", "/dashboard"];

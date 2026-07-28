@@ -8,6 +8,7 @@ const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const { ensureAllocationGroupThread, removeAllocationGroupThread, syncAllocationGroupThreads } = require('../utils/chatGroupProvisioning');
+const { invalidateStudentSubjectsCache } = require('../utils/studentSubjectsCache');
 
 const router = express.Router();
 
@@ -174,6 +175,14 @@ router.post('/', adminAuth, async (req, res) => {
       });
     }
 
+    await invalidateStudentSubjectsCache({
+      organizationId: req.organizationId,
+      schoolId,
+      campusId,
+      classId,
+      sectionId,
+    });
+
     res.status(201).json(populated);
   } catch (err) {
     if (err && err.code === 11000) {
@@ -284,6 +293,21 @@ router.put('/:id', adminAuth, async (req, res) => {
       });
     }
 
+    await invalidateStudentSubjectsCache({
+      organizationId: req.organizationId,
+      schoolId,
+      campusId,
+      classId: existingAllocation.classId,
+      sectionId: existingAllocation.sectionId,
+    });
+    await invalidateStudentSubjectsCache({
+      organizationId: req.organizationId,
+      schoolId,
+      campusId,
+      classId,
+      sectionId,
+    });
+
     res.json(updated);
   } catch (err) {
     if (err && err.code === 11000) {
@@ -324,6 +348,14 @@ router.delete('/:id', adminAuth, async (req, res) => {
         isClassTeacher: true,
       });
     }
+
+    await invalidateStudentSubjectsCache({
+      organizationId: req.organizationId,
+      schoolId,
+      campusId,
+      classId: removed.classId,
+      sectionId: removed.sectionId,
+    });
 
     res.json({ ok: true, message: 'Allocation deleted successfully' });
   } catch (err) {

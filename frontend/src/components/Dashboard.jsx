@@ -28,6 +28,7 @@ import StudentNotificationCenter from './StudentNotificationCenter';
 import StudentOnboarding from './StudentOnboarding';
 import LearningPathMapView from './LearningPathMapView';
 import MasteryView from './MasteryView';
+import ErrorAnalysisView from './ErrorAnalysisView';
 
 // All of these views render the same LearningHub component (it owns an
 // internal tab bar). Treat them as one logical page so switching tabs inside
@@ -161,6 +162,7 @@ const Dashboard = () => {
     notifications: StudentNotificationCenter,
     'learning-path-map': LearningPathMapView,
     mastery: MasteryView,
+    'error-analysis': ErrorAnalysisView,
     profile: ProfileUpdate,
     themecustomizer: ThemeCustomizer,
   };

@@ -95,14 +95,18 @@ import {
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
 const CHIP_MODES = {
-  "Explain Like I'm 10": 'explain',
-  'Give Example': 'explain',
-  'Create Quiz': 'quiz',
-  'Simplify Notes': 'notes',
-  'Mind Map': 'mind_map',
-  Flashcards: 'flashcards',
-  'Homework Help': 'homework_help',
-  'Real World': 'real_world',
+  "Explain Like I'm 10":  'explain',
+  'Give Example':         'explain',
+  'Create Quiz':          'quiz',
+  'Simplify Notes':       'notes',
+  'Mind Map':             'mind_map',
+  Flashcards:             'flashcards',
+  'Homework Help':        'homework_help',
+  'Real World':           'real_world',
+  'Basic Practice':       'practice_basic',
+  'Intermediate Practice':'practice_intermediate',
+  'Advanced Practice':    'practice_advanced',
+  'Re-Engage Me':         'engagement_swap',
 };
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
@@ -113,14 +117,18 @@ const MAX_GENERATED_STUDY_ITEMS = 8;
 const splitStreamTokens = (text) => String(text || '').match(/\S+\s*/g) || [];
 
 const GENERATED_MODE_META = {
-  quiz: { label: 'Quiz', icon: Target },
-  flashcards: { label: 'Flashcards', icon: Layers3 },
-  mind_map: { label: 'Mind map', icon: Network },
-  notes: { label: 'Notes', icon: NotebookPen },
-  explain: { label: 'Explanation', icon: Lightbulb },
-  homework_help: { label: 'Homework help', icon: MessageCircleQuestion },
-  real_world: { label: 'Real world', icon: Globe2 },
-  misconception: { label: 'Misconception explainer', icon: BrainCircuit },
+  quiz:                    { label: 'Quiz',                    icon: Target               },
+  flashcards:              { label: 'Flashcards',              icon: Layers3              },
+  mind_map:                { label: 'Mind map',                icon: Network              },
+  notes:                   { label: 'Notes',                   icon: NotebookPen          },
+  explain:                 { label: 'Explanation',             icon: Lightbulb            },
+  homework_help:           { label: 'Homework help',           icon: MessageCircleQuestion},
+  real_world:              { label: 'Real world',              icon: Globe2               },
+  misconception:           { label: 'Misconception explainer', icon: BrainCircuit         },
+  practice_basic:          { label: 'Basic Practice',          icon: BookOpen             },
+  practice_intermediate:   { label: 'Intermediate Practice',   icon: BookOpen             },
+  practice_advanced:       { label: 'Advanced Practice',       icon: BookOpen             },
+  engagement_swap:         { label: 'Re-Engage',               icon: Sparkles             },
 };
 
 const getGeneratedModeMeta = (mode) => GENERATED_MODE_META[mode] || { label: 'Tutor answer', icon: Bot };
@@ -1196,9 +1204,66 @@ function parseNotesResponse(text) {
   return parsed;
 }
 
+const exportNotesPdf = async (title, rawText) => {
+  const { default: jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const margin = 15;
+  const pageW = doc.internal.pageSize.getWidth();
+  const maxW = pageW - margin * 2;
+  let y = 20;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(30, 30, 60);
+  doc.text(title || 'Study Notes', margin, y);
+  y += 10;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(80, 80, 100);
+  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, margin, y);
+  y += 8;
+
+  doc.setDrawColor(200, 200, 220);
+  doc.line(margin, y, pageW - margin, y);
+  y += 6;
+
+  const lines = rawText.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) { y += 3; continue; }
+    const isHeading = trimmed.startsWith('**') && trimmed.endsWith('**');
+    if (isHeading) {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(60, 40, 140);
+      doc.text(trimmed.replace(/\*\*/g, ''), margin, y);
+      y += 7;
+    } else {
+      if (y > 275) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(50, 50, 60);
+      const wrapped = doc.splitTextToSize(trimmed, maxW);
+      doc.text(wrapped, margin, y);
+      y += wrapped.length * 5 + 1;
+    }
+  }
+
+  doc.save(`study-notes-${Date.now()}.pdf`);
+};
+
 function NotesUI({ text }) {
   const notes = useMemo(() => parseNotesResponse(text), [text]);
   const [markedSections, setMarkedSections] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    try { await exportNotesPdf(notes.title || 'Study Notes', text); }
+    finally { setExporting(false); }
+  };
   const studyStats = useMemo(() => {
     const minutes = Math.max(5, Math.min(30, notes.sections.length * 2 + Math.ceil(notes.tasks.length / 2) + Math.ceil(notes.words.length / 4)));
     const focus = notes.sections.slice(0, 3).map((section) => section.heading).filter(Boolean);
@@ -1236,11 +1301,20 @@ function NotesUI({ text }) {
             <h3 className="mt-1 text-base font-bold leading-snug text-slate-900">{notes.title}</h3>
             {notes.subtitle && <p className="mt-0.5 text-xs text-slate-500">{notes.subtitle}</p>}
           </div>
-          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold items-center">
             <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-violet-700">{studyStats.minutes} min revision</span>
             <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">{notes.sections.length} sections</span>
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">{notes.tasks.length} tasks</span>
             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700">{notes.words.length} words</span>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={exporting}
+              className="flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+            >
+              <FileText className="size-3" />
+              {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
           </div>
         </div>
 
@@ -2036,15 +2110,19 @@ const LEARNING_MODES = [
 ];
 
 const COMPANION_CHIPS = [
-  { label: "Explain Like I'm 10", icon: Lightbulb },
-  { label: 'Give Example', icon: Sparkles },
-  { label: 'Create Quiz', icon: Target },
-  { label: 'Simplify Notes', icon: NotebookPen },
-  { label: 'Translate', icon: Languages },
-  { label: 'Mind Map', icon: Network },
-  { label: 'Flashcards', icon: Layers3 },
-  { label: 'Homework Help', icon: MessageCircleQuestion },
-  { label: 'Real World', icon: Globe2 },
+  { label: "Explain Like I'm 10",   icon: Lightbulb            },
+  { label: 'Give Example',          icon: Sparkles             },
+  { label: 'Create Quiz',           icon: Target               },
+  { label: 'Simplify Notes',        icon: NotebookPen          },
+  { label: 'Translate',             icon: Languages            },
+  { label: 'Mind Map',              icon: Network              },
+  { label: 'Flashcards',            icon: Layers3              },
+  { label: 'Homework Help',         icon: MessageCircleQuestion},
+  { label: 'Real World',            icon: Globe2               },
+  { label: 'Basic Practice',        icon: BookOpen             },
+  { label: 'Intermediate Practice', icon: BookOpen             },
+  { label: 'Advanced Practice',     icon: BookOpen             },
+  { label: 'Re-Engage Me',          icon: Sparkles             },
 ];
 
 // Chat history panel shows this many conversations before a "See more" toggle.
@@ -2809,6 +2887,27 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const conversationIdRef = useRef(null);
   const historyPanelRef = useRef(null);
   const activeChipMeta = COMPANION_CHIPS.find((c) => c.label === activeChip) || COMPANION_CHIPS[0];
+
+  // Auto-set quiz difficulty from mastery when quiz chip + subject + topic are all ready.
+  useEffect(() => {
+    if (activeChip !== 'Create Quiz' || !topicTitle) return;
+    const selectedSubjectForDiff = subjects.find((s) => s.key === subjectKey);
+    if (!selectedSubjectForDiff) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const topicId = topicTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    fetch(
+      `${API_BASE}/api/mastery/suggested-difficulty?subject=${encodeURIComponent(selectedSubjectForDiff.title)}&topicId=${encodeURIComponent(topicId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+      .then((r) => r.ok ? r.json() : null)
+      .then((payload) => {
+        const diff = payload?.data?.difficulty;
+        if (diff && ['easy', 'medium', 'hard'].includes(diff)) setQuizDifficulty(diff);
+      })
+      .catch(() => {});
+  }, [activeChip, subjectKey, topicTitle, subjects]);
+
   const lastMessage = messages[messages.length - 1];
   const showFollowUps = !sending && lastMessage?.role === 'assistant'
     && !lastMessage.error && !lastMessage.thinking && !lastMessage.streaming;

@@ -4,6 +4,23 @@ import { Brain, ChevronDown, ChevronRight, RefreshCw, BookOpen } from 'lucide-re
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
+// ── Demo data shown when no real mastery scores exist yet ───────────────────
+const DEMO_SCORES = [
+  { subject: 'Mathematics',  topicId: 'quadratic-equations',   topicTitle: 'Quadratic Equations',     chapterTitle: 'Algebra',              score: 92, attemptCount: 4 },
+  { subject: 'Mathematics',  topicId: 'trigonometry-basics',   topicTitle: 'Trigonometry Basics',     chapterTitle: 'Trigonometry',         score: 78, attemptCount: 3 },
+  { subject: 'Mathematics',  topicId: 'coordinate-geometry',   topicTitle: 'Coordinate Geometry',     chapterTitle: 'Geometry',             score: 55, attemptCount: 2 },
+  { subject: 'Mathematics',  topicId: 'probability',           topicTitle: 'Probability',             chapterTitle: 'Statistics',           score: 35, attemptCount: 1 },
+  { subject: 'Science',      topicId: 'laws-of-motion',        topicTitle: 'Laws of Motion',          chapterTitle: 'Physics — Mechanics',  score: 88, attemptCount: 5 },
+  { subject: 'Science',      topicId: 'chemical-bonding',      topicTitle: 'Chemical Bonding',        chapterTitle: 'Chemistry',            score: 63, attemptCount: 2 },
+  { subject: 'Science',      topicId: 'cell-division',         topicTitle: 'Cell Division',           chapterTitle: 'Biology',              score: 47, attemptCount: 2 },
+  { subject: 'Science',      topicId: 'electricity',           topicTitle: 'Electricity & Circuits',  chapterTitle: 'Physics — Electricity',score: 71, attemptCount: 3 },
+  { subject: 'English',      topicId: 'grammar-tenses',        topicTitle: 'Verb Tenses',             chapterTitle: 'Grammar',              score: 95, attemptCount: 6 },
+  { subject: 'English',      topicId: 'essay-writing',         topicTitle: 'Essay Writing',           chapterTitle: 'Writing Skills',       score: 68, attemptCount: 3 },
+  { subject: 'English',      topicId: 'reading-comprehension', topicTitle: 'Reading Comprehension',   chapterTitle: 'Reading Skills',       score: 82, attemptCount: 4 },
+  { subject: 'Social Studies', topicId: 'french-revolution',   topicTitle: 'The French Revolution',   chapterTitle: 'World History',        score: 58, attemptCount: 2 },
+  { subject: 'Social Studies', topicId: 'indian-geography',    topicTitle: 'Indian Geography',        chapterTitle: 'Geography',            score: 76, attemptCount: 3 },
+];
+
 // ── Mastery level config ────────────────────────────────────────────────────
 const LEVELS = [
   { min: 90,  label: 'Mastered',   emoji: '🏆', color: 'emerald', bar: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -136,6 +153,7 @@ const MasteryView = () => {
   const [scores, setScores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
   const fetchScores = async () => {
     setLoading(true);
@@ -147,9 +165,19 @@ const MasteryView = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load mastery data');
-      setScores(data.data || []);
+      const real = data.data || [];
+      if (real.length === 0) {
+        setScores(DEMO_SCORES);
+        setIsDemo(true);
+      } else {
+        setScores(real);
+        setIsDemo(false);
+      }
     } catch (err) {
-      setError(err.message);
+      // On error still show demo so the page isn't blank
+      setScores(DEMO_SCORES);
+      setIsDemo(true);
+      setError('');
     } finally {
       setLoading(false);
     }
@@ -195,6 +223,19 @@ const MasteryView = () => {
         </button>
       </div>
 
+      {/* Demo banner */}
+      {isDemo && (
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="text-lg shrink-0">🎯</span>
+          <div>
+            <p className="text-sm font-bold text-amber-800">Sample data — complete a quiz to see your real progress</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Go to AI Tutor, pick a subject and topic, tap <span className="font-semibold">Create Quiz</span>, finish it — your score will appear here automatically.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       {scores.length > 0 && (
         <div className="mb-6 flex gap-3 flex-wrap sm:flex-nowrap">
@@ -225,8 +266,6 @@ const MasteryView = () => {
             <div key={i} className="h-24 rounded-2xl bg-slate-200 animate-pulse" />
           ))}
         </div>
-      ) : scores.length === 0 ? (
-        <EmptyState />
       ) : (
         <div className="space-y-4">
           {Object.entries(grouped).map(([subject, topics]) => (

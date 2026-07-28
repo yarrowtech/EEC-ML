@@ -64,9 +64,10 @@ const MENU_ITEMS = [
     id: 'wellness', name: 'Wellness', icon: Heart,
     iconColor: 'text-pink-600', iconBg: 'bg-pink-100',
     children: [
-      { id: 'wellbeing',    name: 'Emotional Wellbeing', icon: Heart  },
-      { id: 'achievements', name: 'Achievements',         icon: Trophy },
-      { id: 'mastery',      name: 'Mastery Progress',    icon: Zap    },
+      { id: 'wellbeing',      name: 'Emotional Wellbeing', icon: Heart     },
+      { id: 'achievements',   name: 'Achievements',        icon: Trophy    },
+      { id: 'mastery',        name: 'Mastery Progress',   icon: Zap       },
+      { id: 'error-analysis', name: 'Error Analysis',     icon: BarChart3 },
     ],
   },
 ];

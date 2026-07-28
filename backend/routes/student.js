@@ -9,6 +9,8 @@ const auth = require('../middleware/authStudent');
 const multer = require('multer');
 const { logger } = require('../utils/logger');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { getJson, setJson } = require('../utils/redisClient');
+const { getStudentSubjectsCacheKey } = require('../utils/studentSubjectsCache');
 
 // Setup multer for file uploads (in memory)
 const storage = multer.memoryStorage();
@@ -162,6 +164,33 @@ router.get('/allocated-subjects', auth, async (req, res) => {
       return res.json({ subjects: [] });
     }
 
+    // The key is scoped to the tenant, school, campus, class, section, and
+    // authenticated student. Never use a shared key for this private response.
+    const cacheKey = await getStudentSubjectsCacheKey({
+      organizationId: req.organizationId,
+      schoolId,
+      campusId,
+      classId: classDoc._id,
+      sectionId: sectionDoc._id,
+      studentId: req.user.id,
+    });
+    const cachedResponse = await getJson(cacheKey);
+    if (cachedResponse) {
+      res.set('Cache-Control', 'private, no-store');
+      res.set('X-Cache', 'HIT');
+      logStudentPortalEvent(req, {
+        feature: 'tryouts',
+        action: 'allocated_subjects.fetch',
+        outcome: 'success',
+        statusCode: 200,
+        targetType: 'student',
+        targetId: req.user?.id,
+        resultCount: cachedResponse.subjects?.length || 0,
+        cache: 'hit',
+      });
+      return res.json(cachedResponse);
+    }
+
     // Find all teacher allocations for this class/section
     const allocations = await TeacherAllocation.find({
       schoolId,
@@ -197,8 +226,14 @@ router.get('/allocated-subjects', auth, async (req, res) => {
     });
 
     const subjects = Array.from(subjectMap.values());
+    const response = { subjects };
 
-    res.json({ subjects });
+    // A short TTL limits staleness. Allocation writes bump the scope version.
+    await setJson(cacheKey, response, 60);
+
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Cache', 'MISS');
+    res.json(response);
     logStudentPortalEvent(req, {
       feature: 'tryouts',
       action: 'allocated_subjects.fetch',
@@ -207,6 +242,7 @@ router.get('/allocated-subjects', auth, async (req, res) => {
       targetType: 'student',
       targetId: req.user?.id,
       resultCount: subjects.length,
+      cache: 'miss',
     });
   } catch (err) {
     logStudentPortalError(req, {

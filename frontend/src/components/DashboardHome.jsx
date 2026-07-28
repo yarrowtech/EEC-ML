@@ -7,6 +7,7 @@ import CalendarWidget from './CalendarWidget';
 import QuickStats from './QuickStats';
 import TestPetButton from './TestPetButton';
 import DashboardPet from './DashboardPet';
+import RecommendationWidget from './RecommendationWidget';
 import { useStudentDashboard } from './StudentDashboardContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
@@ -237,6 +238,8 @@ const DashboardHome = () => {
 
         {/* Sidebar - Right 1 column */}
         <div className="space-y-4 sm:space-y-6">
+          {/* Personalised Recommendations */}
+          <RecommendationWidget />
           {/* Calendar */}
           <CalendarWidget />
         </div>

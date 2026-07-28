@@ -16,6 +16,7 @@ const examGroupSchema = new mongoose.Schema({
   status:    { type: String, default: 'Scheduled' },
   startDate: { type: String, default: '' },
   endDate:   { type: String, default: '' },
+  startTime: { type: String, default: '' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('ExamGroup', examGroupSchema);

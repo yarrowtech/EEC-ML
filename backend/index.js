@@ -32,6 +32,10 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const { bindConsoleToLogger, logger } = require('./utils/logger');
 bindConsoleToLogger();
 logger.info('Pino logger initialized');
+const { connectRedis } = require('./utils/redisClient');
+if (process.env.NODE_ENV !== 'test') {
+  connectRedis();
+}
 // console.log(`[auth] JWT_EXPIRES_IN=${process.env.JWT_EXPIRES_IN || '24h (default)'}`);
 
 const adminAuthRoutes = require('./routes/adminRoutes');
@@ -88,6 +92,9 @@ const practiceSectionRoutes = require('./routes/practiceSectionRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const spacedRepetitionRoutes = require('./routes/spacedRepetitionRoutes');
 const masteryRoutes = require('./routes/masteryRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
+const engagementRoutes = require('./routes/engagementRoutes');
+const mockExamRoutes = require('./routes/mockExamRoutes');
 const paymentSettingsRoutes = require('./routes/paymentSettingsRoutes');
 const paymentWebhookController = require('./controllers/paymentWebhookController');
 const ChatThread = require('./models/ChatThread');
@@ -103,6 +110,7 @@ const { getPresenceSnapshot, markUserOnline, markUserOffline } = require('./util
 const { syncAllocationGroupThreads } = require('./utils/chatGroupProvisioning');
 const { startHolidayReminderScheduler } = require('./utils/holidayNotificationScheduler');
 const { startTeacherFeedbackReminderScheduler } = require('./utils/teacherFeedbackReminderScheduler');
+const { sendSpacedRepetitionNudges } = require('./services/engagementScorer');
 
 const fixChatThreadIndexes = async () => {
   try {
@@ -400,6 +408,14 @@ mongoose
     await seedPrincipal();
     startHolidayReminderScheduler();
     startTeacherFeedbackReminderScheduler();
+    // Run spaced-repetition nudges once at startup, then every 24 hours.
+    const runSpacedRepNudges = () => {
+      sendSpacedRepetitionNudges(null).catch((err) =>
+        console.error('[spaced-rep] nudge scheduler error:', err.message)
+      );
+    };
+    runSpacedRepNudges();
+    setInterval(runSpacedRepNudges, 24 * 60 * 60 * 1000);
     try {
       const stats = await syncAllocationGroupThreads();
       console.log(`[chat] allocation group sync complete: ${stats.createdOrUpdated}/${stats.scanned}`);
@@ -470,6 +486,9 @@ app.use('/api/lesson-plans', writeHeavyApiLimiter, lessonPlanRoutes);
 app.use('/api/ai-tutor', aiApiLimiter, aiTutorRoutes);
 app.use('/api/spaced-repetition', spacedRepetitionRoutes);
 app.use('/api/mastery', masteryRoutes);
+app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/engagement', engagementRoutes);
+app.use('/api/mock-exam', mockExamRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/chat', chatRoutes);

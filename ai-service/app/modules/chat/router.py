@@ -25,13 +25,21 @@ _LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize", "quiz"}
 # Higher temperature for generative/creative modes so each run produces different questions/cards.
 # Lower temperature for structured/factual modes so output is consistent and well-formatted.
 _MODE_TEMPERATURE: dict[str, float] = {
-    "quiz":          0.9,
-    "flashcards":    0.85,
-    "explain":       0.6,
-    "homework_help": 0.6,
-    "summarize":     0.4,
-    "notes":         0.3,
-    "mind_map":      0.3,
+    "quiz":                0.9,
+    "flashcards":          0.85,
+    "practice_basic":      0.5,
+    "practice_intermediate": 0.6,
+    "practice_advanced":   0.65,
+    "engagement_swap":     0.8,
+    "explain":             0.6,
+    "homework_help":       0.6,
+    "real_world":          0.7,
+    "misconception":       0.5,
+    "exam_explanation":    0.45,
+    "exam_feedback":       0.55,
+    "summarize":           0.4,
+    "notes":               0.3,
+    "mind_map":            0.3,
 }
 _DEFAULT_TEMPERATURE = 0.7
 

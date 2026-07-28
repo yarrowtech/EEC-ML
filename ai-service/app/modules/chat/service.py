@@ -88,6 +88,66 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "Turn the material into exactly 6 flashcards. Return them as a numbered list, "
         "each formatted as 'Q: <question>' followed by 'A: <answer>'."
     ),
+    "practice_basic": (
+        "You are generating FOUNDATION-level practice for a student who is still learning this topic.\n"
+        "Create 5 very simple questions that test basic recall and recognition.\n"
+        "Rules:\n"
+        "- Questions must be answerable directly from the material with one sentence.\n"
+        "- Use simple vocabulary appropriate for a beginner.\n"
+        "- Include the correct answer after each question as 'Answer: <answer>'.\n"
+        "- Do NOT include trick questions or inference — only direct recall."
+    ),
+    "practice_intermediate": (
+        "You are generating STANDARD-level practice for a student with developing understanding.\n"
+        "Create 5 questions that mix recall with application and short explanation.\n"
+        "Rules:\n"
+        "- Mix MCQ and short-answer formats.\n"
+        "- At least 2 questions should require the student to apply or connect concepts.\n"
+        "- Include the correct answer after each question as 'Answer: <answer>'.\n"
+        "- Avoid trivially obvious questions."
+    ),
+    "practice_advanced": (
+        "You are generating EXTENSION-level practice for a student approaching mastery.\n"
+        "Create 5 challenging questions that require analysis, inference, and critical thinking.\n"
+        "Rules:\n"
+        "- Questions must require the student to synthesise across multiple parts of the material.\n"
+        "- Include at least one 'why/how' question and one scenario-based question.\n"
+        "- Include the correct answer or a model answer for each.\n"
+        "- Use precise academic language appropriate for this grade level."
+    ),
+    "engagement_swap": (
+        "The student seems disengaged with this topic. Your job is to re-spark their curiosity.\n"
+        "Using ONLY the retrieved material:\n"
+        "1. Find the single most surprising or counter-intuitive fact in the material.\n"
+        "2. Present it as a compelling 'Did you know?' hook (2-3 sentences).\n"
+        "3. Follow with ONE thought-provoking question to pull the student back in.\n"
+        "4. Suggest ONE specific activity or challenge from the material they could try right now.\n"
+        "Keep the tone energetic and playful — like a friend who loves this topic."
+    ),
+    "exam_explanation": (
+        "A student got a question WRONG on their exam. Your job is to help them understand why.\n"
+        "The question, the student's wrong answer, and the correct answer will be provided.\n"
+        "Your response must:\n"
+        "1. Start with a warm, encouraging opener (1 sentence) — never shame the student.\n"
+        "2. Explain WHY the correct answer is correct — using simple language and a real-world example if possible.\n"
+        "3. Explain WHY the student's answer is wrong — the specific misconception or reasoning gap.\n"
+        "4. Give ONE memory trick or tip to remember the correct concept next time.\n"
+        "5. End with a single confidence-building sentence.\n"
+        "Keep the total response under 150 words. Use warm, encouraging language throughout."
+    ),
+    "exam_feedback": (
+        "A student has just received their exam results. Based on their score and subject, "
+        "write a personalised, motivating post-exam feedback message.\n"
+        "The feedback MUST:\n"
+        "1. Acknowledge the score warmly (do not shame low scores — always find something positive).\n"
+        "2. Identify 2 specific strengths based on their performance.\n"
+        "3. Identify 1-2 areas for improvement with concrete next steps (e.g. 'review Chapter 3 on photosynthesis').\n"
+        "4. Recommend the single best next action (e.g. 'Try a medium quiz on this topic in AI Tutor').\n"
+        "5. End with a short motivational closing line tailored to their score.\n"
+        "Structure the response with clear headings: "
+        "**What you did well**, **Where to improve**, **Your next step**, **Keep going!**\n"
+        "Tone: warm, specific, teacher-like. Keep total under 200 words."
+    ),
 }
 
 

@@ -577,4 +577,55 @@ router.post('/student/submit', authStudent, async (req, res) => {
   }
 });
 
+// ── GET /api/practice/error-analysis ────────────────────────────────────────
+// Returns wrong-answer clusters grouped by subject + topic for the logged-in student.
+router.get('/error-analysis', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const wrongAttempts = await PracticeAttempt.find({ studentId, schoolId, isCorrect: false })
+      .populate('questionId', 'question correctAnswer subject topicTitle chapterTitle difficultyLevel')
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    // Group by subject → topicTitle
+    const clusters = {};
+    for (const attempt of wrongAttempts) {
+      const q = attempt.questionId;
+      if (!q) continue;
+      const subject = q.subject || 'General';
+      const topic   = q.topicTitle || 'Unknown Topic';
+      const key     = `${subject}|||${topic}`;
+      if (!clusters[key]) {
+        clusters[key] = {
+          subject,
+          topicTitle: topic,
+          chapterTitle: q.chapterTitle || '',
+          errorCount: 0,
+          questions: [],
+        };
+      }
+      clusters[key].errorCount++;
+      if (clusters[key].questions.length < 3) {
+        clusters[key].questions.push({
+          question:      q.question,
+          correctAnswer: q.correctAnswer,
+          difficulty:    q.difficultyLevel || 'medium',
+        });
+      }
+    }
+
+    const result = Object.values(clusters)
+      .sort((a, b) => b.errorCount - a.errorCount)
+      .slice(0, 10);
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

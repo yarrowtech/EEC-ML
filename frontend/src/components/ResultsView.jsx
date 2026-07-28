@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Award,
   TrendingUp,
+  TrendingDown,
   Download,
   Target,
   Calendar,
@@ -19,10 +20,13 @@ import {
   ShieldCheck,
   BookOpen,
   Search,
+  Medal,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { fetchCachedJson } from '../utils/studentApiCache';
+import PostExamFeedbackView from './PostExamFeedbackView';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const RESULTS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -86,7 +90,7 @@ const deriveSessionLabel = (group) => {
   return `${startYear}-${startYear + 1}`;
 };
 
-const buildExamCardFromReport = (rc, group) => {
+const buildExamCardFromReport = (rc, group, meta = {}) => {
   if (!rc) return null;
   const totals = rc.totals || {};
   const subjects = Array.isArray(rc.subjects) ? rc.subjects : [];
@@ -112,6 +116,12 @@ const buildExamCardFromReport = (rc, group) => {
       maxMarks: toNumber(subject.totalMarks, 0),
       grade: subject.grade || '',
     })),
+    rank: meta.rank ?? null,
+    percentile: meta.percentile ?? null,
+    classSize: meta.total ?? null,
+    delta: meta.delta ?? null,
+    subject: meta.subject ?? '',
+    examId: meta.examId ?? null,
   };
 };
 
@@ -125,10 +135,23 @@ const getPublishedExamGroupKey = (result = {}) => String(
 
 const buildFallbackPublishedCards = (results = []) => {
   const groupMap = new Map();
+  const metaMap = new Map(); // key → { rank, percentile, total, delta, subject, examId }
 
   results.forEach((result) => {
     const key = getPublishedExamGroupKey(result);
     if (!key) return;
+
+    // Persist rank/percentile/delta from enriched API
+    if (!metaMap.has(key)) {
+      metaMap.set(key, {
+        rank: result.rank ?? null,
+        percentile: result.percentile ?? null,
+        total: result.total ?? null,
+        delta: result.delta ?? null,
+        subject: result.examId?.subject || '',
+        examId: result.examId?._id || result.examId || null,
+      });
+    }
 
     const exam = result?.examId || {};
     const student = result?.studentId || {};
@@ -201,7 +224,7 @@ const buildFallbackPublishedCards = (results = []) => {
         id: entry.group._id,
         group: entry.group,
         raw: rawReportCard,
-        card: buildExamCardFromReport(rawReportCard, entry.group),
+        card: buildExamCardFromReport(rawReportCard, entry.group, metaMap.get(entry.group._id) || {}),
       };
     })
     .sort((a, b) => {
@@ -276,7 +299,9 @@ const ResultsView = () => {
       }
 
       if (studentResultsResult.status === 'fulfilled') {
-        const studentResults = studentResultsResult.value?.data;
+        const payload = studentResultsResult.value;
+        // Handle both old array format and new { success, data } format
+        const studentResults = Array.isArray(payload) ? payload : (payload?.data || []);
         setPublishedResults(Array.isArray(studentResults) ? studentResults : []);
       } else {
         console.warn('Student results fetch skipped', studentResultsResult.reason);
@@ -516,6 +541,11 @@ const ResultsView = () => {
         />
       </div>
 
+      {/* Term-wise Progress Timeline */}
+      {examCards.length >= 2 && (
+        <TermTimeline cards={examCards} />
+      )}
+
       {effectiveExamGroups.length === 0 ? (
         <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
           <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
@@ -702,11 +732,44 @@ const SummaryCard = ({ icon, title, value, subtitle, grad, shadow }) => {
   );
 };
 
+const TermTimeline = ({ cards }) => {
+  const data = [...cards]
+    .sort((a, b) => new Date(a.date || a.startDate || 0) - new Date(b.date || b.startDate || 0))
+    .map((c) => ({ name: (c.examName || 'Exam').slice(0, 14), pct: Math.round(toNumber(c.percentage, 0)) }));
+
+  const max = Math.max(...data.map((d) => d.pct), 1);
+
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
+      <p className="text-sm font-black text-indigo-900 mb-4">Term-wise Progress</p>
+      <div className="flex items-end gap-3 overflow-x-auto pb-2">
+        {data.map((d, i) => (
+          <div key={i} className="flex flex-col items-center gap-1 min-w-[56px]">
+            <span className="text-xs font-bold text-indigo-700">{d.pct}%</span>
+            <Motion.div
+              initial={{ height: 0 }}
+              animate={{ height: `${Math.round((d.pct / max) * 96)}px` }}
+              transition={{ delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+              className={`w-10 rounded-t-xl ${d.pct >= 80 ? 'bg-emerald-500' : d.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
+            />
+            <span className="text-[10px] text-indigo-600/70 text-center leading-tight">{d.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => {
   const [expanded, setExpanded] = useState(true);
+  const [showFeedback, setShowFeedback] = useState(false);
   const percentage = toNumber(exam.percentage, 0);
   const tier = scoreTier(percentage);
   const hasSubjects = Array.isArray(exam.subjects) && exam.subjects.length > 0;
+  const delta = exam.delta;
+  const rank = exam.rank;
+  const percentile = exam.percentile;
+  const classSize = exam.classSize;
 
   return (
     <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
@@ -729,6 +792,15 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <StatPill label="Total" value={exam.totalMarks ?? 0} />
               <StatPill label="Obtained" value={exam.obtainedMarks ?? 0} highlight={tier.text} />
+              {rank && <StatPill label="Rank" value={`#${rank}${classSize ? `/${classSize}` : ''}`} highlight="text-indigo-600" />}
+              {percentile != null && <StatPill label="Percentile" value={`${percentile}%ile`} highlight={percentile >= 75 ? 'text-emerald-600' : 'text-amber-600'} />}
+              {delta != null && (
+                <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-1 rounded-full
+                  ${delta > 0 ? 'bg-emerald-50 text-emerald-700' : delta < 0 ? 'bg-rose-50 text-rose-600' : 'bg-gray-50 text-gray-500'}`}>
+                  {delta > 0 ? <TrendingUp size={11} /> : delta < 0 ? <TrendingDown size={11} /> : null}
+                  {delta > 0 ? `+${delta}%` : `${delta}%`} vs prev
+                </span>
+              )}
               {exam.status && (
                 <span
                   className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
@@ -748,17 +820,25 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
               </div>
             )}
 
-            {showDownload && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {showDownload && (
+                <button
+                  type="button"
+                  onClick={onDownload}
+                  disabled={downloadingReportCard}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-linear-to-r from-indigo-500 to-purple-600 rounded-full px-3.5 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-60 shadow-sm shadow-indigo-200"
+                >
+                  <Download size={12} />
+                  {downloadingReportCard ? 'Downloading...' : 'Download Grade Card'}
+                </button>
+              )}
               <button
-                type="button"
-                onClick={onDownload}
-                disabled={downloadingReportCard}
-                className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-linear-to-r from-indigo-500 to-purple-600 rounded-full px-3.5 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-60 shadow-sm shadow-indigo-200"
+                onClick={() => setShowFeedback((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-3.5 py-1.5 hover:bg-indigo-100 transition-colors"
               >
-                <Download size={12} />
-                {downloadingReportCard ? 'Downloading...' : 'Download Grade Card'}
+                <Sparkles size={12} /> AI Feedback
               </button>
-            )}
+            </div>
           </div>
 
           <div className="relative shrink-0 flex items-center justify-center">
@@ -822,6 +902,26 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
           )}
         </>
       )}
+
+      <AnimatePresence>
+        {showFeedback && (
+          <Motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden border-t border-gray-100"
+          >
+            <PostExamFeedbackView
+              subject={exam.subject || exam.examName || ''}
+              marksScored={exam.obtainedMarks}
+              totalMarks={exam.totalMarks}
+              examTitle={exam.examName}
+              onClose={() => setShowFeedback(false)}
+            />
+          </Motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

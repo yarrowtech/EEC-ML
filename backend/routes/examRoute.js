@@ -457,7 +457,7 @@ router.post('/groups', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
     const normalizedGroupStatus = status ? String(status).trim() : 'Scheduled';
 
     if (!title?.trim()) return res.status(400).json({ error: 'Exam group title is required' });
@@ -487,6 +487,7 @@ router.post('/groups', adminAuth, async (req, res) => {
       status: normalizedGroupStatus,
       startDate: startDate || '',
       endDate:   endDate   || '',
+      startTime: startTime || '',
     });
 
     const populated = await ExamGroup.findById(group._id)
@@ -508,7 +509,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
 
     const updates = {};
     if (title !== undefined) updates.title = title.trim();
@@ -522,6 +523,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     }
     if (startDate !== undefined) updates.startDate = startDate;
     if (endDate !== undefined) updates.endDate = endDate;
+    if (startTime !== undefined) updates.startTime = startTime;
 
     if (classId !== undefined) {
       const classDoc = classId && mongoose.isValidObjectId(classId)
@@ -1183,16 +1185,57 @@ router.get("/results/me", authStudent, async (req, res) => {
         const schoolId = req.schoolId || req.user?.schoolId || null;
         if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
         const campusId = req.campusId || null;
+        const studentId = req.user.id;
+
         const results = await ExamResult.find({
           schoolId,
-          studentId: req.user.id,
+          studentId,
           published: true,
           ...(campusId ? { campusId } : {}),
         })
             .populate('examId', 'title subject date term grade section classId sectionId subjectId groupId marks')
             .populate('studentId', 'name roll grade section academicYear studentCode admissionNumber username')
             .lean();
-        res.json(results);
+
+        // Enrich each result with rank, percentile, and pre/post delta in parallel
+        const enriched = await Promise.all(results.map(async (result) => {
+          const examId = result.examId?._id || result.examId;
+          if (!examId) return result;
+
+          // All published results for the same exam (for rank/percentile)
+          const allForExam = await ExamResult.find({ examId, published: true, schoolId }).select('marks studentId').lean();
+          const total = allForExam.length;
+          const sortedDesc = [...allForExam].sort((a, b) => (b.marks || 0) - (a.marks || 0));
+          const rankPos = sortedDesc.findIndex((r) => String(r.studentId) === String(studentId)) + 1;
+          const rank = rankPos > 0 ? rankPos : null;
+          const percentile = rank && total > 1 ? Math.round(((total - rank) / (total - 1)) * 100) : null;
+
+          // Pre/post delta: previous result for same subject
+          const subject = result.examId?.subject || '';
+          const examDate = result.examId?.date ? new Date(result.examId.date) : null;
+          let delta = null;
+          if (subject && examDate) {
+            const prevResult = await ExamResult.findOne({
+              schoolId,
+              studentId,
+              published: true,
+              _id: { $ne: result._id },
+            })
+              .populate('examId', 'subject date marks')
+              .sort({ 'examId.date': -1 })
+              .lean();
+
+            if (prevResult?.examId?.subject === subject && prevResult.marks != null && result.marks != null) {
+              const prevPct = result.examId?.marks ? Math.round((prevResult.marks / prevResult.examId.marks) * 100) : null;
+              const currPct = result.examId?.marks ? Math.round((result.marks / result.examId.marks) * 100) : null;
+              if (prevPct !== null && currPct !== null) delta = currPct - prevPct;
+            }
+          }
+
+          return { ...result, rank, percentile, total, delta };
+        }));
+
+        res.json({ success: true, data: enriched });
         logStudentPortalEvent(req, {
             feature: 'results',
             action: 'exam_results.fetch',
@@ -1200,7 +1243,7 @@ router.get("/results/me", authStudent, async (req, res) => {
             statusCode: 200,
             targetType: 'student',
             targetId: req.user?.id,
-            resultCount: results.length,
+            resultCount: enriched.length,
         });
     } catch (err) {
         logStudentPortalError(req, {
@@ -1763,6 +1806,22 @@ router.put("/results/:id/publish", adminAuth, async (req, res) => {
         result.published = published;
         result.publishedAt = published ? new Date() : null;
         await result.save();
+
+        // Non-blocking post-exam mastery re-assessment
+        if (published) {
+          const fullResult = await ExamResult.findById(result._id).populate('examId', 'subject marks').lean();
+          if (fullResult?.examId?.subject && fullResult?.examId?.marks) {
+            const axios = require('axios');
+            const BACKEND_URL = `http://localhost:${process.env.PORT || 5000}`;
+            axios.post(`${BACKEND_URL}/api/mastery/post-exam`, {
+              studentId: String(fullResult.studentId),
+              schoolId: String(fullResult.schoolId),
+              subject: fullResult.examId.subject,
+              marksScored: fullResult.marks,
+              totalMarks: fullResult.examId.marks,
+            }).catch(() => {});
+          }
+        }
 
         res.status(200).json({
             success: true,

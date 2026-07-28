@@ -7,7 +7,7 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world'];
+const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback'];
 
 const MAX_MATERIALS = 50;
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -242,6 +242,55 @@ router.post('/generate', authStudent, async (req, res) => {
     if (err.response) {
       return res.status(502).json({ error: 'AI service error', detail: err.response.data });
     }
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/exam-feedback — personalised post-exam AI feedback ────
+router.post('/exam-feedback', authStudent, async (req, res) => {
+  try {
+    const { subject, marksScored, totalMarks, examTitle } = req.body || {};
+    if (!subject || totalMarks == null) {
+      return res.status(400).json({ error: 'subject and totalMarks are required' });
+    }
+    const pct = Math.round((Number(marksScored) / Number(totalMarks)) * 100);
+    const question = `Student scored ${pct}% (${marksScored}/${totalMarks}) on "${examTitle || subject}" exam. Generate personalised post-exam feedback.`;
+
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
+      mode: 'exam_feedback',
+      subject: normalizeString(subject),
+      topic: examTitle || subject,
+      question,
+      school_id: null,
+    }, { timeout: 120000 });
+
+    return res.json({ success: true, data: { content: aiResponse.data?.content || '', percentage: pct } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/exam-explanation — LLM wrong answer explanation ───────
+router.post('/exam-explanation', authStudent, async (req, res) => {
+  try {
+    const { question, studentAnswer, correctAnswer, subject, topicTitle } = req.body || {};
+    if (!question || !correctAnswer) {
+      return res.status(400).json({ error: 'question and correctAnswer are required' });
+    }
+    const prompt = `Question: ${question}\nStudent answered: "${studentAnswer || '(no answer)'}"\nCorrect answer: "${correctAnswer}"\nExplain why the correct answer is right and what the student misunderstood.`;
+
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
+      mode: 'exam_explanation',
+      subject: normalizeString(subject || ''),
+      topic: topicTitle || '',
+      question: prompt,
+      school_id: null,
+    }, { timeout: 120000 });
+
+    return res.json({ success: true, data: { content: aiResponse.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
     return res.status(500).json({ error: err.message });
   }
 });
