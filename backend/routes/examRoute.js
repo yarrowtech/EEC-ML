@@ -1186,9 +1186,11 @@ router.get("/results/me", authStudent, async (req, res) => {
         const results = await ExamResult.find({
           schoolId,
           studentId: req.user.id,
+          published: true,
           ...(campusId ? { campusId } : {}),
         })
-            .populate('examId', 'title subject date term grade section classId sectionId subjectId')
+            .populate('examId', 'title subject date term grade section classId sectionId subjectId groupId marks')
+            .populate('studentId', 'name roll grade section academicYear studentCode admissionNumber username')
             .lean();
         res.json(results);
         logStudentPortalEvent(req, {

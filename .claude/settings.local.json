@@ -191,7 +191,8 @@
       "Bash(curl -s -m 5 -o /dev/null -w \"principal profile \\(no auth\\) status: %{http_code}\\\\n\" http://localhost:5000/api/principal/auth/profile)",
       "Bash(node test_principal.mjs)",
       "Bash(node -c routes/principalRoutes.js)",
-      "Bash(echo \"backend alive: $?\")"
+      "Bash(echo \"backend alive: $?\")",
+      "Bash(curl -s -H 'Authorization: Bearer __CMDSUB_OUTPUT__' http://localhost:5000/api/reports/report-cards/me)"
     ],
     "additionalDirectories": [
       "/tmp"

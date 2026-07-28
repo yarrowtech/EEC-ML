@@ -427,6 +427,36 @@ router.put('/report-cards/template', adminAuth, async (req, res) => {
   }
 });
 
+const resolveSignatories = async ({ schoolId, campusId, classId, sectionId }) => {
+  let classTeacherName = '';
+  if (classId && sectionId) {
+    const allocation = await TeacherAllocation.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      classId,
+      sectionId,
+      isClassTeacher: true,
+    })
+      .populate('teacherId', 'name')
+      .lean();
+    classTeacherName = String(allocation?.teacherId?.name || '').trim();
+  }
+
+  const principalFilter = campusId
+    ? {
+        schoolId,
+        $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }],
+      }
+    : { schoolId };
+
+  const principal = await Principal.findOne(principalFilter)
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .select('name')
+    .lean();
+
+  return { classTeacherName, principalName: String(principal?.name || '').trim() };
+};
+
 router.get('/report-cards/signatories', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -437,33 +467,12 @@ router.get('/report-cards/signatories', adminAuth, async (req, res) => {
     const scope = await resolveClassAndSection({ schoolId, campusId, classId, sectionId });
     if (scope.error) return res.status(400).json({ error: scope.error });
 
-    let classTeacherName = '';
-    if (scope.classDoc?._id && scope.sectionDoc?._id) {
-      const allocation = await TeacherAllocation.findOne({
-        schoolId,
-        ...(campusId ? { campusId } : {}),
-        classId: scope.classDoc._id,
-        sectionId: scope.sectionDoc._id,
-        isClassTeacher: true,
-      })
-        .populate('teacherId', 'name')
-        .lean();
-      classTeacherName = String(allocation?.teacherId?.name || '').trim();
-    }
-
-    const principalFilter = campusId
-      ? {
-          schoolId,
-          $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }],
-        }
-      : { schoolId };
-
-    const principal = await Principal.findOne(principalFilter)
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .select('name')
-      .lean();
-
-    const principalName = String(principal?.name || '').trim();
+    const { classTeacherName, principalName } = await resolveSignatories({
+      schoolId,
+      campusId,
+      classId: scope.classDoc?._id || null,
+      sectionId: scope.sectionDoc?._id || null,
+    });
 
     return res.json({
       classTeacherName,
@@ -619,15 +628,42 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
 
     const className = String(student.grade || '').trim();
     const sectionName = String(student.section || '').trim();
-    const classDoc = className
-      ? await ClassModel.findOne({
-          schoolId,
-          ...(campusId ? { campusId } : {}),
-          name: className,
-        })
+    const studentAcademicYearName = String(student.academicYear || '').trim();
+
+    // Schools recreate Class docs with the same name each academic year (e.g. "5"
+    // exists for 2025-2026, 2026-2027, ...). Without scoping to the student's own
+    // year, ClassModel.findOne can resolve to a stale year's class, which then
+    // filters out the student's actual current-year exam groups/results below.
+    let studentYearDoc = studentAcademicYearName
+      ? await AcademicYear.findOne({ schoolId, name: studentAcademicYearName })
           .select('_id name')
           .lean()
       : null;
+    if (!studentYearDoc) {
+      studentYearDoc = await AcademicYear.findOne({ schoolId, isActive: true })
+        .select('_id name')
+        .lean();
+    }
+
+    let classDoc = null;
+    if (className) {
+      const classQuery = {
+        schoolId,
+        ...(campusId ? { campusId } : {}),
+        name: className,
+      };
+      if (studentYearDoc?._id) {
+        classDoc = await ClassModel.findOne({ ...classQuery, academicYearId: studentYearDoc._id })
+          .select('_id name')
+          .lean();
+      }
+      if (!classDoc) {
+        classDoc = await ClassModel.findOne(classQuery)
+          .sort({ createdAt: -1 })
+          .select('_id name')
+          .lean();
+      }
+    }
     const sectionDoc = classDoc?._id && sectionName
       ? await Section.findOne({
           schoolId,
@@ -642,7 +678,7 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
     const groupFilter = {
       schoolId,
       ...(campusId ? { campusId } : {}),
-      status: 'Completed',
+      status: { $regex: '^completed$', $options: 'i' },
       ...(classDoc?._id ? { classId: classDoc._id } : {}),
       ...(sectionDoc?._id ? { sectionId: sectionDoc._id } : {}),
     };
@@ -677,7 +713,7 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
       selectedExamIds = groupedExams.map((exam) => exam._id);
     }
 
-    const [template, cards] = await Promise.all([
+    const [baseTemplate, cards, signatories] = await Promise.all([
       resolveTemplate({ schoolId, campusId }),
       buildReportCards({
         schoolId,
@@ -690,7 +726,22 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
         includeUnpublished: false,
         examIds: selectedExamIds,
       }),
+      resolveSignatories({
+        schoolId,
+        campusId,
+        classId: classDoc?._id || null,
+        sectionId: sectionDoc?._id || null,
+      }),
     ]);
+
+    // Prefer the student's actual class teacher / school principal over the
+    // admin-configured template defaults, which are a single school-wide value
+    // and often left blank ("Class Teacher"/"Principal" placeholder text).
+    const template = {
+      ...baseTemplate,
+      signatureLabel: signatories.classTeacherName || baseTemplate.signatureLabel,
+      principalLabel: signatories.principalName || baseTemplate.principalLabel,
+    };
 
     const reportCard = cards[0]
       ? {

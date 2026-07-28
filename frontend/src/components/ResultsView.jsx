@@ -115,22 +115,115 @@ const buildExamCardFromReport = (rc, group) => {
   };
 };
 
+const getPublishedExamGroupKey = (result = {}) => String(
+  result?.examId?.groupId?._id ||
+  result?.examId?.groupId ||
+  result?.examId?._id ||
+  result?.examId ||
+  ''
+).trim();
+
+const buildFallbackPublishedCards = (results = []) => {
+  const groupMap = new Map();
+
+  results.forEach((result) => {
+    const key = getPublishedExamGroupKey(result);
+    if (!key) return;
+
+    const exam = result?.examId || {};
+    const student = result?.studentId || {};
+    const existing = groupMap.get(key) || {
+      group: {
+        _id: key,
+        title: exam?.term || exam?.title || 'Exam',
+        term: exam?.term || '',
+        status: String(exam?.status || 'completed').toLowerCase(),
+        startDate: exam?.date || result?.createdAt || null,
+        endDate: exam?.date || result?.createdAt || null,
+      },
+      student: {
+        studentName: student?.name || 'Student',
+        studentCode: student?.studentCode || '',
+        username: student?.username || '',
+        admissionNumber: student?.admissionNumber || '',
+        roll: student?.roll || '',
+        grade: student?.grade || '',
+        section: student?.section || '',
+        academicYear: student?.academicYear || '',
+      },
+      subjects: [],
+      totalObtained: 0,
+      totalMarks: 0,
+      latestDate: result?.createdAt || exam?.date || null,
+    };
+
+    const obtained = toNumber(result?.marks, 0);
+    const maxMarks = toNumber(exam?.marks, 0);
+    existing.subjects.push({
+      name: exam?.subject || exam?.title || 'Subject',
+      obtainedMarks: obtained,
+      totalMarks: maxMarks,
+      percentage: maxMarks > 0 ? Math.round((obtained / maxMarks) * 100) : 0,
+      grade: String(result?.grade || '').trim(),
+    });
+    existing.totalObtained += obtained;
+    existing.totalMarks += maxMarks;
+    existing.latestDate = result?.createdAt || existing.latestDate || exam?.date || null;
+    groupMap.set(key, existing);
+  });
+
+  return [...groupMap.values()]
+    .map((entry) => {
+      const percentage = entry.totalMarks > 0 ? (entry.totalObtained / entry.totalMarks) * 100 : 0;
+      const rawReportCard = {
+        studentId: entry.student.studentName,
+        studentName: entry.student.studentName,
+        studentCode: entry.student.studentCode,
+        username: entry.student.username,
+        admissionNumber: entry.student.admissionNumber,
+        roll: entry.student.roll,
+        grade: entry.student.grade,
+        section: entry.student.section,
+        academicYear: entry.student.academicYear,
+        term: entry.group.title,
+        totals: {
+          obtainedMarks: entry.totalObtained,
+          totalMarks: entry.totalMarks,
+          percentage: Math.round(percentage * 100) / 100,
+          grade: percentage >= 90 ? 'A+' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : percentage >= 50 ? 'D' : 'F',
+          promoted: entry.totalMarks > 0 ? percentage >= 50 : null,
+        },
+        subjects: entry.subjects,
+        generatedAt: entry.latestDate || new Date().toISOString(),
+      };
+
+      return {
+        id: entry.group._id,
+        group: entry.group,
+        raw: rawReportCard,
+        card: buildExamCardFromReport(rawReportCard, entry.group),
+      };
+    })
+    .sort((a, b) => {
+      const d1 = new Date(a.raw?.generatedAt || a.group?.startDate || 0).getTime();
+      const d2 = new Date(b.raw?.generatedAt || b.group?.startDate || 0).getTime();
+      return d2 - d1;
+    });
+};
+
 const ResultsView = () => {
   const [template, setTemplate] = useState(null);
   const [reportCard, setReportCard] = useState(null);
-  const [examGroups, setExamGroups] = useState([]);
-  const [selectedExamGroupId, setSelectedExamGroupId] = useState('');
-  const [selectedExamGroupTitle, setSelectedExamGroupTitle] = useState('');
+  const [publishedResults, setPublishedResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [sessionFilter, setSessionFilter] = useState('all');
   const [examFilter, setExamFilter] = useState('all');
   const [page, setPage] = useState(1);
-  const [resultCards, setResultCards] = useState({});
   const [downloadingId, setDownloadingId] = useState('');
 
-  const fetchExamWiseReport = useCallback(async (examGroupId = '', { forceRefresh = false } = {}) => {
+  const fetchExamWiseReport = useCallback(async () => {
     const token = localStorage.getItem('token');
     const userType = localStorage.getItem('userType');
     if (!token || userType !== 'Student') {
@@ -142,32 +235,60 @@ const ResultsView = () => {
     setLoading(true);
     setError('');
     try {
-      const query = new URLSearchParams();
-      if (examGroupId) query.set('examGroupId', examGroupId);
+      const reportCardEndpoint = `${API_BASE}/api/reports/report-cards/me`;
+      const resultsEndpoint = `${API_BASE}/api/exam/results/me`;
 
-      const endpoint = `${API_BASE}/api/reports/report-cards/me${query.toString() ? `?${query.toString()}` : ''}`;
-      const { data } = await fetchCachedJson(endpoint, {
-        ttlMs: RESULTS_CACHE_TTL_MS,
-        forceRefresh,
-        fetchOptions: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
+      const [reportCardResult, studentResultsResult] = await Promise.allSettled([
+        fetchCachedJson(reportCardEndpoint, {
+          ttlMs: RESULTS_CACHE_TTL_MS,
+          forceRefresh: true,
+          fetchOptions: {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
           },
-        },
-      });
+        }),
+        fetchCachedJson(resultsEndpoint, {
+          ttlMs: RESULTS_CACHE_TTL_MS,
+          forceRefresh: true,
+          fetchOptions: {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        }),
+      ]);
 
-      setTemplate(data?.template || null);
-      setReportCard(data?.reportCard || null);
-      setExamGroups(Array.isArray(data?.examGroups) ? data.examGroups : []);
-      setSelectedExamGroupId(String(data?.selectedExamGroupId || examGroupId || ''));
-      setSelectedExamGroupTitle(String(data?.selectedExamGroupTitle || ''));
+      // Template + academic-year badge only — the results list itself is driven
+      // entirely by the student's own published results below, so it naturally
+      // spans every session/exam the student has ever had, not just the one
+      // exam group the report-card endpoint happens to resolve.
+      if (reportCardResult.status === 'fulfilled') {
+        const data = reportCardResult.value?.data || {};
+        setTemplate(data?.template || null);
+        setReportCard(data?.reportCard || null);
+      } else {
+        console.warn('Report card fetch skipped', reportCardResult.reason);
+        setTemplate(null);
+        setReportCard(null);
+      }
+
+      if (studentResultsResult.status === 'fulfilled') {
+        const studentResults = studentResultsResult.value?.data;
+        setPublishedResults(Array.isArray(studentResults) ? studentResults : []);
+      } else {
+        console.warn('Student results fetch skipped', studentResultsResult.reason);
+        setPublishedResults([]);
+      }
+
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Student results fetch error:', err);
       setError(err.message || 'Unable to load exam results');
       setReportCard(null);
-      setExamGroups([]);
+      setPublishedResults([]);
     } finally {
       setLoading(false);
     }
@@ -177,62 +298,61 @@ const ResultsView = () => {
     fetchExamWiseReport();
   }, [fetchExamWiseReport]);
 
-  const examCards = useMemo(() => {
-    if (!reportCard) return [];
-
-    const totals = reportCard.totals || {};
-    const subjects = Array.isArray(reportCard.subjects) ? reportCard.subjects : [];
-    if (!subjects.length) return [];
-    const percentage = toNumber(totals.percentage, 0);
-    const promoted = totals.promoted;
-    const selectedExamGroup = (Array.isArray(examGroups) ? examGroups : [])
-      .find((group) => String(group?._id) === String(selectedExamGroupId)) || null;
-
-    return [
-      {
-        _id: selectedExamGroupId || String(reportCard.studentId || 'exam'),
-        examName: selectedExamGroupTitle || reportCard.term || 'Exam',
-        date: reportCard.generatedAt || null,
-        startDate: selectedExamGroup?.startDate || null,
-        endDate: selectedExamGroup?.endDate || null,
-        examStatus: String(selectedExamGroup?.status || '').toLowerCase(),
-        obtainedMarks: toNumber(totals.obtainedMarks, 0),
-        totalMarks: toNumber(totals.totalMarks, 0),
-        percentage,
-        grade: String(totals.grade || '').trim(),
-        status: promoted === false ? 'Fail' : promoted === true ? 'Pass' : '',
-        remarks: promoted === false ? 'Not Promoted' : promoted === true ? 'Promoted' : '',
-        subjects: subjects.map((subject) => ({
-          name: subject.name || 'Subject',
-          marks: toNumber(subject.obtainedMarks, 0),
-          maxMarks: toNumber(subject.totalMarks, 0),
-          grade: subject.grade || '',
-        })),
-      },
-    ];
-  }, [reportCard, selectedExamGroupId, selectedExamGroupTitle, examGroups]);
+  const examEntries = useMemo(
+    () => buildFallbackPublishedCards(publishedResults),
+    [publishedResults]
+  );
+  const entriesById = useMemo(
+    () => new Map(examEntries.map((entry) => [String(entry.id), entry])),
+    [examEntries]
+  );
+  const examCards = useMemo(
+    () => examEntries.map((entry) => entry.card).filter(Boolean),
+    [examEntries]
+  );
 
   const overview = useMemo(() => {
-    const exam = examCards[0];
-    if (!exam) {
+    if (!examCards.length) {
       return { averagePercentage: 0, examsTaken: 0, topScore: null, recentExam: null };
     }
+    const totalPercentage = examCards.reduce((sum, exam) => sum + toNumber(exam.percentage, 0), 0);
+    const topScore = examCards.reduce(
+      (best, exam) => (!best || toNumber(exam.percentage, 0) > toNumber(best.percentage, 0) ? exam : best),
+      null
+    );
+    const examDateValue = (exam) => new Date(exam?.date || exam?.endDate || exam?.startDate || 0).getTime() || 0;
+    const recentExam = examCards.reduce(
+      (latest, exam) => (!latest || examDateValue(exam) > examDateValue(latest) ? exam : latest),
+      null
+    );
     return {
-      averagePercentage: toNumber(exam.percentage, 0),
-      examsTaken: 1,
-      topScore: { percentage: toNumber(exam.percentage, 0), examName: exam.examName || 'Exam' },
-      recentExam: { examName: exam.examName || 'Exam', date: exam.date || null },
+      averagePercentage: totalPercentage / examCards.length,
+      examsTaken: examCards.length,
+      topScore: topScore ? { percentage: toNumber(topScore.percentage, 0), examName: topScore.examName || 'Exam' } : null,
+      recentExam: recentExam
+        ? { examName: recentExam.examName || 'Exam', date: recentExam.date || recentExam.endDate || recentExam.startDate || null }
+        : null,
     };
   }, [examCards]);
 
+  const activeAcademicSession = String(reportCard?.academicYear || '').trim();
+  const effectiveExamGroups = useMemo(() => examEntries.map((entry) => entry.group), [examEntries]);
+
   const groupsWithSession = useMemo(
-    () => (Array.isArray(examGroups) ? examGroups : []).map((g) => ({ ...g, sessionLabel: deriveSessionLabel(g) })),
-    [examGroups]
+    () => effectiveExamGroups.map((g) => ({
+      ...g,
+      sessionLabel: deriveSessionLabel(g),
+    })),
+    [effectiveExamGroups]
   );
 
   const sessionOptions = useMemo(() => {
     const seen = new Set();
     const list = [];
+    if (activeAcademicSession) {
+      seen.add(activeAcademicSession);
+      list.push(activeAcademicSession);
+    }
     groupsWithSession.forEach((g) => {
       if (!seen.has(g.sessionLabel)) {
         seen.add(g.sessionLabel);
@@ -240,7 +360,7 @@ const ResultsView = () => {
       }
     });
     return list;
-  }, [groupsWithSession]);
+  }, [groupsWithSession, activeAcademicSession]);
 
   const examOptionsForSession = useMemo(
     () => groupsWithSession.filter((g) => sessionFilter === 'all' || g.sessionLabel === sessionFilter),
@@ -267,47 +387,6 @@ const ResultsView = () => {
   useEffect(() => {
     setPage(1);
   }, [examFilter]);
-
-  useEffect(() => {
-    const toFetch = pageGroups.filter((g) => !resultCards[String(g._id)]);
-    if (toFetch.length === 0) return;
-    let cancelled = false;
-
-    setResultCards((prev) => {
-      const next = { ...prev };
-      toFetch.forEach((g) => { next[String(g._id)] = { status: 'loading' }; });
-      return next;
-    });
-
-    const token = localStorage.getItem('token');
-    Promise.all(
-      toFetch.map(async (g) => {
-        try {
-          const endpoint = `${API_BASE}/api/reports/report-cards/me?examGroupId=${g._id}`;
-          const { data } = await fetchCachedJson(endpoint, {
-            ttlMs: RESULTS_CACHE_TTL_MS,
-            fetchOptions: {
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            },
-          });
-          const card = buildExamCardFromReport(data?.reportCard, g);
-          return { id: String(g._id), status: card ? 'ready' : 'empty', card, raw: data?.reportCard || null };
-        } catch {
-          return { id: String(g._id), status: 'error' };
-        }
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      setResultCards((prev) => {
-        const next = { ...prev };
-        results.forEach(({ id, ...rest }) => { next[id] = rest; });
-        return next;
-      });
-    });
-
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageGroups]);
 
   const handleDownloadFor = async (group, rawReportCard) => {
     if (!rawReportCard) {
@@ -389,6 +468,12 @@ const ResultsView = () => {
         </div>
       </div> */}
       <h1 className='text-4xl font-bold pl-2'>My Results</h1>
+      {activeAcademicSession && (
+        <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+          <span className="h-2 w-2 rounded-full bg-indigo-500" />
+          Active Session: {activeAcademicSession}
+        </div>
+      )}
       {error && (
         <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
           <AlertCircle size={16} className="shrink-0" />
@@ -431,7 +516,7 @@ const ResultsView = () => {
         />
       </div>
 
-      {examGroups.length === 0 ? (
+      {effectiveExamGroups.length === 0 ? (
         <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
           <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="border-b border-amber-100 bg-[linear-gradient(135deg,_rgba(254,243,199,0.55),_rgba(255,255,255,0.95))] p-6 sm:p-8 lg:border-b-0 lg:border-r">
@@ -509,18 +594,15 @@ const ResultsView = () => {
             </div>
           </div>
 
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-4 flex flex-wrap justify-center gap-4">
             {filteredGroups.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                 No exams match this filter.
               </div>
             ) : (
               pageGroups.map((g) => {
-                const entry = resultCards[String(g._id)];
-                if (!entry || entry.status === 'loading') {
-                  return <div key={g._id} className="h-40 animate-pulse rounded-2xl border border-gray-100 bg-white shadow-sm" />;
-                }
-                if (entry.status !== 'ready' || !entry.card) {
+                const entry = entriesById.get(String(g._id));
+                if (!entry?.card) {
                   return (
                     <div key={g._id} className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
                       No published result for {g.title || 'this exam'}.
@@ -627,7 +709,7 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
   const hasSubjects = Array.isArray(exam.subjects) && exam.subjects.length > 0;
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
+    <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-100 border-t-4 ${tier.border} overflow-hidden`}>
       <div className="p-4 md:p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">

@@ -134,6 +134,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   /* ── UI state ── */
   const [search,         setSearch]         = useState('');
   const [termFilter,     setTermFilter]      = useState('all');
+  const [yearFilterId,   setYearFilterId]    = useState('');
   const [expandedGroups, setExpandedGroups] = useState(new Set());
 
   /* ── group modal ── */
@@ -191,8 +192,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     const activeYear = yearItems.find((item) => item?.isActive);
     if (activeYear?._id) {
       setGroupYearId(String(activeYear._id));
+      setYearFilterId((current) => current || String(activeYear._id));
     } else if (yearItems[0]?._id) {
       setGroupYearId(String(yearItems[0]._id));
+      setYearFilterId((current) => current || String(yearItems[0]._id));
     }
     setClasses(Array.isArray(c) ? c : []);
     setSections(Array.isArray(s) ? s : []);
@@ -273,11 +276,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
     return groups.filter(g => {
+      const classItem = classes.find((item) => String(item._id) === String(g.classId?._id || g.classId || ''));
+      const groupYear = String(classItem?.academicYearId || '');
       const matchTerm = termFilter === 'all' || g.term === termFilter;
+      const matchYear = !yearFilterId || groupYear === String(yearFilterId);
       const matchQ = !q || [g.title, g.grade, g.section, g.term].some(v => String(v||'').toLowerCase().includes(q));
-      return matchTerm && matchQ;
+      return matchTerm && matchYear && matchQ;
     });
-  }, [groups, search, termFilter]);
+  }, [groups, search, termFilter, yearFilterId, classes]);
 
   const generateExamSchedulePdf = async (group) => {
     if (!group?._id) return;
@@ -625,6 +631,21 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         {/* ── Toolbar ── */}
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <Calendar size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select
+                value={yearFilterId}
+                onChange={(e) => setYearFilterId(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none"
+              >
+                <option value="">All Sessions</option>
+                {years.map((year) => (
+                  <option key={year._id} value={year._id}>
+                    {year.name}{year.isActive ? ' (active)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="relative min-w-[200px] flex-1">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exam or class…"
