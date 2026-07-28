@@ -66,6 +66,8 @@ const studentSections = [
   "themecustomizer",
   "my-paths",
   "notifications",
+  "learning-path-map",
+  "mastery",
 ];
 
 const studentBasePaths = ["/student", "/dashboard"];

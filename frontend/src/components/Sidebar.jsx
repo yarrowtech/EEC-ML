@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
-  Heart, Star, Target, PanelLeft,
+  Heart, Star, Target, PanelLeft, Zap,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
@@ -66,6 +66,7 @@ const MENU_ITEMS = [
     children: [
       { id: 'wellbeing',    name: 'Emotional Wellbeing', icon: Heart  },
       { id: 'achievements', name: 'Achievements',         icon: Trophy },
+      { id: 'mastery',      name: 'Mastery Progress',    icon: Zap    },
     ],
   },
 ];

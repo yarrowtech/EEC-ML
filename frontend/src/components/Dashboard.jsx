@@ -21,10 +21,13 @@ import AcademicAlcove from './AcademicAlcove';
 import StudentWellbeing from './StudentWellbeing';
 import LessonPlanStatusView from './LessonPlanStatusView';
 import StudentExamsView from './StudentExamsView';
-import { StudentDashboardProvider } from './StudentDashboardContext';
+import { StudentDashboardProvider, useStudentDashboard } from './StudentDashboardContext';
 import MobileBottomNav from './MobileBottomNav';
 import HolidayListView from './HolidayListView';
 import StudentNotificationCenter from './StudentNotificationCenter';
+import StudentOnboarding from './StudentOnboarding';
+import LearningPathMapView from './LearningPathMapView';
+import MasteryView from './MasteryView';
 
 // All of these views render the same LearningHub component (it owns an
 // internal tab bar). Treat them as one logical page so switching tabs inside
@@ -54,6 +57,7 @@ const Dashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const journalRef = useRef(null);
   const wasDesktopRef = useRef(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
@@ -101,6 +105,14 @@ const Dashboard = () => {
     return () => window.removeEventListener('resize', syncSidebarForViewport);
   }, []);
 
+  // Onboarding: show when profile loads and onboardingCompleted === false
+  const { profile } = useStudentDashboard();
+  useEffect(() => {
+    if (profile && profile.onboardingCompleted === false) {
+      setShowOnboarding(true);
+    }
+  }, [profile]);
+
   // Function to handle navigation
   const setActiveView = (view) => {
     const path = view === 'dashboard' ? '/student' : `/student/${view}`;
@@ -147,6 +159,8 @@ const Dashboard = () => {
     wellbeing: StudentWellbeing,
     achievements: AchievementsView,
     notifications: StudentNotificationCenter,
+    'learning-path-map': LearningPathMapView,
+    mastery: MasteryView,
     profile: ProfileUpdate,
     themecustomizer: ThemeCustomizer,
   };
@@ -201,6 +215,12 @@ const Dashboard = () => {
         </div>
         <MobileBottomNav activeView={effectiveView} onSaveJournal={handleSaveJournal} />
       </div>
+      {showOnboarding && (
+        <StudentOnboarding
+          studentName={profile?.name || ''}
+          onComplete={() => setShowOnboarding(false)}
+        />
+      )}
     </StudentDashboardProvider>
   );
 };

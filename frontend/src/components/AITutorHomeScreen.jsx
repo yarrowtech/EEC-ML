@@ -338,12 +338,21 @@ function parseFlashcards(text) {
 // Quiz UI
 // ---------------------------------------------------------------------------
 
-function QuizUI({ text, onMisconception }) {
+function QuizUI({ text, onMisconception, onQuizComplete, subject, topic }) {
   const questions = useMemo(() => parseQuiz(text), [text]);
   const [idx, setIdx] = useState(0);
   const [picks, setPicks] = useState({});
   const [shown, setShown] = useState({});
   const [done, setDone] = useState(false);
+
+  const finishQuiz = () => {
+    setDone(true);
+    if (onQuizComplete && (subject || topic)) {
+      const correct = questions.filter((q, i) => picks[i] === q.answer).length;
+      const pct = Math.round((correct / questions.length) * 100);
+      onQuizComplete(pct, subject, topic);
+    }
+  };
 
   if (!questions.length) return <TutorMessageContent text={text} />;
 
@@ -462,7 +471,7 @@ function QuizUI({ text, onMisconception }) {
               </button>
             )}
             <button
-              onClick={() => idx < questions.length - 1 ? setIdx(i => i + 1) : setDone(true)}
+              onClick={() => idx < questions.length - 1 ? setIdx(i => i + 1) : finishQuiz()}
               className="rounded-xl bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-900 transition-colors"
             >
               {idx < questions.length - 1 ? 'Next →' : 'Finish'}
@@ -1828,8 +1837,8 @@ function ExplainUI({ text }) {
 // Response dispatcher — picks the right UI for each mode
 // ---------------------------------------------------------------------------
 
-function TutorResponseRenderer({ text, mode, onMisconception }) {
-  if (mode === 'quiz') return <QuizUI text={text} onMisconception={onMisconception} />;
+function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic }) {
+  if (mode === 'quiz') return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
@@ -3080,7 +3089,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     setMessages((prev) => [
       ...prev,
       { id: userId, role: 'user', text: userLabel },
-      { id: assistantId, role: 'assistant', thinking: true, text: '', mode },
+      { id: assistantId, role: 'assistant', thinking: true, text: '', mode, subject: selectedSubject?.title || '', topic: topicTitle },
     ]);
     setSending(true);
     try {
@@ -3128,6 +3137,21 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     } finally {
       setSending(false);
       setQuestion('');
+    }
+  };
+
+  const handleQuizComplete = async (scorePct, subject, topic) => {
+    if (!subject && !topic) return;
+    try {
+      const token = localStorage.getItem('token');
+      const topicId = topic ? topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'general';
+      await fetch(`${API_BASE}/api/mastery/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject, topicId, topicTitle: topic, score: scorePct }),
+      });
+    } catch {
+      // silently ignore — mastery update is non-critical
     }
   };
 
@@ -3396,7 +3420,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                 <>
                                   {msg.streaming
                                     ? <TutorMessageContent text={msg.text} />
-                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} />
                                   }
                                   {msg.streaming && (
                                     <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#F59E0B] align-middle" />

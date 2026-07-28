@@ -62,6 +62,7 @@ const AchievementsView = () => {
   const location = useLocation();
   const [student, setStudent] = useState(null);
   const [achievements, setAchievements] = useState([]);
+  const [systemBadges, setSystemBadges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [highlightedAchievementId, setHighlightedAchievementId] = useState('');
@@ -77,18 +78,26 @@ const AchievementsView = () => {
         const token = localStorage.getItem('token');
         if (!token) throw new Error('Please login again.');
 
-        const { data } = await fetchCachedJson(STUDENT_ACHIEVEMENTS_ENDPOINT, {
-          ttlMs: STUDENT_ACHIEVEMENTS_CACHE_TTL_MS,
-          fetchOptions: {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+        const [achievementsRes, badgesRes] = await Promise.allSettled([
+          fetchCachedJson(STUDENT_ACHIEVEMENTS_ENDPOINT, {
+            ttlMs: STUDENT_ACHIEVEMENTS_CACHE_TTL_MS,
+            fetchOptions: {
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             },
-          },
-        });
+          }),
+          fetch(`${API_BASE}/api/student/auth/system-badges`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).then((r) => r.ok ? r.json() : { data: [] }),
+        ]);
 
-        setStudent(data?.student || null);
-        setAchievements(Array.isArray(data?.achievements) ? data.achievements : []);
+        if (achievementsRes.status === 'fulfilled') {
+          const { data } = achievementsRes.value;
+          setStudent(data?.student || null);
+          setAchievements(Array.isArray(data?.achievements) ? data.achievements : []);
+        }
+        if (badgesRes.status === 'fulfilled') {
+          setSystemBadges(Array.isArray(badgesRes.value?.data) ? badgesRes.value.data : []);
+        }
       } catch (err) {
         setError(err.message || 'Unable to load achievements');
         setStudent(null);
@@ -194,8 +203,26 @@ const AchievementsView = () => {
           <StatTile icon={Trophy} label="Total Achievements" value={totalCount} grad="from-amber-400 to-orange-500" shadow="shadow-amber-200/60" />
           <StatTile icon={Calendar} label="Latest" value={latestDate} grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
           <StatTile icon={Award} label="Top Category" value={topCategory} grad="from-purple-500 to-fuchsia-600" shadow="shadow-purple-200/60" />
-          <StatTile icon={Sparkles} label="Sessions" value={sessionOptions.length || 1} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
+          <StatTile icon={Sparkles} label="Badges Earned" value={systemBadges.length} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
         </div>
+
+        {/* System auto-badges */}
+        {systemBadges.length > 0 && (
+          <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50 p-4 shadow-sm">
+            <p className="text-sm font-black text-emerald-800 mb-3">🏅 Earned Badges</p>
+            <div className="flex flex-wrap gap-3">
+              {systemBadges.map((badge) => (
+                <div key={badge.id} className="flex items-center gap-2.5 rounded-2xl bg-white border border-emerald-100 px-3 py-2.5 shadow-sm">
+                  <span className="text-2xl leading-none">{badge.icon}</span>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">{badge.label}</p>
+                    <p className="text-[10px] text-slate-400">{badge.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">

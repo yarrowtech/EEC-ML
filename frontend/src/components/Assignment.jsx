@@ -28,6 +28,7 @@ import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
+import WorksheetSubmitModal from './WorksheetSubmitModal';
 
 const labModelUrl = (file) => new URL(`../models/${file}`, import.meta.url).href;
 
@@ -269,6 +270,7 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
   const [uploadingSubmissionFile, setUploadingSubmissionFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [worksheetModalAssignment, setWorksheetModalAssignment] = useState(null);
 
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
@@ -1349,6 +1351,17 @@ const closeDetail = () => {
                           <ChevronRight className="w-4 h-4 text-slate-300 transition-transform group-hover:translate-x-0.5" />
                         </div>
                       </div>
+                      {requiresPdf && !['submitted', 'late', 'graded'].includes(assignment.submissionStatus) && (
+                        <div className="px-4 pb-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setWorksheetModalAssignment(assignment)}
+                            className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 py-2 text-xs font-bold text-purple-700 hover:bg-purple-100 transition-colors"
+                          >
+                            <Upload className="w-3.5 h-3.5" /> Upload Worksheet
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -2109,7 +2122,20 @@ const closeDetail = () => {
     );
   }
 
-  return null;
+  return (
+    <>
+      {worksheetModalAssignment && (
+        <WorksheetSubmitModal
+          assignment={worksheetModalAssignment}
+          onClose={() => setWorksheetModalAssignment(null)}
+          onSubmitted={() => {
+            setWorksheetModalAssignment(null);
+            fetchAssignments({ forceRefresh: true });
+          }}
+        />
+      )}
+    </>
+  );
 };
 
 export default Assignment;

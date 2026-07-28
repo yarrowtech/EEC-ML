@@ -1079,6 +1079,8 @@ router.get('/dashboard', authStudent, async (req, res) => {
         schoolName: schoolInfo?.name || '',
         schoolAddress: schoolInfo?.address || '',
         schoolLogo: schoolInfo?.logo || null,
+        onboardingCompleted: student.onboardingCompleted || false,
+        learningPreferences: student.learningPreferences || { subjects: [], learningStyle: '' },
       },
       stats: {
         attendancePercentage,
@@ -2156,6 +2158,56 @@ router.post('/teacher-feedback', authStudent, async (req, res) => {
     });
     (req.log || logger).error({ err }, 'Teacher feedback submit error');
     res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/student/auth/onboarding — save learning preferences and mark onboarding complete
+router.patch('/onboarding', authStudent, async (req, res) => {
+  try {
+    const { subjects = [], learningStyle = '' } = req.body || {};
+    await StudentUser.findByIdAndUpdate(req.user.id, {
+      onboardingCompleted: true,
+      'learningPreferences.subjects': Array.isArray(subjects) ? subjects.slice(0, 8) : [],
+      'learningPreferences.learningStyle': learningStyle || '',
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/student/auth/system-badges — return auto-awarded system badges for the student
+router.get('/system-badges', authStudent, async (req, res) => {
+  try {
+    const MasteryScore = require('../models/MasteryScore');
+    const studentId = req.user.id;
+    const schoolId = req.schoolId;
+
+    const [masteryDocs, student] = await Promise.all([
+      MasteryScore.find({ studentId }).lean(),
+      StudentUser.findById(studentId).select('attendance achievements').lean(),
+    ]);
+
+    const masteredCount = masteryDocs.filter((m) => m.score >= 75).length;
+    const totalAttendance = student?.attendance?.length || 0;
+    const presentDays = student?.attendance?.filter((a) => a.status === 'present').length || 0;
+    const attendancePct = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
+    const teacherAwardsCount = Array.isArray(student?.achievements) ? student.achievements.length : 0;
+
+    const SYSTEM_BADGE_DEFS = [
+      { id: 'first_mastery', label: 'First Topic Mastered', icon: '🏅', description: 'Mastered your first topic (75%+)', condition: masteredCount >= 1 },
+      { id: 'five_mastery', label: 'Five Topics Star', icon: '⭐', description: 'Mastered 5 topics', condition: masteredCount >= 5 },
+      { id: 'ten_mastery', label: 'Subject Champion', icon: '🏆', description: 'Mastered 10 topics', condition: masteredCount >= 10 },
+      { id: 'attendance_80', label: 'Attendance Hero', icon: '📅', description: '80%+ attendance', condition: attendancePct >= 80 },
+      { id: 'attendance_95', label: 'Perfect Attendance', icon: '💎', description: '95%+ attendance', condition: attendancePct >= 95 },
+      { id: 'first_achievement', label: 'First Achievement', icon: '🌟', description: 'Received first teacher award', condition: teacherAwardsCount >= 1 },
+      { id: 'five_achievements', label: 'Award Winner', icon: '🎖️', description: '5 teacher awards', condition: teacherAwardsCount >= 5 },
+    ];
+
+    const earned = SYSTEM_BADGE_DEFS.filter((b) => b.condition);
+    return res.json({ success: true, data: earned, masteredTopics: masteredCount, attendancePct });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

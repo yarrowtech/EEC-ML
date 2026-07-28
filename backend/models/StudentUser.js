@@ -218,6 +218,12 @@ const studentUserSchema = new mongoose.Schema({
     previousStatus: { type: String, default: '' },
   },
 
+  onboardingCompleted: { type: Boolean, default: false },
+  learningPreferences: {
+    subjects: { type: [String], default: [] },
+    learningStyle: { type: String, enum: ['visual', 'reading', 'hands-on', 'listening', ''], default: '' },
+  },
+
 
   // Embedded attendance array
   attendance: [attendanceSchema],
