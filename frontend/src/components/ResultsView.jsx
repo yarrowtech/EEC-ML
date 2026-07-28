@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Award,
   TrendingUp,
@@ -25,12 +26,9 @@ import {
 import toast from 'react-hot-toast';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
-import { fetchCachedJson } from '../utils/studentApiCache';
 import PostExamFeedbackView from './PostExamFeedbackView';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
-const RESULTS_CACHE_TTL_MS = 2 * 60 * 1000;
-
 const toNumber = (value, fallback = 0) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -77,6 +75,14 @@ const AVATAR_COLORS = [
 ];
 
 const RESULTS_PAGE_SIZE = 5;
+const JSON_NO_CACHE_OPTIONS = {
+  cache: 'no-store',
+  headers: {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  },
+};
 
 // ExamGroup has no explicit session/academic-year field, so the session label is
 // derived from its start date assuming an Apr–Mar academic year (e.g. "2024-2025").
@@ -235,12 +241,12 @@ const buildFallbackPublishedCards = (results = []) => {
 };
 
 const ResultsView = () => {
+  const location = useLocation();
   const [template, setTemplate] = useState(null);
   const [reportCard, setReportCard] = useState(null);
   const [publishedResults, setPublishedResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(null);
   const [sessionFilter, setSessionFilter] = useState('all');
   const [examFilter, setExamFilter] = useState('all');
   const [page, setPage] = useState(1);
@@ -261,27 +267,30 @@ const ResultsView = () => {
       const reportCardEndpoint = `${API_BASE}/api/reports/report-cards/me`;
       const resultsEndpoint = `${API_BASE}/api/exam/results/me`;
 
+      const fetchJson = async (url) => {
+        const response = await fetch(url, {
+          ...JSON_NO_CACHE_OPTIONS,
+          headers: {
+            ...JSON_NO_CACHE_OPTIONS.headers,
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          let message = `Request failed (${response.status})`;
+          try {
+            const payload = await response.json();
+            message = payload?.error || payload?.message || message;
+          } catch {
+            // keep fallback message
+          }
+          throw new Error(message);
+        }
+        return response.json();
+      };
+
       const [reportCardResult, studentResultsResult] = await Promise.allSettled([
-        fetchCachedJson(reportCardEndpoint, {
-          ttlMs: RESULTS_CACHE_TTL_MS,
-          forceRefresh: true,
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        }),
-        fetchCachedJson(resultsEndpoint, {
-          ttlMs: RESULTS_CACHE_TTL_MS,
-          forceRefresh: true,
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        }),
+        fetchJson(reportCardEndpoint),
+        fetchJson(resultsEndpoint),
       ]);
 
       // Template + academic-year badge only — the results list itself is driven
@@ -289,7 +298,7 @@ const ResultsView = () => {
       // spans every session/exam the student has ever had, not just the one
       // exam group the report-card endpoint happens to resolve.
       if (reportCardResult.status === 'fulfilled') {
-        const data = reportCardResult.value?.data || {};
+        const data = reportCardResult.value || {};
         setTemplate(data?.template || null);
         setReportCard(data?.reportCard || null);
       } else {
@@ -308,7 +317,6 @@ const ResultsView = () => {
         setPublishedResults([]);
       }
 
-      setLastUpdated(new Date());
     } catch (err) {
       console.error('Student results fetch error:', err);
       setError(err.message || 'Unable to load exam results');
@@ -321,7 +329,7 @@ const ResultsView = () => {
 
   useEffect(() => {
     fetchExamWiseReport();
-  }, [fetchExamWiseReport]);
+  }, [fetchExamWiseReport, location.key]);
 
   const examEntries = useMemo(
     () => buildFallbackPublishedCards(publishedResults),
@@ -765,10 +773,6 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
   const percentage = toNumber(exam.percentage, 0);
   const tier = scoreTier(percentage);
   const hasSubjects = Array.isArray(exam.subjects) && exam.subjects.length > 0;
-  const delta = exam.delta;
-  const rank = exam.rank;
-  const percentile = exam.percentile;
-  const classSize = exam.classSize;
 
   return (
     <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-200 border-t-4 self-start ${tier.border} overflow-hidden`}>
@@ -791,13 +795,13 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <StatPill label="Total" value={exam.totalMarks ?? 0} />
               <StatPill label="Obtained" value={exam.obtainedMarks ?? 0} highlight={tier.text} />
-              {rank && <StatPill label="Rank" value={`#${rank}${classSize ? `/${classSize}` : ''}`} highlight="text-indigo-600" />}
-              {percentile != null && <StatPill label="Percentile" value={`${percentile}%ile`} highlight={percentile >= 75 ? 'text-emerald-600' : 'text-amber-600'} />}
-              {delta != null && (
+              {exam.rank && <StatPill label="Rank" value={`#${exam.rank}${exam.classSize ? `/${exam.classSize}` : ''}`} highlight="text-indigo-600" />}
+              {exam.percentile != null && <StatPill label="Percentile" value={`${exam.percentile}%ile`} highlight={exam.percentile >= 75 ? 'text-emerald-600' : 'text-amber-600'} />}
+              {exam.delta != null && (
                 <span className={`inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-1 rounded-full
-                  ${delta > 0 ? 'bg-emerald-50 text-emerald-700' : delta < 0 ? 'bg-rose-50 text-rose-600' : 'bg-gray-50 text-gray-500'}`}>
-                  {delta > 0 ? <TrendingUp size={11} /> : delta < 0 ? <TrendingDown size={11} /> : null}
-                  {delta > 0 ? `+${delta}%` : `${delta}%`} vs prev
+                  ${exam.delta > 0 ? 'bg-emerald-50 text-emerald-700' : exam.delta < 0 ? 'bg-rose-50 text-rose-600' : 'bg-gray-50 text-gray-500'}`}>
+                  {exam.delta > 0 ? <TrendingUp size={11} /> : exam.delta < 0 ? <TrendingDown size={11} /> : null}
+                  {exam.delta > 0 ? `+${exam.delta}%` : `${exam.delta}%`} vs prev
                 </span>
               )}
               {exam.status && (
