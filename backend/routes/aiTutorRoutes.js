@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const authStudent = require('../middleware/authStudent');
+const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback'];
+const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary'];
 
 const MAX_MATERIALS = 50;
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -242,6 +243,45 @@ router.post('/generate', authStudent, async (req, res) => {
     if (err.response) {
       return res.status(502).json({ error: 'AI service error', detail: err.response.data });
     }
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/assignment-feedback — AI feedback on submission ────────
+router.post('/assignment-feedback', authTeacher, async (req, res) => {
+  try {
+    const { submissionText, subject, assignmentTitle, studentName } = req.body || {};
+    if (!submissionText) return res.status(400).json({ error: 'submissionText is required' });
+    const prompt = `Assignment: "${assignmentTitle || 'Assignment'}"\nSubject: ${subject || 'General'}\nStudent: ${studentName || 'Student'}\nSubmission:\n${submissionText.slice(0, 2000)}`;
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
+      mode: 'assignment_feedback',
+      subject: normalizeString(subject || ''),
+      topic: assignmentTitle || '',
+      question: prompt,
+      school_id: null,
+    }, { timeout: 90000 });
+    return res.json({ success: true, data: { content: aiResponse.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error' });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/at-risk-summary — AI risk narrative for a student ─────
+router.post('/at-risk-summary', authTeacher, async (req, res) => {
+  try {
+    const { studentName, riskLevel, attPct, avgScore, scoreTrend, weakAreas } = req.body || {};
+    const prompt = `Student: ${studentName}\nRisk Level: ${riskLevel}\nAttendance: ${attPct}%\nAvg Exam Score: ${avgScore ?? 'N/A'}%\nScore Trend: ${scoreTrend > 0 ? `+${scoreTrend}` : scoreTrend} pts\nWeak Areas: ${(weakAreas || []).join(', ') || 'None identified'}`;
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
+      mode: 'at_risk_summary',
+      subject: 'Student Risk Analysis',
+      topic: studentName || '',
+      question: prompt,
+      school_id: null,
+    }, { timeout: 60000 });
+    return res.json({ success: true, data: { content: aiResponse.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error' });
     return res.status(500).json({ error: err.message });
   }
 });

@@ -37,6 +37,8 @@ _MODE_TEMPERATURE: dict[str, float] = {
     "misconception":       0.5,
     "exam_explanation":    0.45,
     "exam_feedback":       0.55,
+    "assignment_feedback": 0.5,
+    "at_risk_summary":     0.4,
     "summarize":           0.4,
     "notes":               0.3,
     "mind_map":            0.3,

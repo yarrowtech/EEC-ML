@@ -36,12 +36,21 @@ export const persistAdminScope = ({ schoolId, campusId }) => {
     schoolId: normalizeId(schoolId),
     campusId: normalizeId(campusId),
   };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Scope persistence is optional. A full/private browser storage area
+    // must not prevent the authenticated profile from loading.
+  }
 };
 
 export const clearAdminScope = () => {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  window.localStorage.removeItem(STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore storage access errors during logout/cleanup.
+  }
 };
 
 let fetchPatched = false;

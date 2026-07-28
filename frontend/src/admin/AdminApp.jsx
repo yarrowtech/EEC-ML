@@ -319,7 +319,11 @@ const AdminApp = () => {
         onToggleSidebar={() => {
           const next = !sidebarCollapsed;
           setSidebarCollapsed(next);
-          localStorage.setItem('adminSidebarCollapsed', next);
+          try {
+            localStorage.setItem('adminSidebarCollapsed', next);
+          } catch {
+            // Sidebar preference is optional and must not break the portal.
+          }
         }}
         adminUser={adminUser}
         profileLoading={adminProfileLoading}
