@@ -399,6 +399,10 @@ const SchoolRegistrationForm = () => {
   /* ── submit ── */
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (currentStep < totalSteps) {
+      handleNext();
+      return;
+    }
     if (!validateStep6()) return;
     setIsSubmitting(true);
     try {
