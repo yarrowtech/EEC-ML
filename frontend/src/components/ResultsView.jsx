@@ -106,6 +106,7 @@ const buildExamCardFromReport = (rc, group, meta = {}) => {
   return {
     _id: group?._id || String(rc.studentId || 'exam'),
     examName: group?.title || rc.term || 'Exam',
+    sessionLabel: deriveSessionLabel(group),
     date: rc.generatedAt || null,
     startDate: group?.startDate || null,
     endDate: group?.endDate || null,
@@ -405,6 +406,13 @@ const ResultsView = () => {
     [examOptionsForSession, examFilter]
   );
 
+  const filteredCards = useMemo(
+    () => filteredGroups
+      .map((group) => entriesById.get(String(group._id))?.card)
+      .filter(Boolean),
+    [entriesById, filteredGroups]
+  );
+
   const totalPages = Math.max(1, Math.ceil(filteredGroups.length / RESULTS_PAGE_SIZE));
 
   const pageGroups = useMemo(
@@ -549,11 +557,6 @@ const ResultsView = () => {
         />
       </div>
 
-      {/* Term-wise Progress Timeline */}
-      {examCards.length >= 2 && (
-        <TermTimeline cards={examCards} />
-      )}
-
       {effectiveExamGroups.length === 0 ? (
         <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
           <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
@@ -631,6 +634,10 @@ const ResultsView = () => {
               </div>
             </div>
           </div>
+
+          {filteredCards.length > 0 && (
+            <TermTimeline cards={filteredCards} />
+          )}
 
           <div className="mt-4 space-y-4 flex flex-wrap justify-center gap-4">
             {filteredGroups.length === 0 ? (
@@ -742,16 +749,22 @@ const SummaryCard = ({ icon, title, value, subtitle, grad, shadow }) => {
 const TermTimeline = ({ cards }) => {
   const data = [...cards]
     .sort((a, b) => new Date(a.date || a.startDate || 0) - new Date(b.date || b.startDate || 0))
-    .map((c) => ({ name: (c.examName || 'Exam').slice(0, 14), pct: Math.round(toNumber(c.percentage, 0)) }));
+    .map((c, index) => ({
+      order: index + 1,
+      name: c.examName || 'Exam',
+      session: c.sessionLabel || 'Other',
+      pct: Math.round(toNumber(c.percentage, 0)),
+    }));
 
   const max = Math.max(...data.map((d) => d.pct), 1);
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
-      <p className="text-sm font-black text-indigo-900 mb-4">Term-wise Progress</p>
+      <p className="text-sm font-black text-indigo-900 mb-4">Exam-wise Progress</p>
       <div className="flex items-end gap-3 overflow-x-auto pb-2">
         {data.map((d, i) => (
           <div key={i} className="flex flex-col items-center gap-1 min-w-[56px]">
+            {/* <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">#{d.order}</span> */}
             <span className="text-xs font-bold text-indigo-700">{d.pct}%</span>
             <Motion.div
               initial={{ height: 0 }}
@@ -759,6 +772,7 @@ const TermTimeline = ({ cards }) => {
               transition={{ delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
               className={`w-10 rounded-t-xl ${d.pct >= 80 ? 'bg-emerald-500' : d.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
             />
+            <span className="text-[10px] text-indigo-500/80 text-center leading-tight">{d.session}</span>
             <span className="text-[10px] text-indigo-600/70 text-center leading-tight">{d.name}</span>
           </div>
         ))}
@@ -775,7 +789,7 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
   const hasSubjects = Array.isArray(exam.subjects) && exam.subjects.length > 0;
 
   return (
-    <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-200 border-t-4 self-start ${tier.border} overflow-hidden`}>
+        <div className={`w-full sm:w-[49%] bg-white rounded-2xl shadow-sm border border-gray-200 border-t-4 self-start ${tier.border} overflow-hidden`}>
       <div className="p-4 md:p-5">
         {/* <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
@@ -857,6 +871,9 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
         <div>
           <div className="text-center">
             <h3 className="text-base md:text-lg font-extrabold text-gray-900 leading-snug">{exam.examName || 'Exam'}</h3>
+            <div className="mt-1 inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+              Session: {exam.sessionLabel || 'Other'}
+            </div>
             {(exam.startDate || exam.endDate) ? (
               <div className="flex items-center gap-1 text-xs text-gray-400 mt-1.5 justify-center">
                 <Calendar size={11} /> 
