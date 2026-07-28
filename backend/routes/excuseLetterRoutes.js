@@ -2,9 +2,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
+const authParent = require('../middleware/authParent');
 
 const ExcuseLetter = require('../models/ExcuseLetter');
 const StudentUser = require('../models/StudentUser');
+const ParentUser = require('../models/ParentUser');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
@@ -167,6 +169,65 @@ router.post('/student', authStudent, async (req, res) => {
       targetId: req.user?.id,
       reasonType: req.body?.reasonType || undefined,
     });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Parent: list letters submitted by the authenticated parent's linked children.
+router.get('/parent', authParent, async (req, res) => {
+  try {
+    const parent = await ParentUser.findById(req.user.id)
+      .select('schoolId campusId childrenIds children')
+      .lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+
+    const schoolId = parent.schoolId || req.schoolId || null;
+    const campusId = parent.campusId || req.campusId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const studentFilter = {
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+    };
+
+    let students = [];
+    if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
+      students = await StudentUser.find({
+        ...studentFilter,
+        _id: { $in: parent.childrenIds },
+      })
+        .select('_id')
+        .lean();
+    }
+
+    // Preserve support for older parent records that only stored child names.
+    if (students.length === 0 && Array.isArray(parent.children) && parent.children.length > 0) {
+      const childNames = parent.children
+        .map((name) => String(name || '').trim())
+        .filter(Boolean);
+      if (childNames.length > 0) {
+        students = await StudentUser.find({
+          ...studentFilter,
+          name: { $in: childNames },
+        })
+          .select('_id')
+          .lean();
+      }
+    }
+
+    const studentIds = students.map((student) => student._id).filter(Boolean);
+    if (studentIds.length === 0) return res.json([]);
+
+    const items = await ExcuseLetter.find({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      studentId: { $in: studentIds },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(items);
+  } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });

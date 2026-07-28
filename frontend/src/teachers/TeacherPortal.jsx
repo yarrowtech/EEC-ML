@@ -75,6 +75,9 @@ const portalNavigation = [
   { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
+  { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
+  { icon: ThumbsUp, label: 'Student Feedback', path: `${PORTAL_BASE}/classes/current/communication/feedback` },
+  { icon: FileText, label: 'Excuse Letters', path: `${PORTAL_BASE}/classes/current/communication/excuse-letters` },
   { icon: Settings, label: 'Profile & Work', path: `${PORTAL_BASE}/settings` },
 ];
 
@@ -727,6 +730,12 @@ const ClassWorkspace = () => {
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
   const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
   const hasSubTabs = activeTab.subTabs.length > 0;
+
+  // Communication pages are direct destinations from the main sidebar.
+  // Do not render the class workspace header/tabs around them.
+  if (rel === 'communication' || rel.startsWith('communication/')) {
+    return <Outlet />;
+  }
 
   return (
     <div className="space-y-4">

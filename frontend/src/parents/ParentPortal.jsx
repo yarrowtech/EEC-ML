@@ -11,6 +11,7 @@ import {
   MessageCircle,
   AlertOctagon,
   FileEdit,
+  FileText,
   Search,
   Menu,
   X,
@@ -40,6 +41,7 @@ import ParentObservationNonAcademic from './ParentObservationNonAcademic';
 import ParentChat from './ParentChat';
 import ClassRoutine from './ClassRoutine';
 import HolidayList from './HolidayList';
+import ExcuseLetters from './ExcuseLetters';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
@@ -56,6 +58,7 @@ const MENU_ITEMS = [
   { icon: AlertOctagon, label: 'Complaints', description: 'Issue resolution', path: '/parents/complaints' },
   { icon: Video, label: 'Parent-Teacher Meetings', description: 'Upcoming PTMs', path: '/parents/ptm' },
   { icon: FileEdit, label: 'Parent Observation', description: 'Share feedback', path: '/parents/parent-observation' },
+  { icon: FileText, label: 'Excuse Letters', description: 'Children leave requests', path: '/parents/excuse-letters' },
   { icon: GraduationCap, label: 'Results', description: 'Performance summary', path: '/parents/results' },
   { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
 ];
@@ -717,6 +720,7 @@ const ParentPortal = () => {
             <Route path="chat" element={<ParentChat />} />
             <Route path="ptm" element={<PTMPortal />} />
             <Route path="parent-observation" element={<ParentObservationNonAcademic />} />
+            <Route path="excuse-letters" element={<ExcuseLetters />} />
             <Route path="results" element={<ResultsView />} />
             <Route path="achievements" element={<AchievementsView />} />
           </Routes>
