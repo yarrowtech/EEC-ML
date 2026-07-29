@@ -68,10 +68,18 @@ const formatClassLabel = (classId) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
+// Parse "5-a" → { grade: "5", section: "A" }
+const parseClassSlug = (slug) => {
+  if (!slug || slug === 'current') return { grade: '', section: '' };
+  const parts = decodeURIComponent(slug).split('-');
+  return { grade: parts[0] || '', section: (parts[1] || '').toUpperCase() };
+};
+
 const StudentAnalyticsPortal = () => {
   const navigate = useNavigate();
   const { classId = 'current' } = useParams();
   const classLabel = formatClassLabel(classId);
+  const { grade: ctxGrade, section: ctxSection } = parseClassSlug(classId);
   const [activeTab, setActiveTab] = useState('progress'); // 'progress' | 'intervention' | 'misconceptions' | 'gaps' | 'forecast' | 'mastery-growth'
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -92,8 +100,6 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const [weakStudents, setWeakStudents] = useState([]);
   const [interventionFilters, setInterventionFilters] = useState({
-    grade: '',
-    section: '',
     subject: '',
     interventionLevel: ''
   });
@@ -167,7 +173,7 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const [misconceptions, setMisconceptions] = useState([]);
   const [loadingMisconceptions, setLoadingMisconceptions] = useState(false);
-  const [misconceptionFilters, setMisconceptionFilters] = useState({ grade: '', section: '', subject: '' });
+  const [misconceptionFilters, setMisconceptionFilters] = useState({ subject: '' });
   const [aiMisconceptionReport, setAiMisconceptionReport] = useState('');
   const [generatingMisconceptionReport, setGeneratingMisconceptionReport] = useState(false);
 
@@ -176,21 +182,21 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const [classGaps, setClassGaps] = useState([]);
   const [loadingGaps, setLoadingGaps] = useState(false);
-  const [gapFilters, setGapFilters] = useState({ grade: '', section: '', subject: '' });
+  const [gapFilters, setGapFilters] = useState({ subject: '' });
 
   // ─────────────────────────────────────────────────────────────────────────
   // 7-DAY FORECAST TAB STATE
   // ─────────────────────────────────────────────────────────────────────────
   const [forecast7d, setForecast7d] = useState([]);
   const [loadingForecast, setLoadingForecast] = useState(false);
-  const [forecastFilters, setForecastFilters] = useState({ grade: '', section: '' });
+  const [forecastFilters, setForecastFilters] = useState({});
 
   // ─────────────────────────────────────────────────────────────────────────
   // MASTERY GROWTH TAB STATE
   // ─────────────────────────────────────────────────────────────────────────
   const [masteryAllData, setMasteryAllData] = useState([]);
   const [masteryAllLoading, setMasteryAllLoading] = useState(false);
-  const [masteryAllFilters, setMasteryAllFilters] = useState({ grade: '', section: '', subject: '' });
+  const [masteryAllFilters, setMasteryAllFilters] = useState({ subject: '' });
   const [masteryDetailStudent, setMasteryDetailStudent] = useState(null);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -200,8 +206,8 @@ const StudentAnalyticsPortal = () => {
     try {
       setLoadingWeak(true);
       const params = new URLSearchParams();
-      if (interventionFilters.grade) params.set('grade', interventionFilters.grade);
-      if (interventionFilters.section) params.set('section', interventionFilters.section);
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
       if (interventionFilters.subject) params.set('subject', interventionFilters.subject);
       if (interventionFilters.interventionLevel) params.set('level', interventionFilters.interventionLevel);
 
@@ -352,8 +358,8 @@ const StudentAnalyticsPortal = () => {
     setLoadingMisconceptions(true);
     try {
       const params = new URLSearchParams();
-      if (misconceptionFilters.grade) params.set('className', misconceptionFilters.grade);
-      if (misconceptionFilters.section) params.set('section', misconceptionFilters.section);
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
       if (misconceptionFilters.subject) params.set('subject', misconceptionFilters.subject);
       const res = await fetch(`${API_BASE}/api/teacher-analytics/misconceptions?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setMisconceptions(d.data || []); }
@@ -373,7 +379,7 @@ const StudentAnalyticsPortal = () => {
       const res = await fetch(`${API_BASE}/api/ai-teacher/misconception-report`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ subject: misconceptionFilters.subject || 'All Subjects', wrongAnswerPatterns: patterns }),
+        body: JSON.stringify({ subject: misconceptionFilters.subject || `Grade ${ctxGrade}${ctxSection ? '-' + ctxSection : ''}`, wrongAnswerPatterns: patterns }),
       });
       const data = await res.json().catch(() => ({}));
       setAiMisconceptionReport(data?.data?.content || '');
@@ -387,8 +393,8 @@ const StudentAnalyticsPortal = () => {
     setLoadingGaps(true);
     try {
       const params = new URLSearchParams();
-      if (gapFilters.grade) params.set('className', gapFilters.grade);
-      if (gapFilters.section) params.set('section', gapFilters.section);
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
       if (gapFilters.subject) params.set('subject', gapFilters.subject);
       const res = await fetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); }
@@ -402,8 +408,8 @@ const StudentAnalyticsPortal = () => {
     setLoadingForecast(true);
     try {
       const params = new URLSearchParams();
-      if (forecastFilters.grade) params.set('className', forecastFilters.grade);
-      if (forecastFilters.section) params.set('section', forecastFilters.section);
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
       const res = await fetch(`${API_BASE}/api/teacher-analytics/at-risk-7day?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setForecast7d(d.data || []); }
     } catch { /* silent */ } finally { setLoadingForecast(false); }
@@ -416,8 +422,8 @@ const StudentAnalyticsPortal = () => {
     setMasteryAllLoading(true);
     try {
       const params = new URLSearchParams();
-      if (masteryAllFilters.grade) params.set('className', masteryAllFilters.grade);
-      if (masteryAllFilters.section) params.set('section', masteryAllFilters.section);
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
       if (masteryAllFilters.subject) params.set('subject', masteryAllFilters.subject);
       const res = await fetch(`${API_BASE}/api/teacher-analytics/student-mastery-all?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setMasteryAllData(d.data || []); }
@@ -894,14 +900,8 @@ const InterventionTab = ({
           <Search className="size-3.5 text-[#5a7a8e]/60" />
           <input value={interventionSearch} onChange={(event) => setInterventionSearch(event.target.value)} placeholder="Search students..." className="w-full bg-transparent px-2 text-xs text-[#1a2e3f] outline-none placeholder:text-[#8aa8ba]" />
         </div>
-        <select value={interventionFilters.grade} onChange={(event) => updateFilter('grade', event.target.value)} className={selectClass}>
-          <option value="">All Grades</option><option value="9">Grade 9</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option>
-        </select>
-        <select value={interventionFilters.section} onChange={(event) => updateFilter('section', event.target.value)} className={selectClass}>
-          <option value="">All Sections</option><option value="A">Section A</option><option value="B">Section B</option><option value="C">Section C</option>
-        </select>
         <select value={interventionFilters.subject} onChange={(event) => updateFilter('subject', event.target.value)} className={selectClass}>
-          <option value="">All Subjects</option><option value="Mathematics">Mathematics</option><option value="Physics">Physics</option><option value="Chemistry">Chemistry</option><option value="Biology">Biology</option>
+          <option value="">All Subjects</option><option value="Mathematics">Mathematics</option><option value="Physics">Physics</option><option value="Chemistry">Chemistry</option><option value="Biology">Biology</option><option value="English">English</option>
         </select>
         <select value={interventionFilters.interventionLevel} onChange={(event) => updateFilter('interventionLevel', event.target.value)} className={selectClass}>
           <option value="">All Levels</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
@@ -1367,96 +1367,183 @@ const WeakStudentDetailModal = ({ student, onClose, generateLearningPath }) => (
 // ═════════════════════════════════════════════════════════════════════════════
 // MISCONCEPTIONS TAB
 // ═════════════════════════════════════════════════════════════════════════════
-const MisconceptionsTab = ({ data, loading, filters, setFilters, onFetch, aiReport, generatingReport, onGenerateReport }) => (
-  <div className="p-4 space-y-4">
-    <div className="flex flex-wrap gap-3 mb-2">
-      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
-      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
-      <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Subject" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
-      <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Load
-      </button>
-    </div>
-    {loading ? (
-      <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
-    ) : data.length === 0 ? (
-      <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No misconception data found. Load class data to analyse wrong answers.</div>
-    ) : (
-      <>
-        <div className="grid gap-3">
-          {data.slice(0, 15).map((m, i) => (
-            <div key={i} className="rounded-xl border border-rose-100 bg-rose-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide">{m.topic}</p>
-                  <p className="mt-1 text-sm text-slate-800">{m.question}</p>
-                </div>
-                <span className="shrink-0 rounded-full bg-rose-200 px-2.5 py-1 text-xs font-bold text-rose-800">{m.pct}% wrong</span>
-              </div>
-              {m.topWrongAnswers?.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {m.topWrongAnswers.map((wa, j) => (
-                    <span key={j} className="rounded bg-white px-2 py-0.5 text-xs text-slate-600 border border-rose-200">
-                      "{wa.answer}" × {wa.count}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+const MisconceptionsTab = ({ data, loading, filters, setFilters, onFetch, aiReport, generatingReport, onGenerateReport }) => {
+  const selectClass = 'rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 text-xs text-[#3a5a6e] outline-none transition focus:border-[#b0c8d8] focus:ring-2 focus:ring-[#3a7a94]/10';
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-rose-100 text-rose-600"><Brain className="size-4" /></span>
+            Misconceptions
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Questions where the most students gave wrong answers — signals class-wide confusion.</p>
         </div>
-        <button onClick={onGenerateReport} disabled={generatingReport} className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-          {generatingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
-          {generatingReport ? 'Analysing…' : 'Generate AI Misconception Report'}
+        <div className="flex items-center gap-2 rounded-full border border-[#e2e8ee] bg-[#f8fafc] p-1">
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#1a2e3f] shadow-sm">{data.length} pattern{data.length !== 1 ? 's' : ''} found</span>
+        </div>
+      </header>
+
+      {/* Filter bar — subject only; class+section come from the URL */}
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#eaedf0] bg-[#f8fafc] px-3 py-2">
+        <input className={`${selectClass} flex-1 min-w-[140px]`} placeholder="Filter by subject (optional)" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full bg-[#3a7a94] px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 hover:bg-[#2d6278]">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
         </button>
-        {aiReport && (
-          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-            {aiReport}
+      </div>
+
+      {loading ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Analysing patterns…
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <Brain className="mb-2 size-10 text-slate-300" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No patterns yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Students need to attempt practice questions for misconceptions to appear.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {data.slice(0, 15).map((m, i) => (
+              <Motion.div
+                key={i}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.04 }}
+                className="rounded-[1.2rem] border border-rose-100 bg-rose-50 p-4"
+              >
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider mb-1">{m.topic}</p>
+                    <p className="text-sm text-slate-800 leading-snug line-clamp-3">{m.question}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-rose-200 px-2.5 py-1 text-xs font-bold text-rose-800 whitespace-nowrap">{m.pct}% wrong</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-rose-100 overflow-hidden mb-2">
+                  <div className="h-full bg-rose-400 rounded-full" style={{ width: `${m.pct}%` }} />
+                </div>
+                {m.topWrongAnswers?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {m.topWrongAnswers.map((wa, j) => (
+                      <span key={j} className="rounded-full bg-white border border-rose-200 px-2 py-0.5 text-[10px] text-slate-600">
+                        "{wa.answer}" ×{wa.count}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Motion.div>
+            ))}
           </div>
-        )}
-      </>
-    )}
-  </div>
-);
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-[#eaedf0] pt-4">
+            <button onClick={onGenerateReport} disabled={generatingReport} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90">
+              {generatingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+              {generatingReport ? 'Analysing…' : 'Generate AI Misconception Report'}
+            </button>
+          </div>
+
+          {aiReport && (
+            <div className="rounded-[1.2rem] border border-purple-100 bg-purple-50 p-5 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+              {aiReport}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // CLASS GAPS TAB
 // ═════════════════════════════════════════════════════════════════════════════
 const ClassGapsTab = ({ data, loading, filters, setFilters, onFetch }) => {
-  const severityColor = (s) => s === 'critical' ? 'bg-red-500' : s === 'high' ? 'bg-orange-400' : 'bg-amber-300';
-  const severityBg = (s) => s === 'critical' ? 'border-red-200 bg-red-50' : s === 'high' ? 'border-orange-200 bg-orange-50' : 'border-amber-200 bg-amber-50';
+  const selectClass = 'rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 text-xs text-[#3a5a6e] outline-none transition focus:border-[#b0c8d8] focus:ring-2 focus:ring-[#3a7a94]/10';
+  const severityBar  = (s) => s === 'critical' ? 'bg-red-500'    : s === 'high' ? 'bg-orange-400'  : 'bg-amber-300';
+  const severityBg   = (s) => s === 'critical' ? 'border-red-200 bg-red-50'    : s === 'high' ? 'border-orange-200 bg-orange-50'  : 'border-amber-200 bg-amber-50';
+  const severityBadge= (s) => s === 'critical' ? 'bg-red-100 text-red-700'     : s === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700';
+
+  const criticalCount = data.filter((g) => g.gapSeverity === 'critical').length;
+  const highCount     = data.filter((g) => g.gapSeverity === 'high').length;
+  const mediumCount   = data.filter((g) => g.gapSeverity === 'medium').length;
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex flex-wrap gap-3 mb-2">
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Subject" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
-        <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Load
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-amber-100 text-amber-600"><AlertCircle className="size-4" /></span>
+            Class Gaps
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Topics where the class average mastery falls below 75% — sorted by severity.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-[#e2e8ee] bg-[#f8fafc] p-1">
+          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#1a2e3f] shadow-sm">{data.length} gap{data.length !== 1 ? 's' : ''} detected</span>
+        </div>
+      </header>
+
+      {/* Severity summary */}
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Critical', count: criticalCount, cls: 'bg-red-50 border-red-200 text-red-700' },
+            { label: 'High',     count: highCount,     cls: 'bg-orange-50 border-orange-200 text-orange-700' },
+            { label: 'Medium',   count: mediumCount,   cls: 'bg-amber-50 border-amber-200 text-amber-700' },
+          ].map((stat) => (
+            <div key={stat.label} className={`rounded-[1.2rem] border p-3 text-center ${stat.cls}`}>
+              <p className="text-2xl font-bold">{stat.count}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-80 mt-0.5">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filter bar — subject only; class+section come from the URL */}
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#eaedf0] bg-[#f8fafc] px-3 py-2">
+        <input className={`${selectClass} flex-1 min-w-[140px]`} placeholder="Filter by subject (optional)" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full bg-[#3a7a94] px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 hover:bg-[#2d6278]">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
         </button>
       </div>
+
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading gap data…
+        </div>
       ) : data.length === 0 ? (
-        <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No mastery data found. Students must attempt practice questions for gap data to appear.</div>
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <CheckCircle className="mb-2 size-10 text-emerald-500" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No significant gaps</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Students must attempt practice questions for gap data to appear.</p>
+        </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {data.map((gap, i) => (
-            <div key={i} className={`rounded-xl border p-4 ${severityBg(gap.gapSeverity)}`}>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div>
-                  <p className="text-xs text-slate-500">{gap.subject} {gap.chapterTitle ? `· ${gap.chapterTitle}` : ''}</p>
-                  <p className="font-semibold text-slate-800 text-sm">{gap.topicTitle}</p>
+            <Motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className={`rounded-[1.2rem] border p-4 ${severityBg(gap.gapSeverity)}`}
+            >
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-slate-500 truncate">{gap.subject}{gap.chapterTitle ? ` · ${gap.chapterTitle}` : ''}</p>
+                  <p className="font-semibold text-slate-800 text-sm mt-0.5 leading-snug">{gap.topicTitle}</p>
                 </div>
-                <span className="text-lg font-bold text-slate-800">{gap.avgMastery}%</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 rounded-full bg-white/60">
-                  <div className={`h-2 rounded-full ${severityColor(gap.gapSeverity)}`} style={{ width: `${gap.avgMastery}%` }} />
+                <div className="text-right shrink-0">
+                  <p className="text-xl font-bold text-slate-800">{gap.avgMastery}%</p>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge(gap.gapSeverity)}`}>{gap.gapSeverity}</span>
                 </div>
-                <span className="text-xs text-slate-500">{gap.studentsBelow50} students below 50%</span>
               </div>
-            </div>
+              <div className="h-2 rounded-full bg-white/70 overflow-hidden mb-2">
+                <div className={`h-full rounded-full ${severityBar(gap.gapSeverity)}`} style={{ width: `${gap.avgMastery}%` }} />
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>{gap.studentCount} students tracked</span>
+                <span>{gap.studentsBelow50} below 50%</span>
+              </div>
+            </Motion.div>
           ))}
         </div>
       )}
@@ -1467,49 +1554,116 @@ const ClassGapsTab = ({ data, loading, filters, setFilters, onFetch }) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 7-DAY FORECAST TAB
 // ═════════════════════════════════════════════════════════════════════════════
-const ForecastTab = ({ data, loading, filters, setFilters, onFetch }) => {
-  const levelColor = (l) => l === 'critical' ? 'text-red-700 bg-red-50 border-red-200' : l === 'high' ? 'text-orange-700 bg-orange-50 border-orange-200' : 'text-amber-700 bg-amber-50 border-amber-200';
+const ForecastTab = ({ data, loading, onFetch }) => {
+  const levelBg    = (l) => l === 'critical' ? 'border-red-200 bg-red-50'     : l === 'high' ? 'border-orange-200 bg-orange-50'  : 'border-amber-200 bg-amber-50';
+  const levelBadge = (l) => l === 'critical' ? 'bg-red-100 text-red-700'      : l === 'high' ? 'bg-orange-100 text-orange-700'  : 'bg-amber-100 text-amber-700';
+  const levelIcon  = (l) => l === 'critical' ? <XCircle className="size-4" /> : l === 'high' ? <AlertCircle className="size-4" /> : <AlertTriangle className="size-4" />;
+  const iconBox    = (l) => l === 'critical' ? 'bg-[#fce8e8] text-[#b13a3a]'  : l === 'high' ? 'bg-[#f5ede4] text-[#b57a3a]'  : 'bg-[#fdf5dc] text-[#a07a20]';
+
+  const critical = data.filter((s) => s.forecastLevel === 'critical').length;
+  const high     = data.filter((s) => s.forecastLevel === 'high').length;
+  const medium   = data.filter((s) => s.forecastLevel === 'medium').length;
+
   return (
-    <div className="p-4 space-y-4">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
-        <strong>7-Day Forecast</strong> — identifies students whose attendance or scores in the last 7 days show a deteriorating trend.
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Class" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[120px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
-        <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Refresh
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-blue-100 text-blue-600"><Activity className="size-4" /></span>
+            7-Day Forecast
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Students whose attendance or scores have deteriorated in the last 7 days.</p>
+        </div>
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
         </button>
-      </div>
+      </header>
+
+      {/* Stat strip */}
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Critical', count: critical, cls: 'bg-red-50 border-red-200 text-red-700' },
+            { label: 'High',     count: high,     cls: 'bg-orange-50 border-orange-200 text-orange-700' },
+            { label: 'Medium',   count: medium,   cls: 'bg-amber-50 border-amber-200 text-amber-700' },
+          ].map((stat) => (
+            <div key={stat.label} className={`rounded-[1.2rem] border p-3 text-center ${stat.cls}`}>
+              <p className="text-2xl font-bold">{stat.count}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-80 mt-0.5">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Scanning last 7 days…
+        </div>
       ) : data.length === 0 ? (
-        <div className="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-500">No at-risk students detected in the last 7 days. Load data above.</div>
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <CheckCircle className="mb-2 size-10 text-emerald-500" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">All clear!</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">No students show a deteriorating trend in the last 7 days.</p>
+        </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-4 md:grid-cols-2">
           {data.map((s, i) => (
-            <div key={i} className={`rounded-xl border p-4 ${levelColor(s.forecastLevel)}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-sm">{s.name} <span className="text-xs font-normal opacity-70">{s.grade} {s.section}</span></p>
-                  <div className="flex flex-wrap gap-3 mt-1 text-xs opacity-80">
-                    {s.attPct7d !== null && <span>7-day att: {s.attPct7d}%</span>}
-                    {s.avgScore7d !== null && <span>7-day avg: {s.avgScore7d}%</span>}
-                    {s.examCount7d > 0 && <span>Exams: {s.examCount7d}</span>}
+            <Motion.article
+              key={i}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.045 }}
+              whileHover={{ y: -2 }}
+              className={`rounded-[1.4rem] border p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5 ${levelBg(s.forecastLevel)}`}
+            >
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`flex size-9 shrink-0 items-center justify-center rounded-full ${iconBox(s.forecastLevel)}`}>
+                    {levelIcon(s.forecastLevel)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name}</p>
+                    <p className="text-[10px] text-[#5a7a8e] mt-0.5">
+                      {s.grade ? `Grade ${s.grade}` : ''}{s.section ? ` · ${s.section}` : ''}{s.roll ? ` · Roll ${s.roll}` : ''}
+                    </p>
                   </div>
                 </div>
-                <span className="shrink-0 rounded-full px-3 py-1 text-xs font-bold capitalize border" style={{ textTransform: 'uppercase' }}>{s.forecastLevel}</span>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${levelBadge(s.forecastLevel)}`}>
+                  {s.forecastLevel}
+                </span>
               </div>
+
+              <div className="flex flex-wrap gap-x-5 gap-y-2 border-t border-black/5 pt-3">
+                {s.attPct7d !== null && (
+                  <div>
+                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">7-Day Attendance</p>
+                    <p className={`text-sm font-semibold ${s.attPct7d < 60 ? 'text-red-600' : s.attPct7d < 75 ? 'text-orange-600' : 'text-[#1a2e3f]'}`}>{s.attPct7d}%</p>
+                  </div>
+                )}
+                {s.avgScore7d !== null && (
+                  <div>
+                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">7-Day Avg Score</p>
+                    <p className={`text-sm font-semibold ${s.avgScore7d < 40 ? 'text-red-600' : s.avgScore7d < 60 ? 'text-orange-600' : 'text-[#1a2e3f]'}`}>{s.avgScore7d}%</p>
+                  </div>
+                )}
+                {s.examCount7d > 0 && (
+                  <div>
+                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Exams Taken</p>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.examCount7d}</p>
+                  </div>
+                )}
+              </div>
+
               {s.signals?.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {s.signals.map((sig, j) => (
-                    <span key={j} className="rounded bg-white/60 px-2 py-0.5 text-xs border">
-                      {sig.type.replace(/_/g, ' ')}: {sig.value}{sig.type.includes('att') || sig.type.includes('score') ? '%' : 'pt'}
+                    <span key={j} className="rounded-full bg-white/70 border border-black/10 px-2.5 py-0.5 text-[10px] text-[#3a5a6e]">
+                      {sig.type.replace(/_/g, ' ')}: {sig.value}{sig.type.includes('att') || sig.type.includes('score') ? '%' : 'pt drop'}
                     </span>
                   ))}
                 </div>
               )}
-            </div>
+            </Motion.article>
           ))}
         </div>
       )}
@@ -1531,22 +1685,35 @@ const MasteryGrowthTab = ({ data, loading, filters, setFilters, onFetch, detailS
   data.forEach((s) => { if (tierMap[s.tier]) tierMap[s.tier].push(s); });
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-3">
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[110px]" placeholder="Class / Grade" value={filters.grade} onChange={(e) => setFilters((f) => ({ ...f, grade: e.target.value }))} />
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[110px]" placeholder="Section" value={filters.section} onChange={(e) => setFilters((f) => ({ ...f, section: e.target.value }))} />
-        <input className="rounded-lg border px-3 py-2 text-sm flex-1 min-w-[110px]" placeholder="Subject (optional)" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
-        <button onClick={onFetch} disabled={loading} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />} Refresh
-        </button>
-      </div>
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-[#e4edf2] text-[#3a7a94]"><Star className="size-4" /></span>
+            Mastery Growth
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Students grouped by average mastery score — click View Details to see strong and weak topics.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-[180px] items-center rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 focus-within:border-[#b0c8d8]">
+            <input
+              className="w-full bg-transparent text-xs text-[#1a2e3f] outline-none placeholder:text-[#8aa8ba]"
+              placeholder="Filter by subject…"
+              value={filters.subject}
+              onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))}
+            />
+          </div>
+          <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+          </button>
+        </div>
+      </header>
 
-      {/* Summary strip */}
+      {/* Tier summary strip */}
       {!loading && data.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
           {TIERS.map((t) => (
-            <div key={t.key} className={`rounded-xl border ${t.border} ${t.bg} p-3 text-center`}>
+            <div key={t.key} className={`rounded-[1.2rem] border ${t.border} ${t.bg} p-3 text-center`}>
               <p className="text-2xl font-bold text-slate-800">{tierMap[t.key].length}</p>
               <p className="text-xs font-semibold text-slate-600 mt-0.5">{t.label}</p>
               <p className="text-[10px] text-slate-400">{t.range}</p>
@@ -1556,8 +1723,16 @@ const MasteryGrowthTab = ({ data, loading, filters, setFilters, onFetch, detailS
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-blue-500" /></div>
-      ) : data.length === 0 ? null : (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading mastery data…
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <Star className="mb-2 size-10 text-slate-300" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No mastery data yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Students need to attempt practice questions for mastery scores to appear.</p>
+        </div>
+      ) : (
         <div className="grid gap-6 lg:grid-cols-3">
           {TIERS.map((tier) => (
             <div key={tier.key} className="space-y-2">
