@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
   Users, Search, TrendingUp, TrendingDown, BarChart3, Award, Target,
   Calendar, Eye, FileText, AlertCircle, Minus, ChevronDown, ChevronRight, Loader2,
@@ -254,6 +255,32 @@ const StudentAnalyticsPortal = () => {
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
+  // SOCKET — real-time ML intervention alerts
+  // ─────────────────────────────────────────────────────────────────────────
+  const [alertToast, setAlertToast] = useState(null);
+  const alertTimerRef = useRef(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const socket = io(API_BASE, { auth: { token }, transports: ['websocket'] });
+
+    socket.on('intervention_alert', (payload) => {
+      const { studentName, subject, topicTitle, score } = payload;
+      setAlertToast({ studentName, subject, topicTitle, score, id: Date.now() });
+      clearTimeout(alertTimerRef.current);
+      alertTimerRef.current = setTimeout(() => setAlertToast(null), 7000);
+      fetchWeakStudents();
+      if (activeTab === 'intervention') fetchInterventionLogs();
+    });
+
+    return () => {
+      socket.disconnect();
+      clearTimeout(alertTimerRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─────────────────────────────────────────────────────────────────────────
   // INTERVENTION ACTIONS
   // ─────────────────────────────────────────────────────────────────────────
   const logIntervention = async () => {
@@ -462,6 +489,36 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-[calc(100vh-16rem)] items-center justify-center bg-[linear-gradient(145deg,#f0f6fb_0%,#e3ecf5_100%)] p-3 sm:p-5">
+      {/* ML Intervention Alert Toast */}
+      <AnimatePresence>
+        {alertToast && (
+          <Motion.div
+            key={alertToast.id}
+            initial={{ opacity: 0, y: -24, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -16, x: '-50%' }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed top-5 left-1/2 z-[9999] flex items-start gap-3 rounded-2xl border border-red-200 bg-white px-5 py-4 shadow-[0_8px_32px_rgba(220,38,38,0.18)]"
+            style={{ minWidth: 320, maxWidth: 440 }}
+          >
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900">ML Intervention Alert</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                <span className="font-medium text-gray-700">{alertToast.studentName}</span> is stuck on{' '}
+                <span className="font-medium text-gray-700">{alertToast.topicTitle}</span>{' '}
+                ({alertToast.subject}) — score {alertToast.score}%. Intervention tab refreshed.
+              </p>
+            </div>
+            <button onClick={() => setAlertToast(null)} className="mt-0.5 text-gray-400 hover:text-gray-600">
+              <X className="h-4 w-4" />
+            </button>
+          </Motion.div>
+        )}
+      </AnimatePresence>
+
       <Motion.div
         initial={{ opacity: 0, y: 24, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}

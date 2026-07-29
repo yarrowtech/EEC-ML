@@ -32,6 +32,8 @@ const assignmentSchema = new mongoose.Schema({
     enum: ['text', 'pdf'],
     default: 'text'
   },
+  isEssay: { type: Boolean, default: false },
+  rubric: { type: String, default: '' },
   status: {
     type: String,
     enum: ["draft", "active"],

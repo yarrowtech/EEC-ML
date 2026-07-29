@@ -98,6 +98,8 @@ const mockExamRoutes = require('./routes/mockExamRoutes');
 const rubricRoutes = require('./routes/rubricRoutes');
 const teacherAnalyticsRoutes = require('./routes/teacherAnalyticsRoutes');
 const aiTeacherRoutes = require('./routes/aiTeacherRoutes');
+const curriculumMapRoutes = require('./routes/curriculumMapRoutes');
+const mlRoutes = require('./routes/mlRoutes');
 const paymentSettingsRoutes = require('./routes/paymentSettingsRoutes');
 const paymentWebhookController = require('./controllers/paymentWebhookController');
 const ChatThread = require('./models/ChatThread');
@@ -333,23 +335,23 @@ const createApiLimiter = (bucket, { windowMs, max }) => rateLimit({
 
 const generalApiLimiter = createApiLimiter('api:general', {
   windowMs: Number(process.env.RATE_LIMIT_GENERAL_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_GENERAL_MAX || 1200),
+  max: Number(process.env.RATE_LIMIT_GENERAL_MAX || 2400),
 });
 const authApiLimiter = createApiLimiter('api:auth', {
   windowMs: Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_AUTH_MAX || 80),
+  max: Number(process.env.RATE_LIMIT_AUTH_MAX || 160),
 });
 const aiApiLimiter = createApiLimiter('api:ai', {
   windowMs: Number(process.env.RATE_LIMIT_AI_WINDOW_MS || 10 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_AI_MAX || 40),
+  max: Number(process.env.RATE_LIMIT_AI_MAX || 80),
 });
 const uploadApiLimiter = createApiLimiter('api:upload', {
   windowMs: Number(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_UPLOAD_MAX || 60),
+  max: Number(process.env.RATE_LIMIT_UPLOAD_MAX || 120),
 });
 const writeHeavyApiLimiter = createApiLimiter('api:write-heavy', {
   windowMs: Number(process.env.RATE_LIMIT_WRITE_HEAVY_WINDOW_MS || 15 * 60 * 1000),
-  max: Number(process.env.RATE_LIMIT_WRITE_HEAVY_MAX || 180),
+  max: Number(process.env.RATE_LIMIT_WRITE_HEAVY_MAX || 360),
 });
 
 const requireOrganizationDomain = (req, res, next) => {
@@ -499,6 +501,7 @@ app.use('/api/mock-exam', mockExamRoutes);
 app.use('/api/rubrics', rubricRoutes);
 app.use('/api/teacher-analytics', teacherAnalyticsRoutes);
 app.use('/api/ai-teacher', aiApiLimiter, aiTeacherRoutes);
+app.use('/api/curriculum-map', curriculumMapRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/chat', chatRoutes);
@@ -548,6 +551,7 @@ const io = new SocketServer(httpServer, {
   },
 });
 app.set('io', io);
+require('./utils/socketRegistry').set(io);
 
 // Socket.io auth middleware
 io.use(async (socket, next) => {

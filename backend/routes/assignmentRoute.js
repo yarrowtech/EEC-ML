@@ -855,6 +855,53 @@ router.post("/submit", authStudent, async (req, res) => {
         progress.lastUpdated = new Date();
         await progress.save();
 
+        // Fire-and-forget AI essay grading if this is an essay assignment with a rubric
+        if (assignment.isEssay && assignment.rubric && submissionText?.trim()) {
+            const submissionIdx = progress.submissions.findIndex(
+                (s) => String(s.assignmentId) === String(assignmentId) && s.submissionText === submissionText
+            );
+            (async () => {
+                try {
+                    const AI_URL = (process.env.AI_SERVICE_URL || 'http://localhost:8000').replace(/\/$/, '');
+                    const rubricLines = assignment.rubric.split('\n').filter(Boolean);
+                    const rubricArr = rubricLines.map((line, i) => ({
+                        criterion: line.replace(/^\d+[.)]\s*/, '').trim() || `Criterion ${i + 1}`,
+                        maxScore: Math.floor(assignment.marks / rubricLines.length),
+                    }));
+                    const aiRes = await fetch(`${AI_URL}/generate/tutor`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            mode: 'exit_ticket_grade',
+                            question: assignment.description || assignment.title,
+                            student_answer: submissionText,
+                            rubric: rubricArr,
+                        }),
+                    });
+                    if (aiRes.ok) {
+                        const aiData = await aiRes.json();
+                        const content = aiData?.response || aiData?.content || '';
+                        const jsonMatch = content.match(/\{[\s\S]*\}/);
+                        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+                        const totalScore = parsed?.totalScore ?? parsed?.total_score ?? null;
+                        const gradingFeedback = parsed?.overallFeedback || parsed?.feedback || content;
+                        if (submissionIdx >= 0 && totalScore !== null) {
+                            const freshProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
+                            const idx = freshProgress?.submissions?.findIndex(
+                                (s) => String(s.assignmentId) === String(assignmentId)
+                            );
+                            if (freshProgress && idx >= 0) {
+                                freshProgress.submissions[idx].aiScore = Math.min(Number(totalScore), assignment.marks);
+                                freshProgress.submissions[idx].aiGradingFeedback = String(gradingFeedback).slice(0, 1000);
+                                freshProgress.submissions[idx].aiGradingStatus = 'done';
+                                await freshProgress.save();
+                            }
+                        }
+                    }
+                } catch (_) { /* non-critical */ }
+            })();
+        }
+
         res.status(201).json({
             message: 'Assignment submitted',
             status,

@@ -189,7 +189,7 @@
 
 ---
 
-### SECTION 3B — Teacher Workflow Triggers
+### SECTION 3B — Teacher Workflow Triggers [Done] 
 
 | Item | Status | Notes |
 |------|--------|-------|

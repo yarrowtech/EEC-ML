@@ -1968,6 +1968,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const standaloneMaterialFilter = {
       schoolId,
       status: 'published',
+      publishedForStudentPortal: true,
       materialType: { $ne: 'folder' },
       chapterTitle: { $exists: true, $ne: '' },
       $or: [

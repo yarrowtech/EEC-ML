@@ -28,19 +28,6 @@ const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 
 
-const LEARNING_STEPS = [
-  { id: 'step1', title: 'Introduction & Overview', duration: 10, type: 'The Hook' },
-  { id: 'step2', title: 'Core Concepts & Theory', duration: 25, type: 'Instruction' },
-  { id: 'step3', title: 'Practice & Application', duration: 30, type: 'Guided Practice' },
-  { id: 'step4', title: 'Review & Self-Assessment', duration: 15, type: 'Synthesis' },
-];
-
-const LEARNING_OBJECTIVES = [
-  'Master the fundamental concepts and principles of the topic with comprehensive understanding',
-  'Apply learned concepts to solve real-world problems and complex scenarios',
-  'Synthesize knowledge to create meaningful connections between related topics',
-];
-
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const normalizeLabel = (value) => String(value || '').trim();
 
@@ -100,21 +87,7 @@ const MaterialQuickActions = ({ material, onRead }) => {
   );
 };
 
-const UploadedResourcesPanel = ({ resources }) => {
-  const [readerResource, setReaderResource] = useState(null);
-  const groups = [
-    { key: 'Material', title: 'Materials', icon: FileText },
-    { key: 'Uploaded Material', title: 'Uploaded Files', icon: Layers },
-    { key: 'Worksheet Upload', title: 'Worksheet Uploads', icon: ClipboardList },
-    { key: 'Worksheet', title: 'Worksheets', icon: ClipboardList },
-    { key: 'Assessment', title: 'Assessments', icon: CheckCircle2 },
-  ];
-
-  const resourcesByGroup = groups.map((group) => ({
-    ...group,
-    items: resources.filter((resource) => resource.group === group.key),
-  })).filter((group) => group.items.length > 0);
-
+const UploadedResourcesPanel = () => {
   return (
     <></>
     // <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -229,6 +202,7 @@ const AILearningCoursesReference = () => {
   const searchParams = new URLSearchParams(location.search);
   const isDetailsView = searchParams.get('view') === 'details';
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
   const [smartLearningSubjects, setSmartLearningSubjects] = useState([]);
@@ -248,7 +222,7 @@ const AILearningCoursesReference = () => {
 
   // Load progress from localStorage
   useEffect(() => {
-    const storageKey = `learning-topic-progress-${topicSlug}`;
+    const storageKey = `learning-topic-progress-${normalizeKey(subjectSlug)}-${normalizeKey(topicSlug)}`;
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try {
@@ -259,36 +233,20 @@ const AILearningCoursesReference = () => {
         console.error('Failed to load progress:', err);
       }
     }
-  }, [topicSlug]);
-
-  // Save progress to localStorage
-  useEffect(() => {
-    const storageKey = `learning-topic-progress-${topicSlug}`;
-    const percentage = LEARNING_STEPS.length > 0
-      ? Math.round((completedSteps.length / LEARNING_STEPS.length) * 100)
-      : 0;
-    const data = {
-      completedSteps,
-      percentage,
-      lastAccessed: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(data));
-    } catch {
-      // Storage full/unavailable (private mode, quota exceeded) — progress
-      // tracking is best-effort and must not crash the page.
-    }
-    setOverallProgress(percentage);
-  }, [completedSteps, topicSlug]);
+  }, [subjectSlug, topicSlug]);
 
   // Fetch user data
   useEffect(() => {
     const load = async () => {
       try {
+        setLoading(true);
         setError('');
         const token = localStorage.getItem('token');
         const userType = localStorage.getItem('userType');
-        if (!token || userType !== 'Student') return;
+        if (!token || userType !== 'Student') {
+          setLoading(false);
+          return;
+        }
 
         const headers = {
           Authorization: `Bearer ${token}`,
@@ -301,7 +259,11 @@ const AILearningCoursesReference = () => {
         ]);
 
         const [mapRes] = await Promise.all([
-          fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, { ttlMs: 60 * 1000, fetchOptions: { headers } }).catch(() => ({ data: { subjects: [] } })),
+          fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, {
+            ttlMs: 60 * 1000,
+            forceRefresh: true,
+            fetchOptions: { headers },
+          }).catch(() => ({ data: { subjects: [] } })),
         ]);
 
         setProfile(dashRes?.data?.profile || null);
@@ -309,6 +271,8 @@ const AILearningCoursesReference = () => {
         setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -467,7 +431,7 @@ const AILearningCoursesReference = () => {
     const objectives = Array.isArray(selectedChapterMeta.learningObjectives)
       ? selectedChapterMeta.learningObjectives.map((item) => String(item || '').trim()).filter(Boolean)
       : [];
-    return objectives.length > 0 ? objectives : LEARNING_OBJECTIVES;
+    return objectives;
   }, [selectedChapterMeta]);
 
   const chapterInstructionalFlow = useMemo(() => {
@@ -478,14 +442,36 @@ const AILearningCoursesReference = () => {
     return flow.map((step, index) => ({
       id: step.id || `step-${index + 1}`,
       title: String(step.title || step.description || `Step ${index + 1}`).trim(),
-      duration: Number(step.duration || 0) || LEARNING_STEPS[index % LEARNING_STEPS.length]?.duration || 0,
+      duration: Number(step.duration || 0) || 0,
       type: String(step.type || step.phase || `Step ${index + 1}`).trim(),
     }));
   }, [selectedChapterMeta]);
 
+  // Progress is based only on the instructional flow published for this topic.
+  useEffect(() => {
+    const storageKey = `learning-topic-progress-${normalizeKey(subjectSlug)}-${normalizeKey(topicSlug)}`;
+    const totalSteps = chapterInstructionalFlow.length;
+    const percentage = totalSteps > 0
+      ? Math.round((completedSteps.length / totalSteps) * 100)
+      : 0;
+    const data = {
+      completedSteps,
+      percentage,
+      lastAccessed: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(data));
+    } catch {
+      // Storage full/unavailable (private mode, quota exceeded) — progress
+      // tracking is best-effort and must not crash the page.
+    }
+    setOverallProgress(percentage);
+  }, [completedSteps, chapterInstructionalFlow.length, subjectSlug, topicSlug]);
+
   const chapterIntroduction = String(selectedChapterMeta.introduction || '').trim();
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
   const chapterRecap = String(selectedChapterMeta.recap || '').trim();
+  const hasTopicData = Boolean(selectedChapter || selectedTopicFromMap?.topic);
 
   const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
   const chapterDayLabel = selectedChapterMeta.day || (selectedChapterMeta.date ? new Date(selectedChapterMeta.date).toLocaleDateString('en-US', { weekday: 'long' }) : '') || '';
@@ -537,12 +523,14 @@ const AILearningCoursesReference = () => {
   const introductionText = chapterIntroduction || readingContent.intro;
   const detailSections = useMemo(() => ([
     { id: 'introduction', title: 'Introduction', text: introductionText },
+    ...(chapterExplanation ? [{ id: 'explanation', title: 'Explanation', text: chapterExplanation }] : []),
     ...readingContent.sections.map((section, index) => ({
       id: `section-${index + 1}`,
       title: section.title,
       text: section.text,
     })),
-  ]), [readingContent, introductionText]);
+    ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
+  ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap]);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
@@ -732,6 +720,34 @@ const AILearningCoursesReference = () => {
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f7f6] p-6 text-sm text-slate-500">
+        Loading published learning data…
+      </div>
+    );
+  }
+
+  if (!hasTopicData) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f7f6] p-6">
+        <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <h1 className="text-xl font-black text-slate-900">Topic not found</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            No published learning data was found for “{topicSlug}” in “{subjectSlug}”.
+          </p>
+          <button
+            type="button"
+            onClick={goBackToSubjectTopics}
+            className="mt-5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700"
+          >
+            Back to subject
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isDetailsView) {
     return (
       <div
@@ -772,9 +788,11 @@ const AILearningCoursesReference = () => {
               <h1 className="text-4xl font-semibold leading-tight tracking-[-0.02em] text-white sm:text-6xl" style={{ fontFamily: 'Newsreader, serif' }}>
                 {topicSlug}
               </h1>
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-xl">
-                A comprehensive learning experience designed to help you master key concepts through structured practice, visual aids, and interactive materials.
-              </p>
+              {introductionText && (
+                <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-xl">
+                  {introductionText}
+                </p>
+              )}
             </div>
           </section>
 
@@ -805,18 +823,25 @@ const AILearningCoursesReference = () => {
 
             <div className="mx-auto w-full max-w-[720px]">
               <article className="text-[20px] leading-[1.85] text-[#1a1c1b]" style={{ fontFamily: 'Newsreader, serif' }}>
-                <section
-                  id="introduction"
-                  ref={(node) => {
-                    detailSectionRefs.current.introduction = node;
-                  }}
-                  className="mb-12 scroll-mt-24"
-                >
-                  <h2 className="mb-6 text-3xl italic text-black">Understanding the Landscape</h2>
-                  <p className="mb-6">{introductionText}</p>
-                </section>
+                {detailSections.length > 0 ? detailSections.map((section) => (
+                  <section
+                    key={section.id}
+                    id={section.id}
+                    ref={(node) => {
+                      detailSectionRefs.current[section.id] = node;
+                    }}
+                    className="mb-12 scroll-mt-24"
+                  >
+                    <h2 className="mb-6 text-3xl italic text-black">{section.title}</h2>
+                    <p className="mb-6 whitespace-pre-wrap">{section.text}</p>
+                  </section>
+                )) : (
+                  <p className="rounded-2xl border border-slate-200 bg-white p-6 text-base text-slate-500">
+                    No published reading content is available for this topic yet.
+                  </p>
+                )}
 
-                <div className="my-12">
+                {/* Static visual removed; only published topic data is rendered.
                   <img
                     className="aspect-video w-full rounded object-cover"
                     alt="Topic inline visual"
@@ -825,26 +850,8 @@ const AILearningCoursesReference = () => {
                   <p className="mt-3 text-sm italic text-[#444748]" style={{ fontFamily: 'Work Sans, sans-serif' }}>
                     Fig 1.1: Foundational ideas and conceptual structure of {topicSlug}.
                   </p>
-                </div>
+                */}
 
-                {readingContent.sections.map((section, index) => (
-                  <section
-                    key={section.title}
-                    id={`section-${index + 1}`}
-                    ref={(node) => {
-                      detailSectionRefs.current[`section-${index + 1}`] = node;
-                    }}
-                    className="mb-12 scroll-mt-24"
-                  >
-                    <h3 className="mb-6 text-3xl italic text-black">{section.title}</h3>
-                    <p className="mb-6">{section.text}</p>
-                    {index === 0 && (
-                      <blockquote className="mb-6 border-l-2 border-[#6e5c40] pl-6 text-2xl italic leading-snug text-[#6e5c40]">
-                        "Clear concepts create confident problem solvers."
-                      </blockquote>
-                    )}
-                  </section>
-                ))}
               </article>
             </div>
           </main>
@@ -965,9 +972,11 @@ const AILearningCoursesReference = () => {
               <h1 className="mt-4 text-2xl font-black leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
                 {topicSlug}
               </h1>
-              <p className="mt-3 max-w-xl text-sm text-white/85 sm:text-base lg:text-lg">
-                A comprehensive learning experience designed to help you master key concepts through structured practice, visual aids, and interactive materials.
-              </p>
+              {introductionText && (
+                <p className="mt-3 max-w-xl text-sm text-white/85 sm:text-base lg:text-lg">
+                  {introductionText}
+                </p>
+              )}
 
               <div className="mt-6 flex flex-wrap gap-2">
                 <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
@@ -1017,14 +1026,16 @@ const AILearningCoursesReference = () => {
                 <h2 className="text-lg font-black text-slate-900">Learning Objectives</h2>
               </div>
               <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                {chapterLearningObjectives.map((obj, idx) => (
+                {chapterLearningObjectives.length > 0 ? chapterLearningObjectives.map((obj, idx) => (
                   <div key={idx} className="flex gap-3 rounded-2xl bg-white/70 p-3">
                     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[11px] font-bold text-white">
                       {idx + 1}
                     </span>
                     <p className="text-sm leading-relaxed text-slate-700">{obj}</p>
                   </div>
-                ))}
+                )) : (
+                  <p className="pt-4 text-center text-xs text-slate-400">No learning objectives published for this topic.</p>
+                )}
               </div>
             </section>
 

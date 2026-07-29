@@ -92,7 +92,7 @@ const parsePositiveInt = (value, fallback) => {
 };
 
 const SCHOOL_REG_WINDOW_MINUTES = parsePositiveInt(process.env.SCHOOL_REG_WINDOW_MINUTES, 15); // defaults to 15 minutes
-const SCHOOL_REG_MAX_REQUESTS = parsePositiveInt(process.env.SCHOOL_REG_MAX_REQUESTS, 3); // defaults to 3 attempts
+const SCHOOL_REG_MAX_REQUESTS = parsePositiveInt(process.env.SCHOOL_REG_MAX_REQUESTS, 6); // defaults to 6 attempts
 const SCHOOL_REG_WINDOW_MS = SCHOOL_REG_WINDOW_MINUTES * 60 * 1000;
 
 // PUBLIC ENDPOINT - No authentication required

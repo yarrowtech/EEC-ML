@@ -73,7 +73,7 @@ router.post('/register', adminAuth, async (req, res) => {
   }
 });
 
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
   // #swagger.tags = ['Principals']
   const rawUsername = req.body?.username;
   const rawEmail = req.body?.email;
@@ -159,7 +159,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: ra
   }
 });
 
-router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
   // #swagger.tags = ['Principals']
   const { username, newPassword } = req.body || {};
   try {

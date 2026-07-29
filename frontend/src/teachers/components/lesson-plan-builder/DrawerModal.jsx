@@ -118,6 +118,30 @@ const DrawerModal = ({
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
 
+  // Curriculum map topic picker
+  const [curriculumTopics, setCurriculumTopics] = useState([]);
+  const [curriculumLoading, setCurriculumLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const subject = localStorage.getItem('selectedSubjectName') || '';
+    const className = localStorage.getItem('selectedClassName') || '';
+    if (!subject && !className) return;
+    setCurriculumLoading(true);
+    const params = new URLSearchParams();
+    if (subject) params.set('subject', subject);
+    if (className) params.set('className', className);
+    fetch(`${API_BASE}/api/curriculum-map?${params}`, { headers: authHdrs() })
+      .then((r) => r.json())
+      .then((d) => {
+        const maps = d?.data || [];
+        const topics = maps.flatMap((m) => (m.topics || []).map((t) => ({ label: t.title, mapId: m._id, order: t.order })));
+        setCurriculumTopics(topics);
+      })
+      .catch(() => setCurriculumTopics([]))
+      .finally(() => setCurriculumLoading(false));
+  }, [open]);
+
   const generateIdoWeeDo = async () => {
     const subject = localStorage.getItem('selectedSubjectName') || 'General';
     const topic = chapter?.title || 'Lesson Topic';
@@ -241,6 +265,32 @@ const DrawerModal = ({
                   style={{ color: '#0f172a', caretColor: '#0f172a' }}
                 />
               </Field>
+              {curriculumTopics.length > 0 && (
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                    Or pick from curriculum map
+                  </label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) onUpdate({ ...chapter, title: e.target.value });
+                    }}
+                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: '#f0f7ff', borderColor: '#bfdbfe' }}
+                    className="h-9 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    <option value="">— Select a curriculum topic —</option>
+                    {curriculumTopics.map((t, i) => (
+                      <option key={i} value={t.label}>{t.order}. {t.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {curriculumLoading && (
+                <p className="mt-2 text-[11px] text-slate-400 flex items-center gap-1">
+                  <span className="animate-spin inline-block w-3 h-3 border border-slate-300 border-t-blue-500 rounded-full" />
+                  Loading curriculum topics…
+                </p>
+              )}
             </Card>
             <div className="grid gap-3 sm:grid-cols-3">
               <Card>

@@ -28,7 +28,10 @@ const submissionSchema = new mongoose.Schema({
     type: String,
     enum: ['submitted', 'graded', 'late', 'missing'],
     default: 'submitted'
-  }
+  },
+  aiScore: { type: Number, default: null },
+  aiGradingFeedback: { type: String, default: '' },
+  aiGradingStatus: { type: String, enum: ['pending', 'done', 'failed', 'skipped'], default: 'skipped' },
 });
 
 const progressMetricSchema = new mongoose.Schema({

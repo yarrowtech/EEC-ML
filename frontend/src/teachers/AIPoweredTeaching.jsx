@@ -910,14 +910,7 @@ const AIPoweredTeaching = () => {
 
         {activeChapter && (
           <div className="flex justify-end px-2 pt-1 sm:px-3">
-            <button
-              type="button"
-              onClick={() => setActiveStep(5)}
-              className="inline-flex items-center gap-2 rounded-full border border-[#fcd34d] bg-[#fef3c7] px-4 py-1.5 text-xs font-medium text-[#92400e] transition hover:bg-[#fde68a]"
-            >
-              <ClipboardList className="size-3.5" />
-              Add Evaluation <span className="hidden sm:inline">(after class)</span>
-            </button>
+            
           </div>
         )}
 

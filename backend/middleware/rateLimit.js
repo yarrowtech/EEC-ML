@@ -21,7 +21,7 @@ const getKey = (req, { useForwardedFor = true, keyGenerator } = {}) => {
 
 const rateLimit = ({
   windowMs = 60 * 1000,
-  max = 10,
+  max = 20,
   onLimit,
   useForwardedFor = true,
   keyGenerator,

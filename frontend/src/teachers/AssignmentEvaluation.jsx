@@ -25,6 +25,7 @@ import {
   Brain,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -749,6 +750,34 @@ const AssignmentEvaluation = () => {
                           </Motion.div>
                         )}
                       </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* AI auto-grade suggestion */}
+                  {selected.aiGradingStatus === 'done' && selected.aiScore !== null && selected.aiScore !== undefined && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                          <Brain className="w-4 h-4 text-amber-600" />
+                          AI suggested score: <span className="text-amber-900">{selected.aiScore} / {selected.totalMarks}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setMarks(String(selected.aiScore))}
+                          className="rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-700"
+                        >
+                          Use this
+                        </button>
+                      </div>
+                      {selected.aiGradingFeedback && (
+                        <p className="text-xs text-amber-700 leading-relaxed line-clamp-3">{selected.aiGradingFeedback}</p>
+                      )}
+                      <p className="text-[10px] text-amber-500">AI grading is advisory only — teacher grade always takes precedence.</p>
+                    </div>
+                  )}
+                  {selected.aiGradingStatus === 'pending' && (
+                    <div className="flex items-center gap-2 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI grading in progress…
                     </div>
                   )}
 

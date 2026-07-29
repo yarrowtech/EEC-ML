@@ -97,6 +97,8 @@ async function alertTeacherIfStuck(studentId, schoolId, subject, topicTitle, sco
     const teacherIds = [...new Set(allocations.map((a) => String(a.teacherId)))];
     if (!teacherIds.length) return;
 
+    const studentRecord = await StudentUser.findById(studentId).select('name roll grade section').lean();
+
     await NotificationService.createNotification({
       schoolId,
       title: `⚠️ Student needs help: ${topicTitle || subject}`,
@@ -108,6 +110,20 @@ async function alertTeacherIfStuck(studentId, schoolId, subject, topicTitle, sco
       targetUserIds: teacherIds,
       relatedEntity: { entityType: 'mastery', entityId: studentId },
     });
+
+    // Emit real-time alert to all allocated teachers so their intervention tab auto-refreshes
+    const io = require('../utils/socketRegistry').get();
+    if (io) {
+      const payload = {
+        studentId,
+        studentName: studentRecord?.name || 'A student',
+        subject,
+        topicTitle,
+        score,
+        attemptCount,
+      };
+      teacherIds.forEach((tid) => io.to(`user:${tid}`).emit('intervention_alert', payload));
+    }
   } catch (_) { /* non-critical */ }
 }
 

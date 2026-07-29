@@ -161,7 +161,9 @@ const AssignmentManagement = () => {
     marks: 100,
     status: "draft",
     submissionFormat: "text",
-    attachments: []
+    attachments: [],
+    isEssay: false,
+    rubric: "",
   });
   const [pdfFile, setPdfFile] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -485,7 +487,9 @@ const AssignmentManagement = () => {
           marks: 100,
           status: "draft",
           submissionFormat: "text",
-          attachments: []
+          attachments: [],
+          isEssay: false,
+          rubric: "",
         });
         setPdfFile(null);
         setCreateSuccessMessage('Assignment created successfully.');
@@ -987,6 +991,33 @@ const AssignmentManagement = () => {
                       className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors resize-none"
                     />
                   </div>
+
+                  {/* Essay / AI Grading */}
+                  <div className="md:col-span-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newAssignment.isEssay}
+                        onChange={(e) => setNewAssignment((prev) => ({ ...prev, isEssay: e.target.checked, rubric: e.target.checked ? prev.rubric : '' }))}
+                        className="w-4 h-4 rounded border-purple-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-semibold text-gray-700">Essay assignment — enable AI auto-grading on submission</span>
+                    </label>
+                    <p className="mt-1 ml-6 text-[11px] text-gray-400">When checked, AI will grade the student's written response automatically. Teacher can always override.</p>
+                  </div>
+
+                  {newAssignment.isEssay && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">Grading Rubric <span className="font-normal text-gray-400">(one criterion per line, e.g. "Clear thesis statement")</span></label>
+                      <textarea
+                        value={newAssignment.rubric}
+                        onChange={(e) => setNewAssignment((prev) => ({ ...prev, rubric: e.target.value }))}
+                        rows="4"
+                        placeholder={"1. Clear thesis statement\n2. Supporting evidence used\n3. Logical structure\n4. Grammar and spelling"}
+                        className="w-full px-3 py-2 text-sm bg-amber-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors resize-none font-mono"
+                      />
+                    </div>
+                  )}
 
                   {/* PDF Upload Section */}
                   <div className="md:col-span-2">

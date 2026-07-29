@@ -217,7 +217,7 @@ const tryStaff = async ({ user, password, rememberMe }) => {
 
 router.post('/login', rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 20,
   keyGenerator: rateLimit.loginKeyGenerator,
   skipSuccessfulRequests: true,
 }), async (req, res) => {
