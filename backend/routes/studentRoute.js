@@ -681,6 +681,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 10, keyGenerator: ra
       schoolId: user.schoolId,
       campusId: user.campusId,
     });
+
     res.json({ token });
   } catch (err) {
     logAuthEvent(req, {

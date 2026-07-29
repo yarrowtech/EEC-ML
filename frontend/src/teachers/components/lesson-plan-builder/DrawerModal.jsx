@@ -562,6 +562,87 @@ const DrawerModal = ({
               Upload practice papers, worksheets, and create interactive tryout questions for students.
             </p>
 
+            {/* AI-Ready: Curriculum Code + Hinge Question + Exit Quiz Threshold */}
+            <Card>
+              <SectionTitle icon={ClipboardCheck} iconColor="text-indigo-500">Curriculum & AI Triggers</SectionTitle>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Curriculum Code</label>
+                  <Input
+                    value={chapter.curriculumCode || ''}
+                    onChange={(e) => onUpdate({ ...chapter, curriculumCode: e.target.value })}
+                    placeholder="e.g. CBSE-VII-MATH-3.2"
+                    className="text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Exit Quiz Pass Threshold (%)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={chapter.exitQuizThreshold ?? 60}
+                    onChange={(e) => onUpdate({ ...chapter, exitQuizThreshold: Number(e.target.value) })}
+                    className="text-xs"
+                  />
+                  <p className="mt-0.5 text-[10px] text-slate-400">AI re-teach fires if class avg falls below this</p>
+                </div>
+              </div>
+
+              {/* Hinge Question */}
+              <div className="mt-3 space-y-2">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Hinge Question <span className="font-normal text-slate-400">(one diagnostic MCQ mid-lesson)</span>
+                </label>
+                <Input
+                  value={chapter.hingeQuestion || ''}
+                  onChange={(e) => onUpdate({ ...chapter, hingeQuestion: e.target.value })}
+                  placeholder="Type your hinge question here…"
+                  className="text-xs"
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onUpdate({ ...chapter, hingeAnswer: i })}
+                        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border text-[10px] font-bold transition-colors ${
+                          (chapter.hingeAnswer ?? 0) === i
+                            ? 'border-indigo-500 bg-indigo-500 text-white'
+                            : 'border-slate-300 text-slate-400 hover:border-indigo-300'
+                        }`}
+                        title="Mark as correct answer"
+                      >
+                        {String.fromCharCode(65 + i)}
+                      </button>
+                      <Input
+                        value={(chapter.hingeOptions || [])[i] || ''}
+                        onChange={(e) => {
+                          const opts = [...(chapter.hingeOptions || ['', '', '', ''])];
+                          opts[i] = e.target.value;
+                          onUpdate({ ...chapter, hingeOptions: opts });
+                        }}
+                        placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                        className="text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-slate-500">Re-teach if wrong &gt;</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={chapter.hingeThreshold ?? 50}
+                    onChange={(e) => onUpdate({ ...chapter, hingeThreshold: Number(e.target.value) })}
+                    className="w-16 text-xs"
+                  />
+                  <span className="text-[10px] text-slate-500">% of class</span>
+                </div>
+              </div>
+            </Card>
+
             {/* Practice Papers */}
             <Card>
               <div className="mb-3 flex items-center justify-between">

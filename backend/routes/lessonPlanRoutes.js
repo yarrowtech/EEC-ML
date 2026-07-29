@@ -919,6 +919,13 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
         : [],
       additionalNotes: normalizeString(additionalNotes),
       plannerContent: sanitizePlannerContent(plannerContent),
+      // AI workflow trigger fields — passed through as-is
+      curriculumCode:    normalizeString(payload?.curriculumCode),
+      hingeQuestion:     normalizeString(payload?.hingeQuestion),
+      hingeOptions:      Array.isArray(payload?.hingeOptions) ? payload.hingeOptions.map(String) : [],
+      hingeAnswer:       Number(payload?.hingeAnswer) || 0,
+      hingeThreshold:    Number(payload?.hingeThreshold) || 50,
+      exitQuizThreshold: Number(payload?.exitQuizThreshold) || 60,
     },
   };
 };
@@ -2605,5 +2612,243 @@ router.get('/teacher/smart-learning-analytics', authTeacher, async (req, res) =>
   }
 });
 
+
+// ── POST /teacher/:id/hinge-response — students submit hinge answer ───────────
+// Body: { studentId, chosen }  (chosen = 0-based option index)
+// Tallies responses; when ≥ hingeThreshold % wrong → fires AI re-teach + notifies teacher
+router.post('/teacher/:id/hinge-response', authStudent, async (req, res) => {
+  try {
+    const schoolId  = resolveSchoolId(req);
+    const studentId = req.user?.id;
+    if (!schoolId || !studentId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const plan = await LessonPlan.findOne({ _id: req.params.id, schoolId }).lean();
+    if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
+    if (!plan.hingeQuestion) return res.status(400).json({ error: 'No hinge question on this lesson plan' });
+
+    const { chosen } = req.body || {};
+    const isCorrect = Number(chosen) === Number(plan.hingeAnswer);
+
+    // Track response in additionalNotes (lightweight — no new model needed)
+    // Store as JSON in a dedicated field via update
+    const HingeResponse = (() => {
+      try { return require('../models/HingeResponse'); } catch { return null; }
+    })();
+
+    // Use StudentProgress to track the hinge response without a new model
+    await StudentProgress.findOneAndUpdate(
+      { studentId, schoolId },
+      {
+        $push: {
+          recentActivities: {
+            type: 'hinge',
+            lessonPlanId: plan._id,
+            subject: plan.subject,
+            isCorrect,
+            at: new Date(),
+          },
+        },
+      },
+      { upsert: true, new: true }
+    ).catch(() => {});
+
+    // Count responses for this lesson plan from StudentProgress
+    const allProgress = await StudentProgress.find({ schoolId }).select('recentActivities').lean();
+    const hingeResponses = allProgress.flatMap((p) =>
+      (p.recentActivities || []).filter(
+        (a) => a.type === 'hinge' && String(a.lessonPlanId) === String(plan._id)
+      )
+    );
+
+    const total = hingeResponses.length;
+    const wrong = hingeResponses.filter((r) => !r.isCorrect).length;
+    const wrongPct = total > 0 ? Math.round((wrong / total) * 100) : 0;
+    const threshold = plan.hingeThreshold || 50;
+
+    let reteachContent = null;
+    if (wrongPct >= threshold && total >= 3) {
+      // Generate AI re-teach content
+      try {
+        const aiResp = await axios.post(`${AI_SERVICE_URL}/generate/teacher`, {
+          prompt: `The class struggled with this hinge question: "${plan.hingeQuestion}". ${wrongPct}% answered incorrectly. Generate a concise re-teaching explanation for ${plan.subject} that addresses the common misconception, then provide 2 example problems.`,
+          mode: 'lesson_content',
+          subject: plan.subject || '',
+          context: plan.explanation || '',
+        }, { timeout: 45000 });
+        reteachContent = aiResp.data?.response || aiResp.data?.content || '';
+      } catch (_) {}
+
+      // Notify teacher
+      const NotificationService = require('../utils/notificationService');
+      await NotificationService.createNotification({
+        schoolId,
+        title: `⚠️ Re-teach needed: ${plan.title}`,
+        message: `${wrongPct}% of students answered the hinge question incorrectly. A re-teach suggestion has been generated.`,
+        audience: 'Specific',
+        type: 'alert',
+        priority: 'high',
+        category: 'academic',
+        targetUserIds: [plan.teacherId],
+        relatedEntity: { entityType: 'lesson_plan', entityId: plan._id },
+      }).catch(() => {});
+    }
+
+    return res.json({
+      success: true,
+      data: { isCorrect, wrongPct, total, threshold, reteachContent },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /teacher/:id/exit-quiz-result — aggregate exit quiz score ────────────
+// Body: { studentId, score }  (0-100)
+// If class avg drops below exitQuizThreshold → AI re-lesson + flag on plan
+router.post('/teacher/:id/exit-quiz-result', authStudent, async (req, res) => {
+  try {
+    const schoolId  = resolveSchoolId(req);
+    const studentId = req.user?.id;
+    if (!schoolId || !studentId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const plan = await LessonPlan.findOne({ _id: req.params.id, schoolId });
+    if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
+
+    const { score } = req.body || {};
+    const numScore = Math.max(0, Math.min(100, Number(score) || 0));
+
+    // Store exit score in StudentProgress
+    await StudentProgress.findOneAndUpdate(
+      { studentId, schoolId },
+      {
+        $push: {
+          recentActivities: {
+            type: 'exit_quiz',
+            lessonPlanId: plan._id,
+            subject: plan.subject,
+            score: numScore,
+            at: new Date(),
+          },
+        },
+      },
+      { upsert: true, new: true }
+    ).catch(() => {});
+
+    // Compute class average
+    const allProgress = await StudentProgress.find({ schoolId }).select('recentActivities').lean();
+    const exitScores = allProgress.flatMap((p) =>
+      (p.recentActivities || [])
+        .filter((a) => a.type === 'exit_quiz' && String(a.lessonPlanId) === String(plan._id))
+        .map((a) => a.score)
+    );
+
+    const classAvg = exitScores.length
+      ? Math.round(exitScores.reduce((s, v) => s + v, 0) / exitScores.length)
+      : numScore;
+
+    const threshold = plan.exitQuizThreshold || 60;
+    let reteachContent = null;
+
+    if (classAvg < threshold && exitScores.length >= 3 && !plan.exitQuizTriggered) {
+      plan.exitQuizTriggered = true;
+      await plan.save();
+
+      // AI re-lesson suggestion
+      try {
+        const aiResp = await axios.post(`${AI_SERVICE_URL}/generate/teacher`, {
+          prompt: `The class scored an average of ${classAvg}% on the exit quiz for "${plan.title}" (${plan.subject}). Generate a brief differentiated re-lesson plan focusing on the weakest concepts, with 3 practical activities.`,
+          mode: 'lesson_content',
+          subject: plan.subject || '',
+          context: plan.explanation || '',
+        }, { timeout: 45000 });
+        reteachContent = aiResp.data?.response || aiResp.data?.content || '';
+      } catch (_) {}
+
+      const NotificationService = require('../utils/notificationService');
+      await NotificationService.createNotification({
+        schoolId,
+        title: `📉 Re-teach flag: ${plan.title}`,
+        message: `Class exit quiz average is ${classAvg}% (below ${threshold}% threshold). An AI re-lesson suggestion has been generated.`,
+        audience: 'Specific',
+        type: 'alert',
+        priority: 'high',
+        category: 'academic',
+        targetUserIds: [plan.teacherId],
+        relatedEntity: { entityType: 'lesson_plan', entityId: plan._id },
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, data: { classAvg, threshold, reteachContent, exitQuizTriggered: plan.exitQuizTriggered } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /teacher/intervention — flagged students for teacher ──────────────────
+router.get('/teacher/intervention', authTeacher, async (req, res) => {
+  try {
+    const schoolId  = resolveSchoolId(req);
+    const teacherId = req.user?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const MasteryScore = require('../models/MasteryScore');
+    const { MASTERY, ENGAGEMENT } = require('../config/workflowThresholds');
+    const TeacherAllocation = require('../models/TeacherAllocation');
+
+    // Get all subjects this teacher is allocated to
+    const allocations = await TeacherAllocation.find({ schoolId, teacherId })
+      .select('subject className sections')
+      .lean();
+
+    const subjects = [...new Set(allocations.map((a) => a.subject))];
+
+    // Find students stuck below critical threshold with enough attempts
+    const flagged = await MasteryScore.find({
+      schoolId,
+      subject: { $in: subjects },
+      score: { $lt: MASTERY.CRITICAL },
+      attemptCount: { $gte: ENGAGEMENT.DIFFICULTY_ATTEMPTS },
+    })
+      .populate('studentId', 'name grade section')
+      .sort({ score: 1, attemptCount: -1 })
+      .lean();
+
+    // Also flag exit-quiz-triggered lesson plans
+    const reteachPlans = await LessonPlan.find({
+      schoolId,
+      teacherId,
+      exitQuizTriggered: true,
+    }).select('title subject date exitQuizThreshold').lean();
+
+    return res.json({ success: true, data: { flaggedStudents: flagged, reteachPlans } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /teacher/:id/grade — update lesson plan fields (curriculum code etc) ─
+router.patch('/teacher/:id/meta', authTeacher, async (req, res) => {
+  try {
+    const schoolId  = resolveSchoolId(req);
+    const teacherId = req.user?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const allowed = ['curriculumCode', 'hingeQuestion', 'hingeOptions', 'hingeAnswer', 'hingeThreshold', 'exitQuizThreshold'];
+    const update  = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) update[key] = req.body[key];
+    }
+
+    const plan = await LessonPlan.findOneAndUpdate(
+      { _id: req.params.id, schoolId, teacherId },
+      { $set: update },
+      { new: true }
+    );
+    if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
+    return res.json({ success: true, data: plan });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;

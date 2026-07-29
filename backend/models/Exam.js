@@ -36,7 +36,14 @@ const examSchema = new mongoose.Schema({
     section: String,
     groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'ExamGroup', default: null, index: true },
     published: { type: Boolean, default: false },
-    publishedAt: { type: Date }
+    publishedAt: { type: Date },
+    // MCQ auto-grading support
+    questions: [{
+      questionText: { type: String },
+      options: [{ text: String, isCorrect: Boolean }],
+      marks: { type: Number, default: 1 },
+    }],
+    examType: { type: String, enum: ['manual', 'mcq'], default: 'manual' },
 })
 
 module.exports = mongoose.model('Exam', examSchema);

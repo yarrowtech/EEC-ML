@@ -549,6 +549,33 @@ router.post('/student/submit', authStudent, async (req, res) => {
       await PracticeAttempt.insertMany(attempts);
     }
 
+    // Misconception detection — if student got the same question wrong 3+ times, trigger AI content
+    try {
+      const wrongIds = results.filter((r) => !r.isCorrect).map((r) => String(r.questionId));
+      if (wrongIds.length) {
+        for (const qId of wrongIds) {
+          const wrongCount = await PracticeAttempt.countDocuments({
+            studentId, questionId: qId, isCorrect: false,
+          });
+          if (wrongCount >= 3) {
+            const q = questionMap.get(qId);
+            const NotificationService = require('../utils/notificationService');
+            await NotificationService.createNotification({
+              schoolId,
+              title: `🔍 Misconception Detected`,
+              message: `You've missed the same question 3+ times${q?.subjectId ? '' : ''}. Check the AI Tutor for a targeted explanation of this concept.`,
+              audience: 'Specific',
+              type: 'learning',
+              priority: 'medium',
+              category: 'academic',
+              targetUserIds: [studentId],
+              relatedEntity: { entityType: 'practice_question', entityId: qId },
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (_) { /* non-critical */ }
+
     res.json({
       total: results.length,
       correct: correctCount,

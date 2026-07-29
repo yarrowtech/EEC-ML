@@ -512,6 +512,72 @@ router.get('/class-gaps', authTeacher, async (req, res) => {
   }
 });
 
+// ── GET /api/teacher-analytics/student-mastery-all ───────────────────────────
+// All students in a class with avg mastery + strong/weak topic breakdown
+router.get('/student-mastery-all', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { className, section, subject } = req.query;
+
+    const studentFilter = { schoolId };
+    if (className) studentFilter.$or = [{ grade: className }, { grade: `Class ${className}` }];
+    if (section) studentFilter.section = section;
+
+    const students = await StudentUser.find(studentFilter)
+      .select('name roll grade section')
+      .lean();
+
+    if (!students.length) return res.json({ success: true, data: [] });
+
+    const studentIds = students.map((s) => s._id);
+    const masteryFilter = { studentId: { $in: studentIds } };
+    if (subject) masteryFilter.subject = { $regex: subject, $options: 'i' };
+
+    const allScores = await MasteryScore.find(masteryFilter).lean();
+
+    const byStudent = {};
+    allScores.forEach((s) => {
+      const sid = String(s.studentId);
+      if (!byStudent[sid]) byStudent[sid] = [];
+      byStudent[sid].push(s);
+    });
+
+    const result = students
+      .map((student) => {
+        const scores = byStudent[String(student._id)] || [];
+        if (!scores.length) return null;
+        const avgMastery = Math.round(scores.reduce((a, s) => a + s.score, 0) / scores.length);
+        const tier = avgMastery >= 80 ? 'high' : avgMastery >= 60 ? 'mid' : 'low';
+        return {
+          studentId: student._id,
+          name: student.name,
+          roll: student.roll,
+          grade: student.grade,
+          section: student.section,
+          avgMastery,
+          tier,
+          topicCount: scores.length,
+          strongTopics: scores
+            .filter((s) => s.score >= 75)
+            .map((s) => ({ topicTitle: s.topicTitle, subject: s.subject, score: s.score }))
+            .sort((a, b) => b.score - a.score),
+          weakTopics: scores
+            .filter((s) => s.score < 60)
+            .map((s) => ({ topicTitle: s.topicTitle, subject: s.subject, score: s.score }))
+            .sort((a, b) => a.score - b.score),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.avgMastery - a.avgMastery);
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/teacher-analytics/mastery-growth/:studentId ──────────────────────
 // Time-series mastery scores for a student — used for the mastery growth report
 router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
@@ -583,6 +649,235 @@ router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
         masteredTopics: scores.filter((s) => s.score >= 90).length,
       },
     });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/term-comparison ────────────────────────────────
+// Group exam results by term for a class and return per-subject, per-term averages
+router.get('/term-comparison', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const teacherId = req.user?.id || req.teacher?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { className, section, subject } = req.query;
+
+    const filter = { schoolId };
+    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
+    if (section) filter.section = section;
+
+    const students = await StudentUser.find(filter).select('_id').lean();
+    const studentIds = students.map((s) => s._id);
+
+    const resultFilter = { schoolId, studentId: { $in: studentIds }, published: true };
+    if (subject) resultFilter['examId.subject'] = { $regex: subject, $options: 'i' };
+
+    const results = await ExamResult.find(resultFilter)
+      .populate('examId', 'subject marks date term')
+      .lean();
+
+    // Build: { subject → { term → [pct, ...] } }
+    const matrix = {};
+    const terms = new Set();
+    results.forEach((r) => {
+      const sub = r.examId?.subject;
+      const term = r.examId?.term;
+      const maxM = r.examId?.marks || 100;
+      if (!sub || !term || r.marks == null) return;
+      if (subject && sub.toLowerCase() !== subject.toLowerCase()) return;
+      terms.add(term);
+      if (!matrix[sub]) matrix[sub] = {};
+      if (!matrix[sub][term]) matrix[sub][term] = [];
+      matrix[sub][term].push(Math.round((r.marks / maxM) * 100));
+    });
+
+    const TERM_ORDER = ['Class Test', 'Unit Test', 'Monthly Test', 'Term 1', 'Term 2', 'Term 3', 'Half Yearly', 'Annual', 'Final'];
+    const sortedTerms = [...terms].sort((a, b) => {
+      const ia = TERM_ORDER.indexOf(a);
+      const ib = TERM_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    const subjects = Object.entries(matrix).map(([sub, termData]) => ({
+      subject: sub,
+      terms: sortedTerms.map((term) => {
+        const scores = termData[term] || [];
+        return {
+          term,
+          avg: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+          count: scores.length,
+        };
+      }),
+    }));
+
+    return res.json({ success: true, data: { subjects, terms: sortedTerms } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/cohort ─────────────────────────────────────────
+// Multi-class performance dashboard — aggregates across all classes the teacher is allocated to
+router.get('/cohort', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const teacherId = req.user?.id || req.teacher?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const allocations = await TeacherAllocation.find({ schoolId, teacherId })
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .populate('subjectId', 'name')
+      .lean();
+
+    if (!allocations.length) return res.json({ success: true, data: [] });
+
+    // Fetch results for each allocation in parallel
+    const classResults = await Promise.all(
+      allocations.map(async (alloc) => {
+        const className = alloc.classId?.name || alloc.grade || '';
+        const sectionName = alloc.sectionId?.name || alloc.section || '';
+        const subjectName = alloc.subjectId?.name || alloc.subject || '';
+
+        const filter = { schoolId };
+        if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
+        if (sectionName) filter.section = sectionName;
+
+        const students = await StudentUser.find(filter).select('_id attendance').lean();
+        const studentIds = students.map((s) => s._id);
+        if (!studentIds.length) return { className, sectionName, subjectName, avgScore: null, avgAtt: null, studentCount: 0 };
+
+        const results = await ExamResult.find({
+          schoolId, studentId: { $in: studentIds }, published: true,
+          ...(subjectName ? {} : {}),
+        })
+          .populate('examId', 'subject marks')
+          .lean();
+
+        const subjectResults = subjectName
+          ? results.filter((r) => (r.examId?.subject || '').toLowerCase() === subjectName.toLowerCase())
+          : results;
+
+        const scores = subjectResults.map((r) => {
+          const max = r.examId?.marks || 100;
+          return Math.round((r.marks / max) * 100);
+        }).filter((s) => !isNaN(s));
+
+        const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
+        const attPcts = students.map((s) => {
+          const att = s.attendance || [];
+          return att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
+        });
+        const avgAtt = attPcts.length ? Math.round(attPcts.reduce((a, b) => a + b, 0) / attPcts.length) : null;
+
+        return { className, sectionName, subjectName, avgScore, avgAtt, studentCount: students.length };
+      })
+    );
+
+    return res.json({ success: true, data: classResults });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/grade-book-csv — term-end grade book export ───
+// Query: ?term=&subject=&className=&sectionName=
+// Streams a CSV; also emails it to admin if ADMIN_EMAIL is set
+router.get('/grade-book-csv', authTeacher, async (req, res) => {
+  try {
+    const schoolId  = req.schoolId;
+    const teacherId = req.user?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { term, subject, className, sectionName } = req.query;
+
+    const filter = {
+      schoolId,
+      ...(term    ? { 'examId.term': term }    : {}),
+    };
+
+    const results = await ExamResult.find(filter)
+      .populate('examId', 'title subject term grade section marks date')
+      .populate('studentId', 'name grade section roll')
+      .lean();
+
+    // Filter by teacher's subject/class scope
+    const allocations = await TeacherAllocation.find({ schoolId, teacherId }).lean();
+    const allocSet = new Set(allocations.map((a) => `${a.subject}|${a.className}`));
+
+    const scoped = results.filter((r) => {
+      const subj = r.examId?.subject || '';
+      const cls  = r.examId?.grade  || r.studentId?.grade || '';
+      if (subject && subj !== subject) return false;
+      if (className && cls !== className) return false;
+      if (sectionName && (r.examId?.section || r.studentId?.section) !== sectionName) return false;
+      return allocSet.has(`${subj}|${cls}`) || allocations.length === 0;
+    });
+
+    // Build CSV
+    const header = 'Student Name,Roll,Grade,Section,Subject,Exam Title,Term,Marks,Total Marks,Percentage\n';
+    const rows = scoped.map((r) => {
+      const pct = r.examId?.marks ? ((r.marks / r.examId.marks) * 100).toFixed(1) : '-';
+      return [
+        r.studentId?.name || '-',
+        r.studentId?.roll || '-',
+        r.studentId?.grade || '-',
+        r.studentId?.section || '-',
+        r.examId?.subject || '-',
+        r.examId?.title || '-',
+        r.examId?.term || '-',
+        r.marks ?? '-',
+        r.examId?.marks || '-',
+        pct,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+    }).join('\n');
+
+    const csv = header + rows;
+
+    // Non-blocking email to admin
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (adminEmail) {
+      try {
+        const { sendMail } = require('../utils/mailer');
+        await sendMail({
+          to: adminEmail,
+          subject: `Grade Book Export — ${subject || 'All Subjects'} ${className || ''} ${term ? '· ' + term : ''}`,
+          text: 'Grade book CSV attached.',
+          attachments: [{ filename: 'grade-book.csv', content: csv }],
+        });
+      } catch (_) { /* email failure must not block the download */ }
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="grade-book-${Date.now()}.csv"`);
+    return res.send(csv);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/low-mastery — subjects where class avg < 50% ──
+router.get('/low-mastery', authTeacher, async (req, res) => {
+  try {
+    const schoolId  = req.schoolId;
+    const teacherId = req.user?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const allocations = await TeacherAllocation.find({ schoolId, teacherId }).lean();
+    const subjects = [...new Set(allocations.map((a) => a.subject))];
+
+    const pipeline = [
+      { $match: { schoolId: mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : schoolId, subject: { $in: subjects } } },
+      { $group: { _id: '$subject', avgScore: { $avg: '$score' }, studentCount: { $sum: 1 } } },
+      { $match: { avgScore: { $lt: 50 } } },
+      { $sort: { avgScore: 1 } },
+    ];
+
+    const lowMastery = await MasteryScore.aggregate(pipeline);
+    return res.json({ success: true, data: lowMastery });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

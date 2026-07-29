@@ -34,12 +34,28 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'term', label: 'Term Comparison' },
+  { key: 'cohort', label: 'My Classes' },
+];
+
 export default function TeacherAnalyticsDashboard() {
+  const [activeTab, setActiveTab] = useState('overview');
   const [trends, setTrends] = useState(null);
   const [atRisk, setAtRisk] = useState([]);
   const [loadingTrends, setLoadingTrends] = useState(true);
   const [loadingRisk, setLoadingRisk] = useState(true);
   const [activeSubject, setActiveSubject] = useState(null);
+
+  // Term comparison state
+  const [termData, setTermData] = useState(null);
+  const [loadingTerm, setLoadingTerm] = useState(false);
+  const [termSubject, setTermSubject] = useState('');
+
+  // Cohort state
+  const [cohortData, setCohortData] = useState([]);
+  const [loadingCohort, setLoadingCohort] = useState(false);
 
   const fetchTrends = async () => {
     setLoadingTrends(true);
@@ -68,10 +84,43 @@ export default function TeacherAnalyticsDashboard() {
     }
   };
 
+  const fetchTermComparison = async () => {
+    setLoadingTerm(true);
+    try {
+      const params = new URLSearchParams();
+      if (termSubject) params.set('subject', termSubject);
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/term-comparison?${params}`, { headers: authHeaders() });
+      if (res.ok) {
+        const payload = await res.json();
+        setTermData(payload.data);
+      }
+    } catch { /* silent */ } finally {
+      setLoadingTerm(false);
+    }
+  };
+
+  const fetchCohort = async () => {
+    setLoadingCohort(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/cohort`, { headers: authHeaders() });
+      if (res.ok) {
+        const payload = await res.json();
+        setCohortData(payload.data || []);
+      }
+    } catch { /* silent */ } finally {
+      setLoadingCohort(false);
+    }
+  };
+
   useEffect(() => {
     fetchTrends();
     fetchAtRisk();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'term' && !termData) fetchTermComparison();
+    if (activeTab === 'cohort' && !cohortData.length) fetchCohort();
+  }, [activeTab]);
 
   const subjectTrends = trends?.subjectTrends || [];
   const attendanceTrend = trends?.attendanceTrend || [];
@@ -108,6 +157,23 @@ export default function TeacherAnalyticsDashboard() {
         </button>
       </div>
 
+      {/* Tab bar */}
+      <div className="flex gap-1 rounded-2xl border border-gray-200 bg-gray-50 p-1 w-fit">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`rounded-xl px-4 py-1.5 text-sm font-semibold transition ${
+              activeTab === tab.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (<>
       {/* Summary stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
@@ -263,6 +329,126 @@ export default function TeacherAnalyticsDashboard() {
           </div>
         )}
       </div>
+      </>)}
+
+      {/* ── Term Comparison Tab ─────────────────────────────────────────────── */}
+      {activeTab === 'term' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              value={termSubject}
+              onChange={(e) => setTermSubject(e.target.value)}
+              placeholder="Filter by subject (optional)"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-indigo-400"
+            />
+            <button
+              type="button"
+              onClick={fetchTermComparison}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Load
+            </button>
+          </div>
+
+          {loadingTerm ? (
+            <div className="flex h-40 items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+          ) : !termData || !termData.subjects?.length ? (
+            <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
+              No term data. Enter a subject and click Load, or wait for published results.
+            </div>
+          ) : termData.subjects.map((subj) => (
+            <div key={subj.subject} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h3 className="mb-4 text-sm font-bold text-gray-800">{subj.subject}</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={subj.terms.filter((t) => t.avg !== null)} barSize={32}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="term" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                  <Tooltip content={<CustomTooltip />} formatter={(v) => [`${v}%`, 'Avg Score']} />
+                  <Bar dataKey="avg" name="Avg Score" fill="#6366f1" radius={[6, 6, 0, 0]}
+                    label={{ position: 'top', fontSize: 10, formatter: (v) => `${v}%` }} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {subj.terms.filter((t) => t.avg !== null).map((t) => (
+                  <div key={t.term} className="rounded-xl bg-gray-50 px-3 py-2 text-center">
+                    <p className="text-[10px] text-gray-400">{t.term}</p>
+                    <p className="text-base font-black text-indigo-700">{t.avg}%</p>
+                    <p className="text-[10px] text-gray-400">{t.count} results</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── My Classes (Cohort) Tab ─────────────────────────────────────────── */}
+      {activeTab === 'cohort' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">Performance across all your allocated classes and subjects.</p>
+            <button type="button" onClick={fetchCohort}
+              className="flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50">
+              <RefreshCcw className="w-3.5 h-3.5" /> Refresh
+            </button>
+          </div>
+
+          {loadingCohort ? (
+            <div className="flex h-40 items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-gray-300" /></div>
+          ) : !cohortData.length ? (
+            <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
+              No class data found. Ensure you have active allocations.
+            </div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={cohortData.map((c) => ({
+                    label: `${c.className}-${c.sectionName} ${c.subjectName}`.trim(),
+                    avgScore: c.avgScore ?? 0,
+                    avgAtt: c.avgAtt ?? 0,
+                  }))}
+                  barSize={24}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <Bar dataKey="avgScore" name="Avg Exam Score" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="avgAtt" name="Avg Attendance" fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {cohortData.map((c, i) => (
+                  <div key={i} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-bold text-gray-900">
+                      {c.className}{c.sectionName ? ` - ${c.sectionName}` : ''}
+                    </p>
+                    <p className="text-xs text-indigo-600 font-medium mb-3">{c.subjectName || 'All Subjects'}</p>
+                    <div className="flex gap-4">
+                      <div>
+                        <p className="text-[10px] text-gray-400">Avg Score</p>
+                        <p className="text-xl font-black text-gray-900">{c.avgScore != null ? `${c.avgScore}%` : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400">Attendance</p>
+                        <p className="text-xl font-black text-gray-900">{c.avgAtt != null ? `${c.avgAtt}%` : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400">Students</p>
+                        <p className="text-xl font-black text-gray-900">{c.studentCount}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

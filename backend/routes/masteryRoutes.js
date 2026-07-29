@@ -98,13 +98,18 @@ router.post('/update', authStudent, async (req, res) => {
     doc.score = finalScore;
     await doc.save();
 
-    // Side effects — non-blocking
-    const prevScore = doc.score;
-    if (finalScore >= 75 && prevScore < 75) {
-      unlockNextPathNode(studentId, subject, finalScore);
-    }
-    if (finalScore >= 90) awardMasteryBadge(studentId, subject, topicTitle, schoolId);
-    sendMasteryNudge(studentId, schoolId, subject, topicTitle, finalScore);
+    // Side effects — non-blocking via central engine
+    const { runWorkflowTriggers } = require('../services/masteryEngine');
+    runWorkflowTriggers({
+      studentId,
+      schoolId,
+      subject,
+      topicId,
+      topicTitle,
+      chapterTitle,
+      score: finalScore,
+      attemptCount: doc.attemptCount,
+    });
 
     return res.json({ success: true, data: doc });
   } catch (err) {
@@ -229,6 +234,68 @@ router.get('/suggested-difficulty', authStudent, async (req, res) => {
     if (!studentId) return res.status(401).json({ error: 'Unauthorized' });
     const difficulty = await getSuggestedDifficulty(studentId, subject || '', topicId || '');
     return res.json({ success: true, data: { difficulty } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/mastery/lesson-complete ────────────────────────────────────────
+// Called when a student finishes a lesson/content block.
+// Updates mastery, fires all workflow triggers, returns next action.
+router.post('/lesson-complete', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { subject, topicId, topicTitle = '', chapterTitle = '', selfRating } = req.body || {};
+    if (!subject || !topicId) return res.status(400).json({ error: 'subject and topicId are required' });
+
+    // selfRating: 1-5 (1=very confused, 5=fully understood) — convert to 0-100 score
+    const ratingScore = selfRating ? Math.min(100, Math.round((Number(selfRating) / 5) * 100)) : 60;
+
+    const doc = await MasteryScore.findOneAndUpdate(
+      { studentId, subject, topicId },
+      {
+        $set:  { schoolId, topicTitle, chapterTitle, lastUpdated: new Date() },
+        $inc:  { attemptCount: 1 },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    // Weighted blend: lesson self-rating carries 30% weight
+    const prev = doc.score || 0;
+    const blended = doc.attemptCount <= 1 ? ratingScore : Math.round((prev * 0.7) + (ratingScore * 0.3));
+    doc.score = Math.max(prev, blended);
+    await doc.save();
+
+    const { runWorkflowTriggers } = require('../services/masteryEngine');
+    runWorkflowTriggers({
+      studentId,
+      schoolId,
+      subject,
+      topicId,
+      topicTitle,
+      chapterTitle,
+      score: doc.score,
+      attemptCount: doc.attemptCount,
+    });
+
+    const nextAction = await getNextAction(studentId, subject, topicId);
+    return res.json({ success: true, data: { mastery: doc, nextAction } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/mastery/badges?studentId= ──────────────────────────────────────
+router.get('/badges', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    if (!studentId) return res.status(401).json({ error: 'Unauthorized' });
+    const StudentBadge = require('../models/StudentBadge');
+    const badges = await StudentBadge.find({ studentId }).sort({ awardedAt: -1 }).lean();
+    return res.json({ success: true, data: badges });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

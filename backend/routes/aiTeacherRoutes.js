@@ -261,4 +261,206 @@ router.post('/misconception-report', authTeacher, async (req, res) => {
   }
 });
 
+// ── POST /api/ai-teacher/curriculum-check ─────────────────────────────────────
+router.post('/curriculum-check', authTeacher, async (req, res) => {
+  try {
+    const { subject, gradeLevel, curriculumStandard, lessonContent } = req.body || {};
+    if (!curriculumStandard || !lessonContent) {
+      return res.status(400).json({ error: 'curriculumStandard and lessonContent are required' });
+    }
+    const context = `CURRICULUM STANDARD / OBJECTIVE:\n${curriculumStandard}\n\nLESSON CONTENT TO CHECK:\n${lessonContent.slice(0, 3000)}`;
+    const aiRes = await callTeacherAI('curriculum_alignment', subject || 'General', 'Curriculum Alignment Check', gradeLevel, context);
+    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-teacher/generate-lesson-package ─────────────────────────────
+// One-click orchestrator: gap analysis + all AI content in parallel.
+// Body: { subject, topic, chapterTitle, gradeLevel, classId, sectionId }
+// Returns: { gapAnalysis, lessonContent, differentiatedPlan, hingeQuestion,
+//            exitQuizQuestions, misconceptions, learningPathNodes, rawOutputs }
+router.post('/generate-lesson-package', authTeacher, async (req, res) => {
+  try {
+    const schoolId  = req.schoolId;
+    const teacherId = req.user?.id;
+    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { subject, topic, chapterTitle, gradeLevel, classId, sectionId } = req.body || {};
+    if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const fullTopic = [chapterTitle, topic].filter(Boolean).join(' — ');
+
+    // ── 1. Gap analysis from real student data ────────────────────────────────
+    let gapAnalysis = { averageMastery: null, weakStudentCount: 0, topWeaknesses: [], tierBreakdown: { foundation: 0, core: 0, extension: 0 } };
+    try {
+      const filter = { schoolId, subject };
+      if (classId || sectionId) {
+        // Find students in this class/section
+        const StudentUser = require('../models/StudentUser');
+        const classStudents = await StudentUser.find({
+          schoolId,
+          ...(classId ? {} : {}), // classId is an ObjectId for Class, not stored directly on student
+        }).select('_id grade section').lean();
+
+        const studentIds = classStudents.map((s) => s._id);
+        if (studentIds.length) filter.studentId = { $in: studentIds };
+      }
+
+      const scores = await MasteryScore.find(filter).select('score studentId').lean();
+      if (scores.length) {
+        const avg = Math.round(scores.reduce((s, v) => s + v.score, 0) / scores.length);
+        const { MASTERY } = require('../config/workflowThresholds');
+        gapAnalysis = {
+          averageMastery: avg,
+          weakStudentCount: scores.filter((s) => s.score < MASTERY.CRITICAL).length,
+          topWeaknesses: avg < 60 ? [`Students averaging ${avg}% on ${subject}`, `${scores.filter(s => s.score < 40).length} students in foundational tier`] : [],
+          tierBreakdown: {
+            foundation: scores.filter((s) => s.score < MASTERY.CRITICAL).length,
+            core:        scores.filter((s) => s.score >= MASTERY.CRITICAL && s.score < MASTERY.MID).length,
+            extension:   scores.filter((s) => s.score >= MASTERY.MID).length,
+          },
+        };
+      }
+    } catch (_) { /* gap analysis failure must not block content generation */ }
+
+    const gapContext = gapAnalysis.averageMastery != null
+      ? `Class data: avg mastery ${gapAnalysis.averageMastery}%, ${gapAnalysis.tierBreakdown.foundation} foundation students, ${gapAnalysis.tierBreakdown.core} core, ${gapAnalysis.tierBreakdown.extension} extension.`
+      : '';
+
+    // ── 2. Fire all AI modes in parallel ──────────────────────────────────────
+    const [
+      lessonRes,
+      diffRes,
+      hingeRes,
+      quizRes,
+      misconRes,
+    ] = await Promise.allSettled([
+      callTeacherAI('lesson_content',        subject, fullTopic, gradeLevel, gapContext),
+      callTeacherAI('differentiated_plan',   subject, fullTopic, gradeLevel, gapContext),
+      callTeacherAI('hinge_question',        subject, fullTopic, gradeLevel),
+      callTeacherAI('quiz_generate',         subject, fullTopic, gradeLevel, `Generate 5 exit quiz MCQs at mixed difficulty. ${gapContext}`),
+      callTeacherAI('misconception_report',  subject, fullTopic, gradeLevel, gapContext),
+    ]);
+
+    const getText = (settled) => settled.status === 'fulfilled'
+      ? (settled.value?.data?.content || settled.value?.data?.response || '')
+      : '';
+
+    const lessonRaw   = getText(lessonRes);
+    const diffRaw     = getText(diffRes);
+    const hingeRaw    = getText(hingeRes);
+    const quizRaw     = getText(quizRes);
+    const misconRaw   = getText(misconRes);
+
+    // ── 3. Parse differentiated plan into Foundation / Core / Extension ───────
+    const parseTiers = (text) => {
+      const tiers = { foundation: '', core: '', extension: '' };
+      const foundMatch  = text.match(/(?:Foundation|Tier\s*1|Basic)[:\s\-–]*([\s\S]*?)(?=(?:Core|Tier\s*2|Intermediate|Extension|Tier\s*3|Advanced)|$)/i);
+      const coreMatch   = text.match(/(?:Core|Tier\s*2|Intermediate)[:\s\-–]*([\s\S]*?)(?=(?:Extension|Tier\s*3|Advanced)|$)/i);
+      const extMatch    = text.match(/(?:Extension|Tier\s*3|Advanced|Challenge)[:\s\-–]*([\s\S]*?)$/i);
+      if (foundMatch?.[1]) tiers.foundation = foundMatch[1].trim();
+      if (coreMatch?.[1])  tiers.core       = coreMatch[1].trim();
+      if (extMatch?.[1])   tiers.extension  = extMatch[1].trim();
+      if (!tiers.foundation && !tiers.core && !tiers.extension) tiers.core = text;
+      return tiers;
+    };
+
+    // ── 4. Parse hinge question into structured MCQ ───────────────────────────
+    const parseHinge = (text) => {
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      const qLine = lines.find((l) => l.match(/^(Q|Question|Hinge)/i))?.replace(/^(Q|Question|Hinge)[:\-\s]*/i, '')
+        || lines[0] || '';
+      const opts  = lines.filter((l) => /^[A-D][).]\s/.test(l)).map((l) => l.replace(/^[A-D][).]\s*/, ''));
+      const ansLetter = (text.match(/Answer\s*:\s*([A-D])/i) || [])[1]?.toUpperCase() || 'A';
+      const ansIdx = ['A','B','C','D'].indexOf(ansLetter);
+      return { question: qLine, options: opts.slice(0, 4), answer: ansIdx >= 0 ? ansIdx : 0 };
+    };
+
+    // ── 5. Parse exit quiz MCQs ────────────────────────────────────────────────
+    const parseQuizMCQ = (text) => {
+      const blocks = text.split(/\n(?=\d+\.\s)/).map((b) => b.trim()).filter(Boolean);
+      return blocks.slice(0, 5).map((block) => {
+        const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+        const q     = lines[0]?.replace(/^\d+\.\s*/, '') || '';
+        const opts  = lines.filter((l) => /^[A-D][).]\s/.test(l));
+        const ansL  = (block.match(/Answer\s*:\s*([A-D])/i) || [])[1]?.toUpperCase();
+        return {
+          questionText: q,
+          options: opts.map((o, i) => ({
+            text:      o.replace(/^[A-D][).]\s*/, ''),
+            isCorrect: String.fromCharCode(65 + i) === ansL,
+          })),
+        };
+      }).filter((q) => q.questionText);
+    };
+
+    // ── 6. Build suggested learning path nodes from topic breakdown ───────────
+    const buildPathNodes = (lessonText, diffText) => {
+      // Extract sub-topics from lesson content headings
+      const headings = lessonText.match(/(?:^|\n)(?:#{1,3}|\*\*|[A-Z][A-Z\s]{2,}:)/gm) || [];
+      const nodes = headings.slice(0, 5).map((h, i) => ({
+        idx:    i,
+        title:  h.replace(/^[#*]+\s*/, '').replace(/:$/, '').trim(),
+        bloom:  ['remember', 'understand', 'apply', 'analyse', 'evaluate'][i] || 'understand',
+        tier:   i === 0 ? 'foundation' : i < 3 ? 'core' : 'extension',
+        status: i === 0 ? 'active' : 'locked',
+      })).filter((n) => n.title.length > 2);
+
+      if (!nodes.length) {
+        // Fallback: single node for the whole topic
+        nodes.push({ idx: 0, title: fullTopic, bloom: 'understand', tier: 'core', status: 'active' });
+      }
+      return nodes;
+    };
+
+    const tiers        = parseTiers(diffRaw);
+    const hingeQ       = parseHinge(hingeRaw);
+    const exitQuizQs   = parseQuizMCQ(quizRaw);
+    const pathNodes    = buildPathNodes(lessonRaw, diffRaw);
+
+    // ── 7. Parse lesson content into lesson plan fields ───────────────────────
+    const introMatch = lessonRaw.match(/(?:Introduction|Overview|Hook)[:\s\-–]*([\s\S]*?)(?=\n#{1,3}|\n\*\*[A-Z]|$)/i);
+    const explanationText = lessonRaw.length > 200
+      ? lessonRaw.slice(0, Math.floor(lessonRaw.length * 0.7))
+      : lessonRaw;
+    const recapMatch = lessonRaw.match(/(?:Summary|Recap|Key Takeaways?)[:\s\-–]*([\s\S]*?)$/i);
+
+    const objectivesMatch = lessonRaw.match(/(?:Learning Objectives?|By the end)[:\s\-–]*([\s\S]*?)(?=\n#{1,3}|\n\*\*[A-Z]|$)/i);
+    const objectives = objectivesMatch?.[1]
+      ? objectivesMatch[1].split('\n').map((l) => l.replace(/^[-•*\d.]+\s*/, '').trim()).filter((l) => l.length > 5).slice(0, 5)
+      : [`Understand ${topic}`, `Apply concepts of ${topic} in context`];
+
+    return res.json({
+      success: true,
+      data: {
+        gapAnalysis,
+        lessonPlanFields: {
+          introduction:       introMatch?.[1]?.trim() || lessonRaw.slice(0, 300),
+          explanation:        explanationText,
+          recap:              recapMatch?.[1]?.trim() || '',
+          learningObjectives: objectives,
+          additionalNotes:    misconRaw.slice(0, 500),
+        },
+        differentiatedPlan: tiers,
+        hingeQuestion:       hingeQ,
+        exitQuizQuestions:   exitQuizQs,
+        misconceptions:      misconRaw,
+        learningPathNodes:   pathNodes,
+        rawOutputs: {
+          lessonContent:       lessonRaw,
+          differentiatedPlan:  diffRaw,
+          hingeQuestion:       hingeRaw,
+          exitQuiz:            quizRaw,
+          misconceptions:      misconRaw,
+        },
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

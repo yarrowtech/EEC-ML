@@ -958,13 +958,13 @@ router.get("/results", adminOrTeacherAuth, async (req, res) => {
         const schoolId = req.schoolId || req.user?.schoolId || null;
         if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
         const campusId = req.campusId || null;
-        const { examId, studentId, grade, section, subject } = req.query || {};
+        const { examId, studentId, grade, section, subject, enrich } = req.query || {};
         const filter = { schoolId, ...(campusId ? { campusId } : {}) };
         if (examId) filter.examId = examId;
         if (studentId) filter.studentId = studentId;
         const results = await ExamResult.find(filter)
             .populate('studentId', 'name grade section roll academicYear')
-            .populate('examId', 'title subject date term grade section classId sectionId subjectId')
+            .populate('examId', 'title subject date term grade section classId sectionId subjectId marks')
             .lean();
 
         let scopedResults = results;
@@ -989,10 +989,128 @@ router.get("/results", adminOrTeacherAuth, async (req, res) => {
           return matchesGrade && matchesSection && matchesSubject;
         });
 
+        // Optionally enrich with rank, percentile, and pre/post delta when examId is known
+        if (enrich === 'true' && examId) {
+          const allForExam = await ExamResult.find({ examId, published: true, schoolId }).select('marks studentId').lean();
+          const total = allForExam.length;
+          const sortedDesc = [...allForExam].sort((a, b) => (b.marks || 0) - (a.marks || 0));
+
+          // Collect previous results per student+subject in one query
+          const studentIds = filtered.map((r) => r.studentId?._id).filter(Boolean);
+          const examSubject = filtered[0]?.examId?.subject || '';
+          const prevResults = await ExamResult.find({
+            schoolId, studentId: { $in: studentIds }, published: true,
+            examId: { $ne: examId },
+          }).populate('examId', 'subject date marks').sort({ 'examId.date': -1 }).lean();
+
+          const prevByStudent = {};
+          prevResults.forEach((r) => {
+            const sid = String(r.studentId);
+            if (!prevByStudent[sid] && r.examId?.subject === examSubject) {
+              prevByStudent[sid] = r;
+            }
+          });
+
+          const enriched = filtered.map((result) => {
+            const sid = String(result.studentId?._id);
+            const rankPos = sortedDesc.findIndex((r) => String(r.studentId) === sid) + 1;
+            const rank = rankPos > 0 ? rankPos : null;
+            const percentile = rank && total > 1 ? Math.round(((total - rank) / (total - 1)) * 100) : null;
+            const prev = prevByStudent[sid];
+            let delta = null;
+            if (prev && result.marks != null && prev.marks != null) {
+              const maxCurr = result.examId?.marks || 100;
+              const maxPrev = prev.examId?.marks || 100;
+              delta = Math.round((result.marks / maxCurr) * 100) - Math.round((prev.marks / maxPrev) * 100);
+            }
+            return { ...result, rank, percentile, total, delta };
+          });
+          return res.json(enriched);
+        }
+
         res.json(filtered);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// ── GET /api/exam/results/export-csv — CSV export of results for a teacher ───
+router.get("/results/export-csv", adminOrTeacherAuth, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const campusId = req.campusId || null;
+    const { examId, grade, section, subject } = req.query || {};
+
+    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
+    if (examId) filter.examId = examId;
+
+    const results = await ExamResult.find(filter)
+      .populate('studentId', 'name grade section roll')
+      .populate('examId', 'title subject date term marks classId sectionId subjectId')
+      .lean();
+
+    let scopedResults = results;
+    if (req.userType === 'teacher') {
+      const scopeKeys = await getTeacherScopeKeys({ schoolId, campusId, teacherId: req.user?.id || null });
+      scopedResults = results.filter((r) => canTeacherManageExam(scopeKeys, r.examId));
+    }
+
+    const filtered = scopedResults.filter((r) => {
+      const g = r.studentId?.grade || '';
+      const s = r.studentId?.section || '';
+      const sub = r.examId?.subject || '';
+      return (grade ? String(g) === String(grade) : true)
+        && (section ? String(s) === String(section) : true)
+        && (subject ? sub.toLowerCase() === String(subject).toLowerCase() : true);
+    });
+
+    // Compute rank within exam if filtered by examId
+    let rankMap = {};
+    if (examId) {
+      const allForExam = await ExamResult.find({ examId, published: true, schoolId }).select('marks studentId').lean();
+      const sorted = [...allForExam].sort((a, b) => (b.marks || 0) - (a.marks || 0));
+      const total = sorted.length;
+      sorted.forEach((r, i) => {
+        const sid = String(r.studentId);
+        rankMap[sid] = { rank: i + 1, percentile: total > 1 ? Math.round(((total - i - 1) / (total - 1)) * 100) : 100 };
+      });
+    }
+
+    const header = 'Roll,Student Name,Class,Section,Exam,Subject,Term,Marks,Max Marks,Percentage,Grade,Status,Rank,Percentile,Published\n';
+    const rows = filtered.map((r) => {
+      const sid = String(r.studentId?._id || '');
+      const maxM = r.examId?.marks || 100;
+      const pct = r.marks != null ? Math.round((r.marks / maxM) * 100) : '';
+      const rank = rankMap[sid]?.rank ?? '';
+      const percentile = rankMap[sid]?.percentile ?? '';
+      return [
+        r.studentId?.roll || '',
+        `"${(r.studentId?.name || '').replace(/"/g, '""')}"`,
+        r.studentId?.grade || '',
+        r.studentId?.section || '',
+        `"${(r.examId?.title || '').replace(/"/g, '""')}"`,
+        r.examId?.subject || '',
+        r.examId?.term || '',
+        r.marks ?? '',
+        maxM,
+        pct,
+        r.grade || '',
+        r.status || '',
+        rank,
+        percentile,
+        r.published ? 'Yes' : 'No',
+      ].join(',');
+    });
+
+    const csv = header + rows.join('\n');
+    const filename = `results_${examId || 'all'}_${Date.now()}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // List exams for exam management (admin only)
@@ -1631,6 +1749,36 @@ router.put("/results/:id", adminOrTeacherAuth, async (req, res) => {
       });
     }
 
+    // Recalculate mastery whenever a grade is entered/updated
+    if (scoreResult.score != null && updated?.studentId && exam?.subject) {
+      try {
+        const { runWorkflowTriggers } = require('../services/masteryEngine');
+        const MasteryScore = require('../models/MasteryScore');
+        const pct = exam.marks ? Math.round((scoreResult.score / exam.marks) * 100) : scoreResult.score;
+        const topicId = (exam.subject || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const sId = String(updated.studentId?._id || updated.studentId);
+        const doc = await MasteryScore.findOneAndUpdate(
+          { studentId: sId, subject: exam.subject, topicId },
+          {
+            $set:  { schoolId, topicTitle: exam.subject, lastUpdated: new Date() },
+            $inc:  { attemptCount: 1 },
+            $max:  { score: pct },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        runWorkflowTriggers({
+          studentId: sId,
+          schoolId,
+          subject: exam.subject,
+          topicId,
+          topicTitle: exam.subject,
+          chapterTitle: exam.title || '',
+          score: Math.max(doc.score, pct),
+          attemptCount: doc.attemptCount,
+        });
+      } catch (_) { /* non-critical */ }
+    }
+
     res.status(200).json({ message: 'Result updated successfully', result: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2134,6 +2282,135 @@ router.delete('/teacher/:id', teacherAuth, async (req, res) => {
     res.status(200).json({ message: 'Exam and linked results deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/exam/teacher/:examId/auto-grade ─────────────────────────────────
+// Submit student MCQ answer sheet and auto-grade against exam's stored correct answers
+router.post('/teacher/:examId/auto-grade', teacherAuth, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    const campusId = req.campusId || req.user?.campusId || null;
+    const teacherId = req.user?.id || null;
+    const { examId } = req.params;
+    if (!mongoose.isValidObjectId(examId)) return res.status(400).json({ error: 'Invalid examId' });
+
+    const exam = await Exam.findOne({ _id: examId, schoolId, ...(campusId ? { campusId } : {}) }).lean();
+    if (!exam) return res.status(404).json({ error: 'Exam not found' });
+    if (exam.examType !== 'mcq') return res.status(400).json({ error: 'This exam is not MCQ type' });
+    if (!exam.questions?.length) return res.status(400).json({ error: 'Exam has no questions stored' });
+
+    const scopeKeys = await getTeacherScopeKeys({ schoolId, campusId, teacherId });
+    if (!canTeacherManageExam(scopeKeys, exam)) return res.status(403).json({ error: 'Not allocated for this exam' });
+
+    // answers: [{ studentId, responses: [{ questionIndex, selectedOptionIndex }] }]
+    const { answers } = req.body || {};
+    if (!Array.isArray(answers) || !answers.length) return res.status(400).json({ error: 'answers array is required' });
+
+    const maxMarksPerQ = exam.questions.map((q) => q.marks || 1);
+    const totalMax = maxMarksPerQ.reduce((a, b) => a + b, 0);
+
+    const results = await Promise.all(answers.map(async ({ studentId, responses }) => {
+      if (!mongoose.isValidObjectId(studentId)) return { studentId, error: 'Invalid studentId' };
+      let scored = 0;
+      (responses || []).forEach(({ questionIndex, selectedOptionIndex }) => {
+        const q = exam.questions[questionIndex];
+        if (!q) return;
+        const chosen = q.options[selectedOptionIndex];
+        if (chosen?.isCorrect) scored += (q.marks || 1);
+      });
+      const pct = Math.round((scored / totalMax) * 100);
+      const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 50 ? 'D' : 'F';
+      const status = pct >= 35 ? 'pass' : 'fail';
+
+      const existing = await ExamResult.findOne({ examId, studentId, schoolId });
+      if (existing) {
+        existing.marks = scored;
+        existing.grade = grade;
+        existing.status = status;
+        existing.remarks = `Auto-graded MCQ (${scored}/${totalMax})`;
+        await existing.save();
+        return { studentId, marks: scored, grade, status, updated: true };
+      }
+      await ExamResult.create({ examId, studentId, schoolId, campusId: campusId || null, marks: scored, grade, status, remarks: `Auto-graded MCQ (${scored}/${totalMax})`, published: false });
+      return { studentId, marks: scored, grade, status, created: true };
+    }));
+
+    return res.json({ success: true, data: results, totalMax });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/exam/ai-grade-essay — AI scores an essay against a rubric ────────
+// Body: { essayText, rubric: [{ criterion, maxMarks }], subject, context }
+// Returns: { scores: [{criterion, marks, feedback}], total, suggestion }
+router.post('/ai-grade-essay', adminOrTeacherAuth, async (req, res) => {
+  try {
+    const { essayText, rubric = [], subject = '', context = '' } = req.body || {};
+    if (!essayText) return res.status(400).json({ error: 'essayText is required' });
+    if (!rubric.length) return res.status(400).json({ error: 'rubric with at least one criterion is required' });
+
+    const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+    const rubricText = rubric.map((r, i) => `${i + 1}. ${r.criterion} (max ${r.maxMarks} marks)`).join('\n');
+    const totalMax = rubric.reduce((s, r) => s + (r.maxMarks || 0), 0);
+
+    const prompt = `You are grading a student essay for ${subject || 'a subject'}.
+
+RUBRIC:
+${rubricText}
+Total: ${totalMax} marks
+
+STUDENT ESSAY:
+${essayText.slice(0, 2000)}
+
+For each rubric criterion, provide:
+- marks awarded (as a number)
+- brief feedback (1 sentence)
+
+Format your response strictly as JSON:
+{
+  "scores": [
+    { "criterion": "...", "marks": 0, "feedback": "..." }
+  ],
+  "overallFeedback": "..."
+}`;
+
+    const axios = require('axios');
+    const aiResp = await axios.post(`${AI_SERVICE_URL}/generate/teacher`, {
+      prompt,
+      mode: 'exit_ticket_grade',
+      subject,
+      context,
+    }, { timeout: 60000 });
+
+    const raw = aiResp.data?.response || aiResp.data?.content || '';
+
+    // Parse JSON from AI response
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch?.[0] || '{}');
+    } catch (_) {
+      // Fallback: return raw text if JSON parse fails
+      return res.json({ success: true, data: { raw, scores: [], totalMax } });
+    }
+
+    const scores = (parsed.scores || []).map((s, i) => ({
+      criterion: s.criterion || rubric[i]?.criterion || `Criterion ${i + 1}`,
+      marks: Math.min(Math.max(0, Number(s.marks) || 0), rubric[i]?.maxMarks || 0),
+      feedback: s.feedback || '',
+      maxMarks: rubric[i]?.maxMarks || 0,
+    }));
+
+    const total = scores.reduce((s, r) => s + r.marks, 0);
+
+    return res.json({
+      success: true,
+      data: { scores, total, totalMax, overallFeedback: parsed.overallFeedback || '', suggestion: `AI suggestion: ${total}/${totalMax}. Teacher can override.` },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

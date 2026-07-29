@@ -119,7 +119,7 @@
 
 ---
 
-### SECTION 2B — Teacher AI and Teaching Tools
+### SECTION 2B — Teacher AI and Teaching Tools [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -143,7 +143,7 @@
 
 ---
 
-### SECTION 2C — Teacher Exam, Result, and Assessment
+### SECTION 2C — Teacher Exam, Result, and Assessment [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -167,7 +167,7 @@
 
 ---
 
-### SECTION 3A — Student Workflow Triggers
+### SECTION 3A — Student Workflow Triggers [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|

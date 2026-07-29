@@ -3,7 +3,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, BookOpen, HelpCircle, BarChart2, Users, FileText,
   Layers, CheckSquare, ChevronDown, ChevronUp, Loader2, Copy,
-  RefreshCcw, AlertCircle, Brain, Target, ClipboardList
+  RefreshCcw, AlertCircle, Brain, Target, ClipboardList, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -359,6 +359,66 @@ const IdoWeedoTab = () => {
   );
 };
 
+// ─── Curriculum Alignment Checker ───────────────────────────────────────────
+const CurriculumAlignmentTab = () => {
+  const [subject, setSubject] = useState('');
+  const [gradeLevel, setGradeLevel] = useState('');
+  const [curriculumStandard, setCurriculumStandard] = useState('');
+  const [lessonContent, setLessonContent] = useState('');
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const check = async () => {
+    if (!curriculumStandard.trim() || !lessonContent.trim()) {
+      toast.error('Both curriculum standard and lesson content are required');
+      return;
+    }
+    setLoading(true);
+    setResult('');
+    try {
+      const data = await post('/api/ai-teacher/curriculum-check', { subject, gradeLevel, curriculumStandard, lessonContent });
+      setResult(data?.data?.content || '');
+    } catch (err) { toast.error(err.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-500">
+        Paste your lesson plan and the curriculum standard/objective. AI will score alignment,
+        identify gaps, and suggest improvements.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <input className="input-field" placeholder="Subject (optional)" value={subject} onChange={(e) => setSubject(e.target.value)} />
+        <input className="input-field" placeholder="Grade level (optional)" value={gradeLevel} onChange={(e) => setGradeLevel(e.target.value)} />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">Curriculum Standard / Learning Objective *</label>
+        <textarea
+          className="input-field min-h-[80px] resize-y"
+          placeholder="e.g. 'Students will be able to identify and explain Newton's three laws of motion with real-world examples.'"
+          value={curriculumStandard}
+          onChange={(e) => setCurriculumStandard(e.target.value)}
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-semibold text-slate-500">Lesson Content to Check *</label>
+        <textarea
+          className="input-field min-h-[140px] resize-y"
+          placeholder="Paste your lesson plan, teaching notes, or content outline here..."
+          value={lessonContent}
+          onChange={(e) => setLessonContent(e.target.value)}
+        />
+      </div>
+      <button onClick={check} disabled={loading} className="ai-btn">
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+        {loading ? 'Checking alignment…' : 'Check Curriculum Alignment'}
+      </button>
+      {result && <AIResult content={result} onCopy={() => copyText(result)} />}
+    </div>
+  );
+};
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════════════════
@@ -370,6 +430,7 @@ const TABS = [
   { key: 'summary',    label: 'Class Summary',          icon: BarChart2,     component: ClassSummaryTab    },
   { key: 'parent',     label: 'Parent Report',          icon: FileText,      component: ParentReportTab    },
   { key: 'exit',       label: 'Exit Ticket Grader',     icon: CheckSquare,   component: ExitTicketTab      },
+  { key: 'curriculum', label: 'Curriculum Alignment',   icon: ShieldCheck,   component: CurriculumAlignmentTab },
 ];
 
 const TeacherAIToolsPanel = () => {

@@ -201,11 +201,13 @@ _TEACHER_MODES = {
     "lesson_content", "hinge_question", "class_performance_summary",
     "parent_report", "exit_ticket_grade", "idoweedo", "quiz_generate",
     "differentiated_plan", "misconception_report",
+    "intervention_recommendation", "curriculum_alignment",
 }
 
 _TEACHER_LONG_OUTPUT_MODES = {
     "lesson_content", "idoweedo", "differentiated_plan",
     "class_performance_summary", "misconception_report",
+    "curriculum_alignment",
 }
 
 

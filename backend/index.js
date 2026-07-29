@@ -411,6 +411,10 @@ mongoose
     await seedPrincipal();
     startHolidayReminderScheduler();
     startTeacherFeedbackReminderScheduler();
+    if (process.env.NODE_ENV !== 'test') {
+      const { startSchedulers } = require('./schedulers/spacedRepetitionCron');
+      startSchedulers();
+    }
     // Run spaced-repetition nudges once at startup, then every 24 hours.
     const runSpacedRepNudges = () => {
       sendSpacedRepetitionNudges(null).catch((err) =>
@@ -834,6 +838,43 @@ io.on('connection', (socket) => {
       });
       socket.to(`thread:${threadId}`).emit('message-seen', { threadId, userId });
     } catch { /* ignore */ }
+  });
+
+  // ── Live exam monitoring ──────────────────────────────────────────────────
+  // Students emit exam-start / exam-submit when taking a live exam.
+  // Teachers join exam-monitor:<examId> to receive real-time taker updates.
+  socket.on('exam-start', ({ examId }) => {
+    if (!examId || user.role !== 'student') return;
+    socket.join(`exam:${examId}`);
+    io.to(`exam-monitor:${examId}`).emit('exam-taker-update', {
+      examId,
+      studentId: userId,
+      studentName: user.name || user.username || 'Student',
+      event: 'started',
+      at: new Date().toISOString(),
+    });
+  });
+
+  socket.on('exam-submit', ({ examId }) => {
+    if (!examId || user.role !== 'student') return;
+    socket.leave(`exam:${examId}`);
+    io.to(`exam-monitor:${examId}`).emit('exam-taker-update', {
+      examId,
+      studentId: userId,
+      studentName: user.name || user.username || 'Student',
+      event: 'submitted',
+      at: new Date().toISOString(),
+    });
+  });
+
+  socket.on('join-exam-monitor', ({ examId }) => {
+    if (!examId || !['teacher', 'admin', 'principal'].includes(user.role)) return;
+    socket.join(`exam-monitor:${examId}`);
+  });
+
+  socket.on('leave-exam-monitor', ({ examId }) => {
+    if (!examId) return;
+    socket.leave(`exam-monitor:${examId}`);
   });
 
   socket.on('disconnect', () => {

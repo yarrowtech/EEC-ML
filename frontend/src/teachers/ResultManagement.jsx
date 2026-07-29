@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Edit2, FileDown, FileUp, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { Edit2, FileDown, FileUp, Plus, Save, Search, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { formatStudentDisplay } from '../utils/studentDisplay';
@@ -222,7 +222,7 @@ const ResultManagement = () => {
 
     try {
       const query = new URLSearchParams();
-      if (selectedExamId) query.set('examId', selectedExamId);
+      if (selectedExamId) { query.set('examId', selectedExamId); query.set('enrich', 'true'); }
       if (selectedClass) query.set('grade', selectedClass);
       if (selectedSection) query.set('section', selectedSection);
 
@@ -234,6 +234,27 @@ const ResultManagement = () => {
       setResults([]);
     }
   }, [apiFetch, selectedClass, selectedExamId, selectedSection, token]);
+
+  const exportCSV = useCallback(() => {
+    const query = new URLSearchParams();
+    if (selectedExamId) query.set('examId', selectedExamId);
+    if (selectedClass) query.set('grade', selectedClass);
+    if (selectedSection) query.set('section', selectedSection);
+    const url = `${API_BASE}/api/exam/results/export-csv?${query.toString()}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', '');
+    // Attach auth token via fetch since the browser link won't carry the header
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const objectUrl = URL.createObjectURL(blob);
+        a.href = objectUrl;
+        a.click();
+        URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => setError('CSV export failed'));
+  }, [API_BASE, selectedClass, selectedExamId, selectedSection, token]);
 
   const ensureExamStudents = useCallback(
     async (examId) => {
@@ -1003,6 +1024,14 @@ const ResultManagement = () => {
             <FileUp size={14} />
             Upload Results
           </button>
+          <button
+            type="button"
+            onClick={exportCSV}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            <FileDown size={14} />
+            Export CSV
+          </button>
         </div>
       </div>
 
@@ -1035,6 +1064,8 @@ const ResultManagement = () => {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Marks</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Grade</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Status</th>
+                  {selectedExamId && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Rank</th>}
+                  {selectedExamId && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Δ vs Prev</th>}
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Actions</th>
                 </tr>
               </thead>
@@ -1051,9 +1082,37 @@ const ResultManagement = () => {
                       <div className="font-medium text-gray-800">{item?.examId?.title || 'Exam'}</div>
                       <div className="text-xs text-gray-500">{item?.examId?.subject || '-'}</div>
                     </td>
-                    <td className="px-4 py-3 text-gray-800">{item?.marks ?? '-'}</td>
+                    <td className="px-4 py-3 text-gray-800">
+                      {item?.marks ?? '-'}
+                      {item?.percentile != null && (
+                        <div className="text-xs text-indigo-500">{item.percentile}th %ile</div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-800">{item?.grade || '-'}</td>
                     <td className="px-4 py-3 text-gray-800 capitalize">{item?.status || '-'}</td>
+                    {selectedExamId && (
+                      <td className="px-4 py-3 text-gray-800 font-medium">
+                        {item?.rank != null ? `#${item.rank}` : '—'}
+                        {item?.total != null && <span className="text-xs text-gray-400"> /{item.total}</span>}
+                      </td>
+                    )}
+                    {selectedExamId && (
+                      <td className="px-4 py-3">
+                        {item?.delta == null ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : item.delta > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                            <TrendingUp size={12} />+{item.delta}%
+                          </span>
+                        ) : item.delta < 0 ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-500">
+                            <TrendingDown size={12} />{item.delta}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-500">0%</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button

@@ -738,6 +738,13 @@ const AIPoweredTeaching = () => {
         .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),
       additionalNotes: stripHtml(chapter.teacherNotes) || '',
       plannerContent: singleChapterContent,
+      // AI workflow trigger fields
+      curriculumCode:    chapter.curriculumCode    || '',
+      hingeQuestion:     chapter.hingeQuestion     || '',
+      hingeOptions:      chapter.hingeOptions      || [],
+      hingeAnswer:       chapter.hingeAnswer       ?? 0,
+      hingeThreshold:    chapter.hingeThreshold    ?? 50,
+      exitQuizThreshold: chapter.exitQuizThreshold ?? 60,
     };
 
     let progressTimer = null;

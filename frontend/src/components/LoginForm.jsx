@@ -331,8 +331,8 @@ const LoginForm = () => {
         // Fix #3 — unknown userType: show error, reset spinner
         setLoginError('Login succeeded but your account type is not recognised. Please contact support.');
       } else {
-        // Fix #7 — toast fires after navigate so it's visible on the destination page
-        navigate(targetPath);
+        const finalPath = targetPath;
+        navigate(finalPath);
         toast.success('Login successful');
         return; // keep spinner alive during navigation
       }

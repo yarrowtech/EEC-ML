@@ -237,44 +237,76 @@ router.put('/update-progress/:studentId/:subject', adminAuth, async (req, res) =
 
 // Helper function to analyze student weakness
 async function analyzeStudentWeakness(progress, subject) {
-  const subjectSubmissions = progress.submissions.filter(sub => {
-    // You would need to join with Assignment model to get subject info
-    // For now, we'll use mock logic
-    return true; // This should be filtered by assignment subject
-  });
+  const axios = require('axios');
+  const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-  if (subjectSubmissions.length < 3) {
+  // Filter submissions that have a score
+  const scoredSubs = (progress.submissions || []).filter(
+    (sub) => sub.score !== undefined && sub.score !== null
+  );
+
+  if (scoredSubs.length < 3) {
     return {
       subject,
-      consistencyScore: 50, // Default for insufficient data
+      consistencyScore: 50,
       weakAreas: ['Insufficient data for analysis'],
       recommendedTopics: ['Continue submitting assignments for better analysis'],
+      aiRecommendations: null,
       difficultyLevel: 'intermediate',
-      lastAnalyzed: new Date()
+      lastAnalyzed: new Date(),
     };
   }
 
-  // Calculate consistency score based on score variance
-  const scores = subjectSubmissions.map(sub => sub.score).filter(score => score !== undefined);
-  const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  const variance = scores.reduce((sum, score) => sum + Math.pow(score - average, 2), 0) / scores.length;
-  const standardDeviation = Math.sqrt(variance);
-  
-  // Consistency score: lower deviation = higher consistency
-  const consistencyScore = Math.max(0, 100 - (standardDeviation * 2));
+  const scores = scoredSubs.map((s) => Number(s.score));
+  const average = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const variance = scores.reduce((sum, s) => sum + Math.pow(s - average, 2), 0) / scores.length;
+  const stdDev = Math.sqrt(variance);
+  const consistencyScore = Math.max(0, Math.round(100 - stdDev * 2));
+  const difficultyLevel = average < 40 ? 'basic' : average < 70 ? 'intermediate' : 'advanced';
 
-  // Identify weak areas based on subject and performance patterns
-  const weakAreas = identifyWeakAreas(subject, average, standardDeviation);
+  // Build context for LLM — describe performance numerically
+  const recentScores = scoredSubs.slice(-5).map((s) => s.score);
+  const trend = recentScores.length >= 2
+    ? recentScores[recentScores.length - 1] - recentScores[0]
+    : 0;
+
+  const context = [
+    `Subject: ${subject}`,
+    `Total assignments scored: ${scores.length}`,
+    `Average score: ${Math.round(average)}%`,
+    `Score consistency (lower stdDev = more consistent): ${Math.round(stdDev)}`,
+    `Recent score trend (positive = improving): ${trend > 0 ? '+' : ''}${Math.round(trend)}`,
+    `Performance level: ${difficultyLevel}`,
+  ].join('\n');
+
+  let aiRecommendations = null;
+  try {
+    const aiRes = await axios.post(
+      `${AI_SERVICE_URL}/generate/teacher`,
+      {
+        mode: 'intervention_recommendation',
+        subject,
+        topic: 'Student Weakness Analysis',
+        context,
+      },
+      { timeout: 60000 }
+    );
+    aiRecommendations = aiRes.data?.content || null;
+  } catch (_) {
+    // Non-blocking — fall back to null
+  }
+
+  const weakAreas = identifyWeakAreas(subject, average, stdDev);
   const recommendedTopics = getRecommendedTopics(subject, average, weakAreas);
-  const difficultyLevel = getDifficultyLevel(average);
 
   return {
     subject,
-    consistencyScore: Math.round(consistencyScore),
+    consistencyScore,
     weakAreas,
     recommendedTopics,
+    aiRecommendations,
     difficultyLevel,
-    lastAnalyzed: new Date()
+    lastAnalyzed: new Date(),
   };
 }
 

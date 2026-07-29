@@ -40,6 +40,19 @@ const lessonPlanSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: () => []
     },
+    // Curriculum alignment
+    curriculumCode: { type: String, default: '' },  // e.g. "CBSE-VII-MATH-3.2"
+
+    // Hinge question — one diagnostic MCQ mid-lesson
+    hingeQuestion:  { type: String, default: '' },
+    hingeOptions:   [{ type: String }],              // 2–4 option strings
+    hingeAnswer:    { type: Number, default: 0 },    // index of correct option
+    hingeThreshold: { type: Number, default: 50 },   // % wrong that triggers re-teach
+
+    // Exit quiz threshold — avg score below this triggers re-teach flag
+    exitQuizThreshold: { type: Number, default: 60 },
+    exitQuizTriggered: { type: Boolean, default: false },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }
   },
