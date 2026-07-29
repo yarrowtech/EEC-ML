@@ -32,7 +32,6 @@ import {
   RefreshCw,
   CalendarCheck,
   Activity,
-  Sparkles,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
@@ -59,7 +58,6 @@ import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
 import ExamResultPortal from './ExamResultPortal';
 import LiveExamMonitor from './LiveExamMonitor';
-import OneClickLessonStudio from './OneClickLessonStudio';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
@@ -81,7 +79,6 @@ const portalNavigation = [
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   { icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
   { icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
-  { icon: Sparkles, label: 'Lesson Studio', path: `${PORTAL_BASE}/lesson-studio` },
   { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
   { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
   { icon: ThumbsUp, label: 'Student Feedback', path: `${PORTAL_BASE}/classes/current/communication/feedback` },
@@ -1609,7 +1606,6 @@ const TeacherPortalShell = () => {
               <Route path="lesson-plan" element={<AIPoweredTeaching />} />
               <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
               <Route path="live-monitor" element={<LiveExamMonitor />} />
-              <Route path="lesson-studio" element={<OneClickLessonStudio />} />
               <Route path="ptm" element={<ParentMeetings />} />
               <Route path="settings" element={<MyWorkPortal />} />
               <Route path="test" element={<TestTeacherPortal />} />
