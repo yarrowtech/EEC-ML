@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
 import {
   ArrowLeft,
   ArrowRight,
@@ -587,6 +586,7 @@ const AILearningCoursesReference = () => {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
+      const { jsPDF } = await import('jspdf');
       const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();

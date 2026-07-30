@@ -18,6 +18,7 @@ const PracticePaper = require('../models/PracticePaper');
 const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const TryoutResult = require('../models/TryoutResult');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -2847,6 +2848,122 @@ router.patch('/teacher/:id/meta', authTeacher, async (req, res) => {
     );
     if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
     return res.json({ success: true, data: plan });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Tryout Submission (Student) ────────────────────────────────────────────
+// POST /api/lesson-plans/student/tryout-submit
+router.post('/student/tryout-submit', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const { subjectName, chapterTitle, topicTitle, questions, answers } = req.body;
+    if (!Array.isArray(questions) || !Array.isArray(answers)) {
+      return res.status(400).json({ error: 'questions and answers arrays are required' });
+    }
+
+    const answerDocs = questions.map((q, i) => {
+      const studentAnswer = answers[i];
+      let isCorrect = null;
+      let autoScore = null;
+
+      const qType = String(q.type || '').toLowerCase().replace(/-/g, '_');
+      if (qType === 'mcq' && q.correctAnswer !== undefined && q.correctAnswer !== null) {
+        isCorrect = Number(studentAnswer?.selectedOption) === Number(q.correctAnswer);
+        autoScore = isCorrect ? 1 : 0;
+      }
+
+      return {
+        questionId: String(q.id || i),
+        questionType: qType,
+        questionText: String(q.question || q.text || ''),
+        answer: studentAnswer?.value ?? studentAnswer ?? null,
+        isCorrect,
+        autoScore,
+      };
+    });
+
+    const autoGradedAnswers = answerDocs.filter((a) => a.autoScore !== null);
+    const autoScore = autoGradedAnswers.length > 0
+      ? Math.round((autoGradedAnswers.reduce((sum, a) => sum + a.autoScore, 0) / autoGradedAnswers.length) * 100)
+      : null;
+
+    const result = await TryoutResult.create({
+      studentId: req.userId,
+      schoolId,
+      subjectName: normalizeString(subjectName),
+      chapterTitle: normalizeString(chapterTitle),
+      topicTitle: normalizeString(topicTitle),
+      answers: answerDocs,
+      totalQuestions: questions.length,
+      autoGradedCount: autoGradedAnswers.length,
+      autoScore,
+      status: 'submitted',
+    });
+
+    return res.status(201).json({ success: true, result: { _id: result._id, autoScore, autoGradedCount: autoGradedAnswers.length } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/lesson-plans/student/tryout-results — student views their own results
+router.get('/student/tryout-results', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { topicTitle } = req.query;
+    const filter = { studentId: req.userId, schoolId };
+    if (topicTitle) filter.topicTitle = new RegExp(escapeRegex(topicTitle), 'i');
+
+    const results = await TryoutResult.find(filter).sort({ createdAt: -1 }).lean();
+    return res.json({ success: true, results });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Tryout Submissions (Teacher) ───────────────────────────────────────────
+// GET /api/lesson-plans/teacher/tryout-submissions
+router.get('/teacher/tryout-submissions', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const { topicTitle, subjectName, status } = req.query;
+    const filter = { schoolId };
+    if (topicTitle) filter.topicTitle = new RegExp(escapeRegex(topicTitle), 'i');
+    if (subjectName) filter.subjectName = new RegExp(escapeRegex(subjectName), 'i');
+    if (status) filter.status = status;
+
+    const results = await TryoutResult.find(filter)
+      .populate('studentId', 'name grade section roll')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({ success: true, results });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/lesson-plans/teacher/tryout-submissions/:id/grade
+router.patch('/teacher/tryout-submissions/:id/grade', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { teacherScore, teacherFeedback } = req.body;
+    if (teacherScore === undefined) return res.status(400).json({ error: 'teacherScore is required' });
+
+    const result = await TryoutResult.findOneAndUpdate(
+      { _id: req.params.id, schoolId },
+      { $set: { teacherScore: Number(teacherScore), teacherFeedback: normalizeString(teacherFeedback), status: 'graded' } },
+      { new: true }
+    );
+    if (!result) return res.status(404).json({ error: 'Submission not found' });
+
+    return res.json({ success: true, result });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

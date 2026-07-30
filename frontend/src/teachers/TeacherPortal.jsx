@@ -61,6 +61,7 @@ import LiveExamMonitor from './LiveExamMonitor';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
+import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
@@ -1604,6 +1605,7 @@ const TeacherPortalShell = () => {
               />
               <Route path="resource-library" element={<TeacherAlcove />} />
               <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+              <Route path="tryout" element={<TryoutManagement />} />
               <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
               <Route path="live-monitor" element={<LiveExamMonitor />} />
               <Route path="ptm" element={<ParentMeetings />} />

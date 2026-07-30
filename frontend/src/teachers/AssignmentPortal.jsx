@@ -13,8 +13,7 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const AssignmentPortal = () => {
-  // Tab state
-  const [activeTab] = useState('evaluate');
+  const activeTab = 'evaluate';
 
   // ─────────────────────────────────────────────────────────────────────────
   // ASSIGNMENT MANAGEMENT STATE
@@ -90,6 +89,13 @@ const AssignmentPortal = () => {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [bulkSuccess, setBulkSuccess] = useState('');
+
+  // ─── Tryout submissions state ───────────────────────────────────────────────
+  const [tryoutSubmissions, setTryoutSubmissions] = useState([]);
+  const [loadingTryouts, setLoadingTryouts] = useState(false);
+  const [tryoutGrading, setTryoutGrading] = useState({});  // { [id]: { score, feedback } }
+  const [tryoutSaving, setTryoutSaving] = useState({});
+  const [tryoutSaved, setTryoutSaved] = useState({});
 
   // ─────────────────────────────────────────────────────────────────────────
   // COMPUTED VALUES
@@ -244,11 +250,26 @@ const AssignmentPortal = () => {
     }
   };
 
+  const fetchTryoutSubmissions = async () => {
+    try {
+      setLoadingTryouts(true);
+      const { data } = await axios.get(`${API_BASE_URL}/api/lesson-plans/teacher/tryout-submissions`, {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      setTryoutSubmissions(Array.isArray(data?.results) ? data.results : []);
+    } catch (err) {
+      console.error('Error fetching tryout submissions:', err);
+    } finally {
+      setLoadingTryouts(false);
+    }
+  };
+
   useEffect(() => {
     fetchActiveSession();
     fetchMyClasses();
     fetchAssignments();
     fetchSubmissions();
+    fetchTryoutSubmissions();
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -735,7 +756,6 @@ const AssignmentPortal = () => {
           </div>
         )}
 
-        {/* Tab Content */}
         {activeTab === 'manage' ? (
           <ManageAssignments
             loading={loading}
@@ -798,6 +818,33 @@ const AssignmentPortal = () => {
             bulkError={bulkError}
             bulkSuccess={bulkSuccess}
             formatDate={formatDate}
+            tryoutSubmissions={tryoutSubmissions}
+            loadingTryouts={loadingTryouts}
+            tryoutGrading={tryoutGrading}
+            tryoutSaving={tryoutSaving}
+            tryoutSaved={tryoutSaved}
+            onTryoutGradingChange={(id, field, value) => setTryoutGrading((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }))}
+            onTryoutSaveGrade={async (submission) => {
+              const id = String(submission._id);
+              const draft = tryoutGrading[id] || {};
+              const score = Number(draft.score ?? '');
+              if (!Number.isFinite(score)) return;
+              setTryoutSaving((prev) => ({ ...prev, [id]: true }));
+              try {
+                await axios.patch(
+                  `${API_BASE_URL}/api/lesson-plans/teacher/tryout-submissions/${id}/grade`,
+                  { teacherScore: score, teacherFeedback: draft.feedback || '' },
+                  { headers: { Authorization: `Bearer ${token()}` } }
+                );
+                setTryoutSubmissions((prev) => prev.map((s) => String(s._id) === id ? { ...s, teacherScore: score, teacherFeedback: draft.feedback || '', status: 'graded' } : s));
+                setTryoutSaved((prev) => ({ ...prev, [id]: true }));
+                setTimeout(() => setTryoutSaved((prev) => ({ ...prev, [id]: false })), 3000);
+              } catch (err) {
+                console.error('Failed to save tryout grade:', err);
+              } finally {
+                setTryoutSaving((prev) => ({ ...prev, [id]: false }));
+              }
+            }}
           />
         )}
       </div>
@@ -908,6 +955,162 @@ const AssignmentPortal = () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
 // ═════════════════════════════════════════════════════════════════════════════
+
+const TryoutSubmissionsPanel = ({ submissions, loading, grading, saving, saved, onGradingChange, onSaveGrade }) => {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = submissions.find((s) => String(s._id) === selectedId) || null;
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+        Loading tryout submissions…
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+        <Activity className="mx-auto mb-3 text-slate-300" size={36} />
+        <p className="text-base font-bold text-slate-700">No tryout submissions yet</p>
+        <p className="mt-1 text-sm text-slate-500">Students will appear here once they submit a tryout.</p>
+      </div>
+    );
+  }
+
+  const pendingCount = submissions.filter((s) => s.status !== 'graded').length;
+  const gradedCount = submissions.filter((s) => s.status === 'graded').length;
+
+  return (
+    <div className="flex gap-4 lg:gap-6">
+      {/* Left: list */}
+      <div className="w-full lg:w-80 shrink-0 space-y-2">
+        <div className="flex gap-2 mb-3">
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">{pendingCount} pending</span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">{gradedCount} graded</span>
+        </div>
+        {submissions.map((s) => {
+          const studentName = s.studentId?.name || 'Student';
+          const isSelected = String(s._id) === selectedId;
+          const isGraded = s.status === 'graded';
+          return (
+            <button
+              key={String(s._id)}
+              type="button"
+              onClick={() => setSelectedId(String(s._id))}
+              className={`w-full text-left rounded-xl border p-3 transition-all ${isSelected ? 'border-pink-400 bg-pink-50 shadow-sm' : 'border-slate-200 bg-white hover:border-pink-200 hover:bg-pink-50/40'}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-slate-900 truncate">{studentName}</p>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${isGraded ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {isGraded ? 'Graded' : 'Pending'}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-500 truncate">{s.topicTitle || 'Tryout'} · {s.subjectName || ''}</p>
+              <p className="mt-0.5 text-xs text-slate-400">{s.totalQuestions} question{s.totalQuestions !== 1 ? 's' : ''} {s.autoScore !== null ? `· Auto: ${s.autoScore}%` : ''}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Right: detail */}
+      <div className="flex-1 min-w-0">
+        {!selected ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+            Select a submission on the left to review it.
+          </div>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div className="border-b border-slate-100 bg-gradient-to-r from-pink-50 to-rose-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-pink-600">Tryout Submission</p>
+                  <h2 className="mt-0.5 text-lg font-black text-slate-900">{selected.studentId?.name || 'Student'}</h2>
+                  <p className="text-sm text-slate-500">{selected.topicTitle} · {selected.subjectName} · {selected.chapterTitle}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  {selected.autoScore !== null && (
+                    <div className="text-sm font-bold text-emerald-600">Auto: {selected.autoScore}%</div>
+                  )}
+                  {selected.teacherScore !== null && selected.teacherScore !== undefined && (
+                    <div className="text-sm font-bold text-purple-600">Teacher: {selected.teacherScore}%</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-[400px] overflow-y-auto p-4 space-y-3">
+              {(selected.answers || []).map((ans, idx) => (
+                <div key={idx} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Q{idx + 1} · {ans.questionType}</p>
+                    {ans.isCorrect !== null && (
+                      <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 ${ans.isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {ans.isCorrect ? 'Correct' : 'Incorrect'}
+                      </span>
+                    )}
+                  </div>
+                  {ans.questionText && <p className="text-sm font-semibold text-slate-700 mb-1">{ans.questionText}</p>}
+                  <p className="text-sm text-slate-600">
+                    <span className="font-semibold">Answer: </span>
+                    {ans.answer !== null && ans.answer !== undefined
+                      ? typeof ans.answer === 'object'
+                        ? JSON.stringify(ans.answer)
+                        : String(ans.answer)
+                      : <span className="italic text-slate-400">No answer</span>}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-100 p-4 space-y-3">
+              <p className="text-sm font-bold text-slate-700">Teacher Evaluation</p>
+              <div className="flex gap-3">
+                <div className="w-28">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Score (0–100)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={grading[String(selected._id)]?.score ?? (selected.teacherScore ?? '')}
+                    onChange={(e) => onGradingChange(String(selected._id), 'score', e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. 85"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Feedback (optional)</label>
+                  <input
+                    type="text"
+                    value={grading[String(selected._id)]?.feedback ?? (selected.teacherFeedback || '')}
+                    onChange={(e) => onGradingChange(String(selected._id), 'feedback', e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Write feedback for the student..."
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onSaveGrade(selected)}
+                  disabled={saving[String(selected._id)]}
+                  className="rounded-lg bg-pink-600 px-5 py-2 text-sm font-bold text-white hover:bg-pink-700 disabled:opacity-60"
+                >
+                  {saving[String(selected._id)] ? 'Saving…' : 'Save Grade'}
+                </button>
+                {saved[String(selected._id)] && (
+                  <span className="text-sm font-semibold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle size={14} /> Saved
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const ManageAssignments = ({
   loading, filteredAssignments, myClasses, subjects,
@@ -1146,7 +1349,10 @@ const EvaluateSubmissions = ({
   closePanel, saveGrade, evaluationMode, setEvaluationMode,
   bulkDraft, updateBulkDraft, saveBulkGrades, bulkSaving, bulkError, bulkSuccess,
   formatDate,
-  assignments = []
+  assignments = [],
+  tryoutSubmissions = [], loadingTryouts = false,
+  tryoutGrading = {}, tryoutSaving = {}, tryoutSaved = {},
+  onTryoutGradingChange, onTryoutSaveGrade,
 }) => {
   const latestSubmissionDate = submissions.length
     ? submissions
@@ -1161,6 +1367,7 @@ const EvaluateSubmissions = ({
     { key: 'all', label: 'All Types', icon: Layers },
     { key: 'assignment', label: 'Assignments', icon: FileText },
     { key: 'worksheet', label: 'Worksheets', icon: FileText },
+    { key: 'tryout', label: 'Tryouts', icon: Activity },
     { key: 'mcq', label: 'MCQs', icon: ListChecks },
     { key: 'fill', label: 'Fill in the Blanks', icon: Edit3 },
     { key: 'writing', label: 'Writing', icon: Edit3 },
@@ -1249,13 +1456,28 @@ const EvaluateSubmissions = ({
       <div className="mb-6 flex flex-wrap gap-2">
         {typeDefinitions.map((type) => {
           const Icon = type.icon;
-          const count = type.key === 'all' ? pendingCount : submissions.filter((submission) => normalizeType(submission).includes(type.key) && (submission.score === null || submission.score === undefined)).length;
-          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition ${typeFilter === type.key ? 'border-blue-600 bg-[#eef4ff] text-blue-600' : 'border-[#e2eaf2] bg-white text-[#4b5b73] hover:bg-[#f8fbff]'}`}><Icon className="size-3.5" /> {type.label}<span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><Clock className="size-2.5" /> {count}</span></button>;
+          const count = type.key === 'tryout'
+            ? tryoutSubmissions.filter((s) => s.status !== 'graded').length
+            : type.key === 'all' ? pendingCount : submissions.filter((submission) => normalizeType(submission).includes(type.key) && (submission.score === null || submission.score === undefined)).length;
+          const isTryout = type.key === 'tryout';
+          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition ${typeFilter === type.key ? (isTryout ? 'border-pink-600 bg-pink-50 text-pink-600' : 'border-blue-600 bg-[#eef4ff] text-blue-600') : 'border-[#e2eaf2] bg-white text-[#4b5b73] hover:bg-[#f8fbff]'}`}><Icon className="size-3.5" /> {type.label}<span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><Clock className="size-2.5" /> {count}</span></button>;
         })}
         <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600"><AlertCircle className="size-3.5" /> Total Pending <span className="rounded-full bg-red-600 px-2 py-0.5 text-white">{pendingCount}</span></span>
       </div>
 
-      <Motion.section layout className="mb-7 overflow-x-auto rounded-[1.8rem] border border-[#eaf0f8] bg-white p-2 shadow-sm">
+      {typeFilter === 'tryout' ? (
+        <TryoutSubmissionsPanel
+          submissions={tryoutSubmissions}
+          loading={loadingTryouts}
+          grading={tryoutGrading}
+          saving={tryoutSaving}
+          saved={tryoutSaved}
+          onGradingChange={onTryoutGradingChange}
+          onSaveGrade={onTryoutSaveGrade}
+        />
+      ) : null}
+
+      <Motion.section layout className={`mb-7 overflow-x-auto rounded-[1.8rem] border border-[#eaf0f8] bg-white p-2 shadow-sm${typeFilter === 'tryout' ? ' hidden' : ''}`}>
         <table className="w-full min-w-[900px] border-collapse text-sm">
           <thead><tr className="border-b border-[#eef3fa] text-left text-[10px] uppercase tracking-[0.02em] text-[#2c405c]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
           <tbody>
@@ -1275,13 +1497,13 @@ const EvaluateSubmissions = ({
         </table>
       </Motion.section>
 
-      {evaluationMode === 'bulk' ? (
+      {typeFilter !== 'tryout' && evaluationMode === 'bulk' ? (
         <Motion.section layout className="mb-7 rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Bulk evaluation</p><h2 className="text-lg font-semibold">Enter marks for multiple students</h2></div><button type="button" onClick={saveBulkGrades} disabled={bulkSaving || visibleSubmissions.length === 0} className="rounded-full bg-blue-600 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{bulkSaving ? 'Uploading...' : 'Apply Bulk Marks'}</button></div>
           <div className="mt-4 overflow-x-auto rounded-2xl border border-[#e2eaf2] bg-white"><table className="w-full min-w-[700px] text-xs"><thead className="bg-[#f0f6ff]"><tr><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Assignment</th><th className="px-3 py-2 text-left">Marks</th><th className="px-3 py-2 text-left">Feedback</th></tr></thead><tbody>{visibleSubmissions.map((submission) => { const draft = bulkDraft[submission.submissionId] || {}; return <tr key={submission.submissionId} className="border-t border-[#eef3fa]"><td className="px-3 py-2 font-semibold">{submission.studentName}</td><td className="px-3 py-2">{submission.assignmentTitle}</td><td className="px-3 py-2"><input type="number" min="0" max={submission.totalMarks} value={draft.marks ?? submission.score ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'marks', event.target.value)} className="w-24 rounded-full border border-[#dce3ec] px-3 py-1.5" /></td><td className="px-3 py-2"><input value={draft.feedback ?? submission.feedback ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'feedback', event.target.value)} placeholder="Optional feedback" className="w-full min-w-[220px] rounded-full border border-[#dce3ec] px-3 py-1.5" /></td></tr>; })}</tbody></table></div>
           {bulkError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{bulkError}</p>}{bulkSuccess && <p className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-700">{bulkSuccess}</p>}
         </Motion.section>
-      ) : (
+      ) : typeFilter !== 'tryout' ? (
         <div className="mb-7 grid gap-6 lg:grid-cols-2">
           <Motion.section layout className="rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
             <h2 className="mb-5 flex items-center gap-2 text-base font-semibold text-[#2c405c]"><User className="size-4 text-blue-600" /> Teacher Evaluation</h2>
@@ -1311,7 +1533,7 @@ const EvaluateSubmissions = ({
             </div>
           </Motion.section>
         </div>
-      )}
+      ) : null}
 
       <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[#eaf0f8] bg-white px-5 py-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold"><Calendar className="size-5 text-blue-600" /> Upcoming Deadlines</div><div className="flex flex-wrap gap-2">{assignments.filter((assignment) => assignment?.dueDate).slice(0, 4).map((assignment) => <span key={assignment._id} className="rounded-full bg-[#f1f5f9] px-3 py-1.5 text-[11px] font-medium">{formatDate(assignment.dueDate)} · {assignment.title}</span>)}{assignments.length === 0 && <span className="text-xs text-[#6b7f9b]">No upcoming assignments</span>}</div></section>
 

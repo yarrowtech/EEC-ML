@@ -16,7 +16,8 @@ import {
   Trash2,
   Edit3,
   Save,
-  Eye
+  Eye,
+  Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1069,6 +1070,165 @@ const TryoutBuilder = ({
         </Motion.div>
       </Motion.div>
     </AnimatePresence>
+  );
+};
+
+// Inline (non-modal) version for embedding directly inside lesson plan drawer
+export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts }) => {
+  const [localTryouts, setLocalTryouts] = useState(tryouts);
+  const [selectedType, setSelectedType] = useState(null);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [currentQuestion, setCurrentQuestion] = useState({});
+
+  const handleSelectType = (typeId) => {
+    setSelectedType(typeId);
+    setEditingIndex(null);
+    setCurrentQuestion({ type: typeId, id: `tryout-${Date.now()}` });
+  };
+
+  const handleEditQuestion = (index) => {
+    setEditingIndex(index);
+    setCurrentQuestion({ ...localTryouts[index] });
+    setSelectedType(localTryouts[index].type);
+  };
+
+  const handleSaveQuestion = () => {
+    let updated;
+    if (editingIndex !== null) {
+      updated = [...localTryouts];
+      updated[editingIndex] = currentQuestion;
+    } else {
+      updated = [...localTryouts, currentQuestion];
+    }
+    setLocalTryouts(updated);
+    onSaveTryouts(updated);
+    setCurrentQuestion({});
+    setSelectedType(null);
+    setEditingIndex(null);
+  };
+
+  const handleDeleteQuestion = (index) => {
+    const updated = localTryouts.filter((_, i) => i !== index);
+    setLocalTryouts(updated);
+    onSaveTryouts(updated);
+    if (editingIndex === index) {
+      setSelectedType(null);
+      setEditingIndex(null);
+      setCurrentQuestion({});
+    }
+  };
+
+  const handleCancel = () => {
+    setSelectedType(null);
+    setEditingIndex(null);
+    setCurrentQuestion({});
+  };
+
+  const CreatorComponent = selectedType ? QUESTION_CREATORS[selectedType] : null;
+
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/30 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between bg-gradient-to-r from-rose-500 to-pink-600 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Play className="size-4 text-white" />
+          <span className="text-sm font-semibold text-white">Tryout Questions</span>
+        </div>
+        <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">
+          {localTryouts.length} question{localTryouts.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="flex min-h-[320px]">
+        {/* Left: question list */}
+        <div className="w-44 shrink-0 border-r border-rose-200 bg-white/60 overflow-y-auto">
+          {localTryouts.length === 0 ? (
+            <p className="p-3 text-xs text-slate-400 text-center mt-4">No questions yet</p>
+          ) : (
+            <div className="p-2 space-y-1.5">
+              {localTryouts.map((tryout, index) => {
+                const typeInfo = TRYOUT_TYPES.find(t => t.id === tryout.type);
+                return (
+                  <div
+                    key={tryout.id || index}
+                    onClick={() => handleEditQuestion(index)}
+                    className={`rounded-lg border p-2 cursor-pointer transition-colors text-xs ${
+                      editingIndex === index
+                        ? 'border-rose-400 bg-rose-50'
+                        : 'border-slate-200 bg-white hover:border-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {typeInfo && <typeInfo.icon className="size-3 text-rose-500 shrink-0" />}
+                        <span className="font-medium text-slate-700 truncate">{typeInfo?.label || tryout.type}</span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(index); }}
+                        className="shrink-0 p-0.5 rounded hover:bg-red-50"
+                      >
+                        <Trash2 className="size-3 text-red-400" />
+                      </button>
+                    </div>
+                    <p className="text-slate-400 truncate mt-0.5">{tryout.question || tryout.text || `Q${index + 1}`}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Right: type picker or creator */}
+        <div className="flex-1 overflow-y-auto bg-white/60 p-3">
+          {!selectedType && editingIndex === null ? (
+            <div>
+              <p className="text-xs font-semibold text-slate-600 mb-2">+ Add question type</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {TRYOUT_TYPES.map(type => (
+                  <button
+                    key={type.id}
+                    onClick={() => handleSelectType(type.id)}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-rose-300 hover:bg-rose-50 transition-colors"
+                  >
+                    <div className="rounded-md bg-rose-100 p-1 shrink-0">
+                      <type.icon className="size-3.5 text-rose-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-slate-700 truncate">{type.label}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{type.description}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-slate-700">
+                  {editingIndex !== null ? 'Edit Question' : 'New Question'}
+                </p>
+                <Button variant="outline" size="sm" onClick={handleCancel} className="text-xs h-6 px-2">Cancel</Button>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {CreatorComponent && (
+                  <CreatorComponent
+                    key={editingIndex ?? 'new'}
+                    question={currentQuestion}
+                    onChange={setCurrentQuestion}
+                  />
+                )}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button onClick={handleSaveQuestion} size="sm" className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-7">
+                  <Save className="size-3 mr-1" />
+                  {editingIndex !== null ? 'Update' : 'Add Question'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 

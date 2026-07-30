@@ -9,13 +9,12 @@ import {
   ClipboardCheck,
   ClipboardList,
   Clock,
-  Edit3,
   FileText,
   FlaskConical,
   Lightbulb,
   ListChecks,
-  Plus,
   Play,
+  Plus,
   RefreshCcw,
   Send,
   Sparkles,
@@ -25,7 +24,6 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +33,7 @@ import RichTextEditor from './RichTextEditor';
 import UploadDropzone from './UploadDropzone';
 import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
-import TryoutBuilder from './TryoutBuilder';
+import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 
 const MotionButton = motion.button;
@@ -52,6 +50,7 @@ const STEPS = [
   { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
   { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
+  { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
   { key: 'publish',    label: 'Evaluate & Publish', icon: Send,           color: 'emerald' },
 ];
 
@@ -63,6 +62,7 @@ const stepAccent = {
   green:   { ring: 'ring-green-500',   text: 'text-green-700 dark:text-green-300',   banner: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300'   },
   purple:  { ring: 'ring-purple-500',  text: 'text-purple-700 dark:text-purple-300', banner: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' },
   rose:    { ring: 'ring-rose-500',    text: 'text-rose-700 dark:text-rose-300',     banner: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'     },
+  pink:    { ring: 'ring-pink-500',    text: 'text-pink-700 dark:text-pink-300',     banner: 'bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'     },
   emerald: { ring: 'ring-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
 };
 
@@ -114,7 +114,6 @@ const DrawerModal = ({
   onStepChange,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
-  const [showTryoutBuilder, setShowTryoutBuilder] = useState(false);
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
 
@@ -235,7 +234,8 @@ const DrawerModal = ({
     setShowMaterialUpload(true);
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF();
     doc.text(chapter.title || 'Lesson Plan', 14, 20);
     doc.text(`Date: ${chapter.lessonDate || '-'}`, 14, 30);
@@ -656,32 +656,6 @@ const DrawerModal = ({
               </div>
             </Card>
 
-            {/* Tryout / Interactive Questions */}
-            <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-900/40 dark:bg-rose-950/20">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  <Play className="size-4 text-rose-500" /> Tryout Section
-                </p>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {chapter.tryouts?.length > 0
-                    ? `${chapter.tryouts.length} question(s) ready`
-                    : 'No tryout questions yet'}
-                </span>
-              </div>
-              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                Create interactive questions students answer inside the Smart Learning portal.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTryoutBuilder(true)}
-                className="w-full border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:text-rose-300"
-              >
-                <Edit3 className="size-3.5 mr-1.5" />
-                {chapter.tryouts?.length > 0 ? 'Edit Tryout Questions' : 'Create Tryout Questions'}
-              </Button>
-            </div>
-
             {/* Structured assessments */}
             <Card>
               <div className="mb-3 flex items-center justify-between">
@@ -706,9 +680,17 @@ const DrawerModal = ({
               )}
             </Card>
 
-            <TryoutBuilder
-              open={showTryoutBuilder}
-              onClose={() => setShowTryoutBuilder(false)}
+          </div>
+        );
+
+      /* ─── TRYOUT ──────────────────────────────────────────────── */
+      case 'tryout':
+        return (
+          <div className="space-y-4">
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Create interactive questions students answer inside the Smart Learning portal.
+            </p>
+            <InlineTryoutBuilder
               tryouts={chapter.tryouts || []}
               onSaveTryouts={handleSaveTryouts}
             />

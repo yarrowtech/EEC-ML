@@ -1,15 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Upload } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
+const SUBMIT_ENDPOINT = `${API_BASE}/api/lesson-plans/student/tryout-submit`;
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const normalizeQuestionType = (value) => normalize(value).replace(/-/g, '_');
-const optionLabels = ['A', 'B', 'C', 'D'];
+const optionLabels = ['A', 'B', 'C', 'D', 'E'];
 
 const typeLabel = (type) => ({
   mcq: 'Multiple Choice',
@@ -35,7 +36,8 @@ const renderTextWithInputs = (text, renderInput) => {
   ));
 };
 
-const TryoutQuestion = ({ question, index }) => {
+// Each question reports its answer up via onAnswer(answer)
+const TryoutQuestion = ({ question, index, onAnswer }) => {
   const [answer, setAnswer] = useState('');
   const [answers, setAnswers] = useState({});
   const [selectedOption, setSelectedOption] = useState(null);
@@ -46,6 +48,10 @@ const TryoutQuestion = ({ question, index }) => {
   const items = asArray(question.items).filter(Boolean);
   const pairs = asArray(question.pairs).filter(Boolean);
   const dropdownOptions = asArray(question.dropdownOptions);
+
+  const reportAnswer = (payload) => {
+    if (onAnswer) onAnswer(payload);
+  };
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -71,7 +77,7 @@ const TryoutQuestion = ({ question, index }) => {
                   <button
                     key={`${option}-${optionIndex}`}
                     type="button"
-                    onClick={() => setSelectedOption(optionIndex)}
+                    onClick={() => { setSelectedOption(optionIndex); reportAnswer({ selectedOption: optionIndex, value: option }); }}
                     className={`w-full rounded-lg border bg-gray-50 px-5 py-3 text-left transition-all ${
                       isSelected ? 'border-yellow-300 bg-yellow-100 font-semibold' : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
                     }`}
@@ -98,7 +104,7 @@ const TryoutQuestion = ({ question, index }) => {
                       id={`${question.id || `mcq-${index}`}-${optionIndex}`}
                       name={question.id || `mcq-${index}`}
                       checked={isSelected}
-                      onChange={() => setSelectedOption(optionIndex)}
+                      onChange={() => { setSelectedOption(optionIndex); reportAnswer({ selectedOption: optionIndex, value: option }); }}
                       className="mr-3 h-5 w-5 accent-purple-500"
                     />
                     <label
@@ -129,8 +135,30 @@ const TryoutQuestion = ({ question, index }) => {
               {statements.map((statement, statementIndex) => (
                 <tr key={`${statement}-${statementIndex}`} className="border-b border-slate-100">
                   <td className="px-2 py-3 font-medium text-slate-700">{statement}</td>
-                  <td className="px-2 py-3 text-center"><input type="radio" name={`${question.id || index}-${statementIndex}`} className="accent-[#2f7dff]" /></td>
-                  <td className="px-2 py-3 text-center"><input type="radio" name={`${question.id || index}-${statementIndex}`} className="accent-[#2f7dff]" /></td>
+                  <td className="px-2 py-3 text-center">
+                    <input
+                      type="radio"
+                      name={`${question.id || index}-${statementIndex}`}
+                      className="accent-[#2f7dff]"
+                      onChange={() => {
+                        const updated = { ...answers, [statementIndex]: true };
+                        setAnswers(updated);
+                        reportAnswer({ value: updated });
+                      }}
+                    />
+                  </td>
+                  <td className="px-2 py-3 text-center">
+                    <input
+                      type="radio"
+                      name={`${question.id || index}-${statementIndex}`}
+                      className="accent-[#2f7dff]"
+                      onChange={() => {
+                        const updated = { ...answers, [statementIndex]: false };
+                        setAnswers(updated);
+                        reportAnswer({ value: updated });
+                      }}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -146,7 +174,11 @@ const TryoutQuestion = ({ question, index }) => {
                 aria-label={`Blank ${blankIndex + 1}`}
                 className="mx-1 inline-block w-32 rounded-md border border-slate-300 px-2 py-1 text-sm"
                 value={answers[blankIndex] || ''}
-                onChange={(event) => setAnswers((prev) => ({ ...prev, [blankIndex]: event.target.value }))}
+                onChange={(event) => {
+                  const updated = { ...answers, [blankIndex]: event.target.value };
+                  setAnswers(updated);
+                  reportAnswer({ value: updated });
+                }}
               />
             ))}
           </p>
@@ -157,7 +189,15 @@ const TryoutQuestion = ({ question, index }) => {
       {questionType === 'cloze_dropdown' && (
         <p className="text-sm leading-8 text-slate-700">
           {renderTextWithInputs(question.text, (blankIndex) => (
-            <select className="mx-1 rounded-md border border-slate-300 px-2 py-1 text-sm" defaultValue="">
+            <select
+              className="mx-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
+              defaultValue=""
+              onChange={(e) => {
+                const updated = { ...answers, [blankIndex]: e.target.value };
+                setAnswers(updated);
+                reportAnswer({ value: updated });
+              }}
+            >
               <option value="" disabled>Choose</option>
               {asArray(dropdownOptions[blankIndex]).filter(Boolean).map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
@@ -182,7 +222,13 @@ const TryoutQuestion = ({ question, index }) => {
       {(questionType === 'plain_text' || questionType === 'rich_text' || !questionType) && (
         <div className="space-y-3">
           <h3 className="text-base font-bold text-slate-900">{question.question || question.text || 'Write your answer'}</h3>
-          <textarea value={answer} onChange={(event) => setAnswer(event.target.value)} rows={5} className="w-full rounded-lg border border-slate-300 p-3 text-sm" placeholder="Write your answer..." />
+          <textarea
+            value={answer}
+            onChange={(event) => { setAnswer(event.target.value); reportAnswer({ value: event.target.value }); }}
+            rows={5}
+            className="w-full rounded-lg border border-slate-300 p-3 text-sm"
+            placeholder="Write your answer..."
+          />
         </div>
       )}
 
@@ -192,7 +238,7 @@ const TryoutQuestion = ({ question, index }) => {
           <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 p-5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
             <Upload size={16} />
             <span>Select file</span>
-            <input type="file" className="hidden" />
+            <input type="file" className="hidden" onChange={() => reportAnswer({ value: 'file_uploaded' })} />
           </label>
         </div>
       )}
@@ -217,6 +263,12 @@ const AILearningTryoutSection = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [subjects, setSubjects] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitResult, setSubmitResult] = useState(null);
+
+  // answers keyed by question index
+  const answersRef = useRef({});
 
   useEffect(() => {
     const loadAssignedTryouts = async () => {
@@ -252,6 +304,88 @@ const AILearningTryoutSection = () => {
     return asArray(topic?.tryoutSections).filter((item) => item && typeof item === 'object');
   }, [subjects, subjectSlug, topicSlug]);
 
+  // Also get chapter title from the subjects map for the submission payload
+  const chapterTitle = useMemo(() => {
+    const subject = subjects.find((item) => normalize(item.key || item.title) === normalize(subjectSlug));
+    const chapters = asArray(subject?.chapters);
+    for (const ch of chapters) {
+      const found = asArray(ch.topics).find((t) => normalize(t.title) === normalize(topicSlug));
+      if (found) return ch.title || '';
+    }
+    return '';
+  }, [subjects, subjectSlug, topicSlug]);
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
+      const answersList = assignedTryouts.map((_, i) => answersRef.current[i] ?? { value: null });
+      const res = await fetch(SUBMIT_ENDPOINT, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subjectName: subjectSlug,
+          chapterTitle,
+          topicTitle: topicSlug,
+          questions: assignedTryouts,
+          answers: answersList,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Submission failed');
+      setSubmitted(true);
+      setSubmitResult(data.result);
+    } catch (err) {
+      setError(err?.message || 'Failed to submit tryout. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    const autoScore = submitResult?.autoScore;
+    const autoCount = submitResult?.autoGradedCount ?? 0;
+    const total = assignedTryouts.length;
+    const manualCount = total - autoCount;
+    return (
+      <div className="w-full min-h-screen bg-[#f8f7f6] p-4 text-slate-900 sm:p-6 md:p-8">
+        <div className="mx-auto w-full max-w-[700px]">
+          <div className="rounded-2xl border border-emerald-200 bg-white p-8 text-center shadow-sm">
+            <CheckCircle2 className="mx-auto mb-4 text-emerald-500" size={48} />
+            <h1 className="text-2xl font-black text-slate-900">Tryout Submitted!</h1>
+            <p className="mt-2 text-sm text-slate-500">Your answers have been recorded.</p>
+
+            {autoCount > 0 && autoScore !== null && (
+              <div className="mt-6 rounded-xl bg-emerald-50 border border-emerald-200 px-6 py-4">
+                <p className="text-sm font-semibold text-emerald-700">Auto-graded score (MCQ)</p>
+                <p className="text-4xl font-black text-emerald-600 mt-1">{autoScore}%</p>
+                <p className="text-xs text-emerald-600 mt-1">{autoCount} of {total} question{total !== 1 ? 's' : ''} auto-graded</p>
+              </div>
+            )}
+
+            {manualCount > 0 && (
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-6 py-3">
+                <p className="text-sm font-semibold text-amber-700">
+                  {manualCount} question{manualCount !== 1 ? 's' : ''} will be reviewed and marked by your teacher.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectSlug)}/topic/${slugifyForUrl(topicSlug)}`)}
+              className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100"
+            >
+              <ArrowLeft size={16} /> Back to Topic
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full min-h-screen bg-[#f8f7f6] p-4 text-slate-900 sm:p-6 md:p-8">
       <div className="mx-auto w-full max-w-[950px]">
@@ -270,7 +404,7 @@ const AILearningTryoutSection = () => {
           <p className="mt-1 text-sm text-slate-500">Only questions assigned by your teacher are shown here.</p>
         </section>
 
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
+        {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
         {loading && <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm font-semibold text-slate-500">Loading assigned tryout...</div>}
         {!loading && !error && assignedTryouts.length === 0 && (
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
@@ -282,11 +416,21 @@ const AILearningTryoutSection = () => {
         {!loading && !error && assignedTryouts.length > 0 && (
           <div className="space-y-4">
             {assignedTryouts.map((question, index) => (
-              <TryoutQuestion key={question.id || index} question={question} index={index} />
+              <TryoutQuestion
+                key={question.id || index}
+                question={question}
+                index={index}
+                onAnswer={(ans) => { answersRef.current[index] = ans; }}
+              />
             ))}
             <div className="flex justify-end">
-              <button type="button" className="rounded-lg bg-[#2f7dff] px-5 py-2 text-sm font-bold text-white hover:bg-[#1f65d6]">
-                Submit Tryout
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="rounded-lg bg-[#2f7dff] px-5 py-2 text-sm font-bold text-white hover:bg-[#1f65d6] disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Submitting…' : 'Submit Tryout'}
               </button>
             </div>
           </div>
