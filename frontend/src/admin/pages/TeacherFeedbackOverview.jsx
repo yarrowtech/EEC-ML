@@ -636,7 +636,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, delay: 0.3 }}
-        className="rounded-full border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm overflow-hidden"
+        className="rounded-lg border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm overflow-hidden"
       >
         {loading ? (
           <div className="p-14 flex flex-col items-center justify-center gap-3 text-slate-500">
