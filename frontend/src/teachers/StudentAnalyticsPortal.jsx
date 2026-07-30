@@ -201,6 +201,13 @@ const StudentAnalyticsPortal = () => {
   const [masteryDetailStudent, setMasteryDetailStudent] = useState(null);
 
   // ─────────────────────────────────────────────────────────────────────────
+  // ML INSIGHTS TAB STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  const [mlClassData, setMlClassData] = useState([]);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [mlStudentDetail, setMlStudentDetail] = useState(null);
+
+  // ─────────────────────────────────────────────────────────────────────────
   // FETCH WEAK STUDENTS — server-side composite at-risk scoring
   // ─────────────────────────────────────────────────────────────────────────
   const fetchWeakStudents = useCallback(async () => {
@@ -252,6 +259,7 @@ const StudentAnalyticsPortal = () => {
     if (activeTab === 'gaps') fetchClassGaps();
     if (activeTab === 'forecast') fetchForecast7d();
     if (activeTab === 'mastery-growth') fetchMasteryAll();
+    if (activeTab === 'ml') fetchMlScores();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -457,6 +465,18 @@ const StudentAnalyticsPortal = () => {
     } catch { /* silent */ } finally { setMasteryAllLoading(false); }
   }, [masteryAllFilters]);
 
+  const fetchMlScores = useCallback(async () => {
+    setMlLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
+      const res = await fetch(`${API_BASE}/api/ml/class/scores?${params}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setMlClassData(d.data || []); }
+      else setMlClassData([]);
+    } catch { setMlClassData([]); } finally { setMlLoading(false); }
+  }, [ctxGrade, ctxSection]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // FILTERED DATA
   // ─────────────────────────────────────────────────────────────────────────
@@ -544,6 +564,7 @@ const StudentAnalyticsPortal = () => {
                 { key: 'gaps',          label: 'Class Gaps',      icon: AlertCircle    },
                 { key: 'forecast',      label: '7-Day Forecast',  icon: Activity       },
                 { key: 'mastery-growth',label: 'Mastery Growth',  icon: Star           },
+                { key: 'ml',            label: 'ML Insights',     icon: Brain          },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -658,6 +679,17 @@ const StudentAnalyticsPortal = () => {
                 onFetch={fetchMasteryAll}
                 detailStudent={masteryDetailStudent}
                 setDetailStudent={setMasteryDetailStudent}
+              />
+            )}
+            {activeTab === 'ml' && (
+              <MLInsightsTab
+                data={mlClassData}
+                loading={mlLoading}
+                onFetch={fetchMlScores}
+                detailStudent={mlStudentDetail}
+                setDetailStudent={setMlStudentDetail}
+                ctxGrade={ctxGrade}
+                ctxSection={ctxSection}
               />
             )}
           </Motion.div>
@@ -1931,6 +1963,512 @@ const MasteryGrowthTab = ({ data, loading, filters, setFilters, onFetch, detailS
           </Motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ML INSIGHTS TAB
+// ═════════════════════════════════════════════════════════════════════════════
+const PANEL_CLS = 'rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8';
+
+const engagementColor = (label) => {
+  if (label === 'very_high') return 'bg-emerald-100 text-emerald-700';
+  if (label === 'high') return 'bg-green-100 text-green-700';
+  if (label === 'medium') return 'bg-amber-100 text-amber-700';
+  return 'bg-red-100 text-red-700';
+};
+
+const trendIcon = (t) => {
+  if (t === 'improving') return <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />;
+  if (t === 'declining') return <TrendingDown className="w-3.5 h-3.5 text-red-500" />;
+  return <Minus className="w-3.5 h-3.5 text-gray-400" />;
+};
+
+const gapBadgeColor = (type) => {
+  if (type === 'confused') return 'bg-purple-100 text-purple-700';
+  if (type === 'absent') return 'bg-red-100 text-red-700';
+  return 'bg-amber-100 text-amber-700';
+};
+
+const severityColor = (s) => {
+  if (s === 'critical') return 'text-red-600';
+  if (s === 'high') return 'text-orange-600';
+  return 'text-amber-600';
+};
+
+const MLStudentDetailModal = ({ student, onClose }) => {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API_BASE}/api/ml/student/${student.studentId}`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setDetail(d.data || null))
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false));
+  }, [student.studentId]);
+
+  const weakTopics = detail ? [...(detail.mastery || [])].sort((a, b) => a.weightedScore - b.weightedScore).slice(0, 5) : [];
+  const strongTopics = detail ? [...(detail.mastery || [])].sort((a, b) => b.weightedScore - a.weightedScore).slice(0, 5) : [];
+
+  return (
+    <AnimatePresence>
+      <Motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <Motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-lg bg-white shadow-2xl overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+          <div>
+            <p className="text-base font-bold text-gray-900">{student.name}</p>
+            <p className="text-xs text-gray-500">Grade {student.grade} · Section {student.section} · Roll {student.roll}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full border border-gray-200 p-1.5 text-gray-400 hover:text-gray-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          </div>
+        ) : !detail ? (
+          <div className="p-6 text-sm text-gray-400 text-center">No ML data available yet.</div>
+        ) : (
+          <div className="p-6 space-y-6">
+            {/* At-Risk */}
+            <div className="rounded-2xl border border-[#eaedf0] bg-[#fafcff] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">At-Risk Status</p>
+              <div className="flex items-center gap-3 mb-3">
+                <span className={`rounded-full px-3 py-1 text-xs font-bold ${detail.atRisk?.isAtRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {detail.atRisk?.isAtRisk ? 'At Risk' : 'Safe'}
+                </span>
+                <span className="text-sm text-gray-600">Risk Score: <strong>{detail.atRisk?.riskScore ?? '—'}</strong>/100</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 overflow-hidden mb-3">
+                <div className="h-full rounded-full bg-red-400 transition-all" style={{ width: `${detail.atRisk?.riskScore || 0}%` }} />
+              </div>
+              <div className="flex gap-4 text-xs text-gray-600">
+                <span>Recent 7d avg: <strong className="text-gray-800">{detail.atRisk?.recentAvg ?? '—'}</strong></span>
+                <span>Prior 7d avg: <strong className="text-gray-800">{detail.atRisk?.priorAvg ?? '—'}</strong></span>
+                <span>Delta: <strong className={detail.atRisk?.delta < 0 ? 'text-red-600' : 'text-emerald-600'}>{detail.atRisk?.delta > 0 ? '+' : ''}{detail.atRisk?.delta ?? '—'}</strong></span>
+              </div>
+            </div>
+
+            {/* Engagement */}
+            <div className="rounded-2xl border border-[#eaedf0] bg-[#fafcff] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Engagement</p>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-2xl font-bold text-gray-900">{detail.engagement?.engagementScore ?? '—'}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${engagementColor(detail.engagement?.label)}`}>{detail.engagement?.label?.replace('_', ' ')}</span>
+              </div>
+              {['viewScore', 'timeScore', 'submissionScore'].map((key) => {
+                const labels = { viewScore: 'Views', timeScore: 'Time Spent', submissionScore: 'Submissions' };
+                const val = detail.engagement?.components?.[key] ?? 0;
+                return (
+                  <div key={key} className="mb-2">
+                    <div className="flex justify-between text-xs text-gray-600 mb-1"><span>{labels[key]}</span><span>{val}%</span></div>
+                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${val}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pace */}
+            <div className="rounded-2xl border border-[#eaedf0] bg-[#fafcff] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Learning Pace</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-gray-400">Sessions/week</p><p className="font-bold text-gray-900">{detail.pace?.avgSessionsPerWeek ?? '—'}</p></div>
+                <div><p className="text-xs text-gray-400">Current mastery avg</p><p className="font-bold text-gray-900">{detail.pace?.currentAvgMastery ?? '—'}%</p></div>
+                <div><p className="text-xs text-gray-400">Target mastery</p><p className="font-bold text-gray-900">{detail.pace?.targetMastery ?? 75}%</p></div>
+                <div><p className="text-xs text-gray-400">Est. weeks to target</p><p className="font-bold text-gray-900">{detail.pace?.estimatedWeeksToTarget ?? '—'}</p></div>
+              </div>
+              {detail.pace?.paceLabel && (
+                <span className="mt-3 inline-block rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 capitalize">{detail.pace.paceLabel.replace('_', ' ')}</span>
+              )}
+            </div>
+
+            {/* Mastery Topics */}
+            {(weakTopics.length > 0 || strongTopics.length > 0) && (
+              <div className="rounded-2xl border border-[#eaedf0] bg-[#fafcff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Topic Mastery</p>
+                {weakTopics.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-red-600 mb-2">Weakest Topics</p>
+                    <div className="space-y-2">
+                      {weakTopics.map((t) => (
+                        <div key={t.topicId}>
+                          <div className="flex justify-between text-xs text-gray-700 mb-1"><span className="truncate max-w-[70%]">{t.topicTitle}</span><span className="font-semibold text-red-600">{t.weightedScore}%</span></div>
+                          <div className="h-1.5 rounded-full bg-red-100 overflow-hidden"><div className="h-full bg-red-400 rounded-full" style={{ width: `${t.weightedScore}%` }} /></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {strongTopics.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-emerald-600 mb-2">Strongest Topics</p>
+                    <div className="space-y-2">
+                      {strongTopics.map((t) => (
+                        <div key={t.topicId}>
+                          <div className="flex justify-between text-xs text-gray-700 mb-1"><span className="truncate max-w-[70%]">{t.topicTitle}</span><span className="font-semibold text-emerald-600">{t.weightedScore}%</span></div>
+                          <div className="h-1.5 rounded-full bg-emerald-100 overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${t.weightedScore}%` }} /></div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Learning Gaps */}
+            {detail.gaps?.gaps?.length > 0 && (
+              <div className="rounded-2xl border border-[#eaedf0] bg-[#fafcff] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Learning Gaps</p>
+                <div className="space-y-2">
+                  {detail.gaps.gaps.map((g, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-xl border border-gray-100 bg-white px-3 py-2.5">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-800">{g.topicTitle}</p>
+                        <p className="text-[10px] text-gray-400">{g.subject} · Score {g.score}%</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${gapBadgeColor(g.gapType)}`}>{g.gapType}</span>
+                        <span className={`text-[10px] font-semibold ${severityColor(g.severity)}`}>{g.severity}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Motion.div>
+    </AnimatePresence>
+  );
+};
+
+const HeatmapSubPanel = ({ ctxGrade, ctxSection }) => {
+  const [heatmap, setHeatmap] = useState(null);
+  const [heatLoading, setHeatLoading] = useState(false);
+
+  useEffect(() => {
+    setHeatLoading(true);
+    const params = new URLSearchParams();
+    if (ctxGrade) params.set('className', ctxGrade);
+    if (ctxSection) params.set('section', ctxSection);
+    fetch(`${API_BASE}/api/teacher-analytics/mastery-heatmap?${params}`, { headers: authHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setHeatmap(d?.data || null))
+      .catch(() => setHeatmap(null))
+      .finally(() => setHeatLoading(false));
+  }, [ctxGrade, ctxSection]);
+
+  const cellColor = (score) => {
+    if (score == null) return 'bg-gray-100 text-gray-300';
+    if (score >= 80) return 'bg-emerald-100 text-emerald-800';
+    if (score >= 60) return 'bg-amber-100 text-amber-800';
+    return 'bg-red-100 text-red-800';
+  };
+
+  if (heatLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-indigo-400" /></div>;
+  if (!heatmap || !heatmap.students?.length) return <div className="text-center py-10 text-sm text-gray-400">No mastery data for this class.</div>;
+
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-2xl border border-[#eaedf0]">
+        <table className="text-xs min-w-max">
+          <thead>
+            <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
+              <th className="px-3 py-2 text-left font-semibold text-gray-500 sticky left-0 bg-[#f7f9fc] z-10 min-w-[120px]">Student</th>
+              {heatmap.topics.map((t) => (
+                <th key={t} className="px-2 py-2 text-center font-medium text-gray-500 max-w-[80px]">
+                  <span className="block truncate max-w-[80px]" title={t}>{t}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#eaedf0]">
+            {heatmap.students.map((s) => (
+              <tr key={String(s._id)} className="hover:bg-gray-50">
+                <td className="px-3 py-2 font-semibold text-gray-800 sticky left-0 bg-white z-10">{s.name}<br /><span className="text-gray-400 font-normal">Roll {s.roll}</span></td>
+                {heatmap.topics.map((t) => {
+                  const score = heatmap.cells[String(s._id)]?.[t];
+                  return (
+                    <td key={t} className="px-2 py-2 text-center">
+                      <span className={`inline-block rounded-lg px-2 py-0.5 font-bold ${cellColor(score)}`}>
+                        {score != null ? score : '—'}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-[11px] text-gray-500">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200" />80+ Mastered</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-200" />60–80 Developing</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-200" />&lt;60 Needs support</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-gray-100 border border-gray-200" />No data</span>
+      </div>
+    </div>
+  );
+};
+
+const TrendsSubPanel = ({ ctxGrade, ctxSection }) => {
+  const [trendData, setTrendData] = useState([]);
+  const [days, setDays] = useState(7);
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  const load = (d) => {
+    setTrendLoading(true);
+    const params = new URLSearchParams({ days: d });
+    if (ctxGrade) params.set('className', ctxGrade);
+    if (ctxSection) params.set('section', ctxSection);
+    fetch(`${API_BASE}/api/teacher-analytics/improvement-trends?${params}`, { headers: authHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setTrendData(d?.data || []))
+      .catch(() => setTrendData([]))
+      .finally(() => setTrendLoading(false));
+  };
+
+  useEffect(() => { load(days); }, [ctxGrade, ctxSection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-gray-500">Window:</span>
+        {[7, 15, 30].map((d) => (
+          <button key={d} onClick={() => { setDays(d); load(d); }}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${days === d ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            {d}d
+          </button>
+        ))}
+        {trendLoading && <Loader2 className="w-4 h-4 animate-spin text-indigo-400 ml-2" />}
+      </div>
+      {!trendData.length ? (
+        <div className="text-center py-10 text-sm text-gray-400">No trend data available.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-[#eaedf0]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
+                {['Student', 'Recent Avg', 'Prior Avg', 'Δ Change', 'Trend'].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#eaedf0]">
+              {trendData.map((s) => (
+                <tr key={String(s.studentId)} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-semibold text-gray-900">{s.name}<br /><span className="text-xs text-gray-400 font-normal">Roll {s.roll}</span></td>
+                  <td className="px-4 py-3 font-bold text-gray-800">{s.recentAvg ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">{s.priorAvg ?? '—'}</td>
+                  <td className="px-4 py-3">
+                    {s.delta != null ? (
+                      <span className={`font-bold ${s.delta > 0 ? 'text-emerald-600' : s.delta < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                        {s.delta > 0 ? '+' : ''}{s.delta}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3">{trendIcon(s.trend)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CohortReportSubPanel = ({ ctxGrade, ctxSection }) => {
+  const [report, setReport] = useState('');
+  const [generating, setGenerating] = useState(false);
+
+  const generate = () => {
+    setGenerating(true);
+    fetch(`${API_BASE}/api/ai-teacher/cohort-report`, {
+      method: 'POST',
+      headers: { ...authHeaders() },
+      body: JSON.stringify({ className: ctxGrade, section: ctxSection }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setReport(d?.data?.content || 'No report generated.'))
+      .catch(() => setReport('Failed to generate report.'))
+      .finally(() => setGenerating(false));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">AI-generated class performance narrative based on last 30 days of data.</p>
+        <button onClick={generate} disabled={generating}
+          className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-60">
+          {generating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating…</> : <><Brain className="w-3.5 h-3.5" /> Generate Report</>}
+        </button>
+      </div>
+      {report ? (
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-5 text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+          {report}
+        </div>
+      ) : (
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 text-center text-sm text-gray-400">
+          Click "Generate Report" to create an AI-written 30-day cohort narrative.
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MLInsightsTab = ({ data, loading, onFetch, detailStudent, setDetailStudent, ctxGrade, ctxSection }) => {
+  const [subPanel, setSubPanel] = useState('overview');
+  const atRiskCount = data.filter((s) => s.atRisk?.isAtRisk).length;
+  const avgEngagement = data.length ? Math.round(data.reduce((a, s) => a + (s.engagement?.engagementScore || 0), 0) / data.length) : 0;
+  const avgMastery = data.length ? Math.round(data.reduce((a, s) => a + (s.masteryAvg || 0), 0) / data.length) : 0;
+
+  const summaryCards = [
+    { label: 'Total Students', value: data.length, color: 'text-indigo-700', bg: 'bg-indigo-50' },
+    { label: 'At Risk', value: atRiskCount, color: 'text-red-700', bg: 'bg-red-50' },
+    { label: 'Avg Engagement', value: `${avgEngagement}%`, color: 'text-amber-700', bg: 'bg-amber-50' },
+    { label: 'Avg Mastery', value: `${avgMastery}%`, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  ];
+
+  return (
+    <div className={PANEL_CLS}>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Brain className="w-5 h-5 text-indigo-500" />
+          <h2 className="text-lg font-bold text-[#0a2d40]">ML Insights</h2>
+        </div>
+        <button onClick={onFetch} className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100">
+          <RefreshCcw className="w-3.5 h-3.5" /> Refresh
+        </button>
+      </div>
+
+      {/* Sub-panel tabs */}
+      <div className="flex flex-wrap gap-1 mb-5 rounded-full border border-gray-200 bg-gray-100 p-1 w-fit">
+        {[
+          { key: 'overview', label: 'Overview' },
+          { key: 'heatmap', label: 'Mastery Heatmap' },
+          { key: 'trends', label: 'Improvement Trends' },
+          { key: 'report', label: 'Cohort Report' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setSubPanel(key)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${subPanel === key ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {subPanel === 'heatmap' && <HeatmapSubPanel ctxGrade={ctxGrade} ctxSection={ctxSection} />}
+      {subPanel === 'trends' && <TrendsSubPanel ctxGrade={ctxGrade} ctxSection={ctxSection} />}
+      {subPanel === 'report' && <CohortReportSubPanel ctxGrade={ctxGrade} ctxSection={ctxSection} />}
+
+      {subPanel === 'overview' && <>
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
+        {summaryCards.map((c) => (
+          <div key={c.label} className={`rounded-2xl ${c.bg} px-4 py-4`}>
+            <p className="text-xs text-gray-500 mb-1">{c.label}</p>
+            <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+          <span className="ml-2 text-sm text-gray-400">Computing ML scores…</span>
+        </div>
+      ) : data.length === 0 ? (
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-16 text-center">
+          <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">No student data found for this class.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-[#eaedf0]">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
+                {['Student', 'Mastery', 'At-Risk', 'Engagement', 'Pace', 'Trend', ''].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#eaedf0]">
+              {data.map((s) => (
+                <tr key={String(s.studentId)} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-gray-900">{s.name}</p>
+                    <p className="text-xs text-gray-400">Roll {s.roll}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`font-bold ${getScoreColor(s.masteryAvg)}`}>{s.masteryAvg}%</span>
+                    <div className="mt-1 h-1 w-16 rounded-full bg-gray-100 overflow-hidden">
+                      <div className={`h-full rounded-full ${getBarColor(s.masteryAvg)}`} style={{ width: `${s.masteryAvg}%` }} />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${s.atRisk?.isAtRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {s.atRisk?.isAtRisk ? 'At Risk' : 'Safe'}
+                    </span>
+                    {s.atRisk?.isAtRisk && <p className="text-[10px] text-gray-400 mt-0.5">Score {s.atRisk.riskScore}/100</p>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${engagementColor(s.engagement?.label)}`}>
+                      {s.engagement?.label?.replace('_', ' ') || '—'}
+                    </span>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{s.engagement?.engagementScore ?? '—'}/100</p>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-600 capitalize">
+                    {s.pace?.paceLabel?.replace('_', ' ') || '—'}
+                    {s.pace?.estimatedWeeksToTarget != null && (
+                      <p className="text-[10px] text-gray-400">{s.pace.estimatedWeeksToTarget}w to target</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 text-xs">
+                      {trendIcon(s.trend?.overallTrend)}
+                      <span className="text-gray-600 capitalize">{s.trend?.overallTrend || '—'}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setDetailStudent(s)}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
+                    >
+                      View Details
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      </>}
+
+      {detailStudent && (
+        <MLStudentDetailModal student={detailStudent} onClose={() => setDetailStudent(null)} />
+      )}
     </div>
   );
 };

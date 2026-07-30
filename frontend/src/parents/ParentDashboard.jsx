@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar,
   CreditCard,
@@ -17,7 +17,14 @@ import {
   CheckCircle2,
   User as UserIcon,
   MessageCircle,
-  FileText
+  FileText,
+  AlertTriangle,
+  BookOpen,
+  Home,
+  Lightbulb,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatStudentDisplay } from '../utils/studentDisplay';
@@ -28,6 +35,250 @@ const authHeader = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${localStorage.getItem('token')}`,
 });
+
+// ── Weak Areas Card ───────────────────────────────────────────────────────────
+const WeakAreasCard = () => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/parent-dashboard/weak-areas`, { headers: authHeader() })
+      .then((r) => r.json())
+      .then((d) => setItems(d.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const concernColor = (score) => {
+    if (score < 40) return 'bg-red-100 text-red-700 border-red-200';
+    if (score < 60) return 'bg-amber-100 text-amber-700 border-amber-200';
+    return 'bg-yellow-50 text-yellow-700 border-yellow-200';
+  };
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3 bg-red-50/40">
+        <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center text-red-600">
+          <AlertTriangle size={18} />
+        </div>
+        <div>
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">Weak Areas</h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Topics scoring below 60%</p>
+        </div>
+      </div>
+      <div className="p-6">
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-8 text-slate-400">
+            <CheckCircle2 size={32} className="mx-auto mb-2 text-emerald-400" />
+            <p className="text-xs font-bold uppercase tracking-widest">All topics on track!</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+            {items.map((item, i) => (
+              <div key={i} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${concernColor(item.score)}`}>
+                <div className="min-w-0 mr-3">
+                  <p className="text-xs font-bold truncate">{item.topicTitle}</p>
+                  <p className="text-[10px] font-semibold opacity-70">{item.subject} · {item.studentId?.name || 'Student'}</p>
+                </div>
+                <span className="text-sm font-black flex-shrink-0">{item.score}%</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+// ── Teacher Remarks Feed ──────────────────────────────────────────────────────
+const RemarksFeedCard = () => {
+  const [remarks, setRemarks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/parent-dashboard/remarks-feed`, { headers: authHeader() })
+      .then((r) => r.json())
+      .then((d) => setRemarks(d.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const concernBadge = {
+    low: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    medium: 'bg-amber-50 text-amber-700 border-amber-100',
+    high: 'bg-red-50 text-red-700 border-red-100',
+    urgent: 'bg-red-100 text-red-800 border-red-200 font-black',
+  };
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
+          <BookOpen size={18} />
+        </div>
+        <div>
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">Teacher Remarks</h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Latest observations from teachers</p>
+        </div>
+      </div>
+      <div className="p-6">
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+        ) : remarks.length === 0 ? (
+          <div className="text-center py-8 text-slate-400">
+            <MessageCircle size={32} className="mx-auto mb-2 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest">No remarks yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {remarks.map((r, i) => (
+              <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{r.studentName}</p>
+                    <p className="text-[10px] text-slate-400">{new Date(r.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {r.category && (
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase">{r.category}</span>
+                    )}
+                    {r.concernLevel && (
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full border uppercase ${concernBadge[r.concernLevel] || concernBadge.low}`}>{r.concernLevel}</span>
+                    )}
+                  </div>
+                </div>
+                <p className={`text-xs text-slate-700 leading-relaxed ${expanded === i ? '' : 'line-clamp-2'}`}>{r.observationText}</p>
+                {r.observationText?.length > 100 && (
+                  <button onClick={() => setExpanded(expanded === i ? null : i)} className="mt-1 text-[10px] font-bold text-indigo-500 flex items-center gap-0.5">
+                    {expanded === i ? <><ChevronUp size={10} /> Less</> : <><ChevronDown size={10} /> More</>}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+// ── Home Support Tips Card ────────────────────────────────────────────────────
+const HomeSupportCard = ({ studentId, studentName }) => {
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const load = useCallback(() => {
+    if (!studentId) return;
+    setLoading(true);
+    fetch(`${API_BASE}/api/parent-dashboard/home-support/${studentId}`, { headers: authHeader() })
+      .then((r) => r.json())
+      .then((d) => setContent(d.data?.content || ''))
+      .catch(() => {})
+      .finally(() => { setLoading(false); setFetched(true); });
+  }, [studentId]);
+
+  const lines = content.split('\n').filter(Boolean);
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Home size={16} className="text-amber-600" />
+          <p className="text-xs font-black text-amber-900 uppercase tracking-wider">Home Support — {studentName}</p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-3 py-1 hover:bg-amber-200 transition disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={10} className="animate-spin" /> : <Lightbulb size={10} />}
+          {fetched ? 'Refresh' : 'Get Tips'}
+        </button>
+      </div>
+      {content && (
+        <div className="space-y-1 mt-2">
+          {lines.map((line, i) => (
+            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('•') ? 'pl-3 text-amber-800' : 'font-bold text-amber-900 mt-2'}`}>{line}</p>
+          ))}
+        </div>
+      )}
+      {!content && !loading && fetched && (
+        <p className="text-xs text-amber-700 mt-2">Could not load tips. Please try again.</p>
+      )}
+      {!fetched && !loading && (
+        <p className="text-[11px] text-amber-700 mt-1">Click "Get Tips" to see AI-generated home support suggestions for this student.</p>
+      )}
+    </div>
+  );
+};
+
+// ── AI Digest Card (weekly / monthly) ────────────────────────────────────────
+const AIDigestCard = ({ studentId, studentName, type }) => {
+  const [content, setContent] = useState('');
+  const [generatedAt, setGeneratedAt] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const endpoint = type === 'weekly' ? 'weekly-digest' : 'monthly-report';
+  const label = type === 'weekly' ? 'Weekly Digest' : 'Monthly Report';
+  const Icon = type === 'weekly' ? TrendingUp : FileText;
+  const color = type === 'weekly' ? 'indigo' : 'purple';
+
+  const load = useCallback(() => {
+    if (!studentId) return;
+    setLoading(true);
+    fetch(`${API_BASE}/api/parent-dashboard/${endpoint}/${studentId}`, { headers: authHeader() })
+      .then((r) => r.json())
+      .then((d) => { setContent(d.data?.content || ''); setGeneratedAt(d.data?.generatedAt); })
+      .catch(() => {})
+      .finally(() => { setLoading(false); setFetched(true); });
+  }, [studentId, endpoint]);
+
+  const lines = content.split('\n').filter(Boolean);
+
+  const colorMap = {
+    indigo: { border: 'border-indigo-200', bg: 'bg-indigo-50/60', icon: 'text-indigo-600', heading: 'text-indigo-900', body: 'text-indigo-800', btn: 'text-indigo-700 bg-indigo-100 border-indigo-200 hover:bg-indigo-200', h2: 'font-black text-indigo-900 mt-2', bullet: 'pl-3 text-indigo-800' },
+    purple: { border: 'border-purple-200', bg: 'bg-purple-50/60', icon: 'text-purple-600', heading: 'text-purple-900', body: 'text-purple-800', btn: 'text-purple-700 bg-purple-100 border-purple-200 hover:bg-purple-200', h2: 'font-black text-purple-900 mt-2', bullet: 'pl-3 text-purple-800' },
+  }[color];
+
+  return (
+    <div className={`rounded-2xl border ${colorMap.border} ${colorMap.bg} p-5`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Icon size={16} className={colorMap.icon} />
+          <div>
+            <p className={`text-xs font-black uppercase tracking-wider ${colorMap.heading}`}>{label} — {studentName}</p>
+            {generatedAt && <p className="text-[9px] text-slate-400">Generated {new Date(generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
+          </div>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className={`flex items-center gap-1 text-[10px] font-black border rounded-full px-3 py-1 transition disabled:opacity-50 ${colorMap.btn}`}
+        >
+          {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+          {fetched ? 'Refresh' : 'Generate'}
+        </button>
+      </div>
+      {content && (
+        <div className="space-y-0.5 mt-2 max-h-48 overflow-y-auto pr-1">
+          {lines.map((line, i) => (
+            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('##') ? colorMap.h2 : line.startsWith('•') || line.startsWith('-') ? colorMap.bullet : colorMap.body}`}>
+              {line.replace(/^##\s*/, '')}
+            </p>
+          ))}
+        </div>
+      )}
+      {!content && !loading && !fetched && (
+        <p className={`text-[11px] mt-1 ${colorMap.body}`}>Click "Generate" to create an AI-powered {label.toLowerCase()} for this student.</p>
+      )}
+    </div>
+  );
+};
 
 const ParentDashboard = ({ parentName }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -326,6 +577,34 @@ const ParentDashboard = ({ parentName }) => {
           </section>
         </div>
       </div>
+
+      {/* Section 6C — Parent Dashboard Tracking */}
+      <section className="grid gap-6 lg:grid-cols-2">
+        <WeakAreasCard />
+        <RemarksFeedCard />
+      </section>
+
+      {/* Per-child AI reports */}
+      {childrenData.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-indigo-500" />
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">AI-Powered Reports</h2>
+          </div>
+          {childrenData.map((child) => (
+            <div key={child._id} className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6 space-y-4">
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <UserIcon size={12} /> {child.name} · Class {child.grade} {child.section}
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <HomeSupportCard studentId={child._id} studentName={child.name} />
+                <AIDigestCard studentId={child._id} studentName={child.name} type="weekly" />
+                <AIDigestCard studentId={child._id} studentName={child.name} type="monthly" />
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <footer className="text-center pb-8 border-t border-slate-100 pt-8">
         <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">

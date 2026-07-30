@@ -883,4 +883,78 @@ router.get('/low-mastery', authTeacher, async (req, res) => {
   }
 });
 
+// ── GET /api/teacher-analytics/mastery-heatmap?className=&section= ────────────
+router.get('/mastery-heatmap', authTeacher, async (req, res) => {
+  try {
+    const { className, section } = req.query;
+    const schoolId = req.schoolId;
+    const filter = { schoolId };
+    if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
+    if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
+    const students = await StudentUser.find(filter).select('_id name roll grade section').lean();
+
+    const studentIds = students.map((s) => s._id);
+    const records = await MasteryScore.find({ studentId: { $in: studentIds }, schoolId }).lean();
+
+    const topicSet = new Set();
+    records.forEach((r) => topicSet.add(r.topicTitle || r.topicId));
+    const topics = [...topicSet].slice(0, 20);
+
+    const cells = {};
+    for (const s of students) {
+      const sid = String(s._id);
+      cells[sid] = {};
+      const sRecs = records.filter((r) => String(r.studentId) === sid);
+      for (const r of sRecs) {
+        const key = r.topicTitle || r.topicId;
+        if (topics.includes(key)) cells[sid][key] = r.score;
+      }
+    }
+
+    return res.json({ success: true, data: { students, topics, cells } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/improvement-trends?className=&section=&days=7 ──
+router.get('/improvement-trends', authTeacher, async (req, res) => {
+  try {
+    const { className, section, days = '7' } = req.query;
+    const schoolId = req.schoolId;
+    const N = Math.min(parseInt(days, 10) || 7, 90);
+    const now = Date.now();
+    const DAY = 86400000;
+    const recentStart = now - N * DAY;
+    const priorStart = recentStart - N * DAY;
+
+    const filter = { schoolId };
+    if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
+    if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
+    const students = await StudentUser.find(filter).select('_id name roll').lean();
+
+    const StudentProgress = require('../models/StudentProgress');
+    const results = await Promise.allSettled(students.map(async (s) => {
+      const prog = await StudentProgress.findOne({ studentId: s._id, schoolId }).select('submissions').lean();
+      const subs = (prog?.submissions || []).filter((sub) => sub.score != null && sub.submittedAt);
+      const recent = subs.filter((sub) => new Date(sub.submittedAt).getTime() >= recentStart);
+      const prior = subs.filter((sub) => {
+        const t = new Date(sub.submittedAt).getTime();
+        return t >= priorStart && t < recentStart;
+      });
+      const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b.score, 0) / arr.length) : null;
+      const recentAvg = avg(recent);
+      const priorAvg = avg(prior);
+      const delta = recentAvg !== null && priorAvg !== null ? recentAvg - priorAvg : null;
+      const trend = delta === null ? 'stable' : delta < -5 ? 'declining' : delta > 5 ? 'improving' : 'stable';
+      return { studentId: s._id, name: s.name, roll: s.roll, recentAvg, priorAvg, delta, trend };
+    }));
+
+    const data = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+    return res.json({ success: true, data, days: N });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

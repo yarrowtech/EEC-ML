@@ -13,6 +13,7 @@ const examResultSchema = new mongoose.Schema(
     published: { type: Boolean, default: false },
     publishedAt: { type: Date },
     createdBy: { type: mongoose.Schema.Types.ObjectId },
+    aiFeedback: { type: String, default: '' },
   },
   { timestamps: true }
 );

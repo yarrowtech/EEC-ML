@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
 import WelcomeCard from './WelcomeCard';
 import CourseProgress from './CourseProgress';
 import AchievementCard from './AchievementCard';
@@ -11,6 +11,7 @@ import RecommendationWidget from './RecommendationWidget';
 import { useStudentDashboard } from './StudentDashboardContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+const authHdrs = () => ({ Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
 
 const ProgressTrendChart = () => {
   const [chartData, setChartData] = useState([]);
@@ -151,6 +152,130 @@ const StreakTracker = () => {
   );
 };
 
+const tierColor = (score) => score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-400' : 'bg-red-400';
+const tierText = (score) => score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-red-600';
+
+const MasteryTopicsCard = () => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/student-dashboard/mastery-topics`, { headers: authHdrs() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setData(d?.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  if (loading || !data.length) return null;
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+      <p className="mb-3 text-sm font-black text-gray-800">Topic Mastery</p>
+      <div className="space-y-2">
+        {data.slice(0, 6).map((t) => (
+          <div key={t.topicId}>
+            <div className="flex justify-between text-xs text-gray-600 mb-1">
+              <span className="truncate max-w-[65%] font-medium">{t.topicTitle}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-400">{t.subject}</span>
+                <span className={`font-bold ${tierText(t.score)}`}>{t.score}%</span>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+              <div className={`h-full rounded-full ${tierColor(t.score)}`} style={{ width: `${t.score}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const LearningStreakCard = () => {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/student-dashboard/learning-streak`, { headers: authHdrs() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setData(d?.data || null))
+      .catch(() => {});
+  }, []);
+  if (!data) return null;
+  return (
+    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 px-4 py-3 shadow-sm flex items-center gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 shadow shadow-violet-200/60">
+        <span className="text-lg leading-none">{data.streak >= 7 ? '🏆' : data.streak >= 3 ? '⚡' : '📖'}</span>
+      </div>
+      <div>
+        <p className="text-sm font-black text-violet-900">{data.streak} day learning streak</p>
+        <p className="text-xs text-violet-600">{data.totalActiveDays} active days total</p>
+      </div>
+    </div>
+  );
+};
+
+const TimeBySubjectCard = () => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/student-dashboard/time-by-subject`, { headers: authHdrs() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setData(d?.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  if (loading || !data.length) return null;
+  const max = Math.max(...data.map((d) => d.totalMinutes), 1);
+  return (
+    <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+      <p className="mb-3 text-sm font-black text-gray-800">Time Spent by Subject</p>
+      <div className="space-y-2">
+        {data.slice(0, 5).map((d) => (
+          <div key={d.subject}>
+            <div className="flex justify-between text-xs text-gray-600 mb-1">
+              <span className="font-medium">{d.subject}</span>
+              <span className="text-gray-400">{d.totalMinutes}m</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${(d.totalMinutes / max) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const FlashcardStatsCard = () => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/student-dashboard/flashcard-stats`, { headers: authHdrs() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setData(d?.data || null))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+  if (loading || !data || data.totalAttempts === 0) return null;
+  return (
+    <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-black text-gray-800">Flashcard Recall</p>
+        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{data.overallRate}% recall</span>
+      </div>
+      <div className="h-2 rounded-full bg-gray-100 overflow-hidden mb-3">
+        <div className="h-full rounded-full bg-amber-400" style={{ width: `${data.overallRate}%` }} />
+      </div>
+      <div className="space-y-1.5">
+        {data.byTopic.slice(0, 3).map((t) => (
+          <div key={t.topicId} className="flex items-center justify-between text-xs">
+            <span className="text-gray-600 truncate max-w-[65%]">{t.topicTitle}</span>
+            <span className={`font-semibold ${t.recallRate >= 70 ? 'text-emerald-600' : t.recallRate >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{t.recallRate}%</span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-gray-400">{data.totalAttempts} total flashcard attempts</p>
+    </div>
+  );
+};
+
 const DashboardHome = () => {
   const [pets, setPets] = useState([]);
   const [containerBounds, setContainerBounds] = useState({ width: 0, height: 0 });
@@ -220,12 +345,22 @@ const DashboardHome = () => {
       {/* Streak Tracker */}
       <StreakTracker />
 
+      {/* Learning Streak (learning-event based) */}
+      <LearningStreakCard />
+
       {/* Progress Trend */}
       <ProgressTrendChart />
 
       {/* Quick Stats */}
       <QuickStats />
-      
+
+      {/* New tracking cards row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MasteryTopicsCard />
+        <TimeBySubjectCard />
+        <FlashcardStatsCard />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Main Content - Left 2 columns */}
         <div className="lg:col-span-2 space-y-4 sm:space-y-6">

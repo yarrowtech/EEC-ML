@@ -945,6 +945,27 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
             });
         }
 
+        // Fire-and-forget: generate personalised AI exam feedback for the student
+        ;(async () => {
+          try {
+            const AI_URL = (process.env.AI_SERVICE_URL || 'http://localhost:8000').replace(/\/$/, '');
+            const pct = exam?.marks ? Math.round((scoreResult.score / exam.marks) * 100) : scoreResult.score;
+            const context = `Student: ${student.name} | Subject: ${exam.subject || 'General'} | Score: ${pct}% (${scoreResult.score}/${exam?.marks || 100}) | Exam: ${exam.title || exam.subject || 'Exam'}`;
+            const aiRes = await fetch(`${AI_URL}/generate/teacher`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: 'exam_feedback', subject: exam.subject || 'General', topic: exam.title || 'Exam', context }),
+            });
+            if (aiRes.ok) {
+              const aiData = await aiRes.json();
+              const feedback = aiData?.content || '';
+              if (feedback) {
+                await ExamResult.findByIdAndUpdate(result._id, { aiFeedback: feedback });
+              }
+            }
+          } catch (_) { /* non-critical */ }
+        })();
+
         res.status(201).json(result);
     } catch (err) {
         res.status(400).json({ error: err.message });

@@ -211,7 +211,7 @@
 
 ---
 
-### SECTION 4A — ML Model Responsibilities
+### SECTION 4A — ML Model Responsibilities [partial Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -233,7 +233,7 @@
 
 ---
 
-### SECTION 4B — LLM Responsibilities
+### SECTION 4B — LLM Responsibilities [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -332,7 +332,7 @@
 
 ---
 
-### SECTION 6A — Student Dashboard Tracking
+### SECTION 6A — Student Dashboard Tracking [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -349,7 +349,7 @@
 
 ---
 
-### SECTION 6B — Teacher Dashboard Tracking
+### SECTION 6B — Teacher Dashboard Tracking [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -366,7 +366,7 @@
 
 ---
 
-### SECTION 6C — Parent Dashboard Tracking
+### SECTION 6C — Parent Dashboard Tracking [Done]
 
 | Item | Status | Notes |
 |------|--------|-------|

@@ -107,6 +107,9 @@ const CHIP_MODES = {
   'Intermediate Practice':'practice_intermediate',
   'Advanced Practice':    'practice_advanced',
   'Re-Engage Me':         'engagement_swap',
+  'Worksheet':            'worksheet',
+  'Differentiated':       'differentiated_plan',
+  'Hinge Questions':      'hinge_question',
 };
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
@@ -129,6 +132,9 @@ const GENERATED_MODE_META = {
   practice_intermediate:   { label: 'Intermediate Practice',   icon: BookOpen             },
   practice_advanced:       { label: 'Advanced Practice',       icon: BookOpen             },
   engagement_swap:         { label: 'Re-Engage',               icon: Sparkles             },
+  worksheet:               { label: 'Worksheet',                icon: FileText             },
+  differentiated_plan:     { label: 'Differentiated',           icon: Layers3              },
+  hinge_question:          { label: 'Hinge Questions',          icon: Target               },
 };
 
 const getGeneratedModeMeta = (mode) => GENERATED_MODE_META[mode] || { label: 'Tutor answer', icon: Bot };
@@ -501,7 +507,7 @@ const cardSlide = {
   exit: (dir) => ({ x: dir * -240, opacity: 0, rotate: dir * -3 }),
 };
 
-function FlashcardUI({ text }) {
+function FlashcardUI({ text, subject, topic }) {
   const cards = useMemo(() => parseFlashcards(text), [text]);
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -540,6 +546,15 @@ function FlashcardUI({ text }) {
   const rateCard = (gotIt) => {
     setKnown((k) => ({ ...k, [idx]: gotIt }));
     goTo(idx + 1);
+    // Persist result — fire-and-forget
+    const token = localStorage.getItem('token');
+    if (token && topic) {
+      fetch(`${API_BASE}/api/student-dashboard/flashcard-result`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ topicId: topic, topicTitle: topic, subject: subject || '', result: gotIt ? 'got_it' : 'still_learning' }),
+      }).catch(() => {});
+    }
   };
 
   return (
@@ -1908,16 +1923,157 @@ function ExplainUI({ text }) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WorksheetUI
+// ---------------------------------------------------------------------------
+function WorksheetUI({ text }) {
+  const sections = React.useMemo(() => {
+    const parts = text.split(/\*\*Section [A-Z][^*]*\*\*|\*\*Bonus[^*]*\*\*/g);
+    const headers = [...text.matchAll(/\*\*(?:Section [A-Z][^*]*|Bonus[^*]*)\*\*/g)].map((m) => m[0].replace(/\*\*/g, ''));
+    return headers.map((h, i) => ({ header: h, body: (parts[i + 1] || '').trim() })).filter((s) => s.body);
+  }, [text]);
+
+  const sectionColors = ['bg-blue-50 border-blue-200', 'bg-amber-50 border-amber-200', 'bg-purple-50 border-purple-200', 'bg-emerald-50 border-emerald-200', 'bg-rose-50 border-rose-200'];
+
+  if (!sections.length) return <TutorMessageContent text={text} />;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <FileText className="w-4 h-4 text-indigo-500" />
+        <span className="text-sm font-bold text-gray-800">Worksheet</span>
+        <span className="ml-auto text-xs text-gray-400 border border-dashed border-gray-300 rounded-full px-2 py-0.5">Student copy — no answers</span>
+      </div>
+      {sections.map((s, i) => (
+        <div key={i} className={`rounded-2xl border ${sectionColors[i % sectionColors.length]} p-4`}>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-600 mb-2">{s.header}</p>
+          <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{s.body}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DifferentiatedUI
+// ---------------------------------------------------------------------------
+function DifferentiatedUI({ text }) {
+  const [activeLevel, setActiveLevel] = React.useState('FOUNDATION');
+  const levels = React.useMemo(() => {
+    const LEVEL_KEYS = ['FOUNDATION', 'STANDARD', 'EXTENSION'];
+    const splits = text.split(/\*\*(?:FOUNDATION|STANDARD|EXTENSION)[^*]*\*\*/g);
+    const headers = [...text.matchAll(/\*\*(FOUNDATION|STANDARD|EXTENSION)[^*]*\*\*/g)].map((m) => m[1]);
+    return LEVEL_KEYS.map((key) => {
+      const idx = headers.indexOf(key);
+      return { key, body: idx >= 0 ? (splits[idx + 1] || '').trim() : '' };
+    }).filter((l) => l.body);
+  }, [text]);
+
+  const cfg = {
+    FOUNDATION: { label: 'Foundation', color: 'bg-blue-100 text-blue-700', bar: 'bg-blue-500', ring: 'ring-blue-300' },
+    STANDARD:   { label: 'Standard',   color: 'bg-amber-100 text-amber-700', bar: 'bg-amber-500', ring: 'ring-amber-300' },
+    EXTENSION:  { label: 'Extension',  color: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', ring: 'ring-emerald-300' },
+  };
+
+  if (!levels.length) return <TutorMessageContent text={text} />;
+  const active = levels.find((l) => l.key === activeLevel) || levels[0];
+  const c = cfg[active.key];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap">
+        {levels.map((l) => (
+          <button key={l.key} onClick={() => setActiveLevel(l.key)}
+            className={`rounded-full px-3 py-1 text-xs font-bold transition ${activeLevel === l.key ? `${cfg[l.key].color} ring-2 ${cfg[l.key].ring}` : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+            {cfg[l.key].label}
+          </button>
+        ))}
+      </div>
+      <motion.div key={activeLevel} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+        className="rounded-2xl border border-gray-200 bg-white p-4">
+        <div className={`mb-3 h-1 rounded-full ${c.bar}`} style={{ width: activeLevel === 'FOUNDATION' ? '33%' : activeLevel === 'STANDARD' ? '66%' : '100%' }} />
+        <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{active.body}</div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HingeQuestionUI — reuses QuizUI parse pattern
+// ---------------------------------------------------------------------------
+function HingeQuestionUI({ text }) {
+  const [selected, setSelected] = React.useState({});
+  const [revealed, setRevealed] = React.useState({});
+
+  const questions = React.useMemo(() => {
+    const blocks = text.split(/\n(?=\d+\.\s)/).filter((b) => b.trim());
+    return blocks.map((block) => {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+      const stem = lines[0]?.replace(/^\d+\.\s*/, '') || '';
+      const options = lines.filter((l) => /^[A-D][).]\s/.test(l));
+      const answerLine = lines.find((l) => /^Answer:/i.test(l));
+      const diagnosticLine = lines.find((l) => /^Diagnostic:/i.test(l));
+      const answer = answerLine?.match(/[A-D]/)?.[0] || '';
+      const diagnostic = diagnosticLine?.replace(/^Diagnostic:\s*/i, '') || '';
+      return { stem, options, answer, diagnostic };
+    }).filter((q) => q.stem && q.options.length);
+  }, [text]);
+
+  if (!questions.length) return <TutorMessageContent text={text} />;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Target className="w-4 h-4 text-purple-500" />
+        <span className="text-sm font-bold text-gray-800">Hinge Questions</span>
+        <span className="ml-auto text-xs text-gray-400">Diagnostic checkpoint</span>
+      </div>
+      {questions.map((q, qi) => (
+        <div key={qi} className="rounded-2xl border border-purple-100 bg-purple-50/50 p-4">
+          <p className="text-sm font-semibold text-gray-800 mb-3">{qi + 1}. {q.stem}</p>
+          <div className="space-y-2">
+            {q.options.map((opt, oi) => {
+              const letter = opt.match(/^([A-D])/)?.[1];
+              const isCorrect = letter === q.answer;
+              const isSelected = selected[qi] === letter;
+              const done = !!revealed[qi];
+              return (
+                <button key={oi} disabled={done}
+                  onClick={() => { setSelected((s) => ({ ...s, [qi]: letter })); setRevealed((r) => ({ ...r, [qi]: true })); }}
+                  className={`w-full text-left rounded-xl px-3 py-2 text-sm border transition ${
+                    done
+                      ? isCorrect ? 'border-emerald-400 bg-emerald-50 text-emerald-800 font-semibold'
+                        : isSelected ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-200 bg-white text-gray-400'
+                      : 'border-gray-200 bg-white hover:border-purple-300 hover:bg-white text-gray-700'
+                  }`}>
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+          {revealed[qi] && q.diagnostic && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <span className="font-semibold">Diagnostic: </span>{q.diagnostic}
+            </motion.div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Response dispatcher — picks the right UI for each mode
 // ---------------------------------------------------------------------------
 
 function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic }) {
   if (mode === 'quiz') return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
-  if (mode === 'flashcards') return <FlashcardUI text={text} />;
+  if (mode === 'flashcards') return <FlashcardUI text={text} subject={subject} topic={topic} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
   if (mode === 'explain') return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
+  if (mode === 'worksheet') return <WorksheetUI text={text} />;
+  if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;
+  if (mode === 'hinge_question') return <HingeQuestionUI text={text} />;
   return <TutorMessageContent text={text} />;
 }
 

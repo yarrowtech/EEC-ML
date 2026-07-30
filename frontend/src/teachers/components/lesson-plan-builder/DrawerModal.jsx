@@ -515,14 +515,6 @@ const DrawerModal = ({
             <Card>
               <div className="mb-3 flex items-center justify-between">
                 <SectionTitle icon={BookOpen} iconColor="text-purple-500">Study Materials</SectionTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleOpenMaterialUpload}
-                  className="gap-1 text-xs border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-300"
-                >
-                  <UploadCloud className="size-3.5" /> Upload via Editor
-                </Button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <UploadDropzone
@@ -608,98 +600,12 @@ const DrawerModal = ({
       case 'assessment':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Upload practice papers, worksheets, and create interactive tryout questions for students.
-            </p>
-
-            {/* AI-Ready: Curriculum Code + Hinge Question + Exit Quiz Threshold */}
-            <Card>
-              <SectionTitle icon={ClipboardCheck} iconColor="text-indigo-500">Curriculum & AI Triggers</SectionTitle>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Curriculum Code</label>
-                  <Input
-                    value={chapter.curriculumCode || ''}
-                    onChange={(e) => onUpdate({ ...chapter, curriculumCode: e.target.value })}
-                    placeholder="e.g. CBSE-VII-MATH-3.2"
-                    className="text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">Exit Quiz Pass Threshold (%)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={chapter.exitQuizThreshold ?? 60}
-                    onChange={(e) => onUpdate({ ...chapter, exitQuizThreshold: Number(e.target.value) })}
-                    className="text-xs"
-                  />
-                  <p className="mt-0.5 text-[10px] text-slate-400">AI re-teach fires if class avg falls below this</p>
-                </div>
-              </div>
-
-              {/* Hinge Question */}
-              <div className="mt-3 space-y-2">
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  Hinge Question <span className="font-normal text-slate-400">(one diagnostic MCQ mid-lesson)</span>
-                </label>
-                <Input
-                  value={chapter.hingeQuestion || ''}
-                  onChange={(e) => onUpdate({ ...chapter, hingeQuestion: e.target.value })}
-                  placeholder="Type your hinge question here…"
-                  className="text-xs"
-                />
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onUpdate({ ...chapter, hingeAnswer: i })}
-                        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border text-[10px] font-bold transition-colors ${
-                          (chapter.hingeAnswer ?? 0) === i
-                            ? 'border-indigo-500 bg-indigo-500 text-white'
-                            : 'border-slate-300 text-slate-400 hover:border-indigo-300'
-                        }`}
-                        title="Mark as correct answer"
-                      >
-                        {String.fromCharCode(65 + i)}
-                      </button>
-                      <Input
-                        value={(chapter.hingeOptions || [])[i] || ''}
-                        onChange={(e) => {
-                          const opts = [...(chapter.hingeOptions || ['', '', '', ''])];
-                          opts[i] = e.target.value;
-                          onUpdate({ ...chapter, hingeOptions: opts });
-                        }}
-                        placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                        className="text-xs"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-[10px] text-slate-500">Re-teach if wrong &gt;</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={chapter.hingeThreshold ?? 50}
-                    onChange={(e) => onUpdate({ ...chapter, hingeThreshold: Number(e.target.value) })}
-                    className="w-16 text-xs"
-                  />
-                  <span className="text-[10px] text-slate-500">% of class</span>
-                </div>
-              </div>
-            </Card>
-
+            
             {/* Practice Papers */}
             <Card>
               <div className="mb-3 flex items-center justify-between">
                 <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Practice Papers</SectionTitle>
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
-                  Unlocks at 75% progress
-                </span>
+                
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 {[
@@ -830,49 +736,6 @@ const DrawerModal = ({
                 className="resize-none"
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
-            </Card>
-
-            <Card>
-              <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                <UserCheck className="size-4 text-blue-500" /> Class Evaluation
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  { key: 'participation', label: 'Participation',       placeholder: 'e.g. Very active'               },
-                  { key: 'remarks',       label: 'Performance Remarks', placeholder: 'e.g. Understood well'           },
-                  { key: 'behaviour',     label: 'Behaviour',           placeholder: 'e.g. Attentive and cooperative' },
-                  { key: 'progress',      label: 'Progress',            placeholder: 'e.g. On track'                  },
-                ].map(({ key, label, placeholder }) => (
-                  <Field key={key} label={label}>
-                    <Input
-                      value={chapter.evaluation?.[key] || ''}
-                      onChange={(e) => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, [key]: e.target.value } })}
-                      placeholder={placeholder}
-                      className="h-9 text-sm"
-                      style={{ color: '#0f172a', caretColor: '#0f172a' }}
-                    />
-                  </Field>
-                ))}
-              </div>
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall Rating</p>
-                <div className="flex flex-wrap gap-2">
-                  {EVAL_TAGS.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => onUpdate({ ...chapter, evaluation: { ...chapter.evaluation, tag } })}
-                      className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
-                        chapter.evaluation?.tag === tag
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </Card>
 
             {!!chapter.history?.length && (

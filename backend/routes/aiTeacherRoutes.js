@@ -463,4 +463,130 @@ router.post('/generate-lesson-package', authTeacher, async (req, res) => {
   }
 });
 
+// ── POST /api/ai-teacher/progress-summary ─────────────────────────────────────
+router.post('/progress-summary', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { studentId, studentName, grade, section } = req.body || {};
+    if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+
+    const [student, results, mastery] = await Promise.all([
+      StudentUser.findById(studentId).select('name grade section attendance').lean(),
+      ExamResult.find({ schoolId, studentId, published: true })
+        .populate('examId', 'subject marks date')
+        .sort({ createdAt: -1 }).limit(20).lean(),
+      MasteryScore.find({ studentId, schoolId }).sort({ score: 1 }).lean(),
+    ]);
+
+    const att = student?.attendance || [];
+    const attPct = att.length > 0
+      ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100)
+      : 100;
+
+    const subjectMap = {};
+    results.forEach((r) => {
+      const sub = r.examId?.subject || 'General';
+      const max = r.examId?.marks || 100;
+      const pct = Math.round((r.marks / max) * 100);
+      if (!subjectMap[sub]) subjectMap[sub] = [];
+      subjectMap[sub].push(pct);
+    });
+    const subjectLines = Object.entries(subjectMap)
+      .map(([sub, scores]) => {
+        const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+        const trend = scores.length > 1 ? (scores[scores.length - 1] > scores[0] ? 'improving' : 'declining') : 'stable';
+        return `${sub}: ${avg}% (${trend})`;
+      })
+      .join('\n');
+
+    const weakTopics = mastery.filter((m) => m.score < 60).map((m) => m.topicTitle).slice(0, 3).join(', ');
+
+    const context = [
+      `Student: ${studentName || student?.name} | Grade: ${grade || student?.grade} | Section: ${section || student?.section}`,
+      `Attendance: ${attPct}%`,
+      `Subject Performance:\n${subjectLines || 'No exam data'}`,
+      weakTopics ? `Weak topics: ${weakTopics}` : '',
+    ].filter(Boolean).join('\n');
+
+    const aiRes = await callTeacherAI(
+      'progress_summary',
+      'All Subjects',
+      `${studentName || student?.name || 'Student'} Academic Progress`,
+      grade || student?.grade ? `Grade ${grade || student?.grade}` : null,
+      context
+    );
+    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error' });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-teacher/worksheet ────────────────────────────────────────────
+router.post('/worksheet', authTeacher, async (req, res) => {
+  try {
+    const { subject, topic, gradeLevel } = req.body || {};
+    if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    const aiRes = await callTeacherAI('worksheet', subject, topic, gradeLevel || null, null);
+    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error' });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-teacher/cohort-report ────────────────────────────────────────
+router.post('/cohort-report', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { className, section, subject } = req.body || {};
+    if (!className) return res.status(400).json({ error: 'className is required' });
+
+    const StudentUserModel = require('../models/StudentUser');
+    const MasteryScoreModel = require('../models/MasteryScore');
+    const filter = { schoolId };
+    if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
+    if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
+    const students = await StudentUserModel.find(filter).select('_id name grade section attendance').lean();
+    const studentIds = students.map((s) => s._id);
+    const since = new Date(Date.now() - 30 * 86400000);
+
+    const [recentExams, masteryLow] = await Promise.all([
+      ExamResult.find({ schoolId, studentId: { $in: studentIds }, createdAt: { $gte: since } })
+        .populate('examId', 'subject marks').lean(),
+      MasteryScoreModel.find({ schoolId, studentId: { $in: studentIds }, score: { $lt: 60 } }).lean(),
+    ]);
+
+    const subjectMap = {};
+    recentExams.forEach((r) => {
+      const sub = r.examId?.subject || 'General';
+      const max = r.examId?.marks || 100;
+      if (!subjectMap[sub]) subjectMap[sub] = [];
+      subjectMap[sub].push(Math.round((r.marks / max) * 100));
+    });
+    const subjectSummary = Object.entries(subjectMap)
+      .map(([sub, scores]) => `${sub}: ${Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)}% avg (${scores.length} results)`)
+      .join('\n');
+
+    const weakTopics = [...new Set(masteryLow.map((m) => m.topicTitle))].slice(0, 5).join(', ');
+    const attArr = students.flatMap((s) => s.attendance || []);
+    const attPct = attArr.length > 0
+      ? Math.round((attArr.filter((a) => a.status === 'present').length / attArr.length) * 100)
+      : 100;
+
+    const context = [
+      `Class: Grade ${className}${section ? ' Section ' + section : ''} | ${students.length} students | Period: last 30 days`,
+      `Attendance: ${attPct}%`,
+      `Subject Performance (30-day):\n${subjectSummary || 'No exam data'}`,
+      weakTopics ? `Top weak topics across class: ${weakTopics}` : '',
+    ].filter(Boolean).join('\n');
+
+    const aiRes = await callTeacherAI('class_performance_summary', subject || 'All Subjects', `Grade ${className} Cohort Report`, `Grade ${className}`, context);
+    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error' });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

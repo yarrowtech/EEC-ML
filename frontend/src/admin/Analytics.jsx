@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import {
   BarChart,
@@ -26,7 +26,10 @@ import {
   FileText,
   CheckCircle,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  BookOpen,
+  BarChart2,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -133,6 +136,10 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState('');
+  const [masteryMatrix, setMasteryMatrix] = useState(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [teacherEffectiveness, setTeacherEffectiveness] = useState([]);
+  const [teacherEffLoading, setTeacherEffLoading] = useState(false);
 
   useEffect(() => {
     setShowAdminHeader(true);
@@ -371,6 +378,28 @@ const Analytics = ({ setShowAdminHeader }) => {
     loadActivity();
     return () => controller.abort();
   }, []);
+
+  const fetchMasteryMatrix = useCallback(async () => {
+    setMatrixLoading(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/admin-analytics/mastery-matrix'), { headers: getAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setMasteryMatrix(data.data || null);
+    } catch { /* silent */ }
+    finally { setMatrixLoading(false); }
+  }, []);
+
+  const fetchTeacherEffectiveness = useCallback(async () => {
+    setTeacherEffLoading(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/admin-analytics/teacher-effectiveness'), { headers: getAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setTeacherEffectiveness(data.data || []);
+    } catch { /* silent */ }
+    finally { setTeacherEffLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchMasteryMatrix(); fetchTeacherEffectiveness(); }, [fetchMasteryMatrix, fetchTeacherEffectiveness]);
 
   const attendanceRate = useMemo(() => {
     if (!reportsSummary?.attendance) return 0;
@@ -1234,6 +1263,146 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <div className="flex flex-col items-center justify-center py-8 text-gray-300">
                     <Clock className="w-10 h-10 mb-2" />
                     <p className="text-sm text-gray-400">No recent activity logged.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── School-wide Mastery Matrix ─────────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 rounded-xl">
+                    <BarChart2 className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">School-wide Mastery Matrix</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">Average mastery score per subject × class (from AI tutor activity)</p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchMasteryMatrix}
+                  disabled={matrixLoading}
+                  className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5 hover:bg-indigo-100 transition disabled:opacity-50"
+                >
+                  {matrixLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Refresh
+                </button>
+              </div>
+              <div className="p-6">
+                {matrixLoading ? (
+                  <div className="flex items-center justify-center py-12 text-gray-400 text-sm"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading matrix…</div>
+                ) : !masteryMatrix || !masteryMatrix.grades?.length ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-gray-300">
+                    <BookOpen className="w-10 h-10 mb-2" />
+                    <p className="text-sm text-gray-400">No mastery data yet. Data appears as students use the AI Tutor.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-gray-500 font-semibold px-3 py-2 bg-gray-50 rounded-tl-xl border border-gray-100 sticky left-0 z-10 min-w-[80px]">Class</th>
+                          {masteryMatrix.subjects.map((subj) => (
+                            <th key={subj} className="text-center text-gray-500 font-semibold px-3 py-2 bg-gray-50 border border-gray-100 min-w-[90px] truncate max-w-[110px]">{subj}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {masteryMatrix.grades.map((grade) => (
+                          <tr key={grade}>
+                            <td className="text-gray-700 font-semibold px-3 py-2.5 bg-gray-50 border border-gray-100 sticky left-0 z-10">{grade}</td>
+                            {masteryMatrix.subjects.map((subj) => {
+                              const score = masteryMatrix.matrix?.[grade]?.[subj];
+                              const bg =
+                                score == null ? 'bg-gray-50 text-gray-300' :
+                                score >= 75 ? 'bg-emerald-100 text-emerald-700' :
+                                score >= 55 ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-700';
+                              return (
+                                <td key={subj} className={`text-center px-3 py-2.5 border border-gray-100 font-bold ${bg}`}>
+                                  {score != null ? `${score}%` : '—'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" />≥75% Strong</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 inline-block" />55–74% Moderate</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 inline-block" />&lt;55% Needs attention</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Teacher Effectiveness ──────────────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-50 rounded-xl">
+                    <GraduationCap className="w-4 h-4 text-purple-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Teacher Effectiveness</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">Class mastery outcomes per teacher's subject</p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchTeacherEffectiveness}
+                  disabled={teacherEffLoading}
+                  className="flex items-center gap-1.5 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-100 rounded-lg px-3 py-1.5 hover:bg-purple-100 transition disabled:opacity-50"
+                >
+                  {teacherEffLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Refresh
+                </button>
+              </div>
+              <div className="p-6">
+                {teacherEffLoading ? (
+                  <div className="flex items-center justify-center py-10 text-gray-400 text-sm"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+                ) : !teacherEffectiveness.length ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+                    <Users className="w-10 h-10 mb-2" />
+                    <p className="text-sm text-gray-400">No teacher data available.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="text-xs w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          {['Teacher', 'Subject', 'Avg Mastery', 'Students', 'Topics Covered', 'Effectiveness'].map((h) => (
+                            <th key={h} className="text-left text-gray-400 font-semibold uppercase tracking-wide px-3 py-2 text-[10px]">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teacherEffectiveness.map((t, i) => {
+                          const effColor =
+                            t.effectiveness === 'High' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                            t.effectiveness === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                            t.effectiveness === 'No data' ? 'bg-gray-50 text-gray-400 border-gray-200' :
+                            'bg-red-50 text-red-700 border-red-100';
+                          const scoreColor =
+                            t.avgClassMastery == null ? 'text-gray-300' :
+                            t.avgClassMastery >= 75 ? 'text-emerald-600 font-bold' :
+                            t.avgClassMastery >= 55 ? 'text-amber-600 font-bold' :
+                            'text-red-600 font-bold';
+                          return (
+                            <tr key={t.teacherId} className={`border-b border-gray-50 hover:bg-gray-50 transition ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                              <td className="px-3 py-3 font-semibold text-gray-800">{t.name}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.subject}</td>
+                              <td className={`px-3 py-3 ${scoreColor}`}>{t.avgClassMastery != null ? `${t.avgClassMastery}%` : '—'}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.studentCount}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.topicsCovered}</td>
+                              <td className="px-3 py-3">
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${effColor}`}>{t.effectiveness}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
