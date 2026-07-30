@@ -4,6 +4,7 @@ import {
   Plus, Edit3, Trash2, X, ChevronLeft, ChevronRight, User,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
+import toast from 'react-hot-toast';
 import { academicApi, timetableApi, convertTo12Hour } from '../utils/timetableApi';
 
 /* ─────────────────────────────────────────
@@ -42,6 +43,15 @@ const getStrip = (subject = '') => {
 
 const toMins = (v) => { if (!v) return 0; const [h, m] = v.split(':').map(Number); return h * 60 + (m || 0); };
 
+const formatRoomLabel = (roomObj, fallback = '') => {
+  if (roomObj && typeof roomObj === 'object' && roomObj.roomNumber) {
+    const building = roomObj.floorId?.buildingId?.name;
+    const floor = roomObj.floorId?.name;
+    return [building, floor, roomObj.roomNumber].filter(Boolean).join(' / ');
+  }
+  return fallback || '';
+};
+
 /* ── shared atoms ── */
 const Divider = () => <div style={{ height: 1, background: T.border }} />;
 
@@ -53,23 +63,79 @@ const Tag = ({ children, color = T.accentSoft, textColor = T.accent }) => (
   }}>{children}</span>
 );
 
-const IconBtn = ({ icon: Icon, onClick, danger }) => (
-  <button onClick={onClick} style={{
-    background: 'none', border: 'none', cursor: 'pointer', borderRadius: 5,
+const IconBtn = ({ icon, onClick, danger, disabled = false }) => (
+  <button onClick={onClick} disabled={disabled} style={{
+    background: 'none', border: 'none', borderRadius: 5,
     padding: 5, color: danger ? T.danger : T.textMuted,
+    opacity: disabled ? 0.45 : 1,
     display: 'flex', alignItems: 'center', transition: 'background .1s',
+    cursor: disabled ? 'not-allowed' : 'pointer',
   }}
     onMouseEnter={(e) => e.currentTarget.style.background = T.borderSubtle}
     onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
   >
-    <Icon size={13} />
+    {React.createElement(icon, { size: 13 })}
   </button>
 );
 
-const Row = ({ icon: Icon, label }) => (
+const Row = ({ icon, label }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.textMuted }}>
-    <Icon size={10} style={{ flexShrink: 0 }} />
+    {React.createElement(icon, { size: 10, style: { flexShrink: 0 } })}
     <span>{label}</span>
+  </div>
+);
+
+const EntryRow = ({ ci, isDeleting, onEdit, onDelete, showMeta }) => (
+  <div style={{
+    background: T.surface, border: `1px solid ${T.border}`, borderRadius: 9,
+    padding: '10px 14px',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12,
+  }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        fontSize: 14, fontWeight: 700, color: T.text,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{ci.subject}</div>
+      {showMeta && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
+          <Row icon={Users} label={`${ci.className}${ci.sectionName ? `-${ci.sectionName}` : ''}` || 'N/A'} />
+          <Row icon={MapPin} label={ci.room || 'N/A'} />
+        </div>
+      )}
+    </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.textMuted, whiteSpace: 'nowrap' }}>
+        <Clock size={13} style={{ flexShrink: 0 }} />
+        {ci.slot}
+      </span>
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={isDeleting}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+          border: `1.5px solid #bfdbfe`, background: T.surface, color: T.accent,
+          opacity: isDeleting ? 0.5 : 1, cursor: isDeleting ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <Edit3 size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={isDeleting}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+          border: `1.5px solid #fecaca`, background: '#fef2f2', color: T.danger,
+          opacity: isDeleting ? 0.5 : 1, cursor: isDeleting ? 'not-allowed' : 'pointer',
+        }}
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
   </div>
 );
 
@@ -84,8 +150,25 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
   const [currentWeek, setCurrentWeek]         = useState(new Date());
   const [modalOpen, setModalOpen]             = useState(false);
   const [modalTeacher, setModalTeacher]       = useState(null);
+  const [slotModalOpen, setSlotModalOpen]     = useState(false);
+  const [slotModalData, setSlotModalData]     = useState(null);
+  const [entryModalOpen, setEntryModalOpen]   = useState(false);
+  const [entryModalData, setEntryModalData]   = useState(null);
+  const [dayModalOpen, setDayModalOpen]       = useState(false);
+  const [dayModalDay, setDayModalDay]         = useState(null);
+  const [entryForm, setEntryForm]             = useState({
+    subjectId: '',
+    teacherId: '',
+    roomId: '',
+    startTime: '',
+    endTime: '',
+  });
+  const [entrySaving, setEntrySaving]         = useState(false);
+  const [entryDeletingKey, setEntryDeletingKey] = useState('');
   const [years, setYears]                     = useState([]);
   const [teachers, setTeachers]               = useState([]);
+  const [subjects, setSubjects]               = useState([]);
+  const [rooms, setRooms]                     = useState([]);
   const [timetables, setTimetables]           = useState([]);
   const [loading, setLoading]                 = useState(true);
   const [error, setError]                     = useState(null);
@@ -151,7 +234,7 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
           teacher: entry.teacherId?.name || 'TBA',
           teacherId: entry.teacherId?._id || entry.teacherId || null,
           subject: entry.subjectId?.name || 'Unknown',
-          className, sectionName, room: entry.room || '',
+          className, sectionName, room: formatRoomLabel(entry.roomId, entry.room),
         });
       });
     });
@@ -161,18 +244,23 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
   const loadData = async () => {
     try {
       setLoading(true); setError(null);
-      const [yd, td, ttd] = await Promise.all([
+      const [yd, td, sd, rd, ttd] = await Promise.all([
         academicApi.getYears().catch(() => []),
         academicApi.getTeachers().catch(() => []),
+        academicApi.getSubjects().catch(() => []),
+        academicApi.getRooms().catch(() => []),
         timetableApi.getAll().catch(() => []),
       ]);
       const yearItems = Array.isArray(yd) ? yd : [];
       setYears(yearItems);
       const preferredYear = yearItems.find((year) => year?.isActive) || yearItems[0] || null;
-      if (preferredYear?._id) {
+      const currentYearStillValid = yearItems.some((year) => String(year._id) === String(selectedYearId));
+      if (!currentYearStillValid && preferredYear?._id) {
         setSelectedYearId(String(preferredYear._id));
       }
       setTeachers(Array.isArray(td) ? td : []);
+      setSubjects(Array.isArray(sd) ? sd : []);
+      setRooms(Array.isArray(rd) ? rd : []);
       setTimetables(Array.isArray(ttd) ? ttd : []);
     } catch (err) { setError(err.message || 'Failed to load'); }
     finally { setLoading(false); }
@@ -212,7 +300,9 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
         }
       }
       setSchoolBrand({ name: name || 'Electronic Educare', logo: logo || '' });
-    } catch {}
+    } catch (error) {
+      console.warn('Failed to load school brand', error);
+    }
   };
   useEffect(() => { loadSchoolBrand(); }, []);
 
@@ -233,9 +323,40 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
     const s = {};
     weekDays.forEach((day) => {
       s[day] = [];
-      Object.entries(routineData[day] || {}).forEach(([slot, entries]) => {
-        (entries || []).filter((e) => String(e.teacherId) === String(teacherId))
-          .forEach((e) => { s[day].push({ slot: slotLabelByKey.get(slot) || slot, ...e }); });
+      yearFilteredTimetables.forEach((tt) => {
+        const className = tt.classId?.name || '';
+        const sectionName = tt.sectionId?.name || '';
+        const classId = tt.classId?._id || tt.classId || '';
+        const sectionId = tt.sectionId?._id || tt.sectionId || '';
+        const academicYearId = tt.academicYearId?._id || tt.academicYearId || tt.classId?.academicYearId || selectedYearId || '';
+        (tt.entries || []).forEach((entry, entryIndex) => {
+          const entryTeacherId = entry.teacherId?._id || entry.teacherId || '';
+          if (String(entryTeacherId) !== String(teacherId)) return;
+          if (String(entry.dayOfWeek || '') !== String(day)) return;
+          const subjectId = entry.subjectId?._id || entry.subjectId || '';
+          const roomId = entry.roomId?._id || entry.roomId || '';
+          const slotKey = `${entry.startTime || ''}-${entry.endTime || ''}`;
+          s[day].push({
+            timetableId: tt._id,
+            entryIndex,
+            dayOfWeek: entry.dayOfWeek || day,
+            period: entry.period || '',
+            startTime: entry.startTime || '',
+            endTime: entry.endTime || '',
+            slot: slotLabelByKey.get(slotKey) || (entry.startTime && entry.endTime ? `${convertTo12Hour(entry.startTime)} – ${convertTo12Hour(entry.endTime)}` : '-'),
+            teacherId: entryTeacherId,
+            teacher: entry.teacherId?.name || 'TBA',
+            subjectId,
+            subject: entry.subjectId?.name || 'Unknown',
+            classId,
+            sectionId,
+            academicYearId,
+            className,
+            sectionName,
+            roomId,
+            room: formatRoomLabel(entry.roomId, entry.room),
+          });
+        });
       });
     });
     return s;
@@ -252,7 +373,159 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
   };
 
   const openModal  = (t) => { setModalTeacher(t); setModalOpen(true); };
-  const closeModal = () => { setModalOpen(false); setModalTeacher(null); };
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalTeacher(null);
+    setSlotModalOpen(false);
+    setSlotModalData(null);
+    closeDayModal();
+    closeEntryEditor();
+  };
+  const openSlotModal = (day, slot, entries) => {
+    setSlotModalData({ day, slot, entries: Array.isArray(entries) ? entries : [] });
+    setSlotModalOpen(true);
+  };
+  const closeSlotModal = () => {
+    setSlotModalOpen(false);
+    setSlotModalData(null);
+  };
+  const openDayModal = (day) => { setDayModalDay(day); setDayModalOpen(true); };
+  const closeDayModal = () => {
+    setDayModalOpen(false);
+    setDayModalDay(null);
+  };
+
+  const normalizeId = (value) => String(value?._id || value || '');
+
+  const resolveEntryDefaults = (entry) => {
+    const subjectId = normalizeId(entry?.subjectId);
+    const teacherId = normalizeId(entry?.teacherId);
+    const roomId = normalizeId(entry?.roomId) || rooms.find((room) => String(room?.roomNumber || '').toLowerCase() === String(entry?.room || '').toLowerCase())?._id || '';
+    return {
+      subjectId,
+      teacherId,
+      roomId,
+      startTime: entry?.startTime || '',
+      endTime: entry?.endTime || '',
+    };
+  };
+
+  const openEntryEditor = (entry) => {
+    if (!entry) return;
+    setEntryModalData(entry);
+    setEntryForm(resolveEntryDefaults(entry));
+    setEntryModalOpen(true);
+  };
+
+  const closeEntryEditor = () => {
+    setEntryModalOpen(false);
+    setEntryModalData(null);
+    setEntrySaving(false);
+  };
+
+  const getTimetableForEntry = (entry) => {
+    if (!entry) return null;
+    return yearFilteredTimetables.find((tt) => String(tt._id) === String(entry.timetableId))
+      || yearFilteredTimetables.find((tt) => String(tt.classId?._id || tt.classId) === String(entry.classId)
+        && String(tt.sectionId?._id || tt.sectionId || '') === String(entry.sectionId || ''));
+  };
+
+  const buildSavedEntry = (originalEntry) => {
+    const selectedRoom = rooms.find((room) => String(room?._id) === String(entryForm.roomId));
+    const selectedSubject = subjects.find((subject) => String(subject?._id) === String(entryForm.subjectId));
+    const selectedTeacher = teachers.find((teacher) => String(teacher?._id) === String(entryForm.teacherId));
+    return {
+      ...originalEntry,
+      subjectId: entryForm.subjectId || originalEntry.subjectId,
+      teacherId: entryForm.teacherId || originalEntry.teacherId,
+      roomId: entryForm.roomId || originalEntry.roomId || undefined,
+      room: selectedRoom?.roomNumber || originalEntry.room || '',
+      startTime: entryForm.startTime || originalEntry.startTime,
+      endTime: entryForm.endTime || originalEntry.endTime,
+      subject: selectedSubject?.name || originalEntry.subject || '',
+      teacher: selectedTeacher?.name || originalEntry.teacher || '',
+    };
+  };
+
+  const handleSaveEntry = async (e) => {
+    e.preventDefault();
+    if (!entryModalData) return;
+
+    if (!entryForm.subjectId || !entryForm.teacherId || !entryForm.startTime || !entryForm.endTime) {
+      toast.error('Subject, teacher, start time and end time are required');
+      return;
+    }
+
+    const timetable = getTimetableForEntry(entryModalData);
+    if (!timetable) {
+      toast.error('Unable to find the timetable for this class');
+      return;
+    }
+
+    const classId = timetable.classId?._id || timetable.classId;
+    const sectionId = timetable.sectionId?._id || timetable.sectionId || undefined;
+    const academicYearId = timetable.academicYearId?._id || timetable.academicYearId || timetable.classId?.academicYearId || selectedYearId || undefined;
+    const originalEntries = Array.isArray(timetable.entries) ? timetable.entries : [];
+    const updatedEntries = originalEntries.map((entry, index) => (
+      index === entryModalData.entryIndex ? buildSavedEntry(entry) : entry
+    ));
+
+    setEntrySaving(true);
+    try {
+      await timetableApi.save({
+        classId,
+        sectionId,
+        academicYearId,
+        entries: updatedEntries,
+      });
+      await loadData();
+      toast.success('Schedule updated successfully');
+      closeEntryEditor();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update schedule');
+    } finally {
+      setEntrySaving(false);
+    }
+  };
+
+  const handleDeleteEntry = async (entry) => {
+    if (!entry) return;
+    const timetable = getTimetableForEntry(entry);
+    if (!timetable) {
+      toast.error('Unable to find the timetable for this class');
+      return;
+    }
+
+    const actionKey = `${entry.timetableId}:${entry.entryIndex}`;
+    if (!window.confirm(`Delete ${entry.subject || 'this class'} from ${entry.className || 'this timetable'}?`)) {
+      return;
+    }
+
+    const originalEntries = Array.isArray(timetable.entries) ? timetable.entries : [];
+    const updatedEntries = originalEntries.filter((_, index) => index !== entry.entryIndex);
+    setEntryDeletingKey(actionKey);
+    try {
+      if (updatedEntries.length === 0) {
+        await timetableApi.delete(timetable._id);
+      } else {
+        await timetableApi.save({
+          classId: timetable.classId?._id || timetable.classId,
+          sectionId: timetable.sectionId?._id || timetable.sectionId || undefined,
+          academicYearId: timetable.academicYearId?._id || timetable.academicYearId || timetable.classId?.academicYearId || selectedYearId || undefined,
+          entries: updatedEntries,
+        });
+      }
+      await loadData();
+      toast.success('Schedule entry deleted');
+      if (entryModalOpen && entryModalData && String(entryModalData.timetableId) === String(entry.timetableId) && entryModalData.entryIndex === entry.entryIndex) {
+        closeEntryEditor();
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete schedule entry');
+    } finally {
+      setEntryDeletingKey('');
+    }
+  };
 
   /* ── PDF (logic unchanged) ── */
   const loadImageAsDataUrl = async (url) => {
@@ -280,7 +553,13 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
 
       const drawHeader = () => {
         pdf.setFillColor(59, 91, 219); pdf.rect(0, 0, pageWidth, 24, 'F');
-        if (logoDataUrl) { try { pdf.addImage(logoDataUrl, 'PNG', margin, 4, 14, 14); } catch {} }
+        if (logoDataUrl) {
+          try {
+            pdf.addImage(logoDataUrl, 'PNG', margin, 4, 14, 14);
+          } catch (error) {
+            console.warn('Failed to embed school logo in timetable PDF', error);
+          }
+        }
         pdf.setTextColor(255, 255, 255); pdf.setFontSize(14); pdf.setFont(undefined, 'bold');
         pdf.text(schoolBrand.name || 'Electronic Educare', logoDataUrl ? 27 : margin, 11);
         pdf.setFontSize(10); pdf.setFont(undefined, 'normal');
@@ -317,7 +596,10 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
 
       timeSlots.forEach((slot, index) => {
         const dayTexts = weekDays.map((day) => {
-          const entries = timetableData[day]?.[slot.key] || [];
+          const allEntries = timetableData[day]?.[slot.key] || [];
+          const entries = exportTeacherId === 'all'
+            ? allEntries
+            : allEntries.filter((e) => String(e.teacherId) === String(exportTeacherId));
           if (!entries.length) return '-';
           return entries.map((e, i) => {
             const cl = `${e.className || ''}${e.sectionName ? `-${e.sectionName}` : ''}`;
@@ -642,23 +924,36 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
                                   {first.room && <Row icon={MapPin} label={first.room} />}
                                 </div>
                                 {extra > 0 && (
-                                  <div style={{ marginTop: 5 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => openSlotModal(day, slot, entries)}
+                                    style={{
+                                      marginTop: 5,
+                                      padding: 0,
+                                      border: 'none',
+                                      background: 'none',
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                    }}
+                                  >
                                     <Tag color={`${s.bar}1a`} textColor={s.label}>+{extra} more</Tag>
-                                  </div>
+                                  </button>
                                 )}
                               </div>
                             );
                           })() : (
                             <div style={{
-                              border: `1.5px dashed ${T.border}`, borderRadius: 7,
-                              padding: '10px 6px', textAlign: 'center',
-                              color: T.borderSubtle, cursor: 'pointer', transition: 'all .1s',
-                            }}
-                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.color = T.accent; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.borderSubtle; }}
-                            >
-                              <Plus size={12} style={{ display: 'block', margin: '0 auto 2px' }} />
-                              <span style={{ fontSize: 10, fontWeight: 600 }}>Add</span>
+                              minHeight: 54,
+                              border: `1.5px solid ${T.borderSubtle}`, borderRadius: 7,
+                              background: 'rgba(250, 250, 249, .65)',
+                              padding: '10px 8px',
+                            }}>
+                              <div style={{
+                                height: 34,
+                                borderRadius: 6,
+                                border: `1px dashed ${T.borderSubtle}`,
+                                background: 'rgba(255,255,255,.55)',
+                              }} />
                             </div>
                           )}
                         </td>
@@ -765,11 +1060,11 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(28,25,23,.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 50, padding: 16,
+          zIndex: 50, padding: 12,
         }}>
           <div style={{
-            background: T.surface, borderRadius: 12, maxWidth: 720, width: '100%',
-            maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            background: T.surface, borderRadius: 12, width: 'min(920px, calc(100vw - 24px))',
+            maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
             border: `1px solid ${T.border}`, boxShadow: '0 16px 48px rgba(0,0,0,.12)',
           }}>
             <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -793,55 +1088,60 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
               </button>
             </div>
 
-            <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {weekDays.map((day) => {
                 const sched = getTeacherSchedule(modalTeacher._id)[day];
                 const isToday = todayName.toLowerCase() === day.toLowerCase();
                 return (
-                  <div key={day} style={{ border: `1px solid ${isToday ? T.accent : T.border}`, borderRadius: 9, overflow: 'hidden' }}>
+                  <div key={day} style={{
+                    border: `1px solid ${isToday ? '#c7d2fe' : T.border}`, borderRadius: 10, overflow: 'hidden',
+                    background: isToday ? T.accentSoft : T.surface,
+                    display: 'flex', alignItems: 'stretch',
+                  }}>
                     <div style={{
-                      padding: '9px 14px', background: isToday ? T.accentSoft : T.bg,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      borderBottom: sched.length > 0 ? `1px solid ${isToday ? '#c7d2fe' : T.border}` : 'none',
+                      width: 132, flexShrink: 0, padding: '14px 16px', backgroundColor: '#F2F2F2',
+                      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6,
+                      borderRight: `1px solid ${isToday ? '#c7d2fe' : T.border}`,
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? T.accent : T.text }}>{day}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{day}</span>
                         {isToday && <Tag>Today</Tag>}
                       </div>
-                      <span style={{ fontSize: 11, color: T.textMuted }}>{sched.length} class{sched.length !== 1 ? 'es' : ''}</span>
+                      <Tag>{sched.length} class{sched.length !== 1 ? 'es' : ''}</Tag>
                     </div>
                     {sched.length === 0 ? (
-                      <div style={{ padding: '14px', textAlign: 'center', color: T.textSubtle }}>
-                        <Clock size={16} style={{ display: 'block', margin: '0 auto 5px', opacity: .3 }} />
-                        <span style={{ fontSize: 12 }}>No classes</span>
+                      <div style={{ flex: 1, minWidth: 0, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, color: T.textSubtle }}>
+                        <Calendar size={16} style={{ opacity: .5, flexShrink: 0 }} />
+                        <span style={{ fontSize: 13 }}>No classes scheduled</span>
                       </div>
                     ) : (
-                      <div style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {sched.map((ci, idx) => {
-                          const s = getStrip(ci.subject);
+                      <div style={{minWidth: 'full', padding: '9px 11px', display: 'flex', flexDirection: 'row', justifyContent: 'between', alignItems: 'center', gap: 6 }}>
+                        {(() => {
+                          const first = sched[0];
+                          const entryKey = `${first.timetableId}:${first.entryIndex}`;
+                          const isDeleting = entryDeletingKey === entryKey;
                           return (
-                            <div key={idx} style={{
-                              borderLeft: `2.5px solid ${s.bar}`, background: s.bg,
-                              borderRadius: '0 7px 7px 0', padding: '9px 11px',
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: s.label }}>{ci.subject}</span>
-                                  <span style={{ fontSize: 10, color: T.textMuted }}>{ci.slot}</span>
-                                </div>
-                                <div style={{ display: 'flex', gap: 12 }}>
-                                  <Row icon={Users} label={`${ci.className}${ci.sectionName ? `-${ci.sectionName}` : ''}`} />
-                                  <Row icon={MapPin} label={ci.room || 'N/A'} />
-                                </div>
-                              </div>
-                              <div style={{ display: 'flex', marginLeft: 8 }}>
-                                <IconBtn icon={Edit3} />
-                                <IconBtn icon={Trash2} danger />
-                              </div>
-                            </div>
+                            <EntryRow
+                              ci={first}
+                              isDeleting={isDeleting}
+                              onEdit={() => openEntryEditor(first)}
+                              onDelete={() => handleDeleteEntry(first)}
+                            />
                           );
-                        })}
+                        })()}
+                        {sched.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => openDayModal(day)}
+                            style={{
+                              alignSelf: 'flex-start', padding: '4px 10px', borderRadius: 6,
+                              border: `1px solid ${T.border}`, background: T.surface, color: T.accent,
+                              fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                            }}
+                          >
+                            +{sched.length - 1} more
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -875,6 +1175,364 @@ const TeacherTimetable = ({ setShowAdminHeader }) => {
                   onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                 >Close</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ENTRY EDIT MODAL */}
+      {entryModalOpen && entryModalData && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(28,25,23,.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 70, padding: 12,
+        }}>
+          <form onSubmit={handleSaveEntry} style={{
+            background: T.surface, borderRadius: 12, width: 'min(640px, calc(100vw - 24px))',
+            maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: `1px solid ${T.border}`, boxShadow: '0 20px 60px rgba(0,0,0,.18)',
+          }}>
+            <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                  <div style={{ width: 3, height: 16, background: T.accent, borderRadius: 2 }} />
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>
+                    Edit Schedule Entry
+                  </h2>
+                  <Tag>{entryModalData.dayOfWeek || 'Day'}</Tag>
+                </div>
+                <p style={{ margin: '0 0 0 11px', fontSize: 12, color: T.textMuted }}>
+                  {entryModalData.className || 'Class'}{entryModalData.sectionName ? `-${entryModalData.sectionName}` : ''} · {entryModalData.slot || 'Selected slot'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEntryEditor}
+                style={{
+                  background: 'none', border: `1px solid ${T.border}`, cursor: 'pointer',
+                  borderRadius: 6, padding: '5px 6px', color: T.textMuted, display: 'flex', transition: 'all .1s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.danger; e.currentTarget.style.color = T.danger; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 20px', overflowY: 'auto', display: 'grid', gap: 14 }}>
+              {[
+                {
+                  label: 'Subject',
+                  value: entryForm.subjectId,
+                  onChange: (value) => setEntryForm((prev) => ({ ...prev, subjectId: value })),
+                  options: (subjects || []).filter((subject) => {
+                    const subjectClassId = subject?.classId?._id || subject?.classId || '';
+                    return !entryModalData.classId || !subjectClassId || String(subjectClassId) === String(entryModalData.classId);
+                  }),
+                  optionLabel: (subject) => subject?.code ? `${subject.name} (${subject.code})` : subject?.name || 'Subject',
+                },
+                {
+                  label: 'Teacher',
+                  value: entryForm.teacherId,
+                  onChange: (value) => setEntryForm((prev) => ({ ...prev, teacherId: value })),
+                  options: teachers,
+                  optionLabel: (teacher) => teacher?.name || 'Teacher',
+                },
+                {
+                  label: 'Room',
+                  value: entryForm.roomId,
+                  onChange: (value) => setEntryForm((prev) => ({ ...prev, roomId: value })),
+                  options: rooms,
+                  optionLabel: (room) => {
+                    const building = room?.floorId?.buildingId?.name || 'Bldg';
+                    const floor = room?.floorId?.name || 'Floor';
+                    const number = room?.roomNumber || room?.name || 'Room';
+                    return `${building} / ${floor} / ${number}`;
+                  },
+                  allowEmpty: true,
+                },
+              ].map((field) => (
+                <label key={field.label} style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    {field.label}
+                  </span>
+                  <select
+                    value={field.value}
+                    onChange={(e) => field.onChange(e.target.value)}
+                    style={{
+                      appearance: 'none',
+                      padding: '10px 12px',
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 8,
+                      fontSize: 13,
+                      color: T.text,
+                      background: T.bg,
+                      outline: 'none',
+                    }}
+                  >
+                    {field.allowEmpty ? (
+                      <option value="">No room</option>
+                    ) : (
+                      <option value="" disabled>{`Select ${field.label.toLowerCase()}`}</option>
+                    )}
+                    {Array.isArray(field.options) && field.options.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {field.optionLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    Start Time
+                  </span>
+                  <input
+                    type="time"
+                    value={entryForm.startTime}
+                    onChange={(e) => setEntryForm((prev) => ({ ...prev, startTime: e.target.value }))}
+                    style={{
+                      padding: '10px 12px',
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 8,
+                      fontSize: 13,
+                      color: T.text,
+                      background: T.bg,
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: T.textSubtle, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                    End Time
+                  </span>
+                  <input
+                    type="time"
+                    value={entryForm.endTime}
+                    onChange={(e) => setEntryForm((prev) => ({ ...prev, endTime: e.target.value }))}
+                    style={{
+                      padding: '10px 12px',
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 8,
+                      fontSize: 13,
+                      color: T.text,
+                      background: T.bg,
+                      outline: 'none',
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div style={{ padding: '12px 20px', borderTop: `1px solid ${T.border}`, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: T.textMuted }}>
+                Changes apply to the full timetable record for this class
+              </span>
+              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                <button
+                  type="button"
+                  onClick={closeEntryEditor}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 7,
+                    border: `1.5px solid ${T.border}`,
+                    background: T.surface,
+                    color: T.text,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={entrySaving}
+                  style={{
+                    padding: '7px 18px',
+                    borderRadius: 7,
+                    border: 'none',
+                    background: T.accent,
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: entrySaving ? 'not-allowed' : 'pointer',
+                    opacity: entrySaving ? 0.75 : 1,
+                  }}
+                >
+                  {entrySaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* DAY CLASSES MODAL */}
+      {dayModalOpen && dayModalDay && modalTeacher && (() => {
+        const dayEntries = getTeacherSchedule(modalTeacher._id)[dayModalDay] || [];
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(28,25,23,.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 65, padding: 12,
+          }}>
+            <div style={{
+              background: T.surface, borderRadius: 12, width: 'min(640px, calc(100vw - 24px))',
+              maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              border: `1px solid ${T.border}`, boxShadow: '0 16px 48px rgba(0,0,0,.12)',
+            }}>
+              <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                    <div style={{ width: 3, height: 16, background: T.accent, borderRadius: 2 }} />
+                    <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>
+                      {dayModalDay}'s Classes
+                    </h2>
+                    <Tag>{dayEntries.length} class{dayEntries.length !== 1 ? 'es' : ''}</Tag>
+                  </div>
+                  <p style={{ margin: '0 0 0 11px', fontSize: 12, color: T.textMuted }}>
+                    {modalTeacher.name}
+                  </p>
+                </div>
+                <button onClick={closeDayModal} style={{
+                  background: 'none', border: `1px solid ${T.border}`, cursor: 'pointer',
+                  borderRadius: 6, padding: '5px 6px', color: T.textMuted, display: 'flex', transition: 'all .1s',
+                }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.danger; e.currentTarget.style.color = T.danger; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {dayEntries.map((ci) => {
+                  const entryKey = `${ci.timetableId}:${ci.entryIndex}`;
+                  const isDeleting = entryDeletingKey === entryKey;
+                  return (
+                    <EntryRow
+                      key={entryKey}
+                      ci={ci}
+                      isDeleting={isDeleting}
+                      showMeta
+                      onEdit={() => openEntryEditor(ci)}
+                      onDelete={() => handleDeleteEntry(ci)}
+                    />
+                  );
+                })}
+              </div>
+
+              <div style={{ padding: '12px 20px', borderTop: `1px solid ${T.border}`, background: T.bg, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={closeDayModal}
+                  style={{
+                    padding: '7px 18px', borderRadius: 7, border: 'none',
+                    background: T.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', transition: 'opacity .1s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '.8'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* SLOT DETAIL MODAL */}
+      {slotModalOpen && slotModalData && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(28,25,23,.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 60, padding: 12,
+        }}>
+          <div style={{
+            background: T.surface, borderRadius: 12, width: 'min(760px, calc(100vw - 24px))',
+            maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            border: `1px solid ${T.border}`, boxShadow: '0 16px 48px rgba(0,0,0,.12)',
+          }}>
+            <div style={{ padding: '18px 22px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                  <div style={{ width: 3, height: 16, background: T.accent, borderRadius: 2 }} />
+                  <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: T.text }}>
+                    Classes in this time slot
+                  </h2>
+                  <Tag>{slotModalData.day}</Tag>
+                </div>
+                <p style={{ margin: '0 0 0 11px', fontSize: 12, color: T.textMuted }}>
+                  {slotModalData.slot?.label || 'Selected slot'} · {slotModalData.entries.length} class{slotModalData.entries.length !== 1 ? 'es' : ''}
+                </p>
+              </div>
+              <button onClick={closeSlotModal} style={{
+                background: 'none', border: `1px solid ${T.border}`, cursor: 'pointer',
+                borderRadius: 6, padding: '5px 6px', color: T.textMuted, display: 'flex', transition: 'all .1s',
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = T.danger; e.currentTarget.style.color = T.danger; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1 }}>
+              {slotModalData.entries.length === 0 ? (
+                <div style={{ padding: '28px 14px', textAlign: 'center', color: T.textSubtle }}>
+                  <Clock size={18} style={{ display: 'block', margin: '0 auto 6px', opacity: .35 }} />
+                  <span style={{ fontSize: 12 }}>No classes found for this slot</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {slotModalData.entries.map((entry, idx) => {
+                    const s = getStrip(entry.subject);
+                    const classLabel = `${entry.className || ''}${entry.sectionName ? `-${entry.sectionName}` : ''}` || 'N/A';
+                    return (
+                      <div key={`${entry.teacherId || entry.teacher || 'entry'}-${idx}`} style={{
+                        borderLeft: `2.5px solid ${s.bar}`, background: s.bg,
+                        borderRadius: '0 8px 8px 0', padding: '10px 12px',
+                        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 5 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: s.label, lineHeight: 1.2 }}>
+                              {entry.subject}
+                            </span>
+                            <span style={{ fontSize: 10, color: T.textMuted, whiteSpace: 'nowrap' }}>
+                              {idx === 0 ? 'Shown on card' : `Hidden class ${idx}`}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                            <Row icon={User} label={entry.teacher} />
+                            <Row icon={Users} label={classLabel} />
+                            <Row icon={Clock} label={slotModalData.slot?.label || '-'} />
+                            {entry.room && <Row icon={MapPin} label={entry.room} />}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '12px 20px', borderTop: `1px solid ${T.border}`, background: T.bg, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeSlotModal}
+                style={{
+                  padding: '7px 18px', borderRadius: 7, border: 'none',
+                  background: T.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', transition: 'opacity .1s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.opacity = '.8'}
+                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
