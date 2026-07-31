@@ -171,20 +171,23 @@ const normalizeTimetablePayload = (payload) => {
         (entry.startTime
           ? `${entry.startTime}${entry.endTime ? ` - ${entry.endTime}` : ''}`
           : undefined),
-      subject:
-        entry.subjectId?.name ||
-        entry.subject?.name ||
-        entry.subjectName ||
-        entry.subject ||
-        'Class',
-      instructor:
-        entry.teacherId?.name ||
-        entry.teacher?.name ||
-        entry.teacherName ||
-        entry.instructor,
-      room: entry.room || entry.location || 'TBD',
+      subject: entry.isBreak
+        ? 'Break'
+        : (entry.subjectId?.name ||
+          entry.subject?.name ||
+          entry.subjectName ||
+          entry.subject ||
+          'Class'),
+      instructor: entry.isBreak
+        ? '-'
+        : (entry.teacherId?.name ||
+          entry.teacher?.name ||
+          entry.teacherName ||
+          entry.instructor),
+      room: entry.isBreak ? '' : (entry.room || entry.location || 'TBD'),
       className: timetable?.classId?.name || entry.className || entry.class,
       sectionName: timetable?.sectionId?.name || entry.sectionName || entry.section,
+      isBreak: Boolean(entry.isBreak),
     }))
   );
 

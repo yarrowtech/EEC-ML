@@ -216,9 +216,18 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   /* ── derived: subject-modal dropdowns ── */
   const groupClassId = activeGroup?.classId?._id || activeGroup?.classId || '';
 
+  const usedSubjectIds = useMemo(() => new Set(
+    (activeGroup?.subjects || [])
+      .filter(ex => !editingSubjectId || String(ex._id) !== String(editingSubjectId))
+      .map(ex => String(ex.subjectId?._id || ex.subjectId || ''))
+  ), [activeGroup, editingSubjectId]);
+
   const modalSubjects = useMemo(() =>
-    subjects.filter(s => groupClassId ? String(s.classId||'') === String(groupClassId) : true),
-    [subjects, groupClassId]);
+    subjects.filter(s => {
+      if (groupClassId && String(s.classId||'') !== String(groupClassId)) return false;
+      return !usedSubjectIds.has(String(s._id));
+    }),
+    [subjects, groupClassId, usedSubjectIds]);
 
   const modalFloors = useMemo(() =>
     floors.filter(f => subjectForm.buildingId ? String(f.buildingId?._id||f.buildingId) === String(subjectForm.buildingId) : true),

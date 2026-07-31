@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import {
   Calendar,
   CalendarCheck,
@@ -60,6 +61,7 @@ const parseRollForSort = (roll) => {
 };
 
 const AttendanceManagement = () => {
+  const { className: contextClassName, sectionName: contextSectionName } = useOutletContext() || {};
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -77,8 +79,6 @@ const AttendanceManagement = () => {
 
   const [students, setStudents] = useState([]);
   const [sessionOptions, setSessionOptions] = useState([]);
-  const [classOptions, setClassOptions] = useState([]);
-  const [sectionOptions, setSectionOptions] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [attendanceData, setAttendanceData] = useState({});
   const [lessonPlanContext, setLessonPlanContext] = useState(null);
@@ -158,8 +158,6 @@ const AttendanceManagement = () => {
         setStudents([]);
       }
       setSessionOptions(Array.isArray(data?.options?.sessions) ? data.options.sessions : []);
-      setClassOptions(Array.isArray(data?.options?.classes) ? data.options.classes : []);
-      setSectionOptions(Array.isArray(data?.options?.sections) ? data.options.sections : []);
       setSubjectOptions(Array.isArray(data?.options?.subjects) ? data.options.subjects : []);
       setLessonPlanContext(data?.lessonPlanContext || null);
 
@@ -180,6 +178,15 @@ const AttendanceManagement = () => {
       setSelectedSession(sessionOptions[0]);
     }
   }, [selectedSession, sessionOptions]);
+
+  // Class/section come from the class the teacher already selected in the
+  // class workspace (via route context) — no need to ask again here.
+  useEffect(() => {
+    if (contextClassName) setSelectedClass(contextClassName);
+  }, [contextClassName]);
+  useEffect(() => {
+    if (contextSectionName) setSelectedSection(contextSectionName);
+  }, [contextSectionName]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowTick(Date.now()), 30000);
@@ -478,19 +485,7 @@ const AttendanceManagement = () => {
         </span>
       </Motion.section>
 
-      <div className="mb-5 grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2 lg:grid-cols-5">
-        <select value={selectedSession} onChange={(e) => { setSelectedSession(e.target.value); setSelectedClass(''); setSelectedSection(''); }} className={inputClass} aria-label="Session">
-          <option value="">Select Session</option>
-          {sessionOptions.map((session) => <option key={session} value={session}>{session}</option>)}
-        </select>
-        <select value={selectedClass} onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }} className={inputClass} aria-label="Class">
-          <option value="">Select Class</option>
-          {classOptions.map((className) => <option key={className} value={className}>{className}</option>)}
-        </select>
-        <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} className={inputClass} aria-label="Section">
-          <option value="">Select Section</option>
-          {sectionOptions.map((section) => <option key={section} value={section}>{section}</option>)}
-        </select>
+      <div className="mb-5 grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2">
         <div className="relative">
           <Calendar className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
           <input type="date" value={selectedDate} min={todayDateString} max={todayDateString} disabled className={`${inputClass} pl-9`} aria-label="Attendance date" />
@@ -532,9 +527,9 @@ const AttendanceManagement = () => {
         <div className="overflow-x-auto">
           {!hasRequiredHierarchyFilters ? (
             <div className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center">
-              <Search className="mb-3 size-8 opacity-30" />
-              <p className="text-sm font-medium text-black/70">Select Class and Section to view students</p>
-              <p className="mt-1 text-xs text-black/45">Flow: Session → Class → Section</p>
+              <Loader2 className="mb-3 size-8 animate-spin opacity-30" />
+              <p className="text-sm font-medium text-black/70">Loading class roster…</p>
+              <p className="mt-1 text-xs text-black/45">Resolving class and section details</p>
             </div>
           ) : loading ? (
             <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-sm text-black/50"><Loader2 className="size-6 animate-spin opacity-60" /> Loading students...</div>

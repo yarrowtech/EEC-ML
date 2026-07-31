@@ -857,7 +857,7 @@ const ClassWorkspace = () => {
       </div>
 
       {/* Child route */}
-      <Outlet />
+      <Outlet context={{ className, sectionName }} />
 
     </div>
   );

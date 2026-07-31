@@ -1854,12 +1854,13 @@ router.get('/schedule', authStudent, async (req, res) => {
       }
       scheduleByDay[entry.dayOfWeek].push({
         time: `${entry.startTime} - ${entry.endTime}`,
-        subject: entry.subjectId?.name || entry.subjectName || entry.subject || 'Subject',
-        instructor: entry.teacherId?.name || 'TBA',
-        room: entry.room || '',
+        subject: entry.isBreak ? 'Break' : (entry.subjectId?.name || entry.subjectName || entry.subject || 'Subject'),
+        instructor: entry.isBreak ? '-' : (entry.teacherId?.name || 'TBA'),
+        room: entry.isBreak ? '' : (entry.room || ''),
         period: entry.period,
         className: classDoc.name,
         sectionName: resolvedSectionName,
+        isBreak: Boolean(entry.isBreak),
       });
     });
 
