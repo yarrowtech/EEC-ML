@@ -27,6 +27,7 @@ import SchoolRegistrations from './pages/SchoolRegistrations';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import Support from './pages/Support';
 import NoticeManagement from './pages/NoticeManagement';
+import NoticeDetail from './pages/NoticeDetail';
 import AdminSettings from './pages/AdminSettings';
 import PaymentGatewaySettings from './pages/PaymentGatewaySettings';
 import StudentPromotion from './pages/StudentPromotion';
@@ -367,6 +368,7 @@ const AdminApp = () => {
           <Route path="notices" element={<Navigate to="/admin/notices/view" replace />} />
           <Route path="notices/post" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="post" />} />
           <Route path="notices/view" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="view" />} />
+          <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />

@@ -2,30 +2,21 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
-  Bell,
-  Search,
-  Filter,
-  Calendar,
-  User,
-  AlertCircle,
-  Info,
-  CheckCircle,
-  Pin,
-  Download,
-  Share2,
-  Bookmark,
-  BookmarkCheck,
-  File,
-  FileText,
-  Image as ImageIcon,
-  Paperclip,
-  Megaphone,
-  Clock,
-  ArrowRight,
+  Bell, Search, Filter, Calendar, User, AlertCircle, Pin, Download, Share2,
+  MessageCircle, Mail, Phone, Copy, File, FileText, FileSpreadsheet,
+  Image as ImageIcon, Paperclip, Megaphone, Clock, ArrowRight, ArrowLeft,
+  ChevronRight, ChevronLeft, LayoutGrid, List as ListIcon, Hash, Tag, Flag,
+  Users, RefreshCw, Info,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
+import {
+  CATEGORY_ORDER, CATEGORY_META, PRIORITY_META, DEPT_FALLBACK,
+  getDisplayCategory, isNewNotice, isPinnedNotice, formatNoticeDate,
+  formatNoticeTime, formatNoticeDateTime, getNoticeDisplayId, formatFileSize,
+  getAttachmentMeta, getVisibleToLabel,
+} from '../utils/noticeDisplay';
 
 /* ─── Helpers ─── */
 const looksLikeUserId = (value) => {
@@ -34,10 +25,9 @@ const looksLikeUserId = (value) => {
   return /^[A-Z0-9-]{6,}$/.test(v);
 };
 
-const resolvePriority = (notice) => (notice?.priority || 'general').toLowerCase();
-const resolveCategory = (notice) => (notice?.category || notice?.audience || 'general').toLowerCase();
 const resolveDate = (notice) => notice?.date || notice?.createdAt || notice?.updatedAt || null;
 const resolveId = (notice) => notice?._id || notice?.id;
+
 const shouldHideNoticeFromNoticeboard = (notice) => {
   const typeLabel = String(notice?.typeLabel || '').trim().toLowerCase();
   const type = String(notice?.type || '').trim().toLowerCase();
@@ -70,314 +60,283 @@ const findExamGroupForNotice = (notice, examGroups) => {
   ) || null;
 };
 
-const resolveAuthor = (notice) => {
+const getCreator = (notice) => {
   const rawName = notice?.createdByName || '';
   const safeName = rawName && !looksLikeUserId(rawName) ? rawName : '';
-  if (notice?.createdByType === 'admin') return safeName ? `School Admin · ${safeName}` : 'School Admin';
+  if (notice?.createdByType === 'admin') return safeName ? `Admin · ${safeName}` : 'Admin';
   if (notice?.createdByType === 'teacher') return safeName ? `Teacher · ${safeName}` : 'Teacher';
-  return notice?.author || 'School Administration';
+  if (safeName) return safeName;
+  return DEPT_FALLBACK[getDisplayCategory(notice)] || 'School Administration';
 };
 
-const PRIORITY_META = {
-  high:    { label: 'High',    badge: 'bg-red-100 text-red-700 border-red-200',       bar: 'bg-red-500',    icon: AlertCircle,  chip: 'bg-red-100 text-red-600' },
-  medium:  { label: 'Medium',  badge: 'bg-amber-100 text-amber-700 border-amber-200', bar: 'bg-amber-400',  icon: Info,         chip: 'bg-amber-100 text-amber-600' },
-  low:     { label: 'Low',     badge: 'bg-green-100 text-green-700 border-green-200', bar: 'bg-green-500',  icon: CheckCircle,  chip: 'bg-green-100 text-green-600' },
-  general: { label: 'General', badge: 'bg-gray-100 text-gray-600 border-gray-200',    bar: 'bg-gray-300',   icon: Bell,         chip: 'bg-gray-100 text-gray-500' },
-};
-
-const CATEGORY_META = {
-  academic:  'bg-blue-100 text-blue-700 border-blue-200',
-  events:    'bg-purple-100 text-purple-700 border-purple-200',
-  transport: 'bg-orange-100 text-orange-700 border-orange-200',
-  general:   'bg-gray-100 text-gray-600 border-gray-200',
-};
-
-const getFileIcon = (type) => {
-  if (type?.startsWith('image/')) return ImageIcon;
-  if (type === 'application/pdf') return FileText;
+const getFileIcon = (kind) => {
+  if (kind === 'image') return ImageIcon;
+  if (kind === 'sheet') return FileSpreadsheet;
+  if (kind === 'pdf' || kind === 'doc') return FileText;
   return File;
 };
 
-const formatFileSize = (bytes) => {
-  if (!bytes) return '';
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
-};
-
-const formatDate = (raw) => {
-  if (!raw) return 'Date TBA';
-  return new Date(raw).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const formatTime = (raw) => {
-  if (!raw) return 'Time TBA';
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return 'Time TBA';
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-};
+const NOTICE_PAGE_SIZE = 5;
 
 /* ─── Skeleton ─── */
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-pulse">
-    <div className="flex">
-      <div className="w-1.5 bg-gray-200 shrink-0" />
-      <div className="flex-1 p-5 space-y-3">
-        <div className="flex gap-2">
-          <div className="h-5 w-16 bg-gray-200 rounded-full" />
-          <div className="h-5 w-20 bg-gray-200 rounded-full" />
-        </div>
-        <div className="h-5 w-2/3 bg-gray-200 rounded-lg" />
-        <div className="h-4 w-full bg-gray-100 rounded-lg" />
-        <div className="h-4 w-4/5 bg-gray-100 rounded-lg" />
-        <div className="flex gap-4 pt-2">
-          <div className="h-4 w-24 bg-gray-100 rounded" />
-          <div className="h-4 w-20 bg-gray-100 rounded" />
-        </div>
+    <div className="flex items-center gap-4 p-5">
+      <div className="w-10 h-10 bg-gray-200 rounded-xl shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3 w-16 bg-gray-200 rounded" />
+        <div className="h-4 w-2/3 bg-gray-200 rounded-lg" />
+        <div className="h-3 w-full bg-gray-100 rounded-lg" />
       </div>
     </div>
   </div>
 );
 
-const isRecentNotice = (notice) => {
-  const raw = resolveDate(notice);
-  if (!raw) return false;
-  const ageMs = Date.now() - new Date(raw).getTime();
-  return ageMs >= 0 && ageMs <= 2 * 24 * 60 * 60 * 1000;
-};
-
-/* ─── Notice card ─── */
-const NoticeCard = ({ notice, onOpen }) => {
-  const priority = resolvePriority(notice);
-  const category = resolveCategory(notice);
-  const meta = PRIORITY_META[priority] || PRIORITY_META.general;
-  const PriorityIcon = meta.icon;
-  const author = resolveAuthor(notice);
-  const displayDate = resolveDate(notice);
-  const isNew = isRecentNotice(notice);
-  const attachmentCount = Array.isArray(notice?.attachments) ? notice.attachments.length : 0;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen?.(notice)}
-      className={`group flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-        notice?.pinned ? 'border-amber-200 bg-amber-50/40' : 'border-gray-100'
-      }`}
-    >
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${meta.chip}`}>
-        <PriorityIcon className="h-5 w-5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {notice?.pinned && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-              <Pin className="h-2.5 w-2.5" /> Pinned
-            </span>
-          )}
-          {isNew && (
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-              New
-            </span>
-          )}
-          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>
-            {meta.label}
-          </span>
-          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize ${CATEGORY_META[category] || CATEGORY_META.general}`}>
-            {category}
-          </span>
-        </div>
-        <p className="mt-1.5 truncate text-sm font-bold text-gray-900 group-hover:text-indigo-700">
-          {notice?.title || 'Untitled Notice'}
-        </p>
-        {notice?.message && (
-          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-gray-500">{notice.message}</p>
-        )}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400">
-          <span className="inline-flex items-center gap-1">
-            <User className="h-3 w-3" /> {author}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Calendar className="h-3 w-3" /> {formatDate(displayDate)}
-          </span>
-          {attachmentCount > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Paperclip className="h-3 w-3" /> {attachmentCount}
-            </span>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-};
-
-const PRIORITY_BANNER = {
-  high: 'from-red-500 to-rose-600',
-  medium: 'from-amber-400 to-orange-500',
-  low: 'from-green-500 to-emerald-600',
-  general: 'from-gray-500 to-gray-600',
-};
-
-const NoticeDetailsView = ({ notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams }) => {
+/* ─── Notice detail (inline) ─── */
+const NoticeDetailsView = ({
+  notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams,
+  onPrev, onNext, hasPrev, hasNext, onShare,
+}) => {
   if (!notice) return null;
-  const priority = resolvePriority(notice);
-  const category = resolveCategory(notice);
-  const meta = PRIORITY_META[priority] || PRIORITY_META.general;
-  const PriorityIcon = meta.icon;
-  const author = resolveAuthor(notice);
+  const displayCategory = getDisplayCategory(notice);
+  const meta = CATEGORY_META[displayCategory];
+  const Icon = meta.icon;
+  const priorityMeta = PRIORITY_META[notice.priority || 'medium'];
+  const pinned = isPinnedNotice(notice);
+  const fresh = isNewNotice(notice);
+  const creator = getCreator(notice);
   const displayDate = resolveDate(notice);
   const subjectLabel = notice.subjectName || notice.subject || '';
   const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
   const showExamRoutine = isExamNotice(notice);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+        className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition"
       >
-        ← Back to notices
+        <ArrowLeft className="h-4 w-4" />
+        Back to notices
       </button>
 
-      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-        <div className={`relative overflow-hidden bg-linear-to-br ${PRIORITY_BANNER[priority] || PRIORITY_BANNER.general} p-5 text-white sm:p-6`}>
-          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />
-          <div className="relative flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-              <PriorityIcon className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              {notice?.pinned && (
-                <span className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
-                  <Pin className="h-2.5 w-2.5" /> Pinned Notice
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main column */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between mb-3">
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-wide uppercase ${meta.badge}`}>
+                {meta.label}
+              </span>
+              {pinned && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 text-white px-2.5 py-1 text-[11px] font-bold">
+                  <Pin className="h-3 w-3" />
+                  PINNED
                 </span>
               )}
-              <h2 className="text-lg font-bold leading-snug sm:text-xl">{notice.title || 'Untitled Notice'}</h2>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 leading-snug">{notice.title || 'Untitled Notice'}</h1>
+                {/* <p className="mt-2 text-sm text-slate-500 leading-relaxed">{notice.message}</p> */}
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {formatNoticeDate(displayDate)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    {formatNoticeTime(displayDate)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5" />
+                    <span className="text-slate-600 font-medium">{creator}</span>
+                  </span>
+                  {fresh && (
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                  )}
+                </div>
+              </div>
+
+              <div className={`hidden sm:flex w-20 h-20 rounded-2xl items-center justify-center shrink-0 ${meta.iconBg}`}>
+                <Icon className={`h-10 w-10 ${meta.iconColor}`} />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+              <Info className="h-4 w-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Notice Details</h2>
+            </div>
+            <div className="px-5 py-5 space-y-4">
+              {showExamRoutine && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-indigo-600" />
+                    <p className="text-sm font-semibold text-indigo-900">Exam Routine</p>
+                  </div>
+                  <p className="mb-3 text-xs text-indigo-700/80">
+                    {examGroup
+                      ? 'Download the full exam routine below, or see all your exams on the Exams page.'
+                      : 'View the full exam schedule on the Exams page.'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {examGroup && (
+                      <button
+                        type="button"
+                        onClick={onDownloadRoutine}
+                        disabled={downloadingRoutine}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {downloadingRoutine ? 'Preparing…' : 'Download Routine PDF'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onViewExams}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                    >
+                      See Details <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message || 'No details available.'}</p>
+              {subjectLabel ? <p className="text-xs text-slate-400">Subject: {subjectLabel}</p> : null}
+            </div>
+
+            <div className="flex items-center justify-center gap-2 px-5 py-4 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={!hasPrev}
+                onClick={onPrev}
+                title="Previous notice"
+                className="p-2.5 rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                disabled={!hasNext}
+                onClick={onNext}
+                title="Next notice"
+                className="p-2.5 rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="space-y-5 p-5 sm:p-6">
-          {/* Meta grid: who posted it, date, time, priority, category */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Posted By</p>
-              <p className="mt-1 flex items-center gap-1 truncate text-sm font-semibold text-gray-800">
-                <User className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {author}
-              </p>
+        {/* Sidebar */}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Hash className="h-4 w-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Notice Information</h2>
             </div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Date</p>
-              <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-gray-800">
-                <Calendar className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {formatDate(displayDate)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Time</p>
-              <p className="mt-1 flex items-center gap-1 text-sm font-semibold text-gray-800">
-                <Clock className="h-3.5 w-3.5 shrink-0 text-indigo-500" /> {formatTime(displayDate)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Priority</p>
-              <span className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${meta.badge}`}>
-                {meta.label}
-              </span>
-            </div>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Category</p>
-              <span className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold capitalize ${CATEGORY_META[category] || CATEGORY_META.general}`}>
-                {category}
-              </span>
+            <div className="space-y-4">
+              <InfoRow icon={Hash} label="Notice ID" value={getNoticeDisplayId(notice)} />
+              <InfoRow icon={Tag} label="Category">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${meta.badge}`}>
+                  {meta.label}
+                </span>
+              </InfoRow>
+              <InfoRow icon={Flag} label="Priority">
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${priorityMeta.badge}`}>
+                  {priorityMeta.label}
+                </span>
+              </InfoRow>
+              <InfoRow icon={Users} label="Visible To" value={getVisibleToLabel(notice)} />
+              <InfoRow icon={Calendar} label="Published On" value={formatNoticeDateTime(displayDate)} />
+              <InfoRow icon={RefreshCw} label="Last Updated" value={formatNoticeDateTime(notice.updatedAt || displayDate)} />
             </div>
           </div>
 
-          {showExamRoutine && (
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-indigo-600" />
-                <p className="text-sm font-semibold text-indigo-900">Exam Routine</p>
-              </div>
-              <p className="mb-3 text-xs text-indigo-700/80">
-                {examGroup
-                  ? 'Download the full exam routine below, or see all your exams on the Exams page.'
-                  : 'View the full exam schedule on the Exams page.'}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {examGroup && (
-                  <button
-                    type="button"
-                    onClick={onDownloadRoutine}
-                    disabled={downloadingRoutine}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {downloadingRoutine ? 'Preparing…' : 'Download Routine PDF'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={onViewExams}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                >
-                  See Details <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Paperclip className="h-4 w-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Attachments ({attachments.length})</h2>
             </div>
-          )}
-
-          <p className="whitespace-pre-wrap text-gray-700 leading-relaxed">{notice.message || 'No details available.'}</p>
-          {subjectLabel ? <p className="text-sm text-gray-500">Subject: {subjectLabel}</p> : null}
-
-          {attachments.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-sm font-semibold text-gray-700">Attachments</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {attachments.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">No attachment is added</p>
+            ) : (
+              <div className="space-y-2">
                 {attachments.map((att, idx) => {
-                  const FileIcon = getFileIcon(att?.type);
+                  const fileMeta = getAttachmentMeta(att);
+                  const FileIcon = getFileIcon(fileMeta.kind);
                   return (
                     <a
                       key={`${att?.url || idx}`}
                       href={att?.url || '#'}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 hover:bg-indigo-50 hover:border-indigo-200 transition-all"
+                      className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 hover:bg-slate-100 transition"
                     >
-                      <FileIcon className="w-4 h-4 text-indigo-600" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 truncate">{att?.name || `File ${idx + 1}`}</p>
-                        {att?.size ? <p className="text-xs text-gray-500">{formatFileSize(att.size)}</p> : null}
-                      </div>
-                      <Download className="w-4 h-4 text-gray-500" />
+                      <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${fileMeta.color}`}>
+                        <FileIcon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-slate-700 truncate">{att?.name || `Attachment ${idx + 1}`}</p>
+                        <p className="text-[11px] text-slate-400">{fileMeta.label}{att?.size ? ` · ${formatFileSize(att.size)}` : ''}</p>
+                      </span>
+                      <Download className="h-4 w-4 text-slate-400 shrink-0" />
                     </a>
                   );
                 })}
               </div>
+            )}
+          </div>
+
+          {/* <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Share2 className="h-4 w-4 text-indigo-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Share Notice</h2>
             </div>
-          )}
+            <p className="text-xs text-slate-400 mb-4">Share this notice with others</p>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <ShareButton icon={MessageCircle} label="WhatsApp" color="bg-emerald-500" onClick={() => onShare('whatsapp', notice)} />
+              <ShareButton icon={Mail} label="Email" color="bg-blue-500" onClick={() => onShare('email', notice)} />
+              <ShareButton icon={Phone} label="SMS" color="bg-amber-500" onClick={() => onShare('sms', notice)} />
+              <ShareButton icon={Copy} label="Copy Link" color="bg-purple-500" onClick={() => onShare('copy', notice)} />
+            </div>
+          </div> */}
         </div>
       </div>
     </div>
   );
 };
 
-/* ─── Stat tile ─── */
-const StatCard = ({ icon, value, label, grad, shadow }) => {
-  const IconComp = icon;
+const InfoRow = (props) => {
+  const { icon, label, value, children } = props;
+  const Icon = icon;
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
-      <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
-      <div className="relative z-10 flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-          <IconComp className="h-4.5 w-4.5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-lg font-black leading-tight text-white">{value}</p>
-          <p className="text-[11px] font-semibold text-white/80">{label}</p>
-        </div>
+    <div className="flex items-start gap-2.5">
+      <Icon className="h-3.5 w-3.5 text-slate-300 mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+        {children || <p className="text-sm text-slate-700 mt-0.5">{value || '—'}</p>}
       </div>
     </div>
+  );
+};
+
+const ShareButton = (props) => {
+  const { icon, label, color, onClick } = props;
+  const Icon = icon;
+  return (
+    <button type="button" onClick={onClick} className="flex flex-col items-center gap-1.5 group">
+      <span className={`w-11 h-11 rounded-full flex items-center justify-center text-white ${color} group-hover:opacity-90 transition shadow-sm`}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="text-[11px] text-slate-500">{label}</span>
+    </button>
   );
 };
 
@@ -396,16 +355,19 @@ const NoticeBoard = () => {
   const NOTICEBOARD_EXAM_GROUPS_CACHE_TTL_MS = 2 * 60 * 1000;
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterPriority, setFilterPriority] = useState('all');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [bookmarkedNotices] = useState([]);
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [showAllPinned, setShowAllPinned] = useState(false);
+  const [listLayout, setListLayout] = useState('list');
+  const [currentPage, setCurrentPage] = useState(1);
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [classTeacher, setClassTeacher] = useState(null);
   const [teacherLoading, setTeacherLoading] = useState(false);
-  const [selectedNotice, setSelectedNotice] = useState(null);
+  const [selectedNoticeId, setSelectedNoticeId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [examGroups, setExamGroups] = useState([]);
   const [downloadingExamId, setDownloadingExamId] = useState('');
@@ -475,27 +437,73 @@ const NoticeBoard = () => {
     loadNoticeBoardData({ forceRefresh: false });
   }, [loadNoticeBoardData]);
 
-  const filteredNotices = notices.filter(notice => {
+  const searchedNotices = useMemo(() => {
+    if (!searchQuery.trim()) return notices;
     const q = searchQuery.toLowerCase();
-    const matchesSearch =
+    return notices.filter((notice) =>
       (notice.title || '').toLowerCase().includes(q) ||
       (notice.message || '').toLowerCase().includes(q) ||
-      resolveAuthor(notice).toLowerCase().includes(q);
-    const matchesPriority = filterPriority === 'all' || resolvePriority(notice) === filterPriority;
-    const matchesCategory = filterCategory === 'all' || resolveCategory(notice) === filterCategory;
-    return matchesSearch && matchesPriority && matchesCategory;
-  });
+      getCreator(notice).toLowerCase().includes(q)
+    );
+  }, [notices, searchQuery]);
 
-  const sortedNotices = [...filteredNotices].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    return new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0);
-  });
+  const noticesWithMeta = useMemo(
+    () => searchedNotices.map((n) => ({ ...n, _displayCategory: getDisplayCategory(n) })),
+    [searchedNotices]
+  );
 
-  const pinnedNotices = sortedNotices.filter((n) => Boolean(n.pinned));
-  const otherNotices = sortedNotices.filter((n) => !n.pinned);
+  const categoryCounts = useMemo(() => {
+    const counts = { all: noticesWithMeta.length };
+    CATEGORY_ORDER.slice(1).forEach((key) => { counts[key] = 0; });
+    noticesWithMeta.forEach((n) => { counts[n._displayCategory] = (counts[n._displayCategory] || 0) + 1; });
+    return counts;
+  }, [noticesWithMeta]);
 
-  const hasActiveFilters = filterPriority !== 'all' || filterCategory !== 'all' || searchQuery;
+  const categoryFilteredNotices = useMemo(() => {
+    if (activeCategory === 'all') return noticesWithMeta;
+    return noticesWithMeta.filter((n) => n._displayCategory === activeCategory);
+  }, [noticesWithMeta, activeCategory]);
+
+  const sortedNotices = useMemo(() => {
+    const arr = [...categoryFilteredNotices];
+    if (sortBy === 'oldest') {
+      arr.sort((a, b) => new Date(resolveDate(a) || 0) - new Date(resolveDate(b) || 0));
+    } else if (sortBy === 'priority') {
+      const rank = { high: 0, medium: 1, low: 2 };
+      arr.sort((a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
+    } else {
+      arr.sort((a, b) => new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
+    }
+    return arr;
+  }, [categoryFilteredNotices, sortBy]);
+
+  const pinnedNotices = useMemo(() => {
+    const highPriority = [...noticesWithMeta]
+      .filter((n) => isPinnedNotice(n))
+      .sort((a, b) => new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
+    const source = highPriority.length ? highPriority : [...noticesWithMeta].sort((a, b) => new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
+    return source.slice(0, showAllPinned ? 6 : 3);
+  }, [noticesWithMeta, showAllPinned]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedNotices.length / NOTICE_PAGE_SIZE));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeCategory, sortBy, searchQuery]);
+
+  const paginatedNotices = useMemo(() => {
+    const start = (currentPage - 1) * NOTICE_PAGE_SIZE;
+    return sortedNotices.slice(start, start + NOTICE_PAGE_SIZE);
+  }, [sortedNotices, currentPage]);
+
+  const allSortedByDate = useMemo(
+    () => [...noticesWithMeta].sort((a, b) => new Date(resolveDate(a) || 0) - new Date(resolveDate(b) || 0)),
+    [noticesWithMeta]
+  );
+  const selectedIndex = allSortedByDate.findIndex((n) => String(resolveId(n)) === String(selectedNoticeId));
+  const selectedNotice = selectedIndex >= 0 ? allSortedByDate[selectedIndex] : null;
+  const prevNotice = selectedIndex > 0 ? allSortedByDate[selectedIndex - 1] : null;
+  const nextNotice = selectedIndex >= 0 && selectedIndex < allSortedByDate.length - 1 ? allSortedByDate[selectedIndex + 1] : null;
 
   const pdfHeader = useMemo(() => ({
     schoolName: String(profile?.schoolName || '').trim(),
@@ -520,215 +528,393 @@ const NoticeBoard = () => {
     }
   };
 
+  const handleShare = (channel, notice) => {
+    const boardUrl = `${window.location.origin}/student/noticeboard`;
+    const shareText = `${notice.title}\n\n${notice.message}\n\n${boardUrl}`;
+    if (channel === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener,noreferrer');
+    } else if (channel === 'email') {
+      window.location.href = `mailto:?subject=${encodeURIComponent(notice.title)}&body=${encodeURIComponent(shareText)}`;
+    } else if (channel === 'sms') {
+      window.location.href = `sms:?body=${encodeURIComponent(shareText)}`;
+    } else if (channel === 'copy') {
+      navigator.clipboard?.writeText(boardUrl)
+        .then(() => toast.success('Notice board link copied'))
+        .catch(() => toast.error('Unable to copy link'));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {selectedNotice ? (
         <NoticeDetailsView
           notice={selectedNotice}
-          onBack={() => setSelectedNotice(null)}
+          onBack={() => setSelectedNoticeId(null)}
           examGroup={matchedExamGroup}
           onDownloadRoutine={handleDownloadRoutine}
           downloadingRoutine={downloadingExamId === String(matchedExamGroup?._id || '')}
           onViewExams={() => navigate('/student/exams')}
+          onPrev={() => prevNotice && setSelectedNoticeId(resolveId(prevNotice))}
+          onNext={() => nextNotice && setSelectedNoticeId(resolveId(nextNotice))}
+          hasPrev={Boolean(prevNotice)}
+          hasNext={Boolean(nextNotice)}
+          onShare={handleShare}
         />
       ) : (
-      <>
-      {/* Header */}
-      <div className="relative bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 rounded-2xl p-6 md:p-8 text-white mb-6 overflow-hidden">
-        <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full pointer-events-none" />
-        <div className="absolute -bottom-12 -left-6 w-36 h-36 bg-white/5 rounded-full pointer-events-none" />
-        <div className="flex flex-col justify-center items-center md:items-stretch md:justify-between gap-4">
-        <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-3 py-1 text-xs font-medium mb-3">
-              <Megaphone className="w-3.5 h-3.5" />
-              School Announcements
-            </div>
-            <h1 className="text-2xl md:text-3xl font-bold leading-tight">Notice Board</h1>
-            <p className="text-indigo-200 text-sm mt-1">
-              Stay updated with the latest school notices &amp; announcements
-            </p>
-            {lastUpdated && !loading && (
-              <p className="text-indigo-300 text-xs mt-2">
-                Last updated {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            )}
-          </div>
-
-          <div className="bg-white/15 backdrop-blur-sm rounded-2xl px-5 py-4 text-center min-w-[90px] shrink-0">
-            <div className="text-3xl font-bold">{loading ? '—' : notices.length}</div>
-            <div className="text-xs text-indigo-200 mt-0.5">Total</div>
-            <button
-              type="button"
-              onClick={() => loadNoticeBoardData({ forceRefresh: true })}
-              disabled={refreshing || loading}
-              className="mt-2 inline-flex items-center rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        {/* Class teacher */}
-        <div className="relative mt-5">
-          <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm">
-            <User className="w-4 h-4 text-indigo-200" />
-            {teacherLoading ? (
-              <span className="text-indigo-200">Loading class teacher…</span>
-            ) : classTeacher ? (
-              <span>
-                Class Teacher:{' '}
-                <span className="font-semibold">{classTeacher.name}</span>
-                {classTeacher.subject ? ` · ${classTeacher.subject}` : ''}
-                {classTeacher.className ? ` · ${classTeacher.className}` : ''}
-                {classTeacher.sectionName ? `-${classTeacher.sectionName}` : ''}
-              </span>
-            ) : (
-              <span className="text-indigo-200">Class Teacher: Not assigned</span>
-            )}
-          </div>
-        </div>
-</div>
-        {error && (
-          <div className="relative mt-4 flex items-center gap-2 bg-red-500/20 border border-red-400/30 text-white text-sm rounded-xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            {error}
-          </div>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard icon={Bell} value={loading ? '—' : notices.length} label="All Notices" grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
-        <StatCard icon={AlertCircle} value={loading ? '—' : notices.filter(n => resolvePriority(n) === 'high').length} label="High Priority" grad="from-rose-500 to-red-600" shadow="shadow-rose-200/60" />
-        <StatCard icon={Pin} value={loading ? '—' : notices.filter(n => Boolean(n.pinned)).length} label="Pinned" grad="from-amber-400 to-orange-500" shadow="shadow-amber-200/60" />
-        <StatCard icon={Bookmark} value={bookmarkedNotices.length} label="Bookmarked" grad="from-purple-500 to-fuchsia-600" shadow="shadow-purple-200/60" />
-      </div>
-
-      {/* Search & Filter */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-        <div className="relative mb-3">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search notices…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-1.5 mb-2">
-          <Filter className="h-3.5 w-3.5 text-gray-400" />
-          <span className="text-xs font-semibold text-gray-400">Priority</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {['all', 'high', 'medium', 'low'].map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setFilterPriority(p)}
-              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold capitalize transition-all ${
-                filterPriority === p
-                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
-                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {p === 'all' ? 'All' : p}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-1.5 mb-2">
-          <Megaphone className="h-3.5 w-3.5 text-gray-400" />
-          <span className="text-xs font-semibold text-gray-400">Category</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {['all', 'academic', 'events', 'transport', 'general'].map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setFilterCategory(c)}
-              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold capitalize transition-all ${
-                filterCategory === c
-                  ? 'border-violet-600 bg-violet-600 text-white shadow-sm'
-                  : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {c === 'all' ? 'All' : c}
-            </button>
-          ))}
-        </div>
-
-        {/* Active filter chips */}
-        {hasActiveFilters && (
-          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100">
-            <span className="text-xs text-gray-400 self-center">Active:</span>
-            {searchQuery && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-full border border-indigo-200">
-                "{searchQuery}"
-                <button onClick={() => setSearchQuery('')} className="ml-0.5 hover:text-indigo-900 font-bold">×</button>
-              </span>
-            )}
-            {filterPriority !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-full border border-indigo-200 capitalize">
-                {filterPriority} priority
-                <button onClick={() => setFilterPriority('all')} className="ml-0.5 hover:text-indigo-900 font-bold">×</button>
-              </span>
-            )}
-            {filterCategory !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs rounded-full border border-indigo-200 capitalize">
-                {filterCategory}
-                <button onClick={() => setFilterCategory('all')} className="ml-0.5 hover:text-indigo-900 font-bold">×</button>
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Notices */}
-      <div className="space-y-4">
-        {loading ? (
-          <><SkeletonCard /><SkeletonCard /><SkeletonCard /></>
-        ) : sortedNotices.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Bell className="w-8 h-8 text-gray-300" />
-            </div>
-            <h3 className="text-base font-semibold text-gray-700 mb-1">No notices found</h3>
-            <p className="text-sm text-gray-400">Try adjusting your search or filter criteria</p>
-          </div>
-        ) : (
-          <>
-            <p className="text-xs text-gray-400 px-1">
-              Showing {sortedNotices.length} of {notices.length} notice{notices.length !== 1 ? 's' : ''}
-            </p>
-
-            {pinnedNotices.length > 0 && (
-              <div className="space-y-2">
-                <h2 className="flex items-center gap-1.5 px-1 text-xs font-bold uppercase tracking-wide text-amber-600">
-                  <Pin className="h-3.5 w-3.5" /> Pinned
-                </h2>
-                {pinnedNotices.map((notice) => (
-                  <NoticeCard key={resolveId(notice)} notice={notice} onOpen={setSelectedNotice} />
-                ))}
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-5">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
+                  <Megaphone className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900 tracking-tight">Notice Board</h1>
+                  <p className="text-sm text-slate-400 mt-0.5">Stay updated with all important announcements and notices.</p>
+                </div>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadNoticeBoardData({ forceRefresh: true })}
+                  disabled={refreshing || loading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Refreshing…' : 'Refresh'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSearchBar((v) => !v)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
+                >
+                  <Filter className="h-4 w-4" />
+                  Filter &amp; Search
+                </button>
+              </div>
+            </div>
 
-            {otherNotices.length > 0 && (
-              <div className="space-y-2">
-                {pinnedNotices.length > 0 && (
-                  <h2 className="px-1 text-xs font-bold uppercase tracking-wide text-gray-400">All Notices</h2>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2 text-xs">
+                <User className="h-3.5 w-3.5 text-indigo-400" />
+                {teacherLoading ? (
+                  <span className="text-slate-400">Loading class teacher…</span>
+                ) : classTeacher ? (
+                  <span className="text-slate-500">
+                    Class Teacher:{' '}
+                    <span className="font-semibold text-slate-700">{classTeacher.name}</span>
+                    {classTeacher.subject ? ` · ${classTeacher.subject}` : ''}
+                    {classTeacher.className ? ` · ${classTeacher.className}` : ''}
+                    {classTeacher.sectionName ? `-${classTeacher.sectionName}` : ''}
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Class Teacher: Not assigned</span>
                 )}
-                {otherNotices.map((notice) => (
-                  <NoticeCard key={resolveId(notice)} notice={notice} onOpen={setSelectedNotice} />
-                ))}
+              </div>
+              {lastUpdated && !loading && (
+                <span className="text-[11px] text-slate-300">
+                  Last updated {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+
+            {error && (
+              <div className="mt-3 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {error}
               </div>
             )}
-          </>
-        )}
-      </div>
-      </>
+
+            {showSearchBar && (
+              <div className="mt-4 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Search notices…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Category pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            {CATEGORY_ORDER.map((key) => {
+              const meta = CATEGORY_META[key];
+              const Icon = meta.icon;
+              const active = activeCategory === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveCategory(key)}
+                  className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold border transition ${
+                    active
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center ${active ? 'bg-white/20' : meta.iconBg || 'bg-indigo-50'}`}>
+                    <Icon className={`h-3 w-3 ${active ? 'text-white' : meta.iconColor || 'text-indigo-500'}`} />
+                  </span>
+                  {meta.label}
+                  <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    {categoryCounts[key] || 0}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              <SkeletonCard /><SkeletonCard /><SkeletonCard />
+            </div>
+          ) : (
+            <>
+              {/* Pinned notices */}
+              {pinnedNotices.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Pin className="h-4 w-4 text-indigo-500" />
+                      <h2 className="text-sm font-semibold text-slate-900">Pinned Notices</h2>
+                    </div>
+                    {noticesWithMeta.filter((n) => isPinnedNotice(n)).length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPinned((v) => !v)}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                      >
+                        {showAllPinned ? 'Show Less' : 'View All Pinned'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pinnedNotices.map((notice) => {
+                      const meta = CATEGORY_META[notice._displayCategory];
+                      const Icon = meta.icon;
+                      const creator = getCreator(notice);
+                      const fresh = isNewNotice(notice);
+                      return (
+                        <div
+                          key={resolveId(notice)}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedNoticeId(resolveId(notice))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
+                          className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                                <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                              </span>
+                              <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
+                            </div>
+                            <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
+                              PINNED
+                            </span>
+                          </div>
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
+                            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 mt-0.5" />
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                            <div className="flex items-center gap-3">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {formatNoticeDate(resolveDate(notice))}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {creator}
+                              </span>
+                            </div>
+                            {fresh && (
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* All notices */}
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                  <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="appearance-none pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+                    >
+                      <option value="newest">Sort by: Newest First</option>
+                      <option value="oldest">Sort by: Oldest First</option>
+                      <option value="priority">Sort by: Priority</option>
+                    </select>
+                    <div className="hidden sm:flex items-center rounded-xl border border-slate-200 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setListLayout('list')}
+                        className={`p-2 transition ${listLayout === 'list' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
+                        title="List view"
+                      >
+                        <ListIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setListLayout('grid')}
+                        className={`p-2 transition ${listLayout === 'grid' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {sortedNotices.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                      <Bell className="h-7 w-7 text-indigo-200" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-400">No notices found</p>
+                    <p className="text-xs text-slate-300">Try adjusting your search or filter criteria</p>
+                  </div>
+                ) : listLayout === 'list' ? (
+                  <div className="divide-y divide-slate-100">
+                    {paginatedNotices.map((notice) => {
+                      const meta = CATEGORY_META[notice._displayCategory];
+                      const Icon = meta.icon;
+                      const creator = getCreator(notice);
+                      const fresh = isNewNotice(notice);
+                      return (
+                        <div
+                          key={resolveId(notice)}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedNoticeId(resolveId(notice))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
+                          className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                        >
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta.iconBg}`}>
+                            <Icon className={`h-5 w-5 ${meta.iconColor}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-semibold ${meta.text}`}>{meta.label}</p>
+                            <p className="text-sm font-semibold text-slate-900 truncate">{notice.title || 'Untitled Notice'}</p>
+                            <p className="text-xs text-slate-500 truncate">{notice.message}</p>
+                          </div>
+                          <div className="hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              {formatNoticeDate(resolveDate(notice))}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <User className="h-3.5 w-3.5" />
+                              {creator}
+                            </span>
+                          </div>
+                          {fresh && (
+                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                          )}
+                          <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+                    {paginatedNotices.map((notice) => {
+                      const meta = CATEGORY_META[notice._displayCategory];
+                      const Icon = meta.icon;
+                      const creator = getCreator(notice);
+                      const fresh = isNewNotice(notice);
+                      return (
+                        <div
+                          key={resolveId(notice)}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedNoticeId(resolveId(notice))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
+                          className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                              <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                            </span>
+                            <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
+                          </div>
+                          <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
+                          <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                            <div className="flex items-center gap-3">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {formatNoticeDate(resolveDate(notice))}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                {creator}
+                              </span>
+                            </div>
+                            {fresh && (
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {sortedNotices.length > 0 && (
+                  <div className="flex items-center justify-center gap-1.5 px-5 py-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        key={page}
+                        type="button"
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-9 h-9 rounded-lg text-sm font-semibold transition ${
+                          page === currentPage
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-slate-500 hover:bg-slate-50 border border-slate-200'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

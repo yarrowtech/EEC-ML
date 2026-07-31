@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Plus, Trash2,
-  Send, Eye, Clock, FileText, X, Search, Users, Tag
+  Bell, Plus, Trash2, Megaphone, Filter, Pin, Calendar, User, ChevronRight, ChevronLeft,
+  LayoutGrid, List as ListIcon,
+  Send, FileText, X, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
+import {
+  CATEGORY_ORDER, CATEGORY_META, getDisplayCategory, isNewNotice, getCreatorLabel,
+} from '../../utils/noticeDisplay';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -20,20 +25,10 @@ const DEFAULT_FORM = {
   category: 'general',
 };
 
-const PRIORITY_STYLES = {
-  high:   { bar: 'bg-red-500',   badge: 'bg-red-50 text-red-700 border-red-200',     dot: 'bg-red-500' },
-  medium: { bar: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
-  low:    { bar: 'bg-slate-300', badge: 'bg-slate-100 text-slate-600 border-slate-200', dot: 'bg-slate-300' },
-};
-
-const AUDIENCE_STYLES = {
-  All:     'bg-slate-100 text-slate-700 border-slate-200',
-  Student: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  Parent:  'bg-purple-50 text-purple-700 border-purple-200',
-  Teacher: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-};
+const NOTICE_PAGE_SIZE = 5;
 
 const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
+  const navigate = useNavigate();
   const [loading, setLoading]           = useState(false);
   const [academicYears, setAcademicYears] = useState([]);
   const [classes, setClasses]           = useState([]);
@@ -44,6 +39,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   const [form, setForm]                 = useState(DEFAULT_FORM);
   const [searchQuery, setSearchQuery]   = useState('');
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('');
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [sortBy, setSortBy]             = useState('newest');
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [showAllPinned, setShowAllPinned] = useState(false);
+  const [listLayout, setListLayout]     = useState('list');
+  const [currentPage, setCurrentPage]   = useState(1);
   const isPostView = viewMode === 'post';
   const isViewPage = viewMode === 'view';
 
@@ -167,6 +168,55 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
     );
   }, [filteredNotices, searchQuery]);
 
+  const noticesWithMeta = useMemo(
+    () => searchedNotices.map((n) => ({ ...n, _displayCategory: getDisplayCategory(n) })),
+    [searchedNotices]
+  );
+
+  const categoryCounts = useMemo(() => {
+    const counts = { all: noticesWithMeta.length };
+    CATEGORY_ORDER.slice(1).forEach((key) => { counts[key] = 0; });
+    noticesWithMeta.forEach((n) => { counts[n._displayCategory] = (counts[n._displayCategory] || 0) + 1; });
+    return counts;
+  }, [noticesWithMeta]);
+
+  const categoryFilteredNotices = useMemo(() => {
+    if (activeCategory === 'all') return noticesWithMeta;
+    return noticesWithMeta.filter((n) => n._displayCategory === activeCategory);
+  }, [noticesWithMeta, activeCategory]);
+
+  const sortedNotices = useMemo(() => {
+    const arr = [...categoryFilteredNotices];
+    if (sortBy === 'oldest') {
+      arr.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    } else if (sortBy === 'priority') {
+      const rank = { high: 0, medium: 1, low: 2 };
+      arr.sort((a, b) => (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || new Date(b.createdAt) - new Date(a.createdAt));
+    } else {
+      arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+    return arr;
+  }, [categoryFilteredNotices, sortBy]);
+
+  const pinnedNotices = useMemo(() => {
+    const highPriority = [...noticesWithMeta]
+      .filter((n) => n.priority === 'high')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const source = highPriority.length ? highPriority : [...noticesWithMeta].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return source.slice(0, showAllPinned ? 6 : 3);
+  }, [noticesWithMeta, showAllPinned]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedNotices.length / NOTICE_PAGE_SIZE));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeCategory, sortBy, searchQuery]);
+
+  const paginatedNotices = useMemo(() => {
+    const start = (currentPage - 1) * NOTICE_PAGE_SIZE;
+    return sortedNotices.slice(start, start + NOTICE_PAGE_SIZE);
+  }, [sortedNotices, currentPage]);
+
   const resetForm = () => {
     setForm({ ...DEFAULT_FORM, type: 'notice', audience: 'All' });
     setAttachments([]);
@@ -251,9 +301,6 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
     }
   };
 
-  const resolveClassName   = (id) => classes.find((c) => String(c._id) === String(id))?.name || '—';
-  const resolveSectionName = (id) => sections.find((s) => String(s._id) === String(id))?.name || '—';
-
   const formatDate = (iso) => {
     if (!iso) return null;
     return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -265,26 +312,59 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   return (
     <div className="min-h-screen bg-slate-50">
 
-      {/* ── Gradient Header ── */}
-      <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl pointer-events-none" />
-        <div className="relative max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
-              <Bell className="h-5 w-5 text-white" />
+      {/* ── Header ── */}
+      {isViewPage ? (
+        <div className="bg-white border-b border-slate-200 px-6 py-5">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                <Megaphone className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">Notice Board</h1>
+                <p className="text-sm text-slate-400 mt-0.5">Stay updated with all important announcements and notices.</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white tracking-tight">
-                {isPostView ? 'New Notice' : 'Published Notices'}
-              </h1>
-              <p className="text-sm text-slate-400 mt-0.5">
-                {isPostView ? 'Create and publish a new notice' : 'Review notices already published'}
-              </p>
+            <button
+              type="button"
+              onClick={() => setShowSearchBar((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
+            >
+              <Filter className="h-4 w-4" />
+              Filter &amp; Search
+            </button>
+          </div>
+          {showSearchBar && (
+            <div className="max-w-7xl mx-auto mt-4 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search notices…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl pointer-events-none" />
+          <div className="relative max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
+                <Bell className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white tracking-tight">New Notice</h1>
+                <p className="text-sm text-slate-400 mt-0.5">Create and publish a new notice</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── Main content ── */}
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
@@ -519,136 +599,204 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
         ) : null}
 
         {isViewPage ? (
-          <div className="mx-auto max-w-5xl">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="space-y-6">
 
-              {/* List header */}
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900">Published Notices</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {searchedNotices.length} {searchedNotices.length === 1 ? 'notice' : 'notices'}
-                    {searchQuery && ` matching "${searchQuery}"`}
-                  </p>
-                </div>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="Search notices…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 w-48 transition"
-                  />
-                </div>
+            {/* Category pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              {CATEGORY_ORDER.map((key) => {
+                const meta = CATEGORY_META[key];
+                const Icon = meta.icon;
+                const active = activeCategory === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveCategory(key)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold border transition ${
+                      active
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center ${active ? 'bg-white/20' : meta.iconBg || 'bg-indigo-50'}`}>
+                      <Icon className={`h-3 w-3 ${active ? 'text-white' : meta.iconColor || 'text-indigo-500'}`} />
+                    </span>
+                    {meta.label}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      {categoryCounts[key] || 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-100 border-t-indigo-600" />
               </div>
-
-              {/* List body */}
-              {loading ? (
-                <div className="flex items-center justify-center py-20">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-100 border-t-indigo-600" />
-                </div>
-              ) : searchedNotices.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                    <Bell className="h-7 w-7 text-indigo-200" />
-                  </div>
-                  <p className="text-sm font-medium text-slate-400">No notices found</p>
-                  <p className="text-xs text-slate-300">Publish a new notice using the form</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100 max-h-[72vh] overflow-y-auto">
-                  {searchedNotices.map((notice) => {
-                    const priority = notice.priority || 'medium';
-                    const ps = PRIORITY_STYLES[priority] || PRIORITY_STYLES.medium;
-                    const audienceStyle = AUDIENCE_STYLES[notice.audience] || AUDIENCE_STYLES.All;
-                    const isSuperAdminNotice =
-                      String(notice?.createdByType || '').toLowerCase() === 'super_admin' ||
-                      String(notice?.typeLabel || '').toLowerCase() === 'super admin broadcast';
-                    const createdById = String(notice?.createdBy || '');
-                    const byYou = currentAdminId && createdById && currentAdminId === createdById;
-                    const creatorMeta = byYou
-                      ? 'By You'
-                      : notice?.createdByName
-                        ? `By ${notice.createdByName}`
-                        : notice?.schoolId
-                          ? `School ${String(notice.schoolId).slice(-6)}`
-                          : '';
-                    return (
-                      <div key={notice._id} className="flex group hover:bg-slate-50/80 transition-colors">
-                        {/* Priority accent bar */}
-                        <div className={`w-1 shrink-0 ${ps.bar}`} />
-
-                        <div className="flex-1 px-5 py-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                              {/* Icon */}
-                              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-indigo-50 border border-indigo-100">
-                                <Bell className="h-4 w-4 text-indigo-500" />
+            ) : (
+              <>
+                {/* Pinned notices */}
+                {pinnedNotices.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Pin className="h-4 w-4 text-indigo-500" />
+                        <h2 className="text-sm font-semibold text-slate-900">Pinned Notices</h2>
+                      </div>
+                      {(highPriorityCount => highPriorityCount > 3)(noticesWithMeta.filter((n) => n.priority === 'high').length) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllPinned((v) => !v)}
+                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          {showAllPinned ? 'Show Less' : 'View All Pinned'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {pinnedNotices.map((notice) => {
+                        const meta = CATEGORY_META[notice._displayCategory];
+                        const Icon = meta.icon;
+                        const creator = getCreatorLabel(notice, currentAdminId);
+                        const fresh = isNewNotice(notice);
+                        return (
+                          <div
+                            key={notice._id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
+                            className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                                  <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                                </span>
+                                <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
                               </div>
-
-                              <div className="min-w-0 flex-1">
-                                {/* Title */}
-                                <p className="text-sm font-semibold text-slate-900 leading-tight">{notice.title}</p>
-
-                                {/* Message */}
-                                <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
-
-                                {/* Badges */}
-                                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${ps.badge}`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${ps.dot}`} />
-                                    {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                                  </span>
-                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${audienceStyle}`}>
-                                    <Users className="h-3 w-3" />
-                                    {notice.audience || 'All'}
-                                  </span>
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
-                                    <Tag className="h-3 w-3" />
-                                    {notice.typeLabel || notice.type}
-                                  </span>
-                                </div>
-
-                                {/* Meta */}
-                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
-                                  {(notice.classId || notice.sectionId) && (
-                                    <span className="flex items-center gap-1">
-                                      <Users className="h-3 w-3" />
-                                      {notice.classId ? resolveClassName(notice.classId) : 'All classes'}
-                                      {notice.sectionId ? ` · ${resolveSectionName(notice.sectionId)}` : ' · All sections'}
-                                    </span>
-                                  )}
-                                  {creatorMeta && (
-                                    <span>{creatorMeta}</span>
-                                  )}
-                                  {!isSuperAdminNotice && (
-                                    <span className="flex items-center gap-1">
-                                      <Eye className="h-3 w-3" />
-                                      {Number(notice.views) || 0} views
-                                    </span>
-                                  )}
-                                  {notice.createdAt && (
-                                    <span className="flex items-center gap-1">
-                                      <Clock className="h-3 w-3" />
-                                      {formatDate(notice.createdAt)}
-                                    </span>
-                                  )}
-                                  {Array.isArray(notice.attachments) && notice.attachments.length > 0 && (
-                                    <span className="flex items-center gap-1 text-indigo-400">
-                                      <FileText className="h-3 w-3" />
-                                      {notice.attachments.length} file{notice.attachments.length > 1 ? 's' : ''}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                              <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
+                                PINNED
+                              </span>
                             </div>
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
+                              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 mt-0.5" />
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
+                            <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(notice.createdAt)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {creator}
+                                </span>
+                              </div>
+                              {fresh && (
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                            {/* Delete */}
+                {/* All notices */}
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value)}
+                          className="appearance-none pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+                        >
+                          <option value="newest">Sort by: Newest First</option>
+                          <option value="oldest">Sort by: Oldest First</option>
+                          <option value="priority">Sort by: Priority</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center rounded-xl border border-slate-200 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setListLayout('list')}
+                          className={`p-2 transition ${listLayout === 'list' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
+                          title="List view"
+                        >
+                          <ListIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setListLayout('grid')}
+                          className={`p-2 transition ${listLayout === 'grid' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
+                          title="Grid view"
+                        >
+                          <LayoutGrid className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {sortedNotices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                        <Bell className="h-7 w-7 text-indigo-200" />
+                      </div>
+                      <p className="text-sm font-medium text-slate-400">No notices found</p>
+                      <p className="text-xs text-slate-300">Publish a new notice using the form</p>
+                    </div>
+                  ) : listLayout === 'list' ? (
+                    <div className="divide-y divide-slate-100">
+                      {paginatedNotices.map((notice) => {
+                        const meta = CATEGORY_META[notice._displayCategory];
+                        const Icon = meta.icon;
+                        const creator = getCreatorLabel(notice, currentAdminId);
+                        const fresh = isNewNotice(notice);
+                        const isSuperAdminNotice =
+                          String(notice?.createdByType || '').toLowerCase() === 'super_admin' ||
+                          String(notice?.typeLabel || '').toLowerCase() === 'super admin broadcast';
+                        return (
+                          <div
+                            key={notice._id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
+                            className="group flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          >
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta.iconBg}`}>
+                              <Icon className={`h-5 w-5 ${meta.iconColor}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${meta.text}`}>{meta.label}</p>
+                              <p className="text-sm font-semibold text-slate-900 truncate">{notice.title}</p>
+                              <p className="text-xs text-slate-500 truncate">{notice.message}</p>
+                            </div>
+                            <div className="hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {formatDate(notice.createdAt)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3.5 w-3.5" />
+                                {creator}
+                              </span>
+                            </div>
+                            {fresh && (
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                            )}
+                            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
                             {!isSuperAdminNotice && (
                               <button
                                 type="button"
-                                onClick={() => deleteNotice(notice._id)}
+                                onClick={(e) => { e.stopPropagation(); deleteNotice(notice._id); }}
                                 className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition shrink-0 opacity-0 group-hover:opacity-100"
                                 title="Delete notice"
                               >
@@ -656,13 +804,92 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                               </button>
                             )}
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+                      {paginatedNotices.map((notice) => {
+                        const meta = CATEGORY_META[notice._displayCategory];
+                        const Icon = meta.icon;
+                        const creator = getCreatorLabel(notice, currentAdminId);
+                        const fresh = isNewNotice(notice);
+                        return (
+                          <div
+                            key={notice._id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
+                            className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                                <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                              </span>
+                              <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
+                            </div>
+                            <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
+                            <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
+                            <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDate(notice.createdAt)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {creator}
+                                </span>
+                              </div>
+                              {fresh && (
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Pagination */}
+                  {sortedNotices.length > 0 && (
+                    <div className="flex items-center justify-center gap-1.5 px-5 py-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-9 h-9 rounded-lg text-sm font-semibold transition ${
+                            page === currentPage
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'text-slate-500 hover:bg-slate-50 border border-slate-200'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         ) : null}
       </div>
