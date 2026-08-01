@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -558,6 +559,7 @@ const AILearningCoursesReference = () => {
     })),
     ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
   ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap]);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
@@ -777,128 +779,395 @@ const AILearningCoursesReference = () => {
   }
 
   if (isDetailsView) {
+    const sectionIdx = Math.max(1, detailSections.findIndex((s) => s.id === activeDetailSection) + 1);
+    const practiceResources = [...assessmentItems, ...chapterWorksheets.downloadLinks];
+
     return (
       <>
-      <div
-        ref={(node) => {
-          detailsViewRef.current = node;
-          detailsScrollRef.current = node;
-        }}
-        onScroll={handleDetailsScroll}
-        className="h-screen overflow-y-auto bg-[#f9f9f7] px-4 py-5 md:px-8 lg:px-12"
-        style={{ fontFamily: 'Work Sans, sans-serif', color: '#1a1c1b' }}
-      >
-        <div className="mx-auto max-w-[1200px]">
-          <div className="mb-5 flex items-center gap-2">
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+          .rdr-playfair { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+          .rdr-inter { font-family: 'Inter', system-ui, sans-serif; }
+          .rdr-scroll::-webkit-scrollbar { width: 3px; }
+          .rdr-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 10px; }
+          .rdr-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
+          @keyframes rdr-pulse-dot { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
+          .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#4ade80; }
+          @media (max-width: 860px) {
+            .rdr-reader-grid { grid-template-columns: 1fr !important; }
+          }
+          @media (max-width: 520px) {
+            .rdr-book-title { font-size: 26px !important; }
+            .rdr-book-page { padding: 20px 18px 24px !important; }
+          }
+        `}</style>
+
+        <div
+          ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
+          onScroll={handleDetailsScroll}
+          style={{ minHeight: '100vh', overflowY: 'auto', background: '#f5f4f1', padding: 20 }}
+        >
+          {/* Nav row */}
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            style={{ maxWidth: 1100, margin: '0 auto 20px', display: 'flex', alignItems: 'center', gap: 10 }}
+          >
             <button
+              type="button"
               onClick={closeDetailsPage}
-              className="inline-flex items-center gap-2 rounded border border-[#c4c7c7] bg-white px-3 py-2 text-sm font-semibold text-[#2f3130] hover:bg-[#f4f4f2]"
+              className="rdr-inter"
+              style={{ display:'inline-flex', alignItems:'center', gap:8, borderRadius:40, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(255,255,255,0.85)', backdropFilter:'blur(12px)', padding:'8px 18px', fontSize:13, fontWeight:600, color:'#2d2d2d', cursor:'pointer' }}
             >
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={14} /> Back
             </button>
             <button
+              type="button"
               onClick={toggleDetailsFullscreen}
-              className="inline-flex items-center gap-2 rounded border border-[#c4c7c7] bg-white px-3 py-2 text-sm font-semibold text-[#2f3130] hover:bg-[#f4f4f2]"
+              className="rdr-inter"
+              style={{ display:'inline-flex', alignItems:'center', gap:8, borderRadius:40, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(255,255,255,0.85)', backdropFilter:'blur(12px)', padding:'8px 18px', fontSize:13, fontWeight:600, color:'#2d2d2d', cursor:'pointer' }}
             >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {isFullscreen ? 'Exit' : 'Full Screen'}
             </button>
+          </motion.div>
+
+          {/* Reader grid */}
+          <div
+            className="rdr-reader-grid"
+            style={{ maxWidth:1100, margin:'0 auto', display:'grid', gridTemplateColumns:'1fr 340px', gap:28, alignItems:'start' }}
+          >
+            {/* ── Book page ── */}
+            <AnimatePresence>
+              {!isPracticeMode && (
+                <motion.div
+                  key="book-page"
+                  initial={{ opacity:0, y:20 }}
+                  animate={{ opacity:1, y:0 }}
+                  exit={{ opacity:0, y:-16, transition:{ duration:0.22 } }}
+                  transition={{ duration:0.42, ease:[0.25,0.46,0.45,0.94] }}
+                  className="rdr-book-page"
+                  style={{
+                    background:'rgba(255,255,255,0.72)',
+                    backdropFilter:'blur(22px) saturate(180%)',
+                    WebkitBackdropFilter:'blur(22px) saturate(180%)',
+                    borderRadius:32,
+                    border:'1px solid rgba(0,0,0,0.06)',
+                    padding:'40px 44px 36px',
+                    boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07), 0 4px 20px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)',
+                    position:'relative',
+                    overflow:'hidden',
+                  }}
+                >
+                  {/* Radial light sheen */}
+                  <div style={{ position:'absolute', top:'-50%', left:'-50%', width:'200%', height:'200%', background:'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.42) 0%, transparent 60%)', pointerEvents:'none' }} />
+
+                  {/* Chapter meta */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28, paddingBottom:20, borderBottom:'1px solid rgba(0,0,0,0.04)', position:'relative', zIndex:1 }}>
+                    <span className="rdr-playfair" style={{ fontSize:12, fontWeight:600, letterSpacing:'4px', textTransform:'uppercase', color:'rgba(0,0,0,0.25)', background:'rgba(0,0,0,0.025)', padding:'6px 18px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
+                      {mapScope.chapterTitle || subjectSlug}
+                    </span>
+                    <span className="rdr-inter" style={{ display:'flex', alignItems:'center', gap:12, fontSize:13, color:'rgba(0,0,0,0.25)', fontWeight:400 }}>
+                      <span className="rdr-dot" />
+                      Reading
+                    </span>
+                  </div>
+
+                  {/* Title */}
+                  <h1 className="rdr-playfair rdr-book-title" style={{ fontSize:38, fontWeight:700, lineHeight:1.2, marginBottom:8, color:'#1a1a1a', letterSpacing:'-0.5px', position:'relative', zIndex:1 }}>
+                    {topicSlug}
+                  </h1>
+                  <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.3)', fontWeight:300, marginBottom:28, letterSpacing:'0.3px', fontStyle:'italic', position:'relative', zIndex:1 }}>
+                    {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Immersive Reader`}
+                  </p>
+
+                  {/* Theory sections */}
+                  <div className="rdr-scroll" style={{ display:'flex', flexDirection:'column', gap:24, maxHeight:420, overflowY:'auto', paddingRight:8, position:'relative', zIndex:1 }}>
+                    {detailSections.length > 0 ? (
+                      detailSections.map((section, idx) => (
+                        <motion.div
+                          key={section.id}
+                          id={section.id}
+                          ref={(node) => { detailSectionRefs.current[section.id] = node; }}
+                          initial={{ opacity:0, x:-10 }}
+                          animate={{ opacity:1, x:0 }}
+                          transition={{ delay: idx * 0.07, duration:0.38 }}
+                          style={{
+                            paddingLeft:20,
+                            borderLeft:`2px solid ${activeDetailSection === section.id ? 'rgba(139,92,246,0.22)' : 'rgba(0,0,0,0.04)'}`,
+                            transition:'border-left-color 0.3s',
+                          }}
+                        >
+                          <p className="rdr-inter" style={{ fontSize:16, lineHeight:1.85, color:'rgba(0,0,0,0.68)', fontWeight:300, letterSpacing:'0.2px' }}>
+                            {section.text}
+                          </p>
+                          <span className="rdr-inter" style={{ display:'inline-block', marginTop:9, fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:1, color:'rgba(0,0,0,0.15)', background:'rgba(0,0,0,0.025)', padding:'2px 12px', borderRadius:20 }}>
+                            {section.title}
+                          </span>
+                        </motion.div>
+                      ))
+                    ) : (
+                      <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.28)', fontStyle:'italic', textAlign:'center', padding:'32px 0' }}>
+                        No reading content published for this topic yet.
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ── Sidebar ── */}
+            <AnimatePresence>
+              {!isPracticeMode && (
+                <motion.div
+                  key="sidebar"
+                  initial={{ opacity:0, x:20 }}
+                  animate={{ opacity:1, x:0 }}
+                  exit={{ opacity:0, x:20, transition:{ duration:0.22 } }}
+                  transition={{ duration:0.4, delay:0.1 }}
+                  style={{ display:'flex', flexDirection:'column', gap:20 }}
+                >
+                  {/* Progress ring widget */}
+                  <motion.div
+                    initial={{ opacity:0, scale:0.95 }}
+                    animate={{ opacity:1, scale:1 }}
+                    transition={{ delay:0.18, duration:0.4 }}
+                    style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px) saturate(180%)', WebkitBackdropFilter:'blur(16px) saturate(180%)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'24px 26px 28px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
+                  >
+                    <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.15)', marginBottom:14 }}>Progress</p>
+                    <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+                      {/* Conic ring */}
+                      <motion.div
+                        animate={{ background: `conic-gradient(#7c3aed ${detailProgress}%, rgba(0,0,0,0.04) ${detailProgress}%)` }}
+                        transition={{ duration:0.5 }}
+                        style={{ width:62, height:62, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', flexShrink:0 }}
+                      >
+                        <div style={{ position:'absolute', width:50, height:50, borderRadius:'50%', background:'rgba(255,255,255,0.88)' }} />
+                        <span className="rdr-playfair" style={{ position:'relative', zIndex:2, fontSize:15, fontWeight:600, color:'#1a1a1a' }}>
+                          {detailProgress}%
+                        </span>
+                      </motion.div>
+                      <div className="rdr-inter" style={{ fontSize:14, color:'rgba(0,0,0,0.35)', fontWeight:300, lineHeight:1.5 }}>
+                        <strong style={{ color:'rgba(0,0,0,0.7)', fontWeight:500 }}>{detailProgress}%</strong> read<br />
+                        <span style={{ fontSize:12, color:'rgba(0,0,0,0.18)' }}>
+                          {sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* Launch Practice button */}
+                  <motion.div
+                    initial={{ opacity:0, y:10 }}
+                    animate={{ opacity:1, y:0 }}
+                    transition={{ delay:0.24, duration:0.38 }}
+                    style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'20px 24px 22px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
+                  >
+                    <p className="rdr-inter" style={{ fontSize:12, color:'rgba(0,0,0,0.2)', fontWeight:400, letterSpacing:'0.5px', marginBottom:12 }}>
+                      Ready to test your understanding?
+                    </p>
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale:1.01, boxShadow:'0 8px 30px rgba(124,58,237,0.07)', borderColor:'rgba(124,58,237,0.16)' }}
+                      whileTap={{ scale:0.97 }}
+                      onClick={() => setIsPracticeMode(true)}
+                      className="rdr-inter"
+                      style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', background:'linear-gradient(135deg, rgba(124,58,237,0.045), rgba(124,58,237,0.01))', border:'1px solid rgba(124,58,237,0.09)', borderRadius:60, padding:'14px 20px 14px 26px', fontSize:15, fontWeight:500, color:'#1a1a1a', cursor:'pointer' }}
+                    >
+                      <span>Launch Practice</span>
+                      <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:36, height:36, borderRadius:'50%', background:'rgba(124,58,237,0.05)', fontSize:18, color:'#7c3aed' }}>✧</span>
+                    </motion.button>
+                  </motion.div>
+
+                  {/* Section navigator */}
+                  {detailSections.length > 1 && (
+                    <motion.div
+                      initial={{ opacity:0, y:10 }}
+                      animate={{ opacity:1, y:0 }}
+                      transition={{ delay:0.3, duration:0.38 }}
+                      style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'20px 24px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
+                    >
+                      <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.15)', marginBottom:12 }}>Sections</p>
+                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                        {detailSections.map((section) => (
+                          <motion.button
+                            key={section.id}
+                            type="button"
+                            whileHover={{ color:'#7c3aed' }}
+                            onClick={() => jumpToDetailSection(section.id)}
+                            className="rdr-inter"
+                            style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', padding:'4px 0', fontSize:13, fontWeight: activeDetailSection === section.id ? 600 : 400, color: activeDetailSection === section.id ? '#7c3aed' : 'rgba(0,0,0,0.35)', transition:'color 0.2s', display:'block', width:'100%' }}
+                          >
+                            {section.title}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ── Practice panel (full-span) ── */}
+            <AnimatePresence>
+              {isPracticeMode && (
+                <motion.div
+                  key="practice-panel"
+                  initial={{ opacity:0, y:32, scale:0.98 }}
+                  animate={{ opacity:1, y:0, scale:1 }}
+                  exit={{ opacity:0, y:24, scale:0.98 }}
+                  transition={{ duration:0.5, ease:[0.16,1,0.3,1] }}
+                  style={{ gridColumn:'1 / -1', background:'rgba(255,255,255,0.82)', backdropFilter:'blur(22px) saturate(180%)', WebkitBackdropFilter:'blur(22px) saturate(180%)', borderRadius:32, border:'1px solid rgba(0,0,0,0.05)', padding:'32px 34px 34px', boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07)' }}
+                >
+                  {/* Panel header */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, paddingBottom:16, borderBottom:'1px solid rgba(0,0,0,0.04)' }}>
+                    <h3 className="rdr-playfair" style={{ fontSize:28, fontWeight:600, color:'#1a1a1a', letterSpacing:'-0.3px' }}>✦ Practice Paper</h3>
+                    <span className="rdr-inter" style={{ fontSize:12, fontWeight:500, color:'rgba(0,0,0,0.22)', background:'rgba(0,0,0,0.025)', padding:'4px 16px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
+                      {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {/* Resource list */}
+                  <div style={{ display:'grid', gap:14, marginBottom:24 }}>
+                    {practiceResources.length === 0 ? (
+                      <div style={{ textAlign:'center', padding:'40px 20px' }}>
+                        <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.28)', fontStyle:'italic', marginBottom:8 }}>
+                          No practice materials uploaded for this topic yet.
+                        </p>
+                        <p className="rdr-inter" style={{ fontSize:13, color:'rgba(0,0,0,0.18)' }}>
+                          Try the interactive Tryout Section below!
+                        </p>
+                      </div>
+                    ) : (
+                      practiceResources.map((item, idx) => (
+                        <motion.div
+                          key={item.id || idx}
+                          initial={{ opacity:0, x:-10 }}
+                          animate={{ opacity:1, x:0 }}
+                          transition={{ delay: idx * 0.055 }}
+                          style={{ background:'rgba(255,255,255,0.5)', borderRadius:20, padding:'18px 22px', border:'1px solid rgba(0,0,0,0.035)' }}
+                        >
+                          <p className="rdr-inter" style={{ fontSize:15, fontWeight:400, color:'rgba(0,0,0,0.75)', marginBottom:12 }}>
+                            <span style={{ color:'rgba(124,58,237,0.4)', fontWeight:600, marginRight:8 }}>
+                              {String(idx + 1).padStart(2, '0')}.
+                            </span>
+                            {item.title}
+                          </p>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:'8px 12px' }}>
+                            {item.url && (
+                              <>
+                                <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
+                                  Open
+                                </a>
+                                <a href={item.url} download className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
+                                  Download
+                                </a>
+                              </>
+                            )}
+                            {item.content && (
+                              <button
+                                type="button"
+                                onClick={() => setActiveMaterial(item)}
+                                className="rdr-inter"
+                                style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', fontWeight:500, cursor:'pointer' }}
+                              >
+                                Read
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Worksheet assignments in practice panel */}
+                  {chapterWorksheets.submittableAssignments.length > 0 && (
+                    <div style={{ marginBottom:24, display:'flex', flexDirection:'column', gap:12 }}>
+                      <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.18)' }}>Worksheet Assignments</p>
+                      {chapterWorksheets.submittableAssignments.map((assignment) => {
+                        const isSubmitted = submittedWorksheets.has(assignment._id);
+                        const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                        return (
+                          <div key={assignment._id} style={{ background:'rgba(255,255,255,0.5)', borderRadius:20, padding:'16px 20px', border:'1px solid rgba(0,0,0,0.035)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0, flex:1 }}>
+                              <FileText size={15} style={{ color:'#7c3aed', flexShrink:0 }} />
+                              <p className="rdr-inter" style={{ fontSize:14, fontWeight:500, color:'rgba(0,0,0,0.75)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{assignment.title}</p>
+                              {isSubmitted && (
+                                <span className="rdr-inter" style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:4, borderRadius:40, background:'rgba(16,185,129,0.1)', padding:'2px 10px', fontSize:10, fontWeight:700, color:'#059669' }}>
+                                  <CheckCircle2 size={10} /> Submitted
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display:'flex', gap:8 }}>
+                              {attachmentUrl && (
+                                <a href={attachmentUrl} target="_blank" rel="noreferrer" className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'5px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
+                                  <Download size={11} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }} />Download
+                                </a>
+                              )}
+                              {!isSubmitted ? (
+                                <button type="button" onClick={() => setWorksheetModal(assignment)} className="rdr-inter" style={{ fontSize:13, color:'white', background:'#7c3aed', padding:'5px 14px', borderRadius:40, border:'none', fontWeight:500, cursor:'pointer' }}>
+                                  Submit
+                                </button>
+                              ) : (
+                                <span className="rdr-inter" style={{ fontSize:12, color:'#059669', fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+                                  <CheckCircle2 size={12} /> Done
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Panel footer */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:16, borderTop:'1px solid rgba(0,0,0,0.04)', flexWrap:'wrap', gap:12 }}>
+                    <motion.button
+                      type="button"
+                      whileHover={{ color:'rgba(0,0,0,0.55)' }}
+                      onClick={() => setIsPracticeMode(false)}
+                      className="rdr-inter"
+                      style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontSize:14, color:'rgba(0,0,0,0.22)' }}
+                    >
+                      ← Return to theory
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale:1.025, boxShadow:'0 12px 32px rgba(124,58,237,0.26)' }}
+                      whileTap={{ scale:0.97 }}
+                      onClick={goToTryoutSection}
+                      className="rdr-inter"
+                      style={{ background:'linear-gradient(135deg, #7c3aed, #a855f7)', color:'white', border:'none', borderRadius:60, padding:'14px 32px', fontSize:15, fontWeight:600, cursor:'pointer', boxShadow:'0 8px 24px rgba(124,58,237,0.22)' }}
+                    >
+                      Try Full Tryout →
+                    </motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          <section className="relative min-h-[420px] rounded overflow-hidden">
-            <img
-              alt="Topic cover"
-              className="absolute inset-0 h-full w-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPcy9M6aEX_21YYZwpZqit5NcXlZqs15W9c4XW8kG9iGkvycGh_kYPIqXj5YKYud58IjEwCxWPJcjir6ndjWeLU7IrE4o9xNPsAvQW2gzdwSXhA9QKh2zh6AeXU2pJnKSObeVH5w38mKTlafryBC7LA0yaGMGUqVKo3EzyFyaSBB7_nQzeazhUYDXfaP1Rn6wFG7s0mCs6DqnfjP594oKHutJVB3iqTgcz5gj6kpISXIcuTLIPaITH1c-NkMVVlvM37DTLMWmP8kQ"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/45 to-black/20" />
-            <div className="relative flex h-full flex-col justify-end px-5 pb-10 sm:px-10">
-              <span className="mb-3 text-[10px] uppercase tracking-[0.16em] text-white/80">Topic Reader</span>
-              <h1 className="text-4xl font-semibold leading-tight tracking-[-0.02em] text-white sm:text-6xl" style={{ fontFamily: 'Newsreader, serif' }}>
-                {topicSlug}
-              </h1>
-              {introductionText && (
-                <p className="mt-4 max-w-2xl text-base leading-relaxed text-white/90 sm:text-xl">
-                  {introductionText}
-                </p>
-              )}
-            </div>
-          </section>
-
-          <main className="mt-10 flex flex-col gap-10 md:flex-row md:gap-14">
-            <aside className="hidden w-1/4 md:block">
-              <div className="sticky top-8">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-[#444748]">Reading Progress</p>
-                <div className="mt-4 flex">
-                  <div className="mr-4 relative w-[2px] bg-[#dbdbdb]">
-                    <div className="absolute left-0 top-0 w-[2px] bg-black transition-all duration-300" style={{ height: `${detailProgress}%` }} />
-                  </div>
-                  <div className="space-y-6 text-xs uppercase tracking-[0.12em] text-[#444748]">
-                    {detailSections.map((section) => (
-                      <button
-                        key={section.id}
-                        type="button"
-                        onClick={() => jumpToDetailSection(section.id)}
-                        className={`block text-left hover:text-black ${activeDetailSection === section.id ? 'text-black font-semibold' : 'text-[#444748]'}`}
-                      >
-                        {section.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="mt-6 text-sm text-[#444748]">{detailProgress}% read</p>
+          {/* Worksheets strip (theory view only) */}
+          {!isPracticeMode && (chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+            <motion.section
+              initial={{ opacity:0, y:12 }}
+              animate={{ opacity:1, y:0 }}
+              transition={{ delay:0.35 }}
+              style={{ maxWidth:1100, margin:'28px auto 0', background:'rgba(238,240,255,0.7)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:28, border:'1px solid rgba(99,102,241,0.12)', padding:'20px 24px' }}
+            >
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+                <ClipboardList size={18} style={{ color:'#6366f1' }} />
+                <h2 className="rdr-inter" style={{ fontSize:15, fontWeight:800, color:'#1e1b4b' }}>Worksheets</h2>
               </div>
-            </aside>
-
-            <div className="mx-auto w-full max-w-[720px]">
-              <article className="text-[20px] leading-[1.85] text-[#1a1c1b]" style={{ fontFamily: 'Newsreader, serif' }}>
-                {detailSections.length > 0 ? detailSections.map((section) => (
-                  <section
-                    key={section.id}
-                    id={section.id}
-                    ref={(node) => {
-                      detailSectionRefs.current[section.id] = node;
-                    }}
-                    className="mb-12 scroll-mt-24"
-                  >
-                    <h2 className="mb-6 text-3xl italic text-black">{section.title}</h2>
-                    <p className="mb-6 whitespace-pre-wrap">{section.text}</p>
-                  </section>
-                )) : (
-                  <p className="rounded-2xl border border-slate-200 bg-white p-6 text-base text-slate-500">
-                    No published reading content is available for this topic yet.
-                  </p>
-                )}
-
-                {/* Static visual removed; only published topic data is rendered.
-                  <img
-                    className="aspect-video w-full rounded object-cover"
-                    alt="Topic inline visual"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFvrS7k6fBFpvew6Q3BLld583PcM3nKdKP_LC4GJPPITQloaLhSZV1jsAJPqCxMBv5htj8emBhzSxuI876N-gsnrGOKQSRgQkQFIsUbOqnHsTgdLnWyVuNKmlyEKhEukVdSlBbruFxLu-XLwTBdqaYXg4zs2KZrvDaoyq1RLozs1osmcf9vVVjVOKYSq_o2GJnuvJoc3fiNpwyqHnBHbQkcCQEQr_fuqpxVVp2OddInG2fzoXRR326-3vQ5GNupv9NtjqPtgQNUxw"
-                  />
-                  <p className="mt-3 text-sm italic text-[#444748]" style={{ fontFamily: 'Work Sans, sans-serif' }}>
-                    Fig 1.1: Foundational ideas and conceptual structure of {topicSlug}.
-                  </p>
-                */}
-
-              </article>
-            </div>
-          </main>
-          {/* Worksheets panel in reader view */}
-          {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-            <section className="mt-10 rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <ClipboardList size={18} className="text-indigo-600" />
-                <h2 className="text-base font-black text-slate-900">Worksheets</h2>
-              </div>
-              <div className="space-y-3">
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 {chapterWorksheets.downloadLinks.map((link) => (
-                  <div key={link.id} className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FileText size={15} className="shrink-0 text-indigo-500" />
-                      <p className="text-sm font-semibold text-slate-800 truncate">{link.title}</p>
+                  <div key={link.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, background:'white', borderRadius:16, padding:'12px 16px', border:'1px solid rgba(99,102,241,0.1)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                      <FileText size={14} style={{ color:'#6366f1', flexShrink:0 }} />
+                      <p className="rdr-inter" style={{ fontSize:13, fontWeight:600, color:'#1e1b4b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{link.title}</p>
                     </div>
-                    <a href={link.url} target="_blank" rel="noreferrer" className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                    <a href={link.url} target="_blank" rel="noreferrer" style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:5, borderRadius:40, background:'#6366f1', padding:'6px 14px', fontSize:12, fontWeight:700, color:'white', textDecoration:'none' }}>
                       <Download size={11} /> Download
                     </a>
                   </div>
@@ -907,31 +1176,29 @@ const AILearningCoursesReference = () => {
                   const isSubmitted = submittedWorksheets.has(assignment._id);
                   const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                   return (
-                    <div key={assignment._id} className="flex flex-col gap-2 rounded-xl border border-indigo-100 bg-white px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText size={15} className="shrink-0 text-indigo-500" />
-                          <p className="text-sm font-semibold text-slate-800 truncate">{assignment.title}</p>
-                        </div>
+                    <div key={assignment._id} style={{ background:'white', borderRadius:16, padding:'12px 16px', border:'1px solid rgba(99,102,241,0.1)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, flex:1 }}>
+                        <FileText size={14} style={{ color:'#6366f1', flexShrink:0 }} />
+                        <p className="rdr-inter" style={{ fontSize:13, fontWeight:600, color:'#1e1b4b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{assignment.title}</p>
                         {isSubmitted && (
-                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                            <CheckCircle2 size={10} /> Submitted
+                          <span className="rdr-inter" style={{ flexShrink:0, borderRadius:40, background:'rgba(16,185,129,0.1)', padding:'2px 10px', fontSize:10, fontWeight:700, color:'#059669' }}>
+                            Submitted
                           </span>
                         )}
                       </div>
-                      <div className="flex gap-2 flex-wrap">
+                      <div style={{ display:'flex', gap:8 }}>
                         {attachmentUrl && (
-                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, borderRadius:40, border:'1px solid rgba(99,102,241,0.2)', background:'rgba(99,102,241,0.06)', padding:'5px 12px', fontSize:12, fontWeight:600, color:'#6366f1', textDecoration:'none' }}>
                             <Download size={11} /> Download
                           </a>
                         )}
                         {!isSubmitted ? (
-                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                          <button type="button" onClick={() => setWorksheetModal(assignment)} style={{ borderRadius:40, background:'#6366f1', padding:'5px 14px', fontSize:12, fontWeight:700, color:'white', border:'none', cursor:'pointer' }}>
                             Submit
                           </button>
                         ) : (
-                          <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
-                            <CheckCircle2 size={11} /> Already submitted
+                          <span className="rdr-inter" style={{ fontSize:12, color:'#059669', fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+                            <CheckCircle2 size={12} /> Done
                           </span>
                         )}
                       </div>
@@ -939,70 +1206,47 @@ const AILearningCoursesReference = () => {
                   );
                 })}
               </div>
-            </section>
+            </motion.section>
           )}
 
-          <footer className="mt-8 border-t border-[#d7d9d8] pt-5 pb-3">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={goToTryoutSection}
-                className="inline-flex items-center rounded-2xl px-8 py-4 text-base font-bold text-white transition-all duration-500 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-[#9cc3ff] focus:ring-offset-2 group"
-                style={{
-                  background: 'linear-gradient(135deg, #0f6fff 0%, #4f8dff 100%)',
-                  boxShadow: '0 8px 20px rgba(15, 111, 255, 0.25), 0 0 30px rgba(79, 141, 255, 0.15)',
-                  animation: 'tryoutSoftEntrance 800ms cubic-bezier(0.34, 1.56, 0.64, 1), tryoutSoftGlow 3.5s ease-in-out 900ms infinite',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <span className="relative z-10 flex items-center gap-2">
-                  Try Tryout
-                  <svg className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </span>
-              </button>
-            </div>
-          </footer>
-          <style>{`
-            @keyframes tryoutSoftEntrance {
-              0% {
-                opacity: 0;
-                transform: translateY(20px) scale(0.95);
-              }
-              100% {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-              }
-            }
-            @keyframes tryoutSoftGlow {
-              0%, 100% {
-                transform: translateY(0);
-                filter: drop-shadow(0 8px 20px rgba(15, 111, 255, 0.25));
-              }
-              50% {
-                transform: translateY(-3px);
-                filter: drop-shadow(0 12px 28px rgba(15, 111, 255, 0.35));
-              }
-            }
-            button[style*="tryoutSoftEntrance"]:hover {
-              transform: translateY(-4px);
-            }
-          `}</style>
+          <div style={{ maxWidth:1100, margin:'0 auto', paddingBottom:32 }} />
         </div>
-      </div>
 
-      {worksheetModal && (
-        <WorksheetSubmitModal
-          assignment={worksheetModal}
-          onClose={() => setWorksheetModal(null)}
-          onSubmitted={() => {
-            setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
-            setWorksheetModal(null);
-          }}
-        />
-      )}
+        {worksheetModal && (
+          <WorksheetSubmitModal
+            assignment={worksheetModal}
+            onClose={() => setWorksheetModal(null)}
+            onSubmitted={() => {
+              setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
+              setWorksheetModal(null);
+            }}
+          />
+        )}
+
+        {activeMaterial && (
+          <motion.div
+            initial={{ opacity:0 }}
+            animate={{ opacity:1 }}
+            exit={{ opacity:0 }}
+            style={{ position:'fixed', inset:0, zIndex:80, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)', padding:16 }}
+          >
+            <motion.div
+              initial={{ scale:0.94, y:20 }}
+              animate={{ scale:1, y:0 }}
+              style={{ width:'100%', maxWidth:680, maxHeight:'85vh', overflow:'hidden', borderRadius:24, background:'white', boxShadow:'0 40px 80px rgba(0,0,0,0.18)' }}
+            >
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, padding:'18px 22px', borderBottom:'1px solid rgba(0,0,0,0.06)' }}>
+                <h3 className="rdr-inter" style={{ fontSize:16, fontWeight:800, color:'#1a1a1a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{activeMaterial.title}</h3>
+                <button type="button" onClick={() => setActiveMaterial(null)} style={{ flexShrink:0, background:'none', border:'none', cursor:'pointer', color:'#666', padding:6, borderRadius:8, display:'flex' }}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div style={{ maxHeight:'65vh', overflowY:'auto', padding:22 }}>
+                <p className="rdr-inter" style={{ whiteSpace:'pre-wrap', fontSize:14, lineHeight:1.8, color:'#374151' }}>{stripHtml(activeMaterial.content)}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
       </>
     );
   }
