@@ -11,7 +11,7 @@ import {
   CATEGORY_META, PRIORITY_META, getDisplayCategory, isNewNotice, isPinnedNotice,
   getCreatorLabel, CREATOR_TYPE_LABEL, formatNoticeDate, formatNoticeTime,
   formatNoticeDateTime, getNoticeDisplayId, formatFileSize, getAttachmentMeta,
-  getVisibleToLabel,
+  getVisibleToLabel, downloadAttachment,
 } from '../../utils/noticeDisplay';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -283,12 +283,11 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
                   {attachments.map((att, idx) => {
                     const fileMeta = getAttachmentMeta(att);
                     return (
-                      <a
+                      <button
+                        type="button"
                         key={`${att.url}-${idx}`}
-                        href={att.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 hover:bg-slate-100 transition"
+                        onClick={() => downloadAttachment(att)}
+                        className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 hover:bg-slate-100 transition text-left"
                       >
                         <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${fileMeta.color}`}>
                           <Paperclip className="h-4 w-4" />
@@ -298,7 +297,7 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
                           <p className="text-[11px] text-slate-400">{fileMeta.label}{att.size ? ` · ${formatFileSize(att.size)}` : ''}</p>
                         </span>
                         <Download className="h-4 w-4 text-slate-400 shrink-0" />
-                      </a>
+                      </button>
                     );
                   })}
                 </div>

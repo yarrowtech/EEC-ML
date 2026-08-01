@@ -190,7 +190,7 @@ router.post('/', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = req.campusId || null;
-    const { title, message, audience, classId, sectionId, type, typeLabel, priority, category, expiresAt, attachments, subjectId } = req.body || {};
+    const { title, message, audience, classId, sectionId, type, typeLabel, priority, category, expiresAt, attachments, subjectId, isPinned } = req.body || {};
     if (!title || !String(title).trim() || !message || !String(message).trim()) {
       return res.status(400).json({ error: 'title and message are required' });
     }
@@ -239,6 +239,7 @@ router.post('/', adminAuth, async (req, res) => {
       subjectId: subjectId || undefined,
       subjectName,
       attachments: Array.isArray(attachments) ? attachments : [],
+      isPinned: Boolean(isPinned),
       expiresAt: expiresAt ? new Date(expiresAt) : undefined,
     });
 
@@ -383,7 +384,21 @@ router.patch('/:id', adminAuth, async (req, res) => {
     if (!schoolId) return;
     const campusId = req.campusId || null;
     const { id } = req.params;
-    const updates = req.body || {};
+    const updates = { ...(req.body || {}) };
+
+    // className/sectionName are used as a fallback in the student visibility
+    // filter — keep them in sync whenever classId/sectionId are edited.
+    if (updates.classId !== undefined || updates.sectionId !== undefined) {
+      const { className, sectionName } = await resolveClassNames({
+        schoolId,
+        campusId,
+        classId: updates.classId,
+        sectionId: updates.sectionId,
+      });
+      updates.className = className;
+      updates.sectionName = sectionName;
+    }
+
     const updated = await Notification.findOneAndUpdate(
       { _id: id, schoolId, ...(campusId ? { campusId } : {}) },
       updates,

@@ -38,6 +38,7 @@ const notificationSchema = new mongoose.Schema(
       enum: ['academic', 'events', 'transport', 'general'],
       default: 'general'
     },
+    isPinned: { type: Boolean, default: false, index: true },
 
     // Related entity reference
     relatedEntity: {

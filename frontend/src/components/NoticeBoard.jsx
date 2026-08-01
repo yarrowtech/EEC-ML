@@ -16,7 +16,7 @@ import {
   CATEGORY_ORDER, CATEGORY_META, PRIORITY_META, DEPT_FALLBACK,
   getDisplayCategory, isNewNotice, isPinnedNotice, formatNoticeDate,
   formatNoticeTime, formatNoticeDateTime, getNoticeDisplayId, formatFileSize,
-  getAttachmentMeta, getVisibleToLabel,
+  getAttachmentMeta, getVisibleToLabel, downloadAttachment,
 } from '../utils/noticeDisplay';
 
 /* ─── Helpers ─── */
@@ -274,12 +274,11 @@ const NoticeDetailsView = ({
                   const fileMeta = getAttachmentMeta(att);
                   const FileIcon = getFileIcon(fileMeta.kind);
                   return (
-                    <a
+                    <button
+                      type="button"
                       key={`${att?.url || idx}`}
-                      href={att?.url || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 hover:bg-slate-100 transition"
+                      onClick={() => downloadAttachment(att)}
+                      className="flex w-full items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 hover:bg-slate-100 transition text-left"
                     >
                       <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${fileMeta.color}`}>
                         <FileIcon className="h-4 w-4" />
@@ -289,7 +288,7 @@ const NoticeDetailsView = ({
                         <p className="text-[11px] text-slate-400">{fileMeta.label}{att?.size ? ` · ${formatFileSize(att.size)}` : ''}</p>
                       </span>
                       <Download className="h-4 w-4 text-slate-400 shrink-0" />
-                    </a>
+                    </button>
                   );
                 })}
               </div>
@@ -496,11 +495,10 @@ const NoticeBoard = () => {
   }, [categoryFilteredNotices, sortBy]);
 
   const pinnedNotices = useMemo(() => {
-    const highPriority = [...noticesWithMeta]
+    const pinned = [...noticesWithMeta]
       .filter((n) => isPinnedNotice(n))
       .sort((a, b) => new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
-    const source = highPriority.length ? highPriority : [...noticesWithMeta].sort((a, b) => new Date(resolveDate(b) || 0) - new Date(resolveDate(a) || 0));
-    return source.slice(0, showAllPinned ? 6 : 3);
+    return pinned.slice(0, showAllPinned ? 6 : 3);
   }, [noticesWithMeta, showAllPinned]);
 
   const totalPages = Math.max(1, Math.ceil(sortedNotices.length / NOTICE_PAGE_SIZE));

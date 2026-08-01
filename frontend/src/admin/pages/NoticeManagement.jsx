@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Plus, Trash2, Megaphone, Filter, Pin, Calendar, User, ChevronRight, ChevronLeft,
+  Bell, Plus, Trash2, Megaphone, Filter, Pin, PinOff, Edit2, Calendar, User, ChevronRight, ChevronLeft,
   LayoutGrid, List as ListIcon,
   Send, FileText, X, Search
 } from 'lucide-react';
@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
   CATEGORY_ORDER, CATEGORY_META, getDisplayCategory, isNewNotice, getCreatorLabel,
+  isPinnedNotice,
 } from '../../utils/noticeDisplay';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -23,6 +24,7 @@ const DEFAULT_FORM = {
   sectionId: '',
   priority: 'medium',
   category: 'general',
+  isPinned: false,
 };
 
 const NOTICE_PAGE_SIZE = 5;
@@ -45,6 +47,10 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   const [showAllPinned, setShowAllPinned] = useState(false);
   const [listLayout, setListLayout]     = useState('list');
   const [currentPage, setCurrentPage]   = useState(1);
+  const [editingNoticeId, setEditingNoticeId] = useState('');
+  const [editForm, setEditForm]         = useState(null);
+  const [savingEdit, setSavingEdit]     = useState(false);
+  const [pinningId, setPinningId]       = useState('');
   const isPostView = viewMode === 'post';
   const isViewPage = viewMode === 'view';
 
@@ -199,11 +205,10 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   }, [categoryFilteredNotices, sortBy]);
 
   const pinnedNotices = useMemo(() => {
-    const highPriority = [...noticesWithMeta]
-      .filter((n) => n.priority === 'high')
+    const pinned = [...noticesWithMeta]
+      .filter((n) => isPinnedNotice(n))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const source = highPriority.length ? highPriority : [...noticesWithMeta].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    return source.slice(0, showAllPinned ? 6 : 3);
+    return pinned.slice(0, showAllPinned ? 6 : 3);
   }, [noticesWithMeta, showAllPinned]);
 
   const totalPages = Math.max(1, Math.ceil(sortedNotices.length / NOTICE_PAGE_SIZE));
@@ -298,6 +303,67 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
       await loadData();
     } catch (err) {
       toast.error(err.message || 'Unable to delete notice');
+    }
+  };
+
+  const togglePin = async (notice) => {
+    const id = notice._id;
+    setPinningId(id);
+    try {
+      await apiRequest(`/api/notifications/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isPinned: !notice.isPinned }),
+      });
+      toast.success(notice.isPinned ? 'Notice unpinned' : 'Notice pinned to top');
+      await loadData();
+    } catch (err) {
+      toast.error(err.message || 'Unable to update pin status');
+    } finally {
+      setPinningId('');
+    }
+  };
+
+  const openEditNotice = (notice) => {
+    setEditingNoticeId(notice._id);
+    setEditForm({
+      title: notice.title || '',
+      message: notice.message || '',
+      type: notice.type || 'notice',
+      typeLabel: notice.typeLabel || '',
+      audience: notice.audience || 'All',
+      classId: notice.classId || '',
+      sectionId: notice.sectionId || '',
+      priority: notice.priority || 'medium',
+      category: notice.category || 'general',
+      isPinned: Boolean(notice.isPinned),
+    });
+  };
+
+  const closeEditNotice = () => {
+    setEditingNoticeId('');
+    setEditForm(null);
+  };
+
+  const submitEditNotice = async (e) => {
+    e.preventDefault();
+    if (!editForm.title.trim() || !editForm.message.trim()) { toast.error('Title and message are required'); return; }
+    setSavingEdit(true);
+    try {
+      await apiRequest(`/api/notifications/${editingNoticeId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...editForm,
+          classId: editForm.classId || null,
+          sectionId: editForm.sectionId || null,
+        }),
+      });
+      toast.success('Notice updated');
+      closeEditNotice();
+      await loadData();
+    } catch (err) {
+      toast.error(err.message || 'Unable to update notice');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -519,6 +585,17 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                   </div>
                 </div>
 
+                {/* Pin */}
+                <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.isPinned}
+                    onChange={(e) => setForm((p) => ({ ...p, isPinned: e.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Pin this notice to the top</span>
+                </label>
+
                 {/* Custom label */}
                 {form.type === 'other' && (
                   <div>
@@ -644,7 +721,7 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                         <Pin className="h-4 w-4 text-indigo-500" />
                         <h2 className="text-sm font-semibold text-slate-900">Pinned Notices</h2>
                       </div>
-                      {(highPriorityCount => highPriorityCount > 3)(noticesWithMeta.filter((n) => n.priority === 'high').length) && (
+                      {noticesWithMeta.filter((n) => isPinnedNotice(n)).length > 3 && (
                         <button
                           type="button"
                           onClick={() => setShowAllPinned((v) => !v)}
@@ -667,7 +744,7 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                             tabIndex={0}
                             onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
                             onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
-                            className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                            className="group relative rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
                           >
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-2">
@@ -676,9 +753,30 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                 </span>
                                 <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
                               </div>
-                              <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
-                                PINNED
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openEditNotice(notice); }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                    title="Edit notice"
+                                  >
+                                    <Edit2 className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); togglePin(notice); }}
+                                    disabled={pinningId === notice._id}
+                                    className="p-1 rounded-md text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition disabled:opacity-50"
+                                    title="Unpin notice"
+                                  >
+                                    <PinOff className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
+                                  PINNED
+                                </span>
+                              </div>
                             </div>
                             <div className="flex items-start justify-between gap-2">
                               <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
@@ -775,7 +873,10 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                               <Icon className={`h-5 w-5 ${meta.iconColor}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className={`text-xs font-semibold ${meta.text}`}>{meta.label}</p>
+                              <p className={`flex items-center gap-1 text-xs font-semibold ${meta.text}`}>
+                                {notice.isPinned && <Pin className="h-3 w-3 shrink-0" />}
+                                {meta.label}
+                              </p>
                               <p className="text-sm font-semibold text-slate-900 truncate">{notice.title}</p>
                               <p className="text-xs text-slate-500 truncate">{notice.message}</p>
                             </div>
@@ -793,16 +894,35 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                               <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
                             )}
                             <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
-                            {!isSuperAdminNotice && (
+                            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); deleteNotice(notice._id); }}
-                                className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition shrink-0 opacity-0 group-hover:opacity-100"
-                                title="Delete notice"
+                                onClick={(e) => { e.stopPropagation(); openEditNotice(notice); }}
+                                className="p-2 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                title="Edit notice"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Edit2 className="h-4 w-4" />
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); togglePin(notice); }}
+                                disabled={pinningId === notice._id}
+                                className="p-2 rounded-lg text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition disabled:opacity-50"
+                                title={notice.isPinned ? 'Unpin notice' : 'Pin notice'}
+                              >
+                                {notice.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                              </button>
+                              {!isSuperAdminNotice && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); deleteNotice(notice._id); }}
+                                  className="p-2 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition"
+                                  title="Delete notice"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -821,13 +941,37 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                             tabIndex={0}
                             onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
                             onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
-                            className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                            className="group relative rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
                           >
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-                                <Icon className={`h-4 w-4 ${meta.iconColor}`} />
-                              </span>
-                              <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                                  <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                                </span>
+                                <span className={`flex items-center gap-1 text-xs font-semibold ${meta.text}`}>
+                                  {notice.isPinned && <Pin className="h-3 w-3 shrink-0" />}
+                                  {meta.label}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openEditNotice(notice); }}
+                                  className="p-1 rounded-md text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                  title="Edit notice"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); togglePin(notice); }}
+                                  disabled={pinningId === notice._id}
+                                  className="p-1 rounded-md text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition disabled:opacity-50"
+                                  title={notice.isPinned ? 'Unpin notice' : 'Pin notice'}
+                                >
+                                  {notice.isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                                </button>
+                              </div>
                             </div>
                             <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
                             <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
@@ -893,6 +1037,161 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
           </div>
         ) : null}
       </div>
+
+      {/* ── Edit Notice modal ── */}
+      {editingNoticeId && editForm && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeEditNotice} />
+          <div className="relative bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-sm">
+                  <Edit2 className="h-4 w-4 text-white" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-base">Edit Notice</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditNotice}
+                className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={submitEditNotice} className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+              <div>
+                <label className={labelCls}>Title</label>
+                <input
+                  className={inputCls}
+                  value={editForm.title}
+                  onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Message</label>
+                <textarea
+                  rows={4}
+                  className={`${inputCls} resize-none`}
+                  value={editForm.message}
+                  onChange={(e) => setEditForm((p) => ({ ...p, message: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Category</label>
+                  <select className={inputCls} value={editForm.category} onChange={(e) => setEditForm((p) => ({ ...p, category: e.target.value }))}>
+                    <option value="general">General</option>
+                    <option value="academic">Academic</option>
+                    <option value="events">Events</option>
+                    <option value="transport">Transport</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Type</label>
+                  <select className={inputCls} value={editForm.type} onChange={(e) => setEditForm((p) => ({ ...p, type: e.target.value }))}>
+                    <option value="notice">Notice</option>
+                    <option value="announcement">Announcement</option>
+                    <option value="assignment">Assignment</option>
+                    <option value="exam">Exam</option>
+                    <option value="result">Result</option>
+                    <option value="fee">Fee</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Class</label>
+                  <select
+                    className={inputCls}
+                    value={editForm.classId}
+                    onChange={(e) => setEditForm((p) => ({ ...p, classId: e.target.value, sectionId: '' }))}
+                  >
+                    <option value="">All classes</option>
+                    {classes.map((cls) => (
+                      <option key={cls._id} value={cls._id}>{cls.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Section</label>
+                  <select
+                    className={inputCls}
+                    value={editForm.sectionId}
+                    onChange={(e) => setEditForm((p) => ({ ...p, sectionId: e.target.value }))}
+                    disabled={!editForm.classId}
+                  >
+                    <option value="">{editForm.classId ? 'All sections' : 'Select class first'}</option>
+                    {sections.filter((sec) => String(sec.classId) === String(editForm.classId)).map((sec) => (
+                      <option key={sec._id} value={sec._id}>{sec.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Priority</label>
+                  <select className={inputCls} value={editForm.priority} onChange={(e) => setEditForm((p) => ({ ...p, priority: e.target.value }))}>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Audience</label>
+                  <select className={inputCls} value={editForm.audience} onChange={(e) => setEditForm((p) => ({ ...p, audience: e.target.value }))}>
+                    <option value="All">All</option>
+                    <option value="Student">Students</option>
+                    <option value="Parent">Parents</option>
+                    <option value="Teacher">Teachers</option>
+                  </select>
+                </div>
+              </div>
+
+              {editForm.type === 'other' && (
+                <div>
+                  <label className={labelCls}>Custom Label</label>
+                  <input
+                    className={inputCls}
+                    value={editForm.typeLabel}
+                    onChange={(e) => setEditForm((p) => ({ ...p, typeLabel: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.isPinned}
+                  onChange={(e) => setEditForm((p) => ({ ...p, isPinned: e.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                />
+                <span className="text-sm font-medium text-slate-700">Pin this notice to the top</span>
+              </label>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button type="button" onClick={closeEditNotice} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition shadow-md shadow-indigo-200"
+                >
+                  {savingEdit ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

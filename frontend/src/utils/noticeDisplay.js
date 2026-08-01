@@ -50,7 +50,7 @@ export const isNewNotice = (notice) => {
   return diffMs <= 1000 * 60 * 60 * 24 * 7;
 };
 
-export const isPinnedNotice = (notice) => notice?.priority === 'high';
+export const isPinnedNotice = (notice) => Boolean(notice?.isPinned);
 
 export const getCreatorLabel = (notice, currentAdminId) => {
   const createdById = String(notice?.createdBy || '');
@@ -101,6 +101,35 @@ export const getAttachmentMeta = (attachment) => {
   if (['doc', 'docx'].includes(ext)) return { label: ext.toUpperCase(), color: 'bg-blue-50 text-blue-500', kind: 'doc' };
   if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return { label: ext.toUpperCase(), color: 'bg-purple-50 text-purple-500', kind: 'image' };
   return { label: ext ? ext.toUpperCase() : 'FILE', color: 'bg-slate-100 text-slate-500', kind: 'file' };
+};
+
+// Cloudinary serves 'raw' uploads (PDFs) without a filename/extension in the
+// URL, so a plain <a href> download lands as an unnamed file like
+// "file_f9sx6q". Fetch it as a blob and force a proper filename instead.
+export const downloadAttachment = async (attachment) => {
+  const url = attachment?.url;
+  if (!url) return;
+  const meta = getAttachmentMeta(attachment);
+  let filename = String(attachment?.name || '').trim() || 'attachment';
+  if (!/\.[a-z0-9]{2,5}$/i.test(filename)) {
+    const ext = { pdf: 'pdf', sheet: 'xlsx', doc: 'docx', image: 'jpg' }[meta.kind];
+    if (ext) filename = `${filename}.${ext}`;
+  }
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
 };
 
 export const getVisibleToLabel = (notice, classes = [], sections = []) => {
