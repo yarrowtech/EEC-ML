@@ -214,6 +214,14 @@ const AttendanceManagement = () => {
     }
   }, [subject, subjectOptions]);
 
+  // Once the teacher's real allocated subjects load, default to the first
+  // one instead of sitting on the generic "All Subjects" view.
+  useEffect(() => {
+    if (!subject && subjectOptions.length > 0) {
+      setSubject(subjectOptions[0]);
+    }
+  }, [subject, subjectOptions]);
+
   useEffect(() => {
     const loadSchoolMeta = async () => {
       const token = localStorage.getItem('token');
@@ -437,7 +445,7 @@ const AttendanceManagement = () => {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-auto w-full max-w-[1100px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
+      className="mx-auto w-full max-w-[1400px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
     >
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -490,137 +498,149 @@ const AttendanceManagement = () => {
         </span>
       </Motion.section>
 
-      <div className="mb-5 grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2">
-        <div className="relative">
-          <Calendar className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
-          <input type="date" value={selectedDate} min={todayDateString} max={todayDateString} disabled className={`${inputClass} pl-9`} aria-label="Attendance date" />
-        </div>
-        <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className={inputClass} aria-label="Attendance month" />
-      </div>
-
-      <div className="mb-5 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3">
-        <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-black/70">
-          <input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-3.5 accent-black" />
-          Substitute attendance (covering another class)
-        </label>
-        <AnimatePresence>
-          {isSubstituteMode && (
-            <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Active Session</label>
-                  <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} className={inputClass} aria-label="Active session">
-                    {sessionOptions.length === 0 && <option value="">—</option>}
-                    {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Class</label>
-                  <select
-                    value={selectedClass}
-                    onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }}
-                    className={inputClass}
-                    aria-label="Substitute class"
-                  >
-                    <option value="">Select class</option>
-                    {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Section</label>
-                  <select
-                    value={selectedSection}
-                    onChange={(e) => setSelectedSection(e.target.value)}
-                    disabled={!selectedClass}
-                    className={inputClass}
-                    aria-label="Substitute section"
-                  >
-                    <option value="">{selectedClass ? 'Select section' : 'Select class first'}</option>
-                    {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-black/45">Pick the class &amp; section you're covering — subjects below will update to match.</p>
-            </Motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="mb-5 flex flex-wrap gap-2">
-        <button type="button" onClick={() => setSubject('')} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${!subject ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-[#f4f7fa] hover:bg-[#eef2f6]'}`}>
-          <BookOpen className="mr-1.5 inline size-3.5 opacity-45" /> All Subjects
-        </button>
-        {subjectTabs.map((tab, index) => {
-          const Icon = subjectIcons[index % subjectIcons.length];
-          return (
-            <button key={tab} type="button" onClick={() => setSubject(tab)} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${subject === tab ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-[#f4f7fa] hover:bg-[#eef2f6]'}`}>
-              <Icon className="mr-1.5 inline size-3.5 opacity-45" /> {tab}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-xs font-medium text-black/70"><CheckCheck className="mr-1 inline size-3.5 opacity-45" />Mark Attendance</span>
-          <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50"><CheckCheck className="size-3.5 opacity-50" /> Check All</button>
-          <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-50"><span className="text-sm leading-none opacity-50">×</span> Uncheck All</button>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-40" />
-            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student..." className="w-40 rounded-full border border-[#e2e8ee] bg-white py-1.5 pl-8 pr-3 text-xs outline-none transition focus:border-[#b8c4d0] sm:w-48" />
-          </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium"><Users className="size-3.5 opacity-50" /> {students.length} students</span>
-        </div>
-      </div>
-
-      <Motion.div layout className="mb-5 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
-        <div className="overflow-x-auto">
-          {!hasRequiredHierarchyFilters ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center">
-              <Loader2 className="mb-3 size-8 animate-spin opacity-30" />
-              <p className="text-sm font-medium text-black/70">Loading class roster…</p>
-              <p className="mt-1 text-xs text-black/45">Resolving class and section details</p>
+      <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-[4fr_6fr]">
+        {/* ── Left: filters ── */}
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2">
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-45" />
+              <input type="date" value={selectedDate} min={todayDateString} max={todayDateString} disabled className={`${inputClass} pl-9`} aria-label="Attendance date" />
             </div>
-          ) : loading ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-sm text-black/50"><Loader2 className="size-6 animate-spin opacity-60" /> Loading students...</div>
-          ) : students.length === 0 ? (
-            <div className="flex min-h-[260px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 opacity-30" /><p className="text-sm font-medium text-black/60">No students found</p><p className="mt-1 text-xs text-black/40">Try adjusting your filters</p></div>
-          ) : (
-            <table className="w-full min-w-[560px] border-collapse text-sm">
-              <thead className="border-b border-[#e2e8ee] bg-[#f0f4f8]">
-                <tr>
-                  <th className="w-[90px] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Roll No</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Name</th>
-                  <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">User ID</th>
-                  <th className="w-[100px] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Present</th>
-                </tr>
-              </thead>
-              <tbody>
-                <AnimatePresence initial={false}>
-                  {students.map((student, index) => {
-                    const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
-                    return (
-                      <Motion.tr key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="border-b border-[#e2e8ee] transition-colors last:border-0 hover:bg-[#f4f7fa]">
-                        <td className="px-4 py-3"><span className="text-xs font-semibold opacity-60">{student.roll || '—'}</span></td>
-                        <td className="px-4 py-3"><span className="text-sm font-medium">{student.name || '—'}</span></td>
-                        <td className="px-4 py-3"><span className="text-xs font-mono opacity-50">{student.username || '—'}</span></td>
-                        <td className="px-4 py-3">
-                          <label className="flex cursor-pointer items-center justify-center gap-2">
-                            <input type="checkbox" checked={isPresent} disabled={isAttendanceLocked} onChange={(e) => toggleStudentPresent(student._id, e.target.checked)} className="size-[18px] cursor-pointer appearance-none rounded-md border-2 border-[#c8d0d8] bg-white transition checked:border-black checked:bg-black disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Mark ${student.name || 'student'} present`} />
-                            <span className="sr-only">{isPresent ? 'Present' : 'Absent'}</span>
-                          </label>
-                        </td>
-                      </Motion.tr>
-                    );
-                  })}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          )}
+            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className={inputClass} aria-label="Attendance month" />
+          </div>
+
+          <div className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3">
+            <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-black/70">
+              <input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-3.5 accent-black" />
+              Substitute attendance (covering another class)
+            </label>
+            <AnimatePresence>
+              {isSubstituteMode && (
+                <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Active Session</label>
+                      <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} className={inputClass} aria-label="Active session">
+                        {sessionOptions.length === 0 && <option value="">—</option>}
+                        {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Class</label>
+                      <select
+                        value={selectedClass}
+                        onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }}
+                        className={inputClass}
+                        aria-label="Substitute class"
+                      >
+                        <option value="">Select class</option>
+                        {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Section</label>
+                      <select
+                        value={selectedSection}
+                        onChange={(e) => setSelectedSection(e.target.value)}
+                        disabled={!selectedClass}
+                        className={inputClass}
+                        aria-label="Substitute section"
+                      >
+                        <option value="">{selectedClass ? 'Select section' : 'Select class first'}</option>
+                        {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-black/45">Pick the class &amp; section you're covering — subjects will update to match.</p>
+                </Motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3">
+            <span className="mb-2 block text-[10px] font-semibold uppercase tracking-wide text-black/45"><BookOpen className="mr-1 inline size-3 opacity-50" />Subject</span>
+            <div className="flex flex-wrap gap-2">
+              {subjectOptions.length === 0 && (
+                <button type="button" onClick={() => setSubject('')} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${!subject ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-white hover:bg-[#eef2f6]'}`}>
+                  <BookOpen className="mr-1.5 inline size-3.5 opacity-45" /> All Subjects
+                </button>
+              )}
+              {subjectTabs.map((tab, index) => {
+                const Icon = subjectIcons[index % subjectIcons.length];
+                return (
+                  <button key={tab} type="button" onClick={() => setSubject(tab)} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${subject === tab ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-white hover:bg-[#eef2f6]'}`}>
+                    <Icon className="mr-1.5 inline size-3.5 opacity-45" /> {tab}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </Motion.div>
+
+        {/* ── Right: student list ── */}
+        <div className="flex flex-col">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs font-medium text-black/70"><CheckCheck className="mr-1 inline size-3.5 opacity-45" />Mark Attendance</span>
+              <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50"><CheckCheck className="size-3.5 opacity-50" /> Check All</button>
+              <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-50"><span className="text-sm leading-none opacity-50">×</span> Uncheck All</button>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium"><Users className="size-3.5 opacity-50" /> {students.length} students</span>
+          </div>
+
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 opacity-40" />
+            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student..." className="w-full rounded-full border border-[#e2e8ee] bg-white py-2 pl-9 pr-3 text-xs outline-none transition focus:border-[#b8c4d0]" />
+          </div>
+
+          <Motion.div layout className="flex-1 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
+            <div className="self-start max-h-[300px] overflow-y-auto overflow-x-auto">
+              {!hasRequiredHierarchyFilters ? (
+                <div className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center">
+                  <Loader2 className="mb-3 size-8 animate-spin opacity-30" />
+                  <p className="text-sm font-medium text-black/70">Loading class roster…</p>
+                  <p className="mt-1 text-xs text-black/45">Resolving class and section details</p>
+                </div>
+              ) : loading ? (
+                <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-sm text-black/50"><Loader2 className="size-6 animate-spin opacity-60" /> Loading students...</div>
+              ) : students.length === 0 ? (
+                <div className="flex min-h-[260px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 opacity-30" /><p className="text-sm font-medium text-black/60">No students found</p><p className="mt-1 text-xs text-black/40">Try adjusting your filters</p></div>
+              ) : (
+                <table className="w-full min-w-[480px] border-collapse text-sm">
+                  <thead className="sticky top-0 z-10 border-b border-[#e2e8ee] bg-[#f0f4f8]">
+                    <tr>
+                      <th className="w-[80px] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Roll No</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Name</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">User ID</th>
+                      <th className="w-[90px] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Present</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence initial={false}>
+                      {students.map((student, index) => {
+                        const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
+                        return (
+                          <Motion.tr key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="border-b border-[#e2e8ee] bg-[#fafbfc] transition-colors last:border-0 hover:bg-[#f4f7fa]">
+                            <td className="px-4 py-3"><span className="text-xs font-semibold opacity-60">{student.roll || '—'}</span></td>
+                            <td className="px-4 py-3"><span className="text-sm font-medium">{student.name || '—'}</span></td>
+                            <td className="px-4 py-3"><span className="text-xs font-mono opacity-50">{student.username || '—'}</span></td>
+                            <td className="px-4 py-3">
+                              <label className="flex cursor-pointer items-center justify-center gap-2">
+                                <input type="checkbox" checked={isPresent} disabled={isAttendanceLocked} onChange={(e) => toggleStudentPresent(student._id, e.target.checked)} className="size-[18px] cursor-pointer appearance-none rounded-md border-2 border-[#c8d0d8] bg-white transition checked:border-emerald-500 checked:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Mark ${student.name || 'student'} present`} />
+                                <span className="sr-only">{isPresent ? 'Present' : 'Absent'}</span>
+                              </label>
+                            </td>
+                          </Motion.tr>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </Motion.div>
+        </div>
+      </div>
 
       {(!isSubstituteMode && selectedClass && selectedSection && subject.trim()) && (
         <Motion.section initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-5 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">

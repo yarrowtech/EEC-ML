@@ -1150,7 +1150,7 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-    <div className="min-h-screen bg-slate-100 flex">
+    <div className="h-screen overflow-hidden bg-slate-100 flex">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -1520,7 +1520,7 @@ const TeacherPortalShell = () => {
         </header>
 
         <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={isChatRoute ? 'h-full flex flex-col' : 'p-6 h-full'}>
+          <div className={isChatRoute ? 'h-full flex flex-col' : 'p-6 min-h-full'}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
