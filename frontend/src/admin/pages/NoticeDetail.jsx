@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, Bell,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ExamRoutineTable from '../../components/ExamRoutineTable';
 import {
   CATEGORY_META, PRIORITY_META, getDisplayCategory, isNewNotice, isPinnedNotice,
   getCreatorLabel, CREATOR_TYPE_LABEL, formatNoticeDate, formatNoticeTime,
@@ -213,8 +214,9 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
                 <Info className="h-4 w-4 text-indigo-500" />
                 <h2 className="text-sm font-semibold text-slate-900">Notice Details</h2>
               </div>
-              <div className="px-5 py-5">
+              <div className="px-5 py-5 space-y-4">
                 <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message}</p>
+                <ExamRoutineTable rows={notice.examRoutine} />
               </div>
 
               {/* Prev / next notice navigation */}

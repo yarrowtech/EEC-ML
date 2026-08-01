@@ -96,6 +96,57 @@ class NotificationService {
   }
 
   /**
+   * Create (or update, on republish) the consolidated exam-routine notice for
+   * a published exam group — one notice with the full subject-wise schedule
+   * table and the routine PDF attached, instead of a notice per subject.
+   */
+  static async notifyExamRoutinePublished({
+    schoolId,
+    campusId = null,
+    group,
+    examRoutine = [],
+    attachment = null,
+    createdBy = null,
+    existingNoticeId = null,
+  }) {
+    const className = group.classId?.name || group.grade || '';
+    const sectionName = group.sectionId?.name || group.section || '';
+    const scopeLabel = [
+      className && `Class ${className}`,
+      sectionName && `Section ${sectionName}`,
+    ].filter(Boolean).join(', ');
+    const subjectCount = examRoutine.length;
+    const dateRange = group.startDate
+      ? ` from ${group.startDate}${group.endDate && group.endDate !== group.startDate ? ` to ${group.endDate}` : ''}`
+      : '';
+
+    const fields = {
+      schoolId,
+      campusId,
+      title: `Exam Routine Published: ${group.title}`,
+      message: `The exam routine for ${group.title}${scopeLabel ? ` (${scopeLabel})` : ''} has been published. ${subjectCount} subject exam${subjectCount !== 1 ? 's' : ''} scheduled${dateRange}. See the full schedule below.`,
+      audience: 'All',
+      type: 'exam',
+      priority: 'high',
+      category: 'academic',
+      classId: group.classId?._id || group.classId || null,
+      sectionId: group.sectionId?._id || group.sectionId || null,
+      className,
+      sectionName,
+      createdBy,
+      relatedEntity: { entityType: 'exam', entityId: group.firstExamId || group._id },
+      examRoutine,
+      attachments: attachment ? [attachment] : [],
+    };
+
+    if (existingNoticeId) {
+      const updated = await Notification.findByIdAndUpdate(existingNoticeId, fields, { new: true });
+      if (updated) return updated;
+    }
+    return await Notification.create(fields);
+  }
+
+  /**
    * Create fee reminder notification
    */
   static async notifyFeeReminder({ schoolId, campusId, invoice, createdBy }) {

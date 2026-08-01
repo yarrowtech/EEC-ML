@@ -52,6 +52,18 @@ const notificationSchema = new mongoose.Schema(
         type: { type: String, default: '' },
       },
     ],
+
+    // Structured subject-wise schedule, populated when this notice is a
+    // published exam routine (see NotificationService.notifyExamRoutinePublished).
+    examRoutine: [
+      {
+        subject: { type: String, default: '' },
+        date: { type: String, default: '' },
+        time: { type: String, default: '' },
+        duration: { type: Number, default: null },
+        venue: { type: String, default: '' },
+      },
+    ],
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],
 
     // Read tracking

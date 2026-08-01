@@ -12,6 +12,8 @@ import toast from 'react-hot-toast';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const TERM_OPTIONS   = ['Class Test','Unit Test','Monthly Test','Term 1','Term 2','Term 3','Half Yearly','Annual','Final'];
+// 'Published' is intentionally not selectable here — it's only ever set via
+// the dedicated Publish Routine action, which also posts the notice + PDF.
 const GROUP_STATUS_OPTIONS = ['Scheduled', 'Completed'];
 const SUBJECT_STATUS_OPTIONS = ['Scheduled','Ongoing','Completed','Cancelled','Postponed'];
 
@@ -32,6 +34,7 @@ const STATUS_COLORS = {
   Completed: 'bg-slate-100 text-slate-600',
   Cancelled: 'bg-red-50 text-red-600',
   Postponed: 'bg-amber-50 text-amber-700',
+  Published: 'bg-emerald-50 text-emerald-700',
 };
 
 const EMPTY_GROUP   = { title:'', term:'Term 1', classId:'', sectionId:'', status:'Scheduled', startDate:'', endDate:'' };
@@ -130,6 +133,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '' });
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
+  const [publishingGroupId, setPublishingGroupId] = useState('');
 
   /* ── UI state ── */
   const [search,         setSearch]         = useState('');
@@ -294,8 +298,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     });
   }, [groups, search, termFilter, yearFilterId, classes]);
 
-  const generateExamSchedulePdf = async (group) => {
-    if (!group?._id) return;
+  const generateExamSchedulePdf = async (group, { download = true } = {}) => {
+    if (!group?._id) return null;
     const className = group.classId?.name || group.grade || '—';
     const sectionName = group.sectionId?.name || group.section || '—';
     const classItem = classes.find((item) => String(item._id) === String(group.classId?._id || group.classId || ''));
@@ -362,15 +366,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     y += 26;
 
     // ── Table ─────────────────────────────────────────────────────────────
-    const headers = ['Date', 'Day', 'Subject', 'Room No.'];
-    const colWidths = [30, 34, 88, 30];
+    const headers = ['Date', 'Day', 'Subject', 'Venue'];
+    const colWidths = [26, 30, 68, 62];
     const tableW = colWidths.reduce((s, v) => s + v, 0);
     const startX = margin;
-    const rowH = 9;
+    const headerRowH = 9;
+    const lineH = 4.3;
 
     // Header row
     doc.setFillColor(30, 41, 59);           // slate-800
-    doc.roundedRect(startX, y, tableW, rowH, 2, 2, 'F');
+    doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
@@ -379,7 +384,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       doc.text(h, x + colWidths[i] / 2, y + 6, { align: 'center' });
       x += colWidths[i];
     });
-    y += rowH;
+    y += headerRowH;
 
     // Data rows
     const rows = (group.subjects || [])
@@ -392,8 +397,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           ? date.toLocaleDateString('en-US', { weekday: 'long' })
           : '—';
         const subjectName = exam?.subjectId?.name || exam?.subject || 'Subject';
-        const room = exam?.roomId?.roomNumber || exam?.roomId?.name || '—';
-        return [dateText, dayText, subjectName, room];
+        const buildingName = exam?.roomId?.floorId?.buildingId?.name;
+        const floorName = exam?.roomId?.floorId?.name;
+        const roomNumber = exam?.roomId?.roomNumber;
+        const venueParts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
+        const venue = venueParts.length ? venueParts.join(' / ') : (exam?.venue || '—');
+        return [dateText, dayText, subjectName, venue];
       })
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
@@ -402,7 +411,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     }
 
     rows.forEach((row, idx) => {
-      if (y > 270) {
+      const wrapped = row.map((cell, i) => doc.splitTextToSize(String(cell || ''), colWidths[i] - 4));
+      const lineCount = Math.max(...wrapped.map((lines) => lines.length));
+      const rowH = Math.max(9, lineCount * lineH + 4.5);
+
+      if (y + rowH > 285) {
         doc.addPage();
         y = 14;
       }
@@ -429,9 +442,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       let cx = startX;
-      row.forEach((cell, i) => {
-        const clipped = doc.splitTextToSize(String(cell || ''), colWidths[i] - 4)[0] || '';
-        doc.text(clipped, cx + colWidths[i] / 2, y + 6, { align: 'center' });
+      wrapped.forEach((lines, i) => {
+        const align = i >= 2 ? 'left' : 'center';
+        const textXPos = align === 'left' ? cx + 2.5 : cx + colWidths[i] / 2;
+        lines.forEach((line, li) => {
+          doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
+        });
         cx += colWidths[i];
       });
       y += rowH;
@@ -448,7 +464,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     doc.text(pdfHeader.schoolName || '', pageWidth - margin, y, { align: 'right' });
 
     const safeFile = `${title}_${className}_${sectionName}`.replace(/[^\w.-]+/g, '_').toLowerCase();
-    doc.save(`${safeFile}_schedule.pdf`);
+    const filename = `${safeFile}_schedule.pdf`;
+    if (download) {
+      doc.save(filename);
+      return null;
+    }
+    return { blob: doc.output('blob'), filename };
   };
 
   /* ── group handlers ── */
@@ -477,7 +498,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       if (!groupForm.title.trim()) throw new Error('Exam group title is required');
       const url    = editingGroupId ? `${API_BASE}/api/exam/groups/${editingGroupId}` : `${API_BASE}/api/exam/groups`;
       const method = editingGroupId ? 'PUT' : 'POST';
-      const res    = await fetch(url, { method, headers: authH(), body: JSON.stringify(groupForm) });
+      // 'Published' is only ever set via the dedicated Publish Routine action
+      // (which also uploads a fresh PDF) — omit it here so a plain edit save
+      // never re-triggers the publish notice and wipes its attachment.
+      const payload = { ...groupForm };
+      if (payload.status === 'Published') delete payload.status;
+      const res    = await fetch(url, { method, headers: authH(), body: JSON.stringify(payload) });
       const data   = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed');
       toast.success(editingGroupId ? 'Exam updated!' : 'Exam created!');
@@ -512,6 +538,68 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       }
     } catch (err) { toast.error(err.message || 'Failed to save'); }
     finally { setSaving(false); }
+  };
+
+  /* Publish (or republish) the exam routine: generate the schedule PDF,
+     upload it, then post one consolidated table-wise notice to the Notice
+     Board for that class/section — replacing the old one-notice-per-subject
+     behavior. */
+  const handlePublishRoutine = async (group) => {
+    const subCount = group.subjects?.length || 0;
+    if (!subCount) { toast.error('Add at least one subject exam before publishing the routine'); return; }
+    const alreadyPublished = group.status === 'Published';
+    const scopeLabel = [group.classId?.name || group.grade, group.sectionId?.name || group.section].filter(Boolean).join(' - ');
+    const conf = await Swal.fire({
+      title: alreadyPublished ? 'Republish Exam Routine?' : 'Publish Exam Routine?',
+      html: `This posts the ${subCount}-subject schedule${scopeLabel ? ` for <strong>${scopeLabel}</strong>` : ''} to the Notice Board, with the routine PDF attached, visible to students and parents.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      confirmButtonText: alreadyPublished ? 'Republish' : 'Publish',
+    });
+    if (!conf.isConfirmed) return;
+
+    setPublishingGroupId(group._id);
+    try {
+      const pdfResult = await generateExamSchedulePdf(group, { download: false });
+      let attachment = null;
+      if (pdfResult?.blob) {
+        const formData = new FormData();
+        formData.append('file', new File([pdfResult.blob], pdfResult.filename, { type: 'application/pdf' }));
+        formData.append('folder', 'exam-routines');
+        formData.append('tags', 'exam,routine,pdf');
+        const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: formData,
+        });
+        const uploadData = await uploadRes.json().catch(() => ({}));
+        if (!uploadRes.ok) throw new Error(uploadData?.message || 'Routine PDF upload failed');
+        const uploaded = uploadData?.files?.[0];
+        if (uploaded?.secure_url) {
+          attachment = {
+            name: uploaded.originalName || pdfResult.filename,
+            url: uploaded.secure_url,
+            size: uploaded.bytes || 0,
+            type: uploaded.format || 'pdf',
+          };
+        }
+      }
+
+      const res = await fetch(`${API_BASE}/api/exam/groups/${group._id}`, {
+        method: 'PUT',
+        headers: authH(),
+        body: JSON.stringify({ status: 'Published', attachment }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to publish routine');
+      toast.success(alreadyPublished ? 'Routine republished' : 'Exam routine published to Notice Board');
+      await loadGroups();
+    } catch (err) {
+      toast.error(err.message || 'Failed to publish routine');
+    } finally {
+      setPublishingGroupId('');
+    }
   };
 
   const handleDeleteGroup = async (g) => {
@@ -611,6 +699,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const totalSubjects = groups.reduce((n, g) => n + (g.subjects?.length||0), 0);
   const totalScheduled = groups.filter(g => g.status === 'Scheduled').length;
   const totalCompleted = groups.filter(g => g.status === 'Completed').length;
+  const totalPublished = groups.filter(g => g.status === 'Published').length;
 
   /* ════════════ RENDER ════════════ */
   return (
@@ -625,7 +714,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             <p className="mt-0.5 text-sm text-slate-400">Create exams, then add subject-wise papers inside each</p>
           </div>
           <div className="flex items-center gap-3">
-            {[{label:'Exams', val:groups.length},{label:'Subjects', val:totalSubjects},{label:'Scheduled', val:totalScheduled},{label:'Completed', val:totalCompleted}].map(({label,val}) => (
+            {[{label:'Exams', val:groups.length},{label:'Subjects', val:totalSubjects},{label:'Scheduled', val:totalScheduled},{label:'Published', val:totalPublished},{label:'Completed', val:totalCompleted}].map(({label,val}) => (
               <div key={label} className="flex flex-col items-center rounded-xl bg-white/10 px-4 py-2.5 backdrop-blur-sm">
                 <span className="text-xl font-bold">{val}</span>
                 <span className="text-[10px] text-slate-400">{label}</span>
@@ -736,6 +825,23 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
                         >
                           <FileText size={12} /> Download Routine
+                        </button>
+                        <button
+                          onClick={() => handlePublishRoutine(group)}
+                          disabled={!subCount || publishingGroupId === group._id}
+                          title={!subCount ? 'Add at least one subject exam first' : undefined}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                            group.status === 'Published'
+                              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                          }`}
+                        >
+                          {publishingGroupId === group._id
+                            ? <Loader2 size={12} className="animate-spin" />
+                            : <CheckCircle2 size={12} />}
+                          {publishingGroupId === group._id
+                            ? 'Publishing…'
+                            : group.status === 'Published' ? 'Republish Routine' : 'Publish Routine'}
                         </button>
                         <button onClick={() => openEditGroup(group)}
                           className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
@@ -901,9 +1007,15 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               </select>
             </Field>
             <Field label="Status">
-              <select value={groupForm.status} onChange={e => setGroupForm(p=>({...p,status:e.target.value}))} className={inp}>
-                {GROUP_STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
-              </select>
+              {groupForm.status === 'Published' ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
+                  <CheckCircle2 size={14} /> Published — use Republish Routine to update
+                </div>
+              ) : (
+                <select value={groupForm.status} onChange={e => setGroupForm(p=>({...p,status:e.target.value}))} className={inp}>
+                  {GROUP_STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Bell, Search, Filter, Calendar, User, AlertCircle, Pin, Download, Share2,
@@ -11,6 +11,7 @@ import {
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
+import ExamRoutineTable from './ExamRoutineTable';
 import {
   CATEGORY_ORDER, CATEGORY_META, PRIORITY_META, DEPT_FALLBACK,
   getDisplayCategory, isNewNotice, isPinnedNotice, formatNoticeDate,
@@ -95,7 +96,7 @@ const SkeletonCard = () => (
 /* ─── Notice detail (inline) ─── */
 const NoticeDetailsView = ({
   notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams,
-  onPrev, onNext, hasPrev, hasNext, onShare,
+  onPrev, onNext, hasPrev, hasNext,
 }) => {
   if (!notice) return null;
   const displayCategory = getDisplayCategory(notice);
@@ -209,6 +210,7 @@ const NoticeDetailsView = ({
 
               <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message || 'No details available.'}</p>
               {subjectLabel ? <p className="text-xs text-slate-400">Subject: {subjectLabel}</p> : null}
+              <ExamRoutineTable rows={notice.examRoutine} />
             </div>
 
             <div className="flex items-center justify-center gap-2 px-5 py-4 border-t border-slate-100">
@@ -343,6 +345,7 @@ const ShareButton = (props) => {
 /* ─── Main ─── */
 const NoticeBoard = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { profile } = useStudentDashboard();
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
@@ -436,6 +439,21 @@ const NoticeBoard = () => {
   useEffect(() => {
     loadNoticeBoardData({ forceRefresh: false });
   }, [loadNoticeBoardData]);
+
+  // Deep link support: notifications route here as ?notice=<id> so clicking
+  // one opens that specific notice instead of just landing on the board.
+  useEffect(() => {
+    const noticeIdParam = searchParams.get('notice');
+    if (!noticeIdParam || !notices.length) return;
+    if (notices.some((n) => String(resolveId(n)) === String(noticeIdParam))) {
+      setSelectedNoticeId(noticeIdParam);
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('notice');
+      return next;
+    }, { replace: true });
+  }, [notices, searchParams, setSearchParams]);
 
   const searchedNotices = useMemo(() => {
     if (!searchQuery.trim()) return notices;

@@ -24,7 +24,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 
 // Configure multer for CSV upload
 const upload = multer({ dest: 'uploads/' });
-const EXAM_GROUP_STATUS_OPTIONS = new Set(['Scheduled', 'Completed']);
+const EXAM_GROUP_STATUS_OPTIONS = new Set(['Scheduled', 'Completed', 'Published']);
 
 const resolveSchoolId = (req, res) => {
     const schoolId = req.schoolId || req.admin?.schoolId || null;
@@ -462,7 +462,10 @@ router.post('/groups', adminAuth, async (req, res) => {
 
     if (!title?.trim()) return res.status(400).json({ error: 'Exam group title is required' });
     if (!EXAM_GROUP_STATUS_OPTIONS.has(normalizedGroupStatus)) {
-      return res.status(400).json({ error: 'Group status must be Scheduled or Completed' });
+      return res.status(400).json({ error: 'Group status must be Scheduled, Completed or Published' });
+    }
+    if (normalizedGroupStatus === 'Published') {
+      return res.status(400).json({ error: 'Add subjects first, then publish the routine' });
     }
 
     let classDoc = null, sectionDoc = null;
@@ -509,17 +512,19 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime, attachment } = req.body || {};
 
     const updates = {};
     if (title !== undefined) updates.title = title.trim();
     if (term !== undefined) updates.term = term;
+    let isPublishing = false;
     if (status !== undefined) {
       const normalizedGroupStatus = String(status).trim();
       if (!EXAM_GROUP_STATUS_OPTIONS.has(normalizedGroupStatus)) {
-        return res.status(400).json({ error: 'Group status must be Scheduled or Completed' });
+        return res.status(400).json({ error: 'Group status must be Scheduled, Completed or Published' });
       }
       updates.status = normalizedGroupStatus;
+      isPublishing = normalizedGroupStatus === 'Published';
     }
     if (startDate !== undefined) updates.startDate = startDate;
     if (endDate !== undefined) updates.endDate = endDate;
@@ -538,6 +543,19 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       updates.section   = sectionDoc?.name || '';
     }
 
+    // Publishing requires at least one subject exam — validate before mutating
+    // anything so a failed publish never leaves the group half-updated.
+    let examsForRoutine = [];
+    if (isPublishing) {
+      examsForRoutine = await Exam.find({ groupId, schoolId, ...(campusId ? { campusId } : {}) })
+        .populate('subjectId', 'name')
+        .sort({ date: 1, time: 1 })
+        .lean();
+      if (!examsForRoutine.length) {
+        return res.status(400).json({ error: 'Add at least one subject exam before publishing the routine' });
+      }
+    }
+
     const group = await ExamGroup.findOneAndUpdate(
       { _id: groupId, schoolId, ...(campusId ? { campusId } : {}) },
       updates,
@@ -553,6 +571,43 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
         { groupId, schoolId, ...(campusId ? { campusId } : {}) },
         { $set: { status: 'Completed' } }
       );
+    }
+
+    // Publishing posts ONE consolidated, table-wise notice for the whole
+    // group (with the routine PDF attached) instead of a notice per subject.
+    // Republishing (e.g. after editing a subject's date) updates that same
+    // notice in place via routineNoticeId rather than spamming a new one.
+    if (isPublishing) {
+      const examRoutine = examsForRoutine.map((exam) => ({
+        subject: exam.subjectId?.name || exam.subject || 'Subject',
+        date: exam.date || '',
+        time: exam.time || '',
+        duration: exam.duration ?? null,
+        venue: exam.venue || '',
+      }));
+      const normalizedAttachment = attachment && attachment.url
+        ? {
+            name: attachment.name || `${group.title || 'Exam'} Routine.pdf`,
+            url: attachment.url,
+            size: attachment.size || 0,
+            type: attachment.type || 'pdf',
+          }
+        : null;
+
+      const notice = await NotificationService.notifyExamRoutinePublished({
+        schoolId,
+        campusId: campusId || null,
+        group: { ...group, firstExamId: examsForRoutine[0]?._id },
+        examRoutine,
+        attachment: normalizedAttachment,
+        createdBy: req.admin?.id || null,
+        existingNoticeId: group.routineNoticeId || null,
+      });
+
+      const publishedAt = group.publishedAt || new Date();
+      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: notice._id });
+      group.publishedAt = publishedAt;
+      group.routineNoticeId = notice._id;
     }
 
     res.json({ message: 'Exam group updated', group });
@@ -675,17 +730,21 @@ router.post("/add", adminAuth, async (req, res) => {
             publishedAt: published ? new Date() : null,
         });
 
-        // Create notification for students
-        try {
-            await NotificationService.notifyExamScheduled({
-                schoolId,
-                campusId: campusId || null,
-                exam,
-                createdBy: req.admin?.id || null
-            });
-        } catch (notifErr) {
-            console.error('Failed to create exam notification:', notifErr);
-            // Don't fail the entire request if notification fails
+        // Subject exams that belong to a group are notified once, table-wise,
+        // when the group is published (see PUT /groups/:groupId). Only
+        // standalone/ungrouped exams still notify immediately on creation.
+        if (!exam.groupId) {
+          try {
+              await NotificationService.notifyExamScheduled({
+                  schoolId,
+                  campusId: campusId || null,
+                  exam,
+                  createdBy: req.admin?.id || null
+              });
+          } catch (notifErr) {
+              console.error('Failed to create exam notification:', notifErr);
+              // Don't fail the entire request if notification fails
+          }
         }
 
         res.status(201).json({message: "Exam added successfully", exam});

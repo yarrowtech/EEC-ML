@@ -24,6 +24,17 @@ export const buildRoomLabel = (exam) => {
   return String(exam?.venue || '').trim() || '—';
 };
 
+// Full venue detail (building / floor / room) for the printable routine PDF —
+// buildRoomLabel() above stays room-number-only for compact on-screen chips.
+export const buildFullVenueLabel = (exam) => {
+  const buildingName = exam?.roomId?.floorId?.buildingId?.name;
+  const floorName = exam?.roomId?.floorId?.name;
+  const roomNumber = exam?.roomId?.roomNumber;
+  const parts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
+  if (parts.length) return parts.join(' / ');
+  return String(exam?.venue || '').trim() || '—';
+};
+
 export const generateExamSchedulePdf = async (group, pdfHeader) => {
   if (!group?._id) return;
   const className = group.classId?.name || group.grade || '—';
@@ -83,14 +94,15 @@ export const generateExamSchedulePdf = async (group, pdfHeader) => {
 
   y += 26;
 
-  const headers = ['Date', 'Day', 'Subject', 'Room No.'];
-  const colWidths = [30, 34, 88, 30];
+  const headers = ['Date', 'Day', 'Subject', 'Venue'];
+  const colWidths = [26, 30, 68, 62];
   const tableW = colWidths.reduce((s, v) => s + v, 0);
   const startX = margin;
-  const rowH = 9;
+  const headerRowH = 9;
+  const lineH = 4.3;
 
   doc.setFillColor(30, 41, 59);
-  doc.roundedRect(startX, y, tableW, rowH, 2, 2, 'F');
+  doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -99,7 +111,7 @@ export const generateExamSchedulePdf = async (group, pdfHeader) => {
     doc.text(header, x + colWidths[index] / 2, y + 6, { align: 'center' });
     x += colWidths[index];
   });
-  y += rowH;
+  y += headerRowH;
 
   const rows = (group.subjects || [])
     .map((exam) => {
@@ -111,7 +123,7 @@ export const generateExamSchedulePdf = async (group, pdfHeader) => {
         ? date.toLocaleDateString('en-US', { weekday: 'long' })
         : '—';
       const subjectText = exam?.subjectId?.name || exam?.subject || exam?.title || '—';
-      return [dateText, dayText, subjectText, buildRoomLabel(exam)];
+      return [dateText, dayText, subjectText, buildFullVenueLabel(exam)];
     })
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
@@ -122,6 +134,10 @@ export const generateExamSchedulePdf = async (group, pdfHeader) => {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   rows.forEach((row, rowIndex) => {
+    const wrapped = row.map((cell, i) => doc.splitTextToSize(String(cell || '—'), colWidths[i] - 4));
+    const lineCount = Math.max(...wrapped.map((lines) => lines.length));
+    const rowH = Math.max(9, lineCount * lineH + 4.5);
+
     if (y + rowH > 285) {
       doc.addPage();
       y = 18;
@@ -132,11 +148,13 @@ export const generateExamSchedulePdf = async (group, pdfHeader) => {
     doc.rect(startX, y, tableW, rowH);
 
     let colX = startX;
-    row.forEach((cell, i) => {
-      const align = i === 2 ? 'left' : 'center';
+    wrapped.forEach((lines, i) => {
+      const align = i >= 2 ? 'left' : 'center';
       const textXPos = align === 'left' ? colX + 2.5 : colX + colWidths[i] / 2;
       doc.setTextColor(15, 23, 42);
-      doc.text(String(cell || '—'), textXPos, y + 5.7, { align });
+      lines.forEach((line, li) => {
+        doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
+      });
       colX += colWidths[i];
     });
     y += rowH;

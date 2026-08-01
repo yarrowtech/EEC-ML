@@ -87,6 +87,18 @@ const daysUntil = (value) => {
   return Math.round((d - today) / 86400000);
 };
 
+// ── Days-until pill ─────────────────────────────────────────────────────────
+const CountdownBadge = ({ date }) => {
+  const days = daysUntil(date);
+  if (days === null || days < 0) return null;
+  const label = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
+  return (
+    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${days <= 1 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-700'}`}>
+      {label}
+    </span>
+  );
+};
+
 // ── Flip Digit Unit ───────────────────────────────────────────────────────────
 const FlipUnit = ({ value, label }) => {
   const padded = String(value).padStart(2, '0');
@@ -239,7 +251,10 @@ const getSubjectStyle = (name) => {
 };
 
 // ── Stat Tile ─────────────────────────────────────────────────────────────────
-const StatTile = ({ icon: Icon, label, value, sub, grad, shadow }) => (
+const StatTile = (props) => {
+  const { icon, label, value, sub, grad, shadow } = props;
+  const Icon = icon;
+  return (
   <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
     <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
     <div className="relative z-10">
@@ -253,7 +268,8 @@ const StatTile = ({ icon: Icon, label, value, sub, grad, shadow }) => (
       {sub && <p className="mt-1 text-[11px] text-white/70 truncate">{sub}</p>}
     </div>
   </div>
-);
+  );
+};
 
 // ── Main View ─────────────────────────────────────────────────────────────────
 const StudentExamsView = () => {

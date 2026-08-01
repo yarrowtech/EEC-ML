@@ -78,13 +78,18 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
       || notificationText.includes('marked absent')
       || notificationText.includes('you were marked');
 
+    const hasExamRoutine = Array.isArray(notification?.examRoutine) && notification.examRoutine.length > 0;
+
     if (isAttendanceNotification) return '/student/attendance';
     if (notificationText.includes('achievement')) return '/student/achievements';
     if (relatedEntity === 'assignment' || type === 'assignment') return '/student/assignments';
+    // Published exam-routine notices carry their own schedule table + PDF —
+    // route to the notice itself rather than the generic exams list.
+    if (hasExamRoutine) return `/student/noticeboard?notice=${notification._id}`;
     if (relatedEntity === 'exam' || type === 'exam') return '/student/exams';
     if (relatedEntity === 'result' || type === 'result') return '/student/results';
     if (relatedEntity === 'fee' || type === 'fee') return '/student/fees';
-    if (type === 'notice' || type === 'announcement') return '/student/noticeboard';
+    if (type === 'notice' || type === 'announcement') return `/student/noticeboard?notice=${notification._id}`;
     if (type === 'class_note') return '/student/assignments-journal';
     return '/student/home';
   }, []);

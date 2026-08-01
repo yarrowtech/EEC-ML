@@ -17,6 +17,8 @@ const examGroupSchema = new mongoose.Schema({
   startDate: { type: String, default: '' },
   endDate:   { type: String, default: '' },
   startTime: { type: String, default: '' },
+  publishedAt: { type: Date, default: null },
+  routineNoticeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Notification', default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('ExamGroup', examGroupSchema);
