@@ -28,6 +28,7 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').repla
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
 const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback/context`;
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
+const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials`;
 
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
@@ -208,6 +209,7 @@ const AILearningCoursesReference = () => {
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
   const [smartLearningSubjects, setSmartLearningSubjects] = useState([]);
+  const [realMaterials, setRealMaterials] = useState([]);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -273,6 +275,41 @@ const AILearningCoursesReference = () => {
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
         setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
+
+        // Fetch real published teaching materials for this subject
+        try {
+          const materialsUrl = new URL(STUDENT_MATERIALS_ENDPOINT);
+          if (subjectSlug) materialsUrl.searchParams.set('subject', subjectSlug);
+          materialsUrl.searchParams.set('limit', '100');
+          const materialsRes = await fetch(materialsUrl.toString(), { headers });
+          if (materialsRes.ok) {
+            const materialsJson = await materialsRes.json();
+            const allMaterials = Array.isArray(materialsJson?.materials) ? materialsJson.materials : [];
+            // Filter to only materials whose chapterTitle or topicTitle matches the current topicSlug
+            const topicKey = normalizeKey(topicSlug);
+            const filtered = allMaterials.filter((m) => {
+              const chKey = normalizeKey(m?.chapterTitle || '');
+              const tKey = normalizeKey(m?.topicTitle || '');
+              return chKey === topicKey || tKey === topicKey || chKey.includes(topicKey) || topicKey.includes(chKey);
+            });
+            const mapped = filtered.map((m) => {
+              const firstAttachment = Array.isArray(m.attachments) ? m.attachments.find((a) => a?.url) : null;
+              return {
+                id: m._id || m.id || m.title,
+                title: String(m.title || '').trim() || 'Teaching Material',
+                group: 'Material',
+                description: String(m.typeLabel || m.category || m.subjectName || '').trim(),
+                content: String(m.content || '').trim(),
+                url: firstAttachment?.url || '',
+                publishedAt: m.publishedAt || m.createdAt || null,
+                formatLabel: String(m.typeLabel || m.category || 'Material').trim(),
+              };
+            });
+            setRealMaterials(mapped);
+          }
+        } catch {
+          // Non-critical — fall back to smart learning map data
+        }
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       } finally {
@@ -281,7 +318,7 @@ const AILearningCoursesReference = () => {
     };
 
     load();
-  }, []);
+  }, [subjectSlug, topicSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assignedMentors = useMemo(() => {
     const teacherSet = new Set();
@@ -427,7 +464,10 @@ const AILearningCoursesReference = () => {
     return resources;
   }, [mapScope]);
 
-  const learningMaterials = useMemo(() => chapterMaterials, [chapterMaterials]);
+  const learningMaterials = useMemo(
+    () => (realMaterials.length > 0 ? realMaterials : chapterMaterials),
+    [realMaterials, chapterMaterials],
+  );
 
   const assessmentItems = useMemo(() => chapterAssessments, [chapterAssessments]);
 
@@ -560,6 +600,7 @@ const AILearningCoursesReference = () => {
     ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
   ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap]);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
@@ -1251,359 +1292,468 @@ const AILearningCoursesReference = () => {
     );
   }
 
+  // Initialise activeFlowStepId to first step on first render
+  const resolvedActiveFlowStepId = activeFlowStepId ?? (chapterInstructionalFlow[0]?.id ?? null);
+
+  const handleFlowStepClick = (stepId) => {
+    setActiveFlowStepId(stepId);
+    setCompletedSteps((prev) => {
+      if (prev.includes(stepId)) return prev;
+      return [...prev, stepId];
+    });
+  };
+
+  const containerVariants = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.07 } },
+  };
+  const pillVariants = {
+    hidden: { opacity: 0, y: 14 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] } },
+  };
+  const flowVariants = {
+    hidden: { opacity: 0, x: 14 },
+    visible: (i) => ({ opacity: 1, x: 0, transition: { delay: i * 0.08, duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] } }),
+  };
+
   return (
     <div
       ref={moduleRef}
-      className="min-h-screen w-full flex flex-col overflow-x-hidden"
-      style={{ backgroundColor: '#f8f9fa', fontFamily: 'Lexend, sans-serif' }}
+      style={{
+        minHeight: '100vh',
+        background: '#f2f0f5',
+        backgroundImage: 'radial-gradient(ellipse at 10% 20%, rgba(180,160,220,0.09) 0%, transparent 60%), radial-gradient(ellipse at 90% 80%, rgba(120,100,200,0.07) 0%, transparent 50%)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        fontFamily: "'Inter', -apple-system, sans-serif",
+        padding: '28px 20px 48px',
+        color: '#1a142b',
+      }}
     >
-      {/* Header */}
-      <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between border-b border-indigo-100 bg-white/90 px-4 backdrop-blur-xl sm:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-          <button
-            onClick={goBackToSubjectTopics}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-200 sm:text-sm"
-          >
-            <ArrowLeft size={16} /> <span className="hidden sm:inline">Back</span>
-          </button>
-          <div className="hidden h-5 w-px bg-slate-200 sm:block" />
-          <div className="min-w-0">
-            <p className="truncate text-[10px] font-bold uppercase tracking-widest text-indigo-500 sm:text-xs">
-              {subjectSlug} • {profile?.className || 'Class'}
-            </p>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap');
+        .tr-playfair { font-family: 'Playfair Display', Georgia, serif; }
+        .tr-inter { font-family: 'Inter', -apple-system, sans-serif; }
+        .tr-scroll::-webkit-scrollbar { width: 3px; }
+        .tr-scroll::-webkit-scrollbar-thumb { background: rgba(120,100,200,0.15); border-radius: 10px; }
+        @keyframes tr-badge-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+        @keyframes tr-glow-dot { 0%,100%{box-shadow:0 0 12px rgba(107,92,173,0.12)} 50%{box-shadow:0 0 22px rgba(107,92,173,0.28)} }
+        @keyframes tr-float-icon { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        @keyframes tr-hint-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
+        .tr-badge-pulse { animation: tr-badge-pulse 3s ease-in-out infinite; }
+        .tr-glow-dot { animation: tr-glow-dot 2s ease-in-out infinite; }
+        .tr-float-icon { animation: tr-float-icon 4s ease-in-out infinite; }
+        .tr-hint-pulse { animation: tr-hint-pulse 3s ease-in-out infinite; }
+        @media (max-width: 820px) { .tr-grid-two { grid-template-columns: 1fr !important; gap: 24px !important; } }
+        @media (max-width: 480px) { .tr-meta-grid { grid-template-columns: 1fr !important; } .tr-top-bar { flex-direction: column; align-items: flex-start !important; } .tr-card { padding: 20px 16px 24px !important; border-radius: 28px !important; } }
+      `}</style>
+
+      <motion.div
+        initial={{ opacity: 0, y: 22, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+        className="tr-card"
+        style={{
+          maxWidth: 1020,
+          width: '100%',
+          background: 'rgba(255,255,255,0.72)',
+          backdropFilter: 'blur(22px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+          borderRadius: 36,
+          boxShadow: '0 8px 48px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.6)',
+          padding: '40px 44px 44px',
+          border: '1px solid rgba(255,255,255,0.5)',
+        }}
+      >
+        {/* ── Top bar ── */}
+        <div
+          className="tr-top-bar"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 14 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={goBackToSubjectTopics}
+              className="tr-inter"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer' }}
+            >
+              <ArrowLeft size={14} /> Back
+            </motion.button>
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="tr-inter"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer', opacity: downloadingPdf ? 0.6 : 1 }}
+            >
+              <Download size={13} />
+              <span>{downloadingPdf ? 'Preparing…' : 'PDF'}</span>
+            </motion.button>
+            <motion.button
+              type="button"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={toggleFullscreen}
+              className="tr-inter"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer' }}
+            >
+              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            </motion.button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span
+              className="tr-badge-pulse tr-inter"
+              style={{ fontSize: 11, fontWeight: 600, letterSpacing: '2.5px', textTransform: 'uppercase', color: '#7a6a8f', background: 'rgba(160,140,200,0.10)', padding: '7px 20px', borderRadius: 40, border: '1px solid rgba(160,140,200,0.08)' }}
+            >
+              ✦ Topic Reader
+            </span>
+            <span className="tr-playfair" style={{ fontSize: 22, fontWeight: 600, color: '#1a142b', letterSpacing: '-0.3px', marginLeft: 8 }}>
+              {mapScope.chapterTitle || subjectSlug}
+            </span>
+            <span className="tr-inter" style={{ fontSize: 14, fontWeight: 400, color: '#9a8aaa', fontStyle: 'normal', background: 'rgba(160,140,200,0.06)', padding: '2px 14px', borderRadius: 30, border: '1px solid rgba(160,140,200,0.06)', marginLeft: 4 }}>
+              {topicSlug}
+            </span>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={toggleFullscreen}
-            className="hidden items-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-100 sm:flex"
-          >
-            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            {isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={downloadingPdf}
-            className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-500 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-indigo-200 transition-all hover:shadow-md disabled:opacity-70 sm:gap-2 sm:px-4 sm:text-sm"
-          >
-            <Download size={14} className="sm:size-4" />
-            <span className="hidden sm:inline">{downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</span>
-          </button>
-        </div>
-      </header>
 
-      {/* Main content */}
-      <main className="flex-1 w-full overflow-auto bg-[#f8f9fc] p-3 sm:p-5 lg:p-6">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 sm:gap-5">
+        {/* ── Two-column grid ── */}
+        <div
+          className="tr-grid-two"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '36px 44px', marginTop: 4 }}
+        >
 
-          {/* Hero */}
-          <section
-            className="group relative overflow-hidden rounded-3xl bg-linear-to-br from-indigo-600 via-blue-600 to-purple-600 p-6 shadow-lg shadow-indigo-300/40 cursor-pointer sm:p-8 lg:p-10"
-            onClick={openDetailsPage}
-            title={`Open ${topicSlug} details`}
-          >
-            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10" />
-            <div className="pointer-events-none absolute -bottom-20 -left-10 h-52 w-52 rounded-full bg-white/10" />
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(white_1.5px,transparent_1.5px)] bg-size-[20px_20px] opacity-[0.06]" />
-            <BookOpen className="pointer-events-none absolute -bottom-6 -right-6 size-40 rotate-12 text-white/10 transition-transform duration-500 group-hover:rotate-0 sm:size-56" />
+          {/* ═══ LEFT COLUMN ═══ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
-            <div className="relative z-10 max-w-3xl">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
-                <Target size={12} /> Topic Reader
-              </span>
-              <h1 className="mt-4 text-2xl font-black leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-                {topicSlug}
-              </h1>
-              {introductionText && (
-                <p className="mt-3 max-w-xl text-sm text-white/85 sm:text-base lg:text-lg">
-                  {introductionText}
-                </p>
-              )}
+            {/* Meta pills 2×2 */}
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="tr-meta-grid"
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
+            >
+              {[
+                { label: 'Date', value: chapterDateLabel || 'Not set', light: false },
+                { label: 'Day', value: chapterDayLabel || '—', light: false },
+                { label: 'Duration', value: chapterDurationLabel || '—', light: false },
+                { label: 'Step by Step', value: `${completedSteps.length} / ${chapterInstructionalFlow.length}`, light: true },
+              ].map((pill) => (
+                <motion.div
+                  key={pill.label}
+                  variants={pillVariants}
+                  whileHover={{ y: -2, background: 'rgba(255,255,255,0.82)', boxShadow: '0 4px 16px rgba(120,100,200,0.07)' }}
+                  style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 18, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.4)', cursor: 'default' }}
+                >
+                  <div className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9a8aaa', marginBottom: 4 }}>{pill.label}</div>
+                  <div className="tr-inter" style={{ fontSize: 15, fontWeight: pill.light ? 400 : 600, color: pill.light ? '#4a3a5c' : '#1a142b' }}>{pill.value}</div>
+                </motion.div>
+              ))}
+            </motion.div>
 
-              <div className="mt-6 flex flex-wrap gap-2">
-                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase text-white/60">Date</p>
-                  <p className="text-sm font-bold text-white">{chapterDateLabel || 'Not set'}</p>
-                </div>
-                {chapterDayLabel && (
-                  <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
-                    <p className="text-[9px] font-bold uppercase text-white/60">Day</p>
-                    <p className="text-sm font-bold text-white">{chapterDayLabel}</p>
-                  </div>
-                )}
-                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase text-white/60">Duration</p>
-                  <p className="text-sm font-bold text-white">{chapterDurationLabel || 'Not set'}</p>
-                </div>
-                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase text-white/60">Steps Done</p>
-                  <p className="text-sm font-bold text-white">{completedSteps.length}/{chapterInstructionalFlow.length}</p>
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-2">
-                <div className="h-2 w-full max-w-md overflow-hidden rounded-full bg-white/20">
-                  <div
-                    className="h-full rounded-full bg-white transition-all duration-500"
-                    style={{ width: `${overallProgress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-white/70">{completedSteps.length} of {chapterInstructionalFlow.length} learning steps completed</p>
-              </div>
-
-              <div className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-indigo-600 shadow-md transition-transform group-hover:translate-x-1">
-                Read Full Article <ArrowRight size={16} />
-              </div>
-            </div>
-          </section>
-
-          {/* Content grid */}
-          <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
-            {/* Learning Objectives */}
-            <section className="rounded-3xl border border-violet-100 bg-violet-50/60 p-5 shadow-sm sm:p-6">
-              <div className="mb-4 flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-violet-500 text-white shadow-sm shadow-violet-300">
-                  <Target size={18} />
+            {/* Progress block */}
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
+              style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 26px 24px', border: '1px solid rgba(255,255,255,0.4)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span className="tr-inter" style={{ fontSize: 13, fontWeight: 500, color: '#4a3a5c' }}>Reading Progress</span>
+                <span className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', background: 'rgba(120,100,200,0.06)', padding: '2px 12px', borderRadius: 30 }}>
+                  {overallProgress}%
                 </span>
-                <h2 className="text-lg font-black text-slate-900">Learning Objectives</h2>
               </div>
-              <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                {chapterLearningObjectives.length > 0 ? chapterLearningObjectives.map((obj, idx) => (
-                  <div key={idx} className="flex gap-3 rounded-2xl bg-white/70 p-3">
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[11px] font-bold text-white">
-                      {idx + 1}
-                    </span>
-                    <p className="text-sm leading-relaxed text-slate-700">{obj}</p>
-                  </div>
-                )) : (
-                  <p className="pt-4 text-center text-xs text-slate-400">No learning objectives published for this topic.</p>
-                )}
+              <div style={{ width: '100%', height: 4, background: 'rgba(120,100,200,0.08)', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${overallProgress}%` }}
+                  transition={{ duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
+                  style={{ height: '100%', background: 'linear-gradient(90deg,#8b7ac8,#6b5cad)', borderRadius: 10 }}
+                />
               </div>
-            </section>
+              <div className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontWeight: 400 }}>
+                <strong style={{ color: '#1a142b', fontWeight: 600 }}>{completedSteps.length}</strong> of {chapterInstructionalFlow.length} learning steps completed
+              </div>
+              <motion.button
+                type="button"
+                whileHover={{ gap: 12, borderBottomColor: '#6b5cad', color: '#4a3a7a' }}
+                onClick={openDetailsPage}
+                className="tr-inter"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 14, fontWeight: 500, color: '#6b5cad', background: 'none', border: 'none', borderBottom: '1.5px solid rgba(107,92,173,0.14)', paddingBottom: 3, cursor: 'pointer', transition: 'all 0.3s ease' }}
+              >
+                Read Full Article <motion.span whileHover={{ x: 6 }} style={{ display: 'inline-block', transition: '0.3s' }}>→</motion.span>
+              </motion.button>
+            </motion.div>
+
+            {/* Learning Objectives */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.32, duration: 0.42 }}
+            >
+              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
+                Learning Objectives
+              </p>
+              {chapterLearningObjectives.length === 0 ? (
+                <p className="tr-inter" style={{ fontSize: 13, color: '#b0a0c0', fontStyle: 'italic' }}>No objectives published for this topic.</p>
+              ) : (
+                <motion.ul
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="visible"
+                  style={{ listStyle: 'none', padding: 0 }}
+                >
+                  {chapterLearningObjectives.map((obj, idx) => (
+                    <motion.li
+                      key={idx}
+                      variants={pillVariants}
+                      className="tr-inter"
+                      style={{ fontSize: 14, fontWeight: 400, color: '#1a142b', padding: '8px 0', borderBottom: '1px solid rgba(120,100,200,0.04)', display: 'flex', alignItems: 'flex-start', gap: 12 }}
+                    >
+                      <span style={{ width: 5, height: 5, marginTop: 7, background: 'linear-gradient(135deg,#8b7ac8,#6b5cad)', borderRadius: '50%', flexShrink: 0, opacity: 0.45 }} />
+                      {obj}
+                    </motion.li>
+                  ))}
+                </motion.ul>
+              )}
+            </motion.div>
+          </div>
+
+          {/* ═══ RIGHT COLUMN ═══ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
             {/* Instructional Flow */}
-            <section className="rounded-3xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm sm:p-6">
-              <div className="mb-4 flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-blue-500 text-white shadow-sm shadow-blue-300">
-                  <BookOpen size={18} />
-                </span>
-                <h2 className="text-lg font-black text-slate-900">Instructional Flow</h2>
-              </div>
-              <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
-                {chapterInstructionalFlow.length > 0 ? chapterInstructionalFlow.map((step) => (
-                  <div key={step.id} className="relative border-l-2 border-blue-200 pl-4">
-                    <div className="absolute -left-[5px] top-1 size-2.5 rounded-full bg-blue-500" />
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <h3 className="text-[11px] font-bold uppercase text-blue-600">{step.phase || step.type}</h3>
-                      {step.duration > 0 && <span className="text-[10px] font-bold text-slate-400">{step.duration}m</span>}
-                    </div>
-                    <p className="text-sm leading-snug text-slate-700">{step.title}</p>
-                    {completedSteps.includes(step.id) && (
-                      <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600">
-                        <CheckCircle2 size={12} /> Completed
-                      </div>
-                    )}
-                  </div>
-                )) : (
-                  <p className="pt-4 text-center text-xs text-slate-400">No instructional flow provided for this chapter.</p>
-                )}
-              </div>
-            </section>
-
-            {/* Materials */}
-            <section className="rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5 shadow-sm sm:p-6">
-              <div className="mb-4 flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm shadow-emerald-300">
-                  <Layers size={18} />
-                </span>
-                <h2 className="text-lg font-black text-slate-900">Materials</h2>
-              </div>
-              <div className="max-h-72 space-y-2.5 overflow-y-auto pr-1">
-                {learningMaterials.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center">
-                    <p className="text-sm font-semibold text-slate-600">No chapter material uploaded yet.</p>
-                    <p className="mt-1 text-xs text-slate-400">Only files from the material section will appear here.</p>
-                  </div>
-                ) : learningMaterials.map((material, idx) => (
-                  <div key={idx} className="flex flex-col gap-2 rounded-2xl border border-emerald-100 bg-white p-3">
-                    <span className="inline-flex w-fit items-center rounded-lg bg-emerald-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-emerald-700">
-                      {normalizeLabel(material.formatLabel || material.description || 'File')}
-                    </span>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Paperclip size={15} className="shrink-0 text-emerald-600" />
-                      <p className="truncate text-sm font-bold text-slate-800">{material.title}</p>
-                    </div>
-                    <MaterialQuickActions material={material} onRead={setActiveMaterial} />
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* Assessment */}
-            <section className="rounded-3xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm sm:p-6">
-              <div className="mb-4 flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm shadow-amber-300">
-                  <CheckCircle2 size={18} />
-                </span>
-                <h2 className="text-lg font-black text-slate-900">Assessment</h2>
-              </div>
-              <p className="mb-3 text-xs italic text-slate-500">Only assessments uploaded or published by the teacher are shown here.</p>
-              <div className="max-h-64 space-y-2.5 overflow-y-auto pr-1">
-                {assessmentItems.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-amber-200 bg-white/70 p-4 text-center">
-                    <p className="text-sm font-semibold text-slate-600">No assessment uploaded yet.</p>
-                    <p className="mt-1 text-xs text-slate-400">Teacher assessment files will appear here.</p>
-                  </div>
-                ) : assessmentItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-3 rounded-2xl border border-amber-100 bg-white p-3">
-                    <span className="shrink-0 rounded-lg bg-amber-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-                      {normalizeLabel(item.formatLabel || item.description || 'Assessment')}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-800">{item.title}</p>
-                      <p className="truncate text-xs text-slate-400">{item.description}</p>
-                    </div>
-                    <MaterialQuickActions material={item} onRead={setActiveMaterial} />
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          {/* Worksheets */}
-          {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-            <section className="col-span-1 lg:col-span-2 rounded-3xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm sm:p-6">
-              <div className="mb-4 flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm shadow-indigo-300">
-                  <ClipboardList size={18} />
-                </span>
-                <div>
-                  <h2 className="text-lg font-black text-slate-900">Worksheets</h2>
-                  <p className="text-xs text-slate-500">Download and submit your completed worksheets here.</p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Download-only worksheet links from lesson plan */}
-                {chapterWorksheets.downloadLinks.map((link) => (
-                  <div key={link.id} className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-white p-4">
-                    <div className="flex items-start gap-2">
-                      <FileText size={16} className="mt-0.5 shrink-0 text-indigo-500" />
-                      <p className="text-sm font-bold text-slate-800 leading-snug">{link.title}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 transition-colors"
+            <div>
+              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
+                Instructional Flow
+              </p>
+              {chapterInstructionalFlow.length === 0 ? (
+                <p className="tr-inter" style={{ fontSize: 13, color: '#b0a0c0', fontStyle: 'italic' }}>No instructional flow provided yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {chapterInstructionalFlow.map((step, idx) => {
+                    const isActive = resolvedActiveFlowStepId === step.id;
+                    const isDone = completedSteps.includes(step.id);
+                    return (
+                      <motion.div
+                        key={step.id}
+                        custom={idx}
+                        variants={flowVariants}
+                        initial="hidden"
+                        animate="visible"
+                        whileHover={{ x: 4, background: isActive ? 'rgba(107,92,173,0.07)' : 'rgba(255,255,255,0.58)' }}
+                        onClick={() => handleFlowStepClick(step.id)}
+                        className="tr-inter"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '12px 16px',
+                          borderRadius: 16,
+                          background: isActive ? 'rgba(107,92,173,0.06)' : 'rgba(255,255,255,0.32)',
+                          border: `1px solid ${isActive ? 'rgba(107,92,173,0.09)' : 'rgba(255,255,255,0.32)'}`,
+                          cursor: 'pointer',
+                          transition: 'background 0.3s, border-color 0.3s',
+                          backdropFilter: 'blur(4px)',
+                          WebkitBackdropFilter: 'blur(4px)',
+                          position: 'relative',
+                          overflow: 'hidden',
+                        }}
                       >
-                        <Download size={12} /> Download
-                      </a>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Submittable worksheet assignments */}
-                {chapterWorksheets.submittableAssignments.map((assignment) => {
-                  const isSubmitted = submittedWorksheets.has(assignment._id);
-                  const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
-                  return (
-                    <div key={assignment._id} className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-white p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2 flex-1 min-w-0">
-                          <FileText size={16} className="mt-0.5 shrink-0 text-indigo-500" />
-                          <p className="text-sm font-bold text-slate-800 leading-snug truncate">{assignment.title}</p>
-                        </div>
-                        {isSubmitted && (
-                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                            <CheckCircle2 size={10} /> Submitted
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap gap-1.5 text-xs text-slate-500">
-                        {assignment.marks > 0 && (
-                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-600">{assignment.marks} marks</span>
-                        )}
-                        {assignment.dueDate && (
-                          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
-                            Due {new Date(assignment.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                          </span>
-                        )}
-                      </div>
-
-                      {assignment.description && (
-                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{assignment.description}</p>
-                      )}
-
-                      <div className="flex gap-2 flex-wrap">
-                        {attachmentUrl && (
-                          <a
-                            href={attachmentUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                        {/* Step indicator dot */}
+                        <motion.span
+                          animate={isActive ? { scale: [1, 1.2, 1] } : { scale: 1 }}
+                          transition={isActive ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}
+                          className={isActive ? 'tr-glow-dot' : ''}
+                          style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: isActive ? '#6b5cad' : isDone ? '#6b5cad' : 'rgba(107,92,173,0.10)', transition: 'background 0.3s' }}
+                        />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#6b5cad' : '#9a8aaa', width: 28, flexShrink: 0, fontFeatureSettings: '"tnum"', transition: 'color 0.3s' }}>
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flexShrink: 0, flex: 1 }}>{step.type || step.phase}</span>
+                        <span style={{ fontSize: 12, fontWeight: 400, color: '#9a8aaa', letterSpacing: '0.2px', flex: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.title}</span>
+                        {step.duration > 0 && (
+                          <motion.span
+                            whileHover={{ scale: 1.06 }}
+                            style={{ fontSize: 11, fontWeight: 500, color: isActive ? '#6b5cad' : '#b0a0c0', background: isActive ? 'rgba(107,92,173,0.06)' : 'rgba(120,100,200,0.04)', padding: '2px 12px', borderRadius: 30, border: `1px solid ${isActive ? 'rgba(107,92,173,0.08)' : 'rgba(120,100,200,0.04)'}`, whiteSpace: 'nowrap', transition: 'all 0.3s' }}
                           >
-                            <Download size={12} /> Download
-                          </a>
+                            ⏱ {step.duration} min
+                          </motion.span>
                         )}
-                        {!isSubmitted ? (
-                          <button
-                            type="button"
-                            onClick={() => setWorksheetModal(assignment)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 transition-colors"
-                          >
-                            <Upload size={12} /> Submit
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                            <CheckCircle2 size={12} /> Already submitted
-                          </span>
+                        {isDone && (
+                          <CheckCircle2 size={14} style={{ color: '#6b5cad', opacity: 0.6, flexShrink: 0 }} />
                         )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {/* Step-by-Step Explanation + Quick Recap */}
-          {(chapterExplanation || chapterRecap) && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {chapterExplanation && (
-                <section className="rounded-3xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm sm:p-6">
-                  <div className="mb-3 flex items-center gap-2.5">
-                    <span className="flex size-9 items-center justify-center rounded-xl bg-blue-500 text-white shadow-sm shadow-blue-300">
-                      <BookOpen size={18} />
-                    </span>
-                    <h2 className="text-lg font-black text-slate-900">Step-by-Step Explanation</h2>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{chapterExplanation}</p>
-                  <p className="mt-3 text-xs italic text-slate-400">This content is provided by your teacher.</p>
-                </section>
-              )}
-              {chapterRecap && (
-                <section className="rounded-3xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm sm:p-6">
-                  <div className="mb-3 flex items-center gap-2.5">
-                    <span className="flex size-9 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm shadow-amber-300">
-                      <CheckCircle2 size={18} />
-                    </span>
-                    <h2 className="text-lg font-black text-slate-900">Quick Recap</h2>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{chapterRecap}</p>
-                  <p className="mt-3 text-xs italic text-slate-400">Key takeaways from this lesson.</p>
-                </section>
+                      </motion.div>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          )}
 
-          <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
-        </div>
-      </main>
+            {/* Materials */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.42 }}
+            >
+              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
+                Materials
+              </p>
+              {learningMaterials.length === 0 ? (
+                <div style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.3)' }}>
+                  <p className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontStyle: 'italic' }}>No chapter material uploaded yet.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {learningMaterials.map((material, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 + idx * 0.06 }}
+                      whileHover={{ y: -2, background: 'rgba(255,255,255,0.58)', boxShadow: '0 4px 16px rgba(120,100,200,0.05)' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.3)', transition: 'background 0.3s, box-shadow 0.3s' }}
+                    >
+                      <span style={{ fontSize: 18, opacity: 0.5, flexShrink: 0 }}>📄</span>
+                      <span className="tr-inter" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{material.title}</span>
+                      <span className="tr-inter" style={{ fontSize: 11, color: '#9a8aaa', fontWeight: 400, letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>
+                        {normalizeLabel(material.formatLabel || material.description || 'File')}
+                      </span>
+                      <MaterialQuickActions material={material} onRead={setActiveMaterial} />
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
 
+            {/* Assessment */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.36, duration: 0.42 }}
+            >
+              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
+                Assessment
+              </p>
+              <div style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 22, padding: '20px 24px', border: '1px solid rgba(255,255,255,0.3)' }}>
+                {assessmentItems.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0' }}>
+                    <div className="tr-float-icon" style={{ fontSize: 32, opacity: 0.15, marginBottom: 10 }}>📋</div>
+                    <p className="tr-inter" style={{ fontSize: 15, fontWeight: 500, color: '#1a142b' }}>No assessment uploaded yet.</p>
+                    <p className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontWeight: 400, marginTop: 4 }}>Teacher assessment files will appear here.</p>
+                    <span className="tr-hint-pulse tr-inter" style={{ marginTop: 12, fontSize: 12, color: '#b0a0c0', background: 'rgba(120,100,200,0.04)', padding: '4px 16px', borderRadius: 30, border: '1px dashed rgba(120,100,200,0.1)' }}>
+                      awaiting upload
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {assessmentItems.map((item, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span className="tr-inter" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#7a6a8f', background: 'rgba(120,100,200,0.07)', padding: '3px 10px', borderRadius: 20 }}>
+                          {normalizeLabel(item.formatLabel || 'Assessment')}
+                        </span>
+                        <span className="tr-inter" style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                        <MaterialQuickActions material={item} onRead={setActiveMaterial} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+
+          </div>{/* /right col */}
+        </div>{/* /grid */}
+
+        {/* ── Worksheets (below grid) ── */}
+        {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.42, duration: 0.45 }}
+            style={{ marginTop: 32, background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 24, padding: '22px 26px', border: '1px solid rgba(255,255,255,0.4)' }}
+          >
+            <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 14 }}>Worksheets</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
+              {chapterWorksheets.downloadLinks.map((link) => (
+                <div key={link.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '12px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
+                    <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.title}</p>
+                  </div>
+                  <a href={link.url} target="_blank" rel="noreferrer" style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 30, background: '#6b5cad', padding: '5px 14px', fontSize: 12, fontWeight: 600, color: 'white', textDecoration: 'none' }}>
+                    <Download size={11} /> Download
+                  </a>
+                </div>
+              ))}
+              {chapterWorksheets.submittableAssignments.map((assignment) => {
+                const isSubmitted = submittedWorksheets.has(assignment._id);
+                const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                return (
+                  <div key={assignment._id} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '14px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
+                      <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignment.title}</p>
+                      {isSubmitted && (
+                        <span className="tr-inter" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#059669', background: 'rgba(16,185,129,0.1)', padding: '2px 10px', borderRadius: 30 }}>Submitted</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {attachmentUrl && (
+                        <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, borderRadius: 30, border: '1px solid rgba(107,92,173,0.2)', background: 'rgba(107,92,173,0.05)', padding: '4px 12px', fontSize: 12, fontWeight: 600, color: '#6b5cad', textDecoration: 'none' }}>
+                          <Download size={10} /> Download
+                        </a>
+                      )}
+                      {!isSubmitted ? (
+                        <button type="button" onClick={() => setWorksheetModal(assignment)} style={{ borderRadius: 30, background: '#6b5cad', padding: '4px 14px', fontSize: 12, fontWeight: 700, color: 'white', border: 'none', cursor: 'pointer' }}>
+                          Submit
+                        </button>
+                      ) : (
+                        <span className="tr-inter" style={{ fontSize: 12, color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <CheckCircle2 size={12} /> Done
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Explanation + Recap ── */}
+        {(chapterExplanation || chapterRecap) && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.48, duration: 0.45 }}
+            style={{ marginTop: 28, display: 'grid', gridTemplateColumns: chapterExplanation && chapterRecap ? '1fr 1fr' : '1fr', gap: 20 }}
+          >
+            {chapterExplanation && (
+              <div style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Step-by-Step Explanation</p>
+                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterExplanation}</p>
+              </div>
+            )}
+            {chapterRecap && (
+              <div style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Quick Recap</p>
+                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterRecap}</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
+      </motion.div>
+
+      {/* ── Modals ── */}
       {worksheetModal && (
         <WorksheetSubmitModal
           assignment={worksheetModal}
@@ -1615,52 +1765,44 @@ const AILearningCoursesReference = () => {
         />
       )}
 
-      {activeMaterial && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-linear-to-r from-indigo-50 to-purple-50 p-5">
-              <h3 className="truncate text-lg font-black text-slate-900">{activeMaterial.title}</h3>
-              <button
-                type="button"
-                onClick={() => setActiveMaterial(null)}
-                className="shrink-0 rounded-full p-2 text-slate-500 hover:bg-white/70"
-                aria-label="Close reader"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="max-h-[65vh] overflow-y-auto p-5">
-              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
-                {stripHtml(activeMaterial.content)}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {activeMaterial && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(26,20,43,0.55)', padding: 16 }}
+          >
+            <motion.div
+              initial={{ scale: 0.93, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.93, y: 18 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              style={{ width: '100%', maxWidth: 680, maxHeight: '85vh', overflow: 'hidden', borderRadius: 28, background: 'white', boxShadow: '0 40px 80px rgba(26,20,43,0.18)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '18px 22px', borderBottom: '1px solid rgba(120,100,200,0.08)', background: 'rgba(160,140,200,0.04)' }}>
+                <h3 className="tr-playfair" style={{ fontSize: 17, fontWeight: 600, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeMaterial.title}</h3>
+                <button type="button" onClick={() => setActiveMaterial(null)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#7a6a8f', padding: 6, display: 'flex', borderRadius: 8 }}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tr-scroll" style={{ maxHeight: '65vh', overflowY: 'auto', padding: 22 }}>
+                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8, color: '#1a142b' }}>{stripHtml(activeMaterial.content)}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Error Notification */}
       {error && (
-        <div className="fixed bottom-4 right-4 max-w-md rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-lg">
-          <p className="text-sm font-semibold text-rose-700">{error}</p>
-        </div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ position: 'fixed', bottom: 20, right: 20, maxWidth: 380, borderRadius: 16, background: 'rgba(255,245,245,0.95)', backdropFilter: 'blur(12px)', border: '1px solid rgba(200,100,100,0.15)', padding: '12px 18px', boxShadow: '0 8px 32px rgba(200,100,100,0.1)' }}
+        >
+          <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#c53030' }}>{error}</p>
+        </motion.div>
       )}
-
-      <style>{`
-        * {
-          scrollbar-width: thin;
-          scrollbar-color: #cbd5e1 transparent;
-        }
-        *::-webkit-scrollbar {
-          width: 4px;
-        }
-        *::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        *::-webkit-scrollbar-thumb {
-          background: #cbd5e1;
-          border-radius: 2px;
-        }
-      `}</style>
     </div>
   );
 };
