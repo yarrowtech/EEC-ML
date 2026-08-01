@@ -25,6 +25,7 @@ import {
   IndianRupee,
   LayoutGrid,
   List,
+  Loader2,
   LogIn,
   LogOut,
   Mail,
@@ -47,12 +48,14 @@ import {
   XCircle,
   Zap
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
 const MotionButton = motion.button;
@@ -63,10 +66,6 @@ const Progress = ({ value = 0, className }) => (
     <div className="h-full rounded-full bg-slate-900 transition-all duration-500" style={{ width: `${Math.max(0, Math.min(Number(value) || 0, 100))}%` }} />
   </div>
 );
-
-const Avatar = ({ className, children }) => <div className={cn('relative inline-flex shrink-0 overflow-hidden rounded-full', className)}>{children}</div>;
-const AvatarImage = ({ src, alt }) => (src ? <img src={src} alt={alt || ''} className="h-full w-full object-cover" /> : null);
-const AvatarFallback = ({ className, children }) => <div className={cn('flex h-full w-full items-center justify-center rounded-full bg-slate-100 text-slate-700', className)}>{children}</div>;
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -320,6 +319,7 @@ const MyWorkPortal = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
 
   const [notifications, setNotifications] = useState([
@@ -335,8 +335,8 @@ const MyWorkPortal = () => {
     { id: 'attendance', label: 'Attendance', icon: Clock },
     { id: 'leave', label: 'Leave Management', icon: CalendarRange },
     { id: 'expenses', label: 'Expenses & Claims', icon: Wallet },
-    { id: 'documents', label: 'Documents', icon: FileText },
-    { id: 'notifications', label: 'Notifications', icon: BellRing },
+    // { id: 'documents', label: 'Documents', icon: FileText },
+    // { id: 'notifications', label: 'Notifications', icon: BellRing },
     { id: 'profile', label: 'Profile & Identity', icon: User },
     { id: 'insights', label: 'Work Insights', icon: TrendingUp }
   ];
@@ -631,7 +631,7 @@ const MyWorkPortal = () => {
     if (!file) return;
     setProfileError('');
     setProfileSuccess('');
-    setProfileSaving(true);
+    setAvatarUploading(true);
     try {
       if (!file.type.startsWith('image/')) throw new Error('Please select an image file');
       if (file.size > 5 * 1024 * 1024) throw new Error('Image size should be 5MB or less');
@@ -652,12 +652,12 @@ const MyWorkPortal = () => {
       });
       if (!saveRes.ok) throw new Error('Unable to save profile photo');
       setProfileData((prev) => ({ ...prev, profilePic: uploadedUrl }));
-      setProfileSuccess('Profile photo updated successfully');
+      toast.success('Profile photo updated successfully');
     } catch (error) {
-      setProfileError(error.message || 'Unable to update photo');
+      toast.error(error.message || 'Unable to update photo');
     } finally {
       if (profilePicInputRef.current) profilePicInputRef.current.value = '';
-      setProfileSaving(false);
+      setAvatarUploading(false);
     }
   };
 
@@ -750,10 +750,10 @@ const MyWorkPortal = () => {
   };
 
   const quickActions = [
-    { label: activeSession ? 'Check Out' : 'Check In', icon: activeSession ? LogOut : LogIn, onClick: activeSession ? handleCheckOut : handleCheckIn, disabled: attendanceSaving || todayAttendance.hasCheckedOut || (!activeSession && todayAttendance.hasCheckedIn), tone: 'emerald' },
-    { label: 'Apply Leave', icon: CalendarRange, onClick: openLeaveForm, disabled: false, tone: 'blue' },
-    { label: 'Submit Claim', icon: Receipt, onClick: openExpenseForm, disabled: false, tone: 'violet' },
-    { label: 'Update Profile', icon: User, onClick: () => setActiveTab('profile'), disabled: false, tone: 'slate' }
+    // { label: activeSession ? 'Check Out' : 'Check In', icon: activeSession ? LogOut : LogIn, onClick: activeSession ? handleCheckOut : handleCheckIn, disabled: attendanceSaving || todayAttendance.hasCheckedOut || (!activeSession && todayAttendance.hasCheckedIn), tone: 'emerald' },
+    // { label: 'Apply Leave', icon: CalendarRange, onClick: openLeaveForm, disabled: false, tone: 'blue' },
+    // { label: 'Submit Claim', icon: Receipt, onClick: openExpenseForm, disabled: false, tone: 'violet' },
+    // { label: 'Update Profile', icon: User, onClick: () => setActiveTab('profile'), disabled: false, tone: 'slate' }
   ];
 
   const tabContentProps = shouldReduceMotion ? {} : panelMotion;
@@ -1066,7 +1066,35 @@ const MyWorkPortal = () => {
       {profileError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{profileError}</div>}
       {profileSuccess && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{profileSuccess}</div>}
       <div className="grid gap-5 xl:grid-cols-[0.7fr_1.3fr]">
-        <Card className="border-slate-200 bg-white py-0 shadow-sm"><CardContent className="p-5 text-center"><Avatar className="mx-auto h-24 w-24 border border-slate-200 shadow-sm"><AvatarImage src={profileData.profilePic} alt={profileData.name || 'Teacher'} /><AvatarFallback className="bg-slate-900 text-2xl font-semibold text-white">{profileData.name?.charAt(0) || 'T'}</AvatarFallback></Avatar><h3 className="mt-4 text-lg font-semibold text-slate-950">{profileData.name || 'Teacher'}</h3><p className="text-sm text-slate-500">{profileData.department || 'Department not set'}</p><div className="mt-5 text-left"><div className="flex items-center justify-between text-sm"><span className="text-slate-500">Profile completion</span><span className="font-semibold text-slate-900">{profileCompletion}%</span></div><Progress value={profileCompletion} className="mt-2 h-2" /></div><input ref={profilePicInputRef} type="file" accept="image/*" className="hidden" onChange={handleProfilePicUpload} /><Button variant="outline" className="mt-5 w-full" onClick={() => profilePicInputRef.current?.click()} disabled={profileSaving}><Camera className="h-4 w-4" />Update Avatar</Button></CardContent></Card>
+        <Card className="border-slate-200 bg-white py-0 shadow-sm">
+          <CardContent className="p-5 text-center">
+            <div className="relative mx-auto h-24 w-24">
+              <Avatar className="h-24 w-24 border border-slate-200 shadow-sm">
+                <AvatarImage src={profileData.profilePic} alt={profileData.name || 'Teacher'} />
+                <AvatarFallback className="bg-slate-900 text-2xl font-semibold text-white">{profileData.name?.charAt(0) || 'T'}</AvatarFallback>
+              </Avatar>
+              {avatarUploading && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+                  <Loader2 className="h-6 w-6 animate-spin text-white" />
+                </div>
+              )}
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-slate-950">{profileData.name || 'Teacher'}</h3>
+            <p className="text-sm text-slate-500">{profileData.department || 'Department not set'}</p>
+            <div className="mt-5 text-left">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Profile completion</span>
+                <span className="font-semibold text-slate-900">{profileCompletion}%</span>
+              </div>
+              <Progress value={profileCompletion} className="mt-2 h-2" />
+            </div>
+            <input ref={profilePicInputRef} type="file" accept="image/*" className="hidden" onChange={handleProfilePicUpload} disabled={avatarUploading} />
+            <Button variant="outline" className="mt-5 w-full" onClick={() => profilePicInputRef.current?.click()} disabled={avatarUploading}>
+              {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+              {avatarUploading ? 'Uploading…' : 'Update Avatar'}
+            </Button>
+          </CardContent>
+        </Card>
         <Card className="border-slate-200 bg-white py-0 shadow-sm"><CardHeader className="p-4"><CardTitle>Identity Details</CardTitle><CardDescription>Grouped sections for personal, contact, professional, and emergency information.</CardDescription></CardHeader><CardContent className="grid gap-4 p-4 pt-0 md:grid-cols-2">
           <Field label="Full Name" icon={User}><Input value={profileData.name} disabled={!editProfile} onChange={(e) => setProfileData((prev) => ({ ...prev, name: e.target.value }))} /></Field>
           <Field label="Employee ID" icon={BadgeCheck}><Input value={profileData.employeeId} disabled /></Field>
