@@ -16,10 +16,12 @@ import {
   ExternalLink,
   X,
   Paperclip,
+  Upload,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
+import WorksheetSubmitModal from './WorksheetSubmitModal';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -210,6 +212,8 @@ const AILearningCoursesReference = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState(null);
+  const [worksheetModal, setWorksheetModal] = useState(null);
+  const [submittedWorksheets, setSubmittedWorksheets] = useState(new Set());
   const moduleRef = useRef(null);
   const detailsViewRef = useRef(null);
 
@@ -425,6 +429,30 @@ const AILearningCoursesReference = () => {
   const learningMaterials = useMemo(() => chapterMaterials, [chapterMaterials]);
 
   const assessmentItems = useMemo(() => chapterAssessments, [chapterAssessments]);
+
+  const chapterWorksheets = useMemo(() => {
+    const downloadLinks = [];
+    const submittableAssignments = [];
+    const seenLinks = new Set();
+    const seenAssignments = new Set();
+
+    mapScope.topics.forEach((topic) => {
+      (topic.subtopics || []).forEach((subtopic) => {
+        (subtopic.worksheetUploads || []).forEach((upload) => {
+          if (!upload.url || seenLinks.has(upload.url)) return;
+          seenLinks.add(upload.url);
+          downloadLinks.push({ id: upload.id, title: upload.title || 'Worksheet', url: upload.url });
+        });
+        (subtopic.assignments || []).forEach((assignment) => {
+          if (seenAssignments.has(assignment.id)) return;
+          seenAssignments.add(assignment.id);
+          submittableAssignments.push({ ...assignment, _id: assignment.id });
+        });
+      });
+    });
+
+    return { downloadLinks, submittableAssignments };
+  }, [mapScope]);
 
   const chapterLearningObjectives = useMemo(() => {
     const objectives = Array.isArray(selectedChapterMeta.learningObjectives)
@@ -750,6 +778,7 @@ const AILearningCoursesReference = () => {
 
   if (isDetailsView) {
     return (
+      <>
       <div
         ref={(node) => {
           detailsViewRef.current = node;
@@ -855,6 +884,64 @@ const AILearningCoursesReference = () => {
               </article>
             </div>
           </main>
+          {/* Worksheets panel in reader view */}
+          {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+            <section className="mt-10 rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <ClipboardList size={18} className="text-indigo-600" />
+                <h2 className="text-base font-black text-slate-900">Worksheets</h2>
+              </div>
+              <div className="space-y-3">
+                {chapterWorksheets.downloadLinks.map((link) => (
+                  <div key={link.id} className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={15} className="shrink-0 text-indigo-500" />
+                      <p className="text-sm font-semibold text-slate-800 truncate">{link.title}</p>
+                    </div>
+                    <a href={link.url} target="_blank" rel="noreferrer" className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                      <Download size={11} /> Download
+                    </a>
+                  </div>
+                ))}
+                {chapterWorksheets.submittableAssignments.map((assignment) => {
+                  const isSubmitted = submittedWorksheets.has(assignment._id);
+                  const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                  return (
+                    <div key={assignment._id} className="flex flex-col gap-2 rounded-xl border border-indigo-100 bg-white px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText size={15} className="shrink-0 text-indigo-500" />
+                          <p className="text-sm font-semibold text-slate-800 truncate">{assignment.title}</p>
+                        </div>
+                        {isSubmitted && (
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            <CheckCircle2 size={10} /> Submitted
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {attachmentUrl && (
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100">
+                            <Download size={11} /> Download
+                          </a>
+                        )}
+                        {!isSubmitted ? (
+                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700">
+                            Submit
+                          </button>
+                        ) : (
+                          <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                            <CheckCircle2 size={11} /> Already submitted
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           <footer className="mt-8 border-t border-[#d7d9d8] pt-5 pb-3">
             <div className="flex justify-end">
               <button
@@ -905,6 +992,18 @@ const AILearningCoursesReference = () => {
           `}</style>
         </div>
       </div>
+
+      {worksheetModal && (
+        <WorksheetSubmitModal
+          assignment={worksheetModal}
+          onClose={() => setWorksheetModal(null)}
+          onSubmitted={() => {
+            setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
+            setWorksheetModal(null);
+          }}
+        />
+      )}
+      </>
     );
   }
 
@@ -1128,6 +1227,105 @@ const AILearningCoursesReference = () => {
             </section>
           </div>
 
+          {/* Worksheets */}
+          {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+            <section className="col-span-1 lg:col-span-2 rounded-3xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm sm:p-6">
+              <div className="mb-4 flex items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm shadow-indigo-300">
+                  <ClipboardList size={18} />
+                </span>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900">Worksheets</h2>
+                  <p className="text-xs text-slate-500">Download and submit your completed worksheets here.</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Download-only worksheet links from lesson plan */}
+                {chapterWorksheets.downloadLinks.map((link) => (
+                  <div key={link.id} className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-white p-4">
+                    <div className="flex items-start gap-2">
+                      <FileText size={16} className="mt-0.5 shrink-0 text-indigo-500" />
+                      <p className="text-sm font-bold text-slate-800 leading-snug">{link.title}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <a
+                        href={link.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 transition-colors"
+                      >
+                        <Download size={12} /> Download
+                      </a>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Submittable worksheet assignments */}
+                {chapterWorksheets.submittableAssignments.map((assignment) => {
+                  const isSubmitted = submittedWorksheets.has(assignment._id);
+                  const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                  return (
+                    <div key={assignment._id} className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-white p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                          <FileText size={16} className="mt-0.5 shrink-0 text-indigo-500" />
+                          <p className="text-sm font-bold text-slate-800 leading-snug truncate">{assignment.title}</p>
+                        </div>
+                        {isSubmitted && (
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            <CheckCircle2 size={10} /> Submitted
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 text-xs text-slate-500">
+                        {assignment.marks > 0 && (
+                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-600">{assignment.marks} marks</span>
+                        )}
+                        {assignment.dueDate && (
+                          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                            Due {new Date(assignment.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                          </span>
+                        )}
+                      </div>
+
+                      {assignment.description && (
+                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{assignment.description}</p>
+                      )}
+
+                      <div className="flex gap-2 flex-wrap">
+                        {attachmentUrl && (
+                          <a
+                            href={attachmentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                          >
+                            <Download size={12} /> Download
+                          </a>
+                        )}
+                        {!isSubmitted ? (
+                          <button
+                            type="button"
+                            onClick={() => setWorksheetModal(assignment)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 transition-colors"
+                          >
+                            <Upload size={12} /> Submit
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                            <CheckCircle2 size={12} /> Already submitted
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* Step-by-Step Explanation + Quick Recap */}
           {(chapterExplanation || chapterRecap) && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1161,6 +1359,17 @@ const AILearningCoursesReference = () => {
           <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
         </div>
       </main>
+
+      {worksheetModal && (
+        <WorksheetSubmitModal
+          assignment={worksheetModal}
+          onClose={() => setWorksheetModal(null)}
+          onSubmitted={() => {
+            setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
+            setWorksheetModal(null);
+          }}
+        />
+      )}
 
       {activeMaterial && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4">
