@@ -79,6 +79,8 @@ const AttendanceManagement = () => {
 
   const [students, setStudents] = useState([]);
   const [sessionOptions, setSessionOptions] = useState([]);
+  const [classOptions, setClassOptions] = useState([]);
+  const [sectionOptions, setSectionOptionsList] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [attendanceData, setAttendanceData] = useState({});
   const [lessonPlanContext, setLessonPlanContext] = useState(null);
@@ -158,6 +160,8 @@ const AttendanceManagement = () => {
         setStudents([]);
       }
       setSessionOptions(Array.isArray(data?.options?.sessions) ? data.options.sessions : []);
+      setClassOptions(Array.isArray(data?.options?.classes) ? data.options.classes : []);
+      setSectionOptionsList(Array.isArray(data?.options?.sections) ? data.options.sections : []);
       setSubjectOptions(Array.isArray(data?.options?.subjects) ? data.options.subjects : []);
       setLessonPlanContext(data?.lessonPlanContext || null);
 
@@ -180,13 +184,14 @@ const AttendanceManagement = () => {
   }, [selectedSession, sessionOptions]);
 
   // Class/section come from the class the teacher already selected in the
-  // class workspace (via route context) — no need to ask again here.
+  // class workspace (via route context) — no need to ask again here. Skipped
+  // in substitute mode so picking a different class to cover isn't clobbered.
   useEffect(() => {
-    if (contextClassName) setSelectedClass(contextClassName);
-  }, [contextClassName]);
+    if (!isSubstituteMode && contextClassName) setSelectedClass(contextClassName);
+  }, [contextClassName, isSubstituteMode]);
   useEffect(() => {
-    if (contextSectionName) setSelectedSection(contextSectionName);
-  }, [contextSectionName]);
+    if (!isSubstituteMode && contextSectionName) setSelectedSection(contextSectionName);
+  }, [contextSectionName, isSubstituteMode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowTick(Date.now()), 30000);
@@ -493,6 +498,54 @@ const AttendanceManagement = () => {
         <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className={inputClass} aria-label="Attendance month" />
       </div>
 
+      <div className="mb-5 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3">
+        <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-black/70">
+          <input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-3.5 accent-black" />
+          Substitute attendance (covering another class)
+        </label>
+        <AnimatePresence>
+          {isSubstituteMode && (
+            <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Active Session</label>
+                  <select value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)} className={inputClass} aria-label="Active session">
+                    {sessionOptions.length === 0 && <option value="">—</option>}
+                    {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Class</label>
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }}
+                    className={inputClass}
+                    aria-label="Substitute class"
+                  >
+                    <option value="">Select class</option>
+                    {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-black/45">Section</label>
+                  <select
+                    value={selectedSection}
+                    onChange={(e) => setSelectedSection(e.target.value)}
+                    disabled={!selectedClass}
+                    className={inputClass}
+                    aria-label="Substitute section"
+                  >
+                    <option value="">{selectedClass ? 'Select section' : 'Select class first'}</option>
+                    {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-black/45">Pick the class &amp; section you're covering — subjects below will update to match.</p>
+            </Motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       <div className="mb-5 flex flex-wrap gap-2">
         <button type="button" onClick={() => setSubject('')} className={`rounded-full border px-4 py-2 text-xs font-medium transition ${!subject ? 'border-[#b8c4d0] bg-[#e8eef4] font-semibold shadow-sm' : 'border-[#e2e8ee] bg-[#f4f7fa] hover:bg-[#eef2f6]'}`}>
           <BookOpen className="mr-1.5 inline size-3.5 opacity-45" /> All Subjects
@@ -512,7 +565,6 @@ const AttendanceManagement = () => {
           <span className="text-xs font-medium text-black/70"><CheckCheck className="mr-1 inline size-3.5 opacity-45" />Mark Attendance</span>
           <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50"><CheckCheck className="size-3.5 opacity-50" /> Check All</button>
           <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-3.5 py-1.5 text-xs font-medium transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-50"><span className="text-sm leading-none opacity-50">×</span> Uncheck All</button>
-          <label className="inline-flex items-center gap-1.5 text-[11px] text-black/60"><input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-3.5 accent-black" /> Substitute attendance</label>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">

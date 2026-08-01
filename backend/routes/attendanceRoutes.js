@@ -1042,9 +1042,16 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
       )
     );
 
+    // Sections are scoped to the currently selected class (when one is
+    // chosen) so the substitute picker cascades class -> section correctly,
+    // instead of listing every section in the school regardless of class.
+    const studentsForSectionOptions = requestedClass
+      ? normalized.filter((student) => normalizeText(student.className) === requestedClass)
+      : normalized;
+
     const sessionSet = new Set(normalized.map((student) => normalizeText(student.session)).filter(Boolean));
     const classSet = new Set(normalized.map((student) => normalizeText(student.className)).filter(Boolean));
-    const sectionSet = new Set(normalized.map((student) => normalizeText(student.section)).filter(Boolean));
+    const sectionSet = new Set(studentsForSectionOptions.map((student) => normalizeText(student.section)).filter(Boolean));
     const subjectOptions = isSubstituteMode
       ? await getClassSectionSubjects({
         schoolId,
