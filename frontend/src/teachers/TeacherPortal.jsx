@@ -1456,13 +1456,13 @@ const TeacherPortalShell = () => {
                       <img
                         src={teacherProfile.profilePic}
                         alt=""
-                        className="w-8 h-8 rounded-lg border border-gray-200 object-cover"
+                        className="w-8 h-8 rounded-full border border-gray-200 object-cover"
                         onError={(e) => {
                           e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'%3E%3C/path%3E%3Ccircle cx='12' cy='7' r='4'%3E%3C/circle%3E%3C/svg%3E";
                         }}
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-lg bg-linear-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
                         {initialsLabel}
                       </div>
                     )}

@@ -71,7 +71,7 @@ const LoginForm = () => {
   useEffect(() => {
     const noticeFromState = location.state?.authNotice;
     const storedNotice = consumeAuthNotice();
-    const notice = noticeFromState || storedNotice;
+    const notice = noticeFromState || storedNotice; // This can be simplified
     if (!notice) return;
 
     if (notice === AUTH_NOTICE.EXPIRED) {
@@ -81,7 +81,7 @@ const LoginForm = () => {
     if (notice === AUTH_NOTICE.LOGGED_OUT) {
       toast.success('Logged out successfully');
     }
-  }, [location.state]);
+  }, [location.state?.authNotice]);
 
   // Auto-focus username field on mount (Fix #11)
   useEffect(() => {
@@ -554,7 +554,7 @@ const LoginForm = () => {
                     <User className="w-3.5 h-3.5 text-amber-500" />
                   </div>
                   <input
-                    id="login-username"
+                    id="username"
                     type="text"
                     name="username"
                     aria-label="User ID"
