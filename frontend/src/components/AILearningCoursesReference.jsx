@@ -241,7 +241,8 @@ const AILearningCoursesReference = () => {
     }
   }, [subjectSlug, topicSlug]);
 
-  // Fetch user data
+  // Fetch profile, subject context, and smart learning map once on mount.
+  // These are heavy calls; caching avoids re-fetching on every topic navigation.
   useEffect(() => {
     const load = async () => {
       try {
@@ -259,15 +260,11 @@ const AILearningCoursesReference = () => {
           'Content-Type': 'application/json',
         };
 
-        const [dashRes, contextRes] = await Promise.all([
-          fetchCachedJson(DASHBOARD_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
-          fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 2 * 60 * 1000, fetchOptions: { headers } }),
-        ]);
-
-        const [mapRes] = await Promise.all([
+        const [dashRes, contextRes, mapRes] = await Promise.all([
+          fetchCachedJson(DASHBOARD_ENDPOINT, { ttlMs: 5 * 60 * 1000, fetchOptions: { headers } }),
+          fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 5 * 60 * 1000, fetchOptions: { headers } }),
           fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, {
-            ttlMs: 60 * 1000,
-            forceRefresh: true,
+            ttlMs: 3 * 60 * 1000,
             fetchOptions: { headers },
           }).catch(() => ({ data: { subjects: [] } })),
         ]);
@@ -275,41 +272,6 @@ const AILearningCoursesReference = () => {
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
         setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
-
-        // Fetch real published teaching materials for this subject
-        try {
-          const materialsUrl = new URL(STUDENT_MATERIALS_ENDPOINT);
-          if (subjectSlug) materialsUrl.searchParams.set('subject', subjectSlug);
-          materialsUrl.searchParams.set('limit', '100');
-          const materialsRes = await fetch(materialsUrl.toString(), { headers });
-          if (materialsRes.ok) {
-            const materialsJson = await materialsRes.json();
-            const allMaterials = Array.isArray(materialsJson?.materials) ? materialsJson.materials : [];
-            // Filter to only materials whose chapterTitle or topicTitle matches the current topicSlug
-            const topicKey = normalizeKey(topicSlug);
-            const filtered = allMaterials.filter((m) => {
-              const chKey = normalizeKey(m?.chapterTitle || '');
-              const tKey = normalizeKey(m?.topicTitle || '');
-              return chKey === topicKey || tKey === topicKey || chKey.includes(topicKey) || topicKey.includes(chKey);
-            });
-            const mapped = filtered.map((m) => {
-              const firstAttachment = Array.isArray(m.attachments) ? m.attachments.find((a) => a?.url) : null;
-              return {
-                id: m._id || m.id || m.title,
-                title: String(m.title || '').trim() || 'Teaching Material',
-                group: 'Material',
-                description: String(m.typeLabel || m.category || m.subjectName || '').trim(),
-                content: String(m.content || '').trim(),
-                url: firstAttachment?.url || '',
-                publishedAt: m.publishedAt || m.createdAt || null,
-                formatLabel: String(m.typeLabel || m.category || 'Material').trim(),
-              };
-            });
-            setRealMaterials(mapped);
-          }
-        } catch {
-          // Non-critical — fall back to smart learning map data
-        }
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       } finally {
@@ -318,6 +280,48 @@ const AILearningCoursesReference = () => {
     };
 
     load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real published teaching materials when the topic changes.
+  // Uses fetchCachedJson so repeated visits to the same topic are instant.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userType = localStorage.getItem('userType');
+    if (!token || userType !== 'Student') return;
+
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+    const materialsUrl = new URL(STUDENT_MATERIALS_ENDPOINT);
+    if (subjectSlug) materialsUrl.searchParams.set('subject', subjectSlug);
+    materialsUrl.searchParams.set('limit', '100');
+
+    fetchCachedJson(materialsUrl.toString(), { ttlMs: 3 * 60 * 1000, fetchOptions: { headers } })
+      .then((res) => {
+        const allMaterials = Array.isArray(res?.data?.materials) ? res.data.materials : [];
+        const topicKey = normalizeKey(topicSlug);
+        const filtered = allMaterials.filter((m) => {
+          const chKey = normalizeKey(m?.chapterTitle || '');
+          const tKey = normalizeKey(m?.topicTitle || '');
+          return chKey === topicKey || tKey === topicKey || chKey.includes(topicKey) || topicKey.includes(chKey);
+        });
+        const mapped = filtered.map((m) => {
+          const firstAttachment = Array.isArray(m.attachments) ? m.attachments.find((a) => a?.url) : null;
+          return {
+            id: m._id || m.id || m.title,
+            title: String(m.title || '').trim() || 'Teaching Material',
+            group: 'Material',
+            description: String(m.typeLabel || m.category || m.subjectName || '').trim(),
+            content: String(m.content || '').trim(),
+            url: firstAttachment?.url || '',
+            publishedAt: m.publishedAt || m.createdAt || null,
+            formatLabel: String(m.typeLabel || m.category || 'Material').trim(),
+          };
+        });
+        setRealMaterials(mapped);
+      })
+      .catch(() => {
+        // Non-critical — fall back to smart learning map data
+      });
   }, [subjectSlug, topicSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assignedMentors = useMemo(() => {
