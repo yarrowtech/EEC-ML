@@ -7,6 +7,10 @@ const academicYearSchema = new mongoose.Schema(
     startDate: { type: Date },
     endDate: { type: Date },
     isActive: { type: Boolean, default: false },
+    // Lifecycle label shown in the UI. isActive is the real "default academic
+    // year" flag (drives invoice generation etc.); status is purely
+    // descriptive, except that only one year can be marked "active".
+    status: { type: String, enum: ['upcoming', 'active', 'archived'], default: 'upcoming' },
   },
   { timestamps: true }
 );

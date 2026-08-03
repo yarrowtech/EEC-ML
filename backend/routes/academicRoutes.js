@@ -231,27 +231,45 @@ router.get('/teacher/years', teacherAuth, async (req, res) => {
   }
 });
 
+const YEAR_STATUS_OPTIONS = new Set(['upcoming', 'active', 'archived']);
+
+// Reconciles the descriptive `status` label with the real `isActive` flag —
+// callers may send either (or both); isActive always wins for "active".
+const resolveYearStatusFields = ({ status, isActive }) => {
+  if (status !== undefined && !YEAR_STATUS_OPTIONS.has(status)) {
+    throw new Error('Status must be Upcoming, Active or Archived');
+  }
+  const resolvedIsActive = Boolean(isActive);
+  const resolvedStatus = resolvedIsActive ? 'active' : (status || 'upcoming');
+  return { isActive: resolvedIsActive, status: resolvedStatus };
+};
+
 router.post('/years', adminAuth, async (req, res) => {
   // #swagger.tags = ['Academics']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const { name, startDate, endDate, isActive } = req.body || {};
+    const { name, startDate, endDate, isActive, status } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Academic year name is required' });
     }
+    const statusFields = resolveYearStatusFields({ status, isActive });
 
     const created = await AcademicYear.create({
       schoolId,
       name: String(name).trim(),
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
-      isActive: Boolean(isActive),
+      ...statusFields,
     });
     if (created.isActive) {
       await AcademicYear.updateMany(
         { schoolId, _id: { $ne: created._id } },
         { $set: { isActive: false } }
+      );
+      await AcademicYear.updateMany(
+        { schoolId, _id: { $ne: created._id }, status: 'active' },
+        { $set: { status: 'archived' } }
       );
       try {
         await generateInvoicesForAcademicYear({
@@ -292,10 +310,11 @@ router.put('/years/:id', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
 
-    const { name, startDate, endDate, isActive } = req.body || {};
+    const { name, startDate, endDate, isActive, status } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Academic year name is required' });
     }
+    const statusFields = resolveYearStatusFields({ status, isActive });
 
     // Verify ownership
     const existing = await AcademicYear.findOne({ _id: id, schoolId }).lean();
@@ -309,7 +328,7 @@ router.put('/years/:id', adminAuth, async (req, res) => {
         name: String(name).trim(),
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
-        isActive: Boolean(isActive),
+        ...statusFields,
       },
       { new: true, runValidators: true }
     ).lean();
@@ -318,6 +337,10 @@ router.put('/years/:id', adminAuth, async (req, res) => {
       await AcademicYear.updateMany(
         { schoolId, _id: { $ne: updated._id } },
         { $set: { isActive: false } }
+      );
+      await AcademicYear.updateMany(
+        { schoolId, _id: { $ne: updated._id }, status: 'active' },
+        { $set: { status: 'archived' } }
       );
       try {
         await generateInvoicesForAcademicYear({
