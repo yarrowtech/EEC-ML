@@ -4,7 +4,7 @@ import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
-  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight, Info, Trophy,
+  FolderOpen, UserCheck, Sparkles, CheckCircle2, Check, ArrowRight, Info, Trophy, ListOrdered, Type,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -17,6 +17,19 @@ const SENIOR_SECONDARY_STREAM_OPTIONS = [
   { value: "commerce", label: "Commerce" },
   { value: "arts", label: "Arts" },
   { value: "mixed", label: "Mixed" },
+];
+
+const CLASS_ADD_MODES = [
+  { key: "range", icon: ListOrdered, title: "Numbered Range", desc: "Class 1 through Class 10, generated instantly." },
+  { key: "custom", icon: Type, title: "Custom List", desc: "Type any names — Nursery, LKG, UKG, and so on." },
+  { key: "stream", icon: GraduationCap, title: "11/12 + Stream", desc: "Senior secondary class with a stream and subjects." },
+];
+
+const QUICK_CLASS_PRESETS = [
+  { label: "Classes 1–5", mode: "range", from: "1", to: "5" },
+  { label: "Classes 1–10", mode: "range", from: "1", to: "10" },
+  { label: "Classes 1–12", mode: "range", from: "1", to: "12" },
+  { label: "Nursery, LKG, UKG", mode: "custom", text: "Nursery, LKG, UKG" },
 ];
 
 const getAcademicCacheStorage = () => {
@@ -92,7 +105,7 @@ const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = 
         >
           <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
             <h2 className="flex items-center gap-2.5 text-lg font-bold text-gray-800">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-sm">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-sm">
                 <Edit3 className="h-4 w-4 text-white" />
               </span>
               {title}
@@ -107,7 +120,7 @@ const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = 
               <button type="button" onClick={onClose} disabled={isSubmitting} className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-50">
                 Cancel
               </button>
-              <button type="submit" disabled={isSubmitting} className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/70 transition hover:shadow-lg disabled:opacity-50">
+              <button type="submit" disabled={isSubmitting} className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200/70 transition hover:shadow-lg disabled:opacity-50">
                 {isSubmitting ? "Saving..." : "Save Changes"}
               </button>
             </div>
@@ -159,8 +172,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   // Search/filter
   const [yearSuccessMessage, setYearSuccessMessage] = useState("");
-  const [showYearForm, setShowYearForm] = useState(true);
+  const [showYearForm, setShowYearForm] = useState(false);
   const [searchClass, setSearchClass] = useState("");
+  const [showAddClassesModal, setShowAddClassesModal] = useState(false);
+  const [showClassForm, setShowClassForm] = useState(false);
   const [searchSection, setSearchSection] = useState("");
   const [searchSubject, setSearchSubject] = useState("");
 
@@ -566,10 +581,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   };
 
   useEffect(() => {
-    setShowAdminHeader?.(false);
+    setShowAdminHeader?.(true);
     setError("");
     loadAcademicData().catch(handleApiError);
-    loadClassTeachers().catch(() => {});
+    loadClassTeachers().catch(() => { });
   }, [setShowAdminHeader]);
 
   const showTransientSuccess = (setter, message, durationMs = 4000) => {
@@ -626,6 +641,20 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   };
   const saveYearAsDraft = () => submitYearWithMode("draft");
 
+
+  /* ─── Quick-add preset: pre-fill mode + form, then open the modal ─── */
+  const openClassAddMode = (mode) => {
+    setClassAddMode(mode);
+    setShowAddClassesModal(true);
+  };
+  const applyQuickClassPreset = (preset) => {
+    if (preset.mode === "range") {
+      setClassRangeForm((p) => ({ ...p, from: preset.from, to: preset.to }));
+    } else if (preset.mode === "custom") {
+      setClassCustomInput(preset.text);
+    }
+    openClassAddMode(preset.mode);
+  };
 
   /* ─── Bulk submit: classes by range ─── */
   const submitClassRange = async (e) => {
@@ -1209,16 +1238,15 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   const ProgressChip = ({ label, value, filled }) => (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm transition-colors ${
-        filled ? "border-[#2E8B57] bg-[#DCEFE3] text-[#2E8B57]" : "border-[#DDE3EA] bg-white text-[#4B5768]"
-      }`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm transition-colors ${filled ? "border-[#2E8B57] bg-[#DCEFE3] text-[#2E8B57]" : "border-[#DDE3EA] bg-white text-[#4B5768]"
+        }`}
     >
       {label}: <strong className={filled ? "text-[#2E8B57]" : "text-[#14203B]"}>{value}</strong>
     </span>
   );
 
   const StepNav = ({ prevKey, nextKey, skippable, finishLabel }) => (
-    <div className="flex items-center justify-between rounded-2xl border border-[#DDE3EA] bg-white px-5 py-4 shadow-sm">
+    <div className="flex items-center justify-between rounded-2xl px-5 py-4">
       {prevKey ? (
         <button
           type="button"
@@ -1249,16 +1277,61 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     </div>
   );
 
+  const STEP_ILLUSTRATIONS = {
+    classes: (
+      <svg viewBox="0 0 120 90" className="h-full w-full" aria-hidden="true">
+        <circle cx="60" cy="45" r="38" fill="#DBEAFE" opacity="0.6" />
+        <circle cx="94" cy="20" r="6" fill="#BFDBFE" opacity="0.8" />
+        <rect x="30" y="52" width="60" height="12" rx="3" fill="#1D4ED8" />
+        <rect x="34" y="38" width="52" height="12" rx="3" fill="#3B82F6" />
+        <rect x="38" y="24" width="44" height="12" rx="3" fill="#93C5FD" />
+      </svg>
+    ),
+    sections: (
+      <svg viewBox="0 0 120 90" className="h-full w-full" aria-hidden="true">
+        <circle cx="60" cy="45" r="38" fill="#DBEAFE" opacity="0.6" />
+        <rect x="26" y="24" width="28" height="28" rx="5" fill="#3B82F6" />
+        <rect x="66" y="24" width="28" height="28" rx="5" fill="#93C5FD" />
+        <rect x="26" y="58" width="28" height="20" rx="5" fill="#BFDBFE" />
+        <rect x="66" y="58" width="28" height="20" rx="5" fill="#1D4ED8" />
+      </svg>
+    ),
+    subjects: (
+      <svg viewBox="0 0 120 90" className="h-full w-full" aria-hidden="true">
+        <circle cx="60" cy="45" r="38" fill="#DBEAFE" opacity="0.6" />
+        <path d="M60 32c-9-6-21-6-30-2v34c9-4 21-4 30 2 9-6 21-6 30-2V30c-9-4-21-4-30 2Z" fill="#3B82F6" />
+        <path d="M60 32v34" stroke="#1D4ED8" strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="30" cy="22" r="5" fill="#BFDBFE" />
+      </svg>
+    ),
+    teachers: (
+      <svg viewBox="0 0 120 90" className="h-full w-full" aria-hidden="true">
+        <circle cx="60" cy="45" r="38" fill="#DBEAFE" opacity="0.6" />
+        <path d="M34 78c0-15 11.6-26 26-26s26 11 26 26" fill="#1D4ED8" />
+        <circle cx="60" cy="34" r="13" fill="#3B82F6" />
+        <rect x="47" y="18" width="26" height="8" rx="2.5" fill="#1D4ED8" />
+        <circle cx="94" cy="22" r="5" fill="#BFDBFE" />
+      </svg>
+    ),
+  };
+
   const StepHeader = (props) => {
     const StepIcon = props.icon;
     return (
-      <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 shadow-sm sm:p-7">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
-          <StepIcon className="h-6 w-6 text-blue-600" />
+      <div className="flex items-center gap-4 overflow-hidden rounded-2xl border border-[#DDE3EA] bg-white p-6 shadow-sm sm:p-7">
+        <div className="min-w-0 flex-1">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
+            <StepIcon className="h-6 w-6 text-blue-600" />
+          </div>
+          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-blue-600">Step {props.step} of 5</p>
+          <h2 className="mt-1 text-xl font-bold text-[#14203B]">{props.question}</h2>
+          <p className="mt-1.5 max-w-2xl text-sm text-[#4B5768]">{props.explain}</p>
         </div>
-        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-blue-600">Step {props.step} of 5</p>
-        <h2 className="mt-1 text-xl font-bold text-[#14203B]">{props.question}</h2>
-        <p className="mt-1.5 max-w-2xl text-sm text-[#4B5768]">{props.explain}</p>
+        {props.illustration && STEP_ILLUSTRATIONS[props.illustration] && (
+          <div className="hidden h-24 w-32 shrink-0 sm:block">
+            {STEP_ILLUSTRATIONS[props.illustration]}
+          </div>
+        )}
       </div>
     );
   };
@@ -1271,7 +1344,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-gray-200 bg-white/90 py-2.5 pl-10 pr-4 text-sm transition focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+        className="w-full rounded-xl border border-gray-200 bg-white/90 py-2.5 pl-10 pr-4 text-sm transition focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
       />
     </div>
   );
@@ -1279,15 +1352,15 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const SortableHeader = ({ label, field, sortConfig, onSort }) => (
     <th
       onClick={() => onSort(field)}
-      className="cursor-pointer select-none whitespace-nowrap bg-gray-50/80 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 transition hover:bg-amber-50"
+      className="cursor-pointer select-none whitespace-nowrap bg-gray-50/80 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 transition hover:bg-blue-50"
     >
       <div className="flex items-center gap-1.5">
         {label}
         {sortConfig.field === field ? (
           sortConfig.order === "asc" ? (
-            <ChevronUp className="h-3.5 w-3.5 text-amber-600" />
+            <ChevronUp className="h-3.5 w-3.5 text-blue-600" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-amber-600" />
+            <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
           )
         ) : (
           <ChevronsUpDown className="h-3.5 w-3.5 text-gray-300" />
@@ -1318,7 +1391,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           <select
             value={itemsPerPage}
             onChange={(e) => setItemsPerPage(Number(e.target.value))}
-            className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+            className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -1343,11 +1416,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <button
               key={n}
               onClick={() => onPageChange(n)}
-              className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${
-                currentPage === n
-                  ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm"
+              className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${currentPage === n
+                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm"
                   : "text-gray-600 hover:bg-white border border-transparent hover:border-gray-200"
-              }`}
+                }`}
             >
               {n}
             </button>
@@ -1374,9 +1446,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const [selected] = selectionMap[entityType];
     if (selected.length === 0) return null;
     return (
-      <div className="mb-3 flex items-center justify-between rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-2.5">
-        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-800">
-          <CheckCircle2 className="h-4 w-4 text-amber-500" /> {selected.length} selected
+      <div className="mb-3 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+          <CheckCircle2 className="h-4 w-4 text-blue-500" /> {selected.length} selected
         </span>
         <div className="flex gap-2">
           <button
@@ -1396,12 +1468,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     );
   };
 
-  const EmptyState = ({ search, entity }) => (
+  const EmptyState = ({ search, entity, actionLabel, onAction }) => (
     <div className="flex flex-col items-center justify-center py-14 text-gray-400">
-      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50">
-        <FolderOpen className="h-7 w-7 text-amber-300" />
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
+        <FolderOpen className="h-7 w-7 text-blue-300" />
       </div>
       <p className="text-sm">{search ? `No matching ${entity} found.` : `No ${entity} yet.`}</p>
+      {!search && actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-3 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+        >
+          <Plus className="h-3.5 w-3.5" /> {actionLabel}
+        </button>
+      )}
     </div>
   );
 
@@ -1418,7 +1499,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ RENDER ═══════════════════════ */
 
   return (
-    <div className="min-h-screen bg-[#F4F6FB] p-4 md:p-6">
+    <div className="min-h-screen p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-6">
         {/* ─── Header ─── */}
         <div className="relative overflow-hidden">
@@ -1437,627 +1518,758 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         )}
 
         {/* ─── Step pipeline (horizontal) ─── */}
-        <div className="flex items-start">
+        <div className="grid w-full items-start gap-2" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
           {tabs.map((t, idx) => {
             const isCurrent = activeTab === t.key;
             const isDone = t.count > 0 && !isCurrent;
+            const isDimmed = !isCurrent && !isDone;
             return (
-              <React.Fragment key={t.key}>
-                <button type="button" onClick={() => setActiveTab(t.key)} className="flex shrink-0 flex-col items-center gap-2">
+              <button
+                type="button"
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className="flex min-w-0 flex-col items-center gap-2 text-center"
+              >
+                <div className="relative flex w-full items-center justify-center">
+                  {idx < tabs.length - 1 && (
+                    <svg className="absolute left-1/2 top-1/2 h-0.5 w-full -translate-y-1/2" preserveAspectRatio="none">
+                      <line
+                        x1="0" y1="1" x2="100%" y2="1"
+                        strokeWidth="2"
+                        strokeDasharray="0,6"
+                        strokeLinecap="round"
+                        className="stroke-gray-300"
+                      />
+                    </svg>
+                  )}
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold transition-colors ${
-                      isCurrent
-                        ? "border-blue-600 bg-blue-600 text-white shadow-[0_0_0_4px_#DBEAFE]"
-                        : isDone
-                        ? "border-blue-600 bg-blue-600 text-white"
-                        : "border-gray-200 bg-white text-gray-400"
-                    }`}
+                    className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-opacity ${isDone
+                        ? "bg-emerald-500 text-white"
+                        : "bg-white text-gray-700 ring-1 ring-inset ring-gray-300"
+                      } ${isDimmed ? "opacity-60" : ""}`}
                   >
-                    {isDone ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
+                    {isDone ? <Check className="h-3.5 w-3.5" /> : idx + 1}
                   </span>
-                  <span className={`whitespace-nowrap text-xs font-semibold ${isCurrent ? "text-blue-600" : isDone ? "text-gray-600" : "text-gray-400"}`}>
+                </div>
+                <div className={`flex flex-col ${isDimmed ? "opacity-60" : ""}`}>
+                  <span className={`truncate text-xs font-semibold ${isCurrent ? "text-blue-600" : "text-[#14203B]"}`}>
                     {t.label}
                   </span>
-                </button>
-                {idx < tabs.length - 1 && (
-                  <div className={`mt-[18px] h-0.5 flex-1 ${isDone ? "bg-blue-600" : "bg-gray-200"}`} />
-                )}
-              </React.Fragment>
+                  <span className="truncate text-[11px] text-gray-500">{t.desc}</span>
+                </div>
+              </button>
             );
           })}
         </div>
 
         <div className="space-y-4">
 
-        {/* ═══════════════ YEARS TAB ═══════════════ */}
-        {activeTab === "years" && (
-          <div className="space-y-4">
-            {/* Add Academic Year modal */}
-            {showYearForm && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowYearForm(false)}>
-            <div
-              className="max-h-[92vh] w-full max-w-3xl overflow-y-auto overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-end px-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowYearForm(false)}
-                  className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
-                {/* Left: form */}
-                <div className="px-6 pb-6 pt-0 sm:px-8 sm:pb-8">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50">
-                      <Calendar className="h-5 w-5 text-blue-600" />
+          {/* ═══════════════ YEARS TAB ═══════════════ */}
+          {activeTab === "years" && (
+            <div className="space-y-4">
+              {/* Add Academic Year modal */}
+              {showYearForm && ( // This is the modal to update
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowYearForm(false)}>
+                  <div
+                    className="max-h-[92vh] w-full max-w-3xl overflow-y-auto overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-end px-4 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowYearForm(false)}
+                        className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
                     </div>
-                    <div>
-                      <h3 className="text-base font-bold text-gray-900">Academic Year</h3>
-                      <p className="text-xs text-gray-500">Create the academic session your school will use.</p>
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
+                      {/* Left: form */}
+                      <div className="px-6 pb-6 pt-0 sm:px-8 sm:pb-8">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50">
+                            <Calendar className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-bold text-gray-900">Academic Year</h3>
+                            <p className="text-xs text-gray-500">Create the academic session your school will use.</p>
+                          </div>
+                        </div>
+
+                        <div className="my-5 border-t border-gray-100" />
+
+                        <form onSubmit={submitYear} className="space-y-4">
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-600">Academic Year Name</label>
+                            <div className="relative">
+                              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                              <input type="text" value={yearForm.name} onChange={(e) => setYearForm((p) => ({ ...p, name: e.target.value }))}
+                                className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                placeholder="2026-2027" required />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="mb-1.5 block text-xs font-semibold text-gray-600">Start Date</label>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                                <input type="date" value={yearForm.startDate} onChange={(e) => setYearForm((p) => ({ ...p, startDate: e.target.value }))}
+                                  className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-xs font-semibold text-gray-600">End Date</label>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                                <input type="date" value={yearForm.endDate} onChange={(e) => setYearForm((p) => ({ ...p, endDate: e.target.value }))}
+                                  className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { value: "upcoming", label: "Upcoming" },
+                                { value: "active", label: "Active" },
+                                { value: "archived", label: "Archived" },
+                              ].map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => setYearForm((p) => ({ ...p, status: opt.value }))}
+                                  className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${yearForm.status === opt.value
+                                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                                    }`}
+                                >
+                                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${yearForm.status === opt.value ? "border-blue-600" : "border-gray-300"
+                                    }`}>
+                                    {yearForm.status === opt.value && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+                                  </span>
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <label className="flex items-center gap-2 text-sm text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={yearForm.isActive}
+                              onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked }))}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                            />
+                            Make this the default academic year
+                          </label>
+
+                          <div className="flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="flex items-center gap-1.5 text-xs text-gray-400">
+                              <Info className="h-3.5 w-3.5" /> You can always edit these details later.
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={saveYearAsDraft}
+                                disabled={isSubmitting}
+                                className="flex items-center gap-1.5 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                              >
+                                Save as Draft
+                              </button>
+                              <button type="submit" disabled={isSubmitting}
+                                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
+                                Save &amp; Continue <ArrowRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+
+                      {/* Right: live preview */}
+                      <div className="relative overflow-hidden border-t border-gray-100 bg-gradient-to-br from-blue-500 to-indigo-600 p-6 text-white sm:border-l sm:border-t-0">
+                        <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-40 opacity-20" />
+                        <div className="relative z-10">
+                          <p className="flex items-center gap-1.5 text-xs font-bold text-white/80">
+                            <Calendar size={16} /> Academic Year Preview
+                          </p>
+                          <p className="mt-4 text-2xl font-bold">{yearForm.name || "—"}</p>
+                          <div className="mt-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between rounded-lg bg-black/10 px-3 py-2 backdrop-blur-sm">
+                              <div>
+                                <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Starts</p>
+                                <p className="mt-0.5 font-semibold">{yearForm.startDate ? new Date(yearForm.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                              </div>
+                              <div className="h-8 w-px bg-white/20" />
+                              <div className="text-right">
+                                <p className="flex items-center justify-end gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Ends</p>
+                                <p className="mt-0.5 font-semibold">{yearForm.endDate ? new Date(yearForm.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-black/10 px-3 py-2 backdrop-blur-sm">
+                              <p className="flex items-center gap-1.5 text-xs text-white/70"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
+                              <p className="mt-0.5 font-semibold capitalize">{yearForm.status}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  <div className="my-5 border-t border-gray-100" />
 
-                  <form onSubmit={submitYear} className="space-y-4">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-gray-600">Academic Year Name</label>
-                      <div className="relative">
-                        <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
-                        <input type="text" value={yearForm.name} onChange={(e) => setYearForm((p) => ({ ...p, name: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          placeholder="2026-2027" required />
-                      </div>
-                    </div>
+              {/* Success banner */}
+              <AnimatePresence>
+                {yearSuccessMessage && (
+                  <Motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+                  >
+                    <CheckCircle2 className="h-4 w-4 shrink-0" /> {yearSuccessMessage}
+                  </Motion.div>
+                )}
+              </AnimatePresence>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-gray-600">Start Date</label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
-                          <input type="date" value={yearForm.startDate} onChange={(e) => setYearForm((p) => ({ ...p, startDate: e.target.value }))}
-                            className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
+                {/* Current academic year card */}
+                <div className="relative overflow-hidden rounded-2xl bg-blue-500/50 p-6 shadow-lg shadow-blue-200/50">
+                  <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-20 w-full h-full object-cover" />
+                  <div className="relative z-10">
+                    <p className="flex items-center gap-1.5 text-xs font-bold">
+                      <Calendar size={16} /> Current Academic Year
+                    </p>
+                    {currentAcademicYear ? (
+                      <>
+                        <p className="mt-4 text-3xl font-bold">{currentAcademicYear.name}</p>
+                        <div className="mt-4 space-y-3 text-sm">
+                          <div className="flex items-center justify-between rounded-lg bg-black/5 px-3 py-2 backdrop-blur-sm">
+                            <div>
+                              <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Starts</p>
+                              <p className="mt-0.5 font-semibold">{currentAcademicYear.startDate ? new Date(currentAcademicYear.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                            </div>
+                            <div className="h-8 w-px bg-white/20" />
+                            <div className="text-right">
+                              <p className="flex items-center justify-end gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Ends</p>
+                              <p className="mt-0.5 font-semibold">{currentAcademicYear.endDate ? new Date(currentAcademicYear.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                            </div>
+                          </div>
+                          <div className="rounded-lg bg-black/5 px-3 py-2 backdrop-blur-sm">
+                            <p className="flex items-center gap-1.5 text-xs text-white/70"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
+                            <p className="mt-0.5 font-semibold capitalize">{currentAcademicYear.status || "active"}</p>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-xs font-semibold text-gray-600">End Date</label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
-                          <input type="date" value={yearForm.endDate} onChange={(e) => setYearForm((p) => ({ ...p, endDate: e.target.value }))}
-                            className="w-full rounded-lg border border-gray-200 py-2.5 pl-9 pr-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
+                      </>
+                    ) : (
+                      <div className="mt-5 flex flex-col items-center text-center">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
+                          <Calendar className="h-6 w-6 text-white" />
                         </div>
+                        <p className="mt-3 text-sm font-semibold">No academic year yet</p>
+                        <p className="mt-1 text-xs text-white/80">Add one to get started.</p>
                       </div>
-                    </div>
+                    )}
+                  </div>
+                </div>
 
+                {/* Table Card */}
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
                     <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { value: "upcoming", label: "Upcoming" },
-                          { value: "active", label: "Active" },
-                          { value: "archived", label: "Archived" },
-                        ].map((opt) => (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            onClick={() => setYearForm((p) => ({ ...p, status: opt.value }))}
-                            className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                              yearForm.status === opt.value
-                                ? "border-blue-500 bg-blue-50 text-blue-700"
-                                : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                            }`}
-                          >
-                            <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                              yearForm.status === opt.value ? "border-blue-600" : "border-gray-300"
-                            }`}>
-                              {yearForm.status === opt.value && <span className="h-2 w-2 rounded-full bg-blue-600" />}
-                            </span>
-                            {opt.label}
-                          </button>
+                      <h3 className="text-sm font-bold text-gray-800">Academic Years</h3>
+                      <p className="mt-0.5 text-xs text-gray-500">Below is the list of all academic years in your school.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowYearForm(true)}
+                      className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                    >
+                      <Plus className="h-4 w-4" /> Add Academic Year
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <SortableHeader label="Year Name" field="name" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
+                          <SortableHeader label="Start Date" field="startDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
+                          <SortableHeader label="End Date" field="endDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                          <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paginatedYears.map((year) => (
+                          <tr key={year._id} className="transition hover:bg-blue-50/30">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{year.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{year.startDate ? new Date(year.startDate).toLocaleDateString() : "—"}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{year.endDate ? new Date(year.endDate).toLocaleDateString() : "—"}</td>
+                            <td className="px-4 py-3">
+                              {(() => {
+                                const statusLabel = year.status || (year.isActive ? "active" : "upcoming");
+                                const statusStyles = {
+                                  active: "bg-emerald-50 text-emerald-700",
+                                  upcoming: "bg-blue-50 text-blue-700",
+                                  archived: "bg-gray-100 text-gray-500",
+                                };
+                                return (
+                                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusStyles[statusLabel] || statusStyles.upcoming}`}>
+                                    {statusLabel}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => copyYearSetup(year)}
+                                  disabled={deletingId === year._id}
+                                  className="rounded-md p-1.5 text-gray-400 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+                                  title="Copy this year's classes, sections, subjects and class teachers to another year"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => setEditingYear(year)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                  <Edit3 className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => deleteYear(year._id)} disabled={deletingId === year._id}
+                                  className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
                         ))}
-                      </div>
+                      </tbody>
+                    </table>
+                    {paginatedYears.length === 0 && <EmptyState search="" entity="academic years" />}
+                  </div>
+                  <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
+                </div>
+              </div>
+              <StepNav prevKey={null} nextKey="classes" />
+            </div>
+          )}
+
+          {/* ═══════════════ CLASSES TAB ═══════════════ */}
+          {activeTab === "classes" && (
+            <div className="space-y-4">
+              {/* <StepHeader
+                icon={Layers}
+                step={2}
+                question="Which classes does your school have?"
+                explain="Tap a quick-add group below, or type your own. You can rename or remove any class later."
+                illustration="classes"
+              /> */}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+                {/* ─── Left: quick add ─── */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    {CLASS_ADD_MODES.map((preset) => {
+                      const PresetIcon = preset.icon;
+                      return (
+                        <button
+                          key={preset.key}
+                          type="button"
+                          onClick={() => openClassAddMode(preset.key)}
+                          className="group flex w-full items-start gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50/40 hover:shadow-md"
+                        >
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-100">
+                            <PresetIcon className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-800">{preset.title}</p>
+                            <p className="mt-0.5 text-xs text-gray-500">{preset.desc}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Quick start</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {QUICK_CLASS_PRESETS.map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => applyQuickClassPreset(preset)}
+                          className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
                     </div>
+                  </div>
+                </div>
 
-                    <label className="flex items-center gap-2 text-sm text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={yearForm.isActive}
-                        onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
+                {/* ─── Right: classes list ─── */}
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                    <div>
+                      <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                        <Layers className="h-4 w-4 text-blue-500" /> Classes
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">{sortedClasses.length}</span>
+                      </h3>
+                      <p className="mt-0.5 text-xs text-gray-500">All classes currently set up for your school.</p>
+                    </div>
+                    <div className="w-full sm:w-64">
+                      <SearchInput value={searchClass} onChange={setSearchClass} placeholder="Search classes..." />
+                    </div>
+                  </div>
+                  <BulkBar entityType="classes" entityName="class" />
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="w-12 bg-gray-50 px-4 py-3">
+                            <input type="checkbox" checked={selectedClasses.length === paginatedClasses.length && paginatedClasses.length > 0}
+                              onChange={() => handleSelectAll("classes", paginatedClasses)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                          </th>
+                          <SortableHeader label="Name" field="name" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
+                          <SortableHeader label="Order" field="order" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Academic Year</th>
+                          <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {paginatedClasses.map((cls) => (
+                          <tr key={cls._id} className="transition hover:bg-blue-50/30">
+                            <td className="px-4 py-3">
+                              <input type="checkbox" checked={selectedClasses.includes(cls._id)}
+                                onChange={() => handleSelectItem("classes", cls._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                            </td>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{cls.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{cls.order ?? 0}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {cls.stream ? (
+                                <span className="inline-flex items-center rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium capitalize text-purple-700">
+                                  {String(cls.stream)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{yearNameById[String(cls.academicYearId || "")] || "—"}</td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => setEditingClass(cls)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                  <Edit3 className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => deleteClass(cls._id)} disabled={deletingId === cls._id}
+                                  className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {paginatedClasses.length === 0 && (
+                      <EmptyState
+                        search={searchClass}
+                        entity="classes"
+                        actionLabel="Add Classes"
+                        onAction={() => openClassAddMode("range")}
                       />
-                      Make this the default academic year
-                    </label>
+                    )}
+                  </div>
+                  <Pagination currentPage={classPage} totalItems={sortedClasses.length} onPageChange={setClassPage} />
+                </div>
+              </div>
 
-                    <div className="flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="flex items-center gap-1.5 text-xs text-gray-400">
-                        <Info className="h-3.5 w-3.5" /> You can always edit these details later.
-                      </p>
-                      <div className="flex items-center gap-2">
+              {showAddClassesModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowAddClassesModal(false)}>
+                  <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="border-b border-gray-100 bg-blue-50/40 px-5 pt-4">
+                      <div className="flex items-center justify-between pb-3">
+                        <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">2</span>
+                          Add Classes
+                        </h3>
                         <button
                           type="button"
-                          onClick={saveYearAsDraft}
-                          disabled={isSubmitting}
-                          className="flex items-center gap-1.5 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                          onClick={() => setShowAddClassesModal(false)}
+                          className="rounded-lg p-1.5 text-gray-400 transition hover:bg-white hover:text-gray-600"
                         >
-                          Save as Draft
-                        </button>
-                        <button type="submit" disabled={isSubmitting}
-                          className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
-                          Save &amp; Continue <ArrowRight className="h-4 w-4" />
+                          <X className="h-4 w-4" />
                         </button>
                       </div>
-                    </div>
-                  </form>
-                </div>
-
-                {/* Right: live preview */}
-                <div className="border-t border-gray-100 bg-gradient-to-b from-blue-50/70 to-indigo-50/40 p-6 sm:border-l sm:border-t-0">
-                  <p className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
-                    <Calendar className="h-3.5 w-3.5" /> Academic Year Preview
-                  </p>
-                  <p className="mt-4 text-2xl font-bold text-gray-900">{yearForm.name || "—"}</p>
-                  <div className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <p className="flex items-center gap-1.5 text-xs text-gray-400"><Calendar className="h-3.5 w-3.5" /> Starts</p>
-                      <p className="mt-0.5 font-medium text-gray-700">{yearForm.startDate ? new Date(yearForm.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                    </div>
-                    <div>
-                      <p className="flex items-center gap-1.5 text-xs text-gray-400"><Calendar className="h-3.5 w-3.5" /> Ends</p>
-                      <p className="mt-0.5 font-medium text-gray-700">{yearForm.endDate ? new Date(yearForm.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                    </div>
-                    <div>
-                      <p className="flex items-center gap-1.5 text-xs text-gray-400"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
-                      <p className={`mt-0.5 font-medium capitalize ${yearForm.status === "active" ? "text-emerald-600" : "text-gray-700"}`}>{yearForm.status}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            </div>
-            )}
-
-
-            {/* Success banner */}
-            <AnimatePresence>
-              {yearSuccessMessage && (
-                <Motion.div
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
-                >
-                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {yearSuccessMessage}
-                </Motion.div>
-              )}
-            </AnimatePresence>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
-              {/* Current academic year card */}
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-b from-blue-50/70 to-indigo-50/40 p-6 shadow-sm">
-                <p className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
-                  <Calendar className="h-3.5 w-3.5" /> Current Academic Year
-                </p>
-                {currentAcademicYear ? (
-                  <>
-                    <p className="mt-4 text-2xl font-bold text-gray-900">{currentAcademicYear.name}</p>
-                    <div className="mt-4 space-y-3 text-sm">
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs text-gray-400"><Calendar className="h-3.5 w-3.5" /> Starts</p>
-                        <p className="mt-0.5 font-medium text-gray-700">{currentAcademicYear.startDate ? new Date(currentAcademicYear.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                      </div>
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs text-gray-400"><Calendar className="h-3.5 w-3.5" /> Ends</p>
-                        <p className="mt-0.5 font-medium text-gray-700">{currentAcademicYear.endDate ? new Date(currentAcademicYear.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                      </div>
-                      <div>
-                        <p className="flex items-center gap-1.5 text-xs text-gray-400"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
-                        <p className="mt-0.5 font-medium capitalize text-emerald-600">{currentAcademicYear.status || "active"}</p>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-5 flex flex-col items-center text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100">
-                      <Calendar className="h-6 w-6 text-blue-500" />
-                    </div>
-                    <p className="mt-3 text-sm font-semibold text-gray-700">No academic year yet</p>
-                    <p className="mt-1 text-xs text-gray-400">Add one to get started.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Table Card */}
-              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-800">Academic Years</h3>
-                    <p className="mt-0.5 text-xs text-gray-500">Below is the list of all academic years in your school.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowYearForm(true)}
-                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-                  >
-                    <Plus className="h-4 w-4" /> Add Academic Year
-                  </button>
-                </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <SortableHeader label="Year Name" field="name" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
-                      <SortableHeader label="Start Date" field="startDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
-                      <SortableHeader label="End Date" field="endDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                      <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {paginatedYears.map((year) => (
-                      <tr key={year._id} className="transition hover:bg-amber-50/30">
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{year.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{year.startDate ? new Date(year.startDate).toLocaleDateString() : "—"}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{year.endDate ? new Date(year.endDate).toLocaleDateString() : "—"}</td>
-                        <td className="px-4 py-3">
-                          {(() => {
-                            const statusLabel = year.status || (year.isActive ? "active" : "upcoming");
-                            const statusStyles = {
-                              active: "bg-emerald-50 text-emerald-700",
-                              upcoming: "bg-blue-50 text-blue-700",
-                              archived: "bg-gray-100 text-gray-500",
-                            };
-                            return (
-                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusStyles[statusLabel] || statusStyles.upcoming}`}>
-                                {statusLabel}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
+                      <div className="flex gap-1">
+                        {CLASS_ADD_MODES.map((preset) => {
+                          const PresetIcon = preset.icon;
+                          const isActive = classAddMode === preset.key;
+                          return (
                             <button
-                              onClick={() => copyYearSetup(year)}
-                              disabled={deletingId === year._id}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
-                              title="Copy this year's classes, sections, subjects and class teachers to another year"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => setEditingYear(year)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => deleteYear(year._id)} disabled={deletingId === year._id}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {paginatedYears.length === 0 && <EmptyState search="" entity="academic years" />}
-              </div>
-              <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
-              </div>
-            </div>
-            <StepNav prevKey={null} nextKey="classes" />
-          </div>
-        )}
-
-        {/* ═══════════════ CLASSES TAB ═══════════════ */}
-        {activeTab === "classes" && (
-          <div className="space-y-4">
-            <StepHeader
-              icon={Layers}
-              step={2}
-              question="Which classes does your school have?"
-              explain="Tap a quick-add group below, or type your own. You can rename or remove any class later."
-            />
-              <div className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
-                {/* Mode switcher */}
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-emerald-50/40">
-                  <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">2</span>
-                    Add Classes
-                  </h3>
-                  <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
-                    {["range", "custom", "stream"].map((mode) => (
-                      <button key={mode} type="button" onClick={() => setClassAddMode(mode)}
-                        className={`px-3 py-1.5 capitalize transition ${classAddMode === mode ? "bg-amber-500 text-white" : "text-gray-500 hover:bg-gray-50"} ${mode !== "range" ? "border-l border-gray-200" : ""}`}>
-                        {mode === "range" ? "Range (1–10)" : mode === "custom" ? "Custom list" : "11/12 + Stream"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {classAddMode === "range" ? (
-                  <form onSubmit={submitClassRange} className="p-5 space-y-4">
-                    <p className="text-xs text-gray-500">Create multiple numbered classes at once — e.g. Class 1 through Class 10.</p>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
-                        <select value={classRangeForm.academicYearId}
-                          onChange={(e) => setClassRangeForm((p) => ({ ...p, academicYearId: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100">
-                          <option value="">Select year</option>
-                          {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Prefix <span className="text-gray-400">(optional)</span></label>
-                        <input type="text" value={classRangeForm.prefix}
-                          onChange={(e) => setClassRangeForm((p) => ({ ...p, prefix: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                          placeholder='e.g. "Class"' />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">From</label>
-                        <input type="number" min={1} value={classRangeForm.from}
-                          onChange={(e) => setClassRangeForm((p) => ({ ...p, from: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                          required />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">To</label>
-                        <input type="number" min={1} value={classRangeForm.to}
-                          onChange={(e) => setClassRangeForm((p) => ({ ...p, to: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                          required />
-                      </div>
-                    </div>
-                    {/* Live preview */}
-                    {hasValidClassRange && (
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-2">Preview — {classRangeCount} classes:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {Array.from({ length: Math.min(classRangeCount, 30) }, (_, i) => (
-                            <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium border border-amber-200">
-                              {classRangeForm.prefix ? `${classRangeForm.prefix} ` : ""}{classRangeFromNumber + i}
-                            </span>
-                          ))}
-                          {classRangeCount > 30 && (
-                            <span className="text-xs text-gray-400 self-center">…and more</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    <button type="submit" disabled={isSubmitting || !hasValidClassRange}
-                      className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
-                      <Plus className="h-4 w-4" />
-                      {isSubmitting ? "Creating…" : `Create ${classRangeCount} Classes`}
-                    </button>
-                  </form>
-                ) : classAddMode === "custom" ? (
-                  <form onSubmit={submitClassCustom} className="p-5 space-y-4">
-                    <p className="text-xs text-gray-500">Type class names separated by commas — e.g. <span className="font-mono bg-gray-100 px-1 rounded">Nursery, LKG, UKG, 1, 2, 3</span></p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Class names (comma-separated)</label>
-                        <input type="text" value={classCustomInput}
-                          onChange={(e) => setClassCustomInput(e.target.value)}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                          placeholder="Nursery, LKG, UKG, 1, 2, 3, 4, 5" required />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
-                        <select value={classCustomYear} onChange={(e) => setClassCustomYear(e.target.value)}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100">
-                          <option value="">Select year</option>
-                          {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    {/* Preview chips */}
-                    {classCustomInput.trim() && (
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-2">
-                          Preview — {classCustomInput.split(",").map((s) => s.trim()).filter(Boolean).length} classes:
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {classCustomInput.split(",").map((s) => s.trim()).filter(Boolean).map((name, i) => (
-                            <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium border border-amber-200">
-                              {name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <button type="submit" disabled={isSubmitting || !classCustomInput.trim()}
-                      className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
-                      <Plus className="h-4 w-4" />
-                      {isSubmitting ? "Creating…" : `Create ${classCustomInput.split(",").filter((s) => s.trim()).length || 0} Classes`}
-                    </button>
-                  </form>
-                ) : (
-                  <form onSubmit={submitSeniorSecondaryStreamSetup} className="p-5 space-y-4">
-                    <p className="text-xs text-gray-500">
-                      Create Class 11 or 12 with a stream and subjects in the <span className="font-medium">current active session</span>.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Current Session</label>
-                        <input
-                          type="text"
-                          value={currentAcademicYear?.name || "No active year"}
-                          disabled
-                          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
-                        <select
-                          value={seniorSecondaryForm.standard}
-                          onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, standard: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                        >
-                          <option value="11">Class 11</option>
-                          <option value="12">Class 12</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">Stream</label>
-                        <select
-                          value={seniorSecondaryForm.stream}
-                          onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, stream: e.target.value }))}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                        >
-                          {SENIOR_SECONDARY_STREAM_OPTIONS.map((stream) => (
-                            <option key={stream.value} value={stream.value}>
-                              {stream.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">Subjects (comma separated)</label>
-                      <div className="flex flex-wrap gap-1.5 rounded-lg border border-gray-200 px-3 py-2 min-h-11 focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-100">
-                        {seniorSecondaryForm.subjectTags.map((tag) => (
-                          <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium border border-amber-200">
-                            {tag}
-                            <button
+                              key={preset.key}
                               type="button"
-                              onClick={() =>
+                              onClick={() => setClassAddMode(preset.key)}
+                              className={`flex items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-xs font-semibold transition ${isActive ? "border-blue-500 bg-white text-blue-700" : "border-transparent text-gray-500 hover:bg-white/60 hover:text-gray-700"}`}
+                            >
+                              <PresetIcon className="h-3.5 w-3.5" /> {preset.title}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {classAddMode === "range" ? (
+                      <form onSubmit={submitClassRange} className="p-5 space-y-4">
+                        <p className="text-xs text-gray-500">Create multiple numbered classes at once — e.g. Class 1 through Class 10.</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
+                            <select value={classRangeForm.academicYearId}
+                              onChange={(e) => setClassRangeForm((p) => ({ ...p, academicYearId: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                              <option value="">Select year</option>
+                              {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Prefix <span className="text-gray-400">(optional)</span></label>
+                            <input type="text" value={classRangeForm.prefix}
+                              onChange={(e) => setClassRangeForm((p) => ({ ...p, prefix: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                              placeholder='e.g. "Class"' />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">From</label>
+                            <input type="number" min={1} value={classRangeForm.from}
+                              onChange={(e) => setClassRangeForm((p) => ({ ...p, from: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                              required />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">To</label>
+                            <input type="number" min={1} value={classRangeForm.to}
+                              onChange={(e) => setClassRangeForm((p) => ({ ...p, to: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                              required />
+                          </div>
+                        </div>
+                        {/* Live preview */}
+                        {hasValidClassRange && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-2">Preview — {classRangeCount} classes:</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {Array.from({ length: Math.min(classRangeCount, 30) }, (_, i) => (
+                                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium border border-blue-200">
+                                  {classRangeForm.prefix ? `${classRangeForm.prefix} ` : ""}{classRangeFromNumber + i}
+                                </span>
+                              ))}
+                              {classRangeCount > 30 && (
+                                <span className="text-xs text-gray-400 self-center">…and more</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <button type="submit" disabled={isSubmitting || !hasValidClassRange}
+                          className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
+                          <Plus className="h-4 w-4" />
+                          {isSubmitting ? "Creating…" : `Create ${classRangeCount} Classes`}
+                        </button>
+                      </form>
+                    ) : classAddMode === "custom" ? (
+                      <form onSubmit={submitClassCustom} className="p-5 space-y-4">
+                        <p className="text-xs text-gray-500">Type class names separated by commas — e.g. <span className="font-mono bg-gray-100 px-1 rounded">Nursery, LKG, UKG, 1, 2, 3</span></p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="md:col-span-2">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Class names (comma-separated)</label>
+                            <input type="text" value={classCustomInput}
+                              onChange={(e) => setClassCustomInput(e.target.value)}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                              placeholder="Nursery, LKG, UKG, 1, 2, 3, 4, 5" required />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
+                            <select value={classCustomYear} onChange={(e) => setClassCustomYear(e.target.value)}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                              <option value="">Select year</option>
+                              {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        {/* Preview chips */}
+                        {classCustomInput.trim() && (
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 mb-2">
+                              Preview — {classCustomInput.split(",").map((s) => s.trim()).filter(Boolean).length} classes:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {classCustomInput.split(",").map((s) => s.trim()).filter(Boolean).map((name, i) => (
+                                <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium border border-blue-200">
+                                  {name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <button type="submit" disabled={isSubmitting || !classCustomInput.trim()}
+                          className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
+                          <Plus className="h-4 w-4" />
+                          {isSubmitting ? "Creating…" : `Create ${classCustomInput.split(",").filter((s) => s.trim()).length || 0} Classes`}
+                        </button>
+                      </form>
+                    ) : (
+                      <form onSubmit={submitSeniorSecondaryStreamSetup} className="p-5 space-y-4">
+                        <p className="text-xs text-gray-500">
+                          Create Class 11 or 12 with a stream and subjects in the <span className="font-medium">current active session</span>.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Current Session</label>
+                            <input
+                              type="text"
+                              value={currentAcademicYear?.name || "No active year"}
+                              disabled
+                              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
+                            <select
+                              value={seniorSecondaryForm.standard}
+                              onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, standard: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              <option value="11">Class 11</option>
+                              <option value="12">Class 12</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Stream</label>
+                            <select
+                              value={seniorSecondaryForm.stream}
+                              onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, stream: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              {SENIOR_SECONDARY_STREAM_OPTIONS.map((stream) => (
+                                <option key={stream.value} value={stream.value}>
+                                  {stream.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-600">Subjects (comma separated)</label>
+                          <div className="flex flex-wrap gap-1.5 rounded-lg border border-gray-200 px-3 py-2 min-h-11 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+                            {seniorSecondaryForm.subjectTags.map((tag) => (
+                              <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200">
+                                {tag}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSeniorSecondaryForm((p) => ({
+                                      ...p,
+                                      subjectTags: p.subjectTags.filter((item) => item !== tag),
+                                    }))
+                                  }
+                                  className="ml-0.5 rounded-full hover:bg-blue-300 w-3.5 h-3.5 flex items-center justify-center text-blue-700 font-bold"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                            <input
+                              type="text"
+                              value={seniorSecondaryForm.subjectsInput}
+                              onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, subjectsInput: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === ",") {
+                                  e.preventDefault();
+                                  const names = seniorSecondaryForm.subjectsInput
+                                    .split(",")
+                                    .map((s) => s.trim())
+                                    .filter(Boolean);
+                                  if (!names.length) return;
+                                  setSeniorSecondaryForm((p) => ({
+                                    ...p,
+                                    subjectTags: [...new Set([...p.subjectTags, ...names])],
+                                    subjectsInput: "",
+                                  }));
+                                }
+                              }}
+                              onBlur={() => {
+                                const names = seniorSecondaryForm.subjectsInput
+                                  .split(",")
+                                  .map((s) => s.trim())
+                                  .filter(Boolean);
+                                if (!names.length) return;
                                 setSeniorSecondaryForm((p) => ({
                                   ...p,
-                                  subjectTags: p.subjectTags.filter((item) => item !== tag),
-                                }))
-                              }
-                              className="ml-0.5 rounded-full hover:bg-amber-300 w-3.5 h-3.5 flex items-center justify-center text-amber-700 font-bold"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                        <input
-                          type="text"
-                          value={seniorSecondaryForm.subjectsInput}
-                          onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, subjectsInput: e.target.value }))}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === ",") {
-                              e.preventDefault();
-                              const names = seniorSecondaryForm.subjectsInput
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean);
-                              if (!names.length) return;
-                              setSeniorSecondaryForm((p) => ({
-                                ...p,
-                                subjectTags: [...new Set([...p.subjectTags, ...names])],
-                                subjectsInput: "",
-                              }));
-                            }
-                          }}
-                          onBlur={() => {
-                            const names = seniorSecondaryForm.subjectsInput
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean);
-                            if (!names.length) return;
-                            setSeniorSecondaryForm((p) => ({
-                              ...p,
-                              subjectTags: [...new Set([...p.subjectTags, ...names])],
-                              subjectsInput: "",
-                            }));
-                          }}
-                          className="flex-1 min-w-40 bg-transparent text-sm outline-none placeholder:text-gray-400"
-                          placeholder="Physics, Chemistry, Biology..."
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !currentAcademicYear?._id}
-                      className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {isSubmitting ? "Saving…" : "Create Class + Stream Subjects"}
-                    </button>
-                  </form>
-                )}
-              </div>
-
-            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                  <Layers className="h-4 w-4 text-emerald-500" /> Classes
-                </h3>
-                <div className="w-64">
-                  <SearchInput value={searchClass} onChange={setSearchClass} placeholder="Search classes..." />
-                </div>
-              </div>
-              <BulkBar entityType="classes" entityName="class" />
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="w-12 bg-gray-50 px-4 py-3">
-                        <input type="checkbox" checked={selectedClasses.length === paginatedClasses.length && paginatedClasses.length > 0}
-                          onChange={() => handleSelectAll("classes", paginatedClasses)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                      </th>
-                      <SortableHeader label="Name" field="name" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
-                      <SortableHeader label="Order" field="order" sortConfig={classSort} onSort={toggleSort(setClassSort)} />
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Academic Year</th>
-                      <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {paginatedClasses.map((cls) => (
-                      <tr key={cls._id} className="transition hover:bg-amber-50/30">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedClasses.includes(cls._id)}
-                            onChange={() => handleSelectItem("classes", cls._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{cls.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{cls.order ?? 0}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {cls.stream ? `${cls.standard ? `Class ${cls.standard} - ` : ""}${String(cls.stream).replace(/^./, (ch) => ch.toUpperCase())}` : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{yearNameById[String(cls.academicYearId || "")] || "—"}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => setEditingClass(cls)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => deleteClass(cls._id)} disabled={deletingId === cls._id}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                                  subjectTags: [...new Set([...p.subjectTags, ...names])],
+                                  subjectsInput: "",
+                                }));
+                              }}
+                              className="flex-1 min-w-40 bg-transparent text-sm outline-none placeholder:text-gray-400"
+                              placeholder="Physics, Chemistry, Biology..."
+                            />
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {paginatedClasses.length === 0 && <EmptyState search={searchClass} entity="classes" />}
-              </div>
-              <Pagination currentPage={classPage} totalItems={sortedClasses.length} onPageChange={setClassPage} />
-            </div>
-            <StepNav prevKey="years" nextKey="sections" />
-          </div>
-        )}
+                        </div>
 
-        {/* ═══════════════ SECTIONS TAB ═══════════════ */}
-        {activeTab === "sections" && (
-          <div className="space-y-4">
-            <StepHeader
-              icon={BookOpen}
-              step={3}
-              question="Do your classes split into sections?"
-              explain="Pick a class, then tap the section letters it has — like Class 5-A and Class 5-B."
-            />
-              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
-                <div className="border-b border-gray-100 px-5 py-3 bg-violet-50/40">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !currentAcademicYear?._id}
+                          className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {isSubmitting ? "Saving…" : "Create Class + Stream Subjects"}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <StepNav prevKey="years" nextKey="sections" />
+            </div>
+          )}
+          
+          {/* Add/Edit Class Modal */}
+          <EditModal
+            isOpen={showClassForm || editingClass !== null}
+            onClose={() => { setShowClassForm(false); setEditingClass(null); }}
+            title={editingClass ? "Edit Class" : "Add Class"}
+            onSubmit={editingClass ? updateClass : (e) => { e.preventDefault(); /* TODO: Add single class logic */ }}
+            isSubmitting={isSubmitting}
+          >
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Class Name</label>
+                <input type="text" value={editingClass?.name || ""} onChange={(e) => setEditingClass((p) => ({ ...p, name: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">Display Order</label>
+                <input type="number" min="0" value={editingClass?.order ?? ""} onChange={(e) => setEditingClass((p) => ({ ...p, order: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="0" />
+              </div>
+            </div>
+          </EditModal>
+
+          {/* ═══════════════ SECTIONS TAB ═══════════════ */}
+          {activeTab === "sections" && (
+            <div className="space-y-4">
+              <StepHeader
+                icon={BookOpen}
+                step={3}
+                question="Do your classes split into sections?"
+                explain="Pick a class, then tap the section letters it has — like Class 5-A and Class 5-B."
+                illustration="sections"
+              />
+              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-gray-100 px-5 py-3 bg-blue-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">3</span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">3</span>
                     Add Sections
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Pick a class, tap quick letters and/or type custom names — all created in one click.</p>
@@ -2089,9 +2301,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 };
                               });
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                              isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-amber-400'
-                            }`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'
+                              }`}
                           >
                             {c.name}
                           </button>
@@ -2104,7 +2315,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <div>
                     <label className="mb-2 block text-xs font-medium text-gray-600">Quick select sections</label>
                     <div className="flex flex-wrap gap-2">
-                      {["A","B","C","D","E","F","G","H","I","J"].map((letter) => {
+                      {["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"].map((letter) => {
                         const active = sectionBulkForm.selected.includes(letter);
                         return (
                           <button key={letter} type="button"
@@ -2112,11 +2323,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                               ...p,
                               selected: active ? p.selected.filter((s) => s !== letter) : [...p.selected, letter],
                             }))}
-                            className={`w-10 h-10 rounded-xl text-sm font-bold border-2 transition-all ${
-                              active
-                                ? "bg-amber-500 border-amber-500 text-white shadow-sm scale-105"
-                                : "border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-600"
-                            }`}>
+                            className={`w-10 h-10 rounded-xl text-sm font-bold border-2 transition-all ${active
+                                ? "bg-blue-500 border-blue-500 text-white shadow-sm scale-105"
+                                : "border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600"
+                              }`}>
                             {letter}
                           </button>
                         );
@@ -2131,7 +2341,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     </label>
                     <input type="text" value={sectionBulkForm.custom}
                       onChange={(e) => setSectionBulkForm((p) => ({ ...p, custom: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                       placeholder="Science, Commerce, Arts" />
                   </div>
 
@@ -2142,12 +2352,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     return all.length > 0 ? (
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-2">
-                          Preview — {all.length} section{all.length !== 1 ? "s" : ""} 
+                          Preview — {all.length} section{all.length !== 1 ? "s" : ""}
                           {sectionBulkForm.classIds?.length > 0 ? ` per class (${all.length * sectionBulkForm.classIds.length} total)` : ""}:
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {all.map((name) => (
-                            <span key={name} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium border border-amber-200">
+                            <span key={name} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium border border-blue-200">
                               {name}
                             </span>
                           ))}
@@ -2157,108 +2367,107 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   })()}
 
                   <button type="submit" disabled={isSubmitting}
-                    className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
+                    className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
                     <Plus className="h-4 w-4" />
                     {isSubmitting ? "Creating…" : "Create Sections"}
                   </button>
                 </div>
               </form>
 
-            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
-              {classTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveClassId(tab.id)}
-                  className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    activeClassId === tab.id
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {tab.name}
-                  {tab.id !== "all" && (
-                    <span
-                      className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        activeClassId === tab.id
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-200 text-gray-500"
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
+                {classTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveClassId(tab.id)}
+                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${activeClassId === tab.id
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
                       }`}
-                    >
-                      {sectionsByClass[tab.id] || 0}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+                  >
+                    {tab.name}
+                    {tab.id !== "all" && (
+                      <span
+                        className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${activeClassId === tab.id
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-200 text-gray-500"
+                          }`}
+                      >
+                        {sectionsByClass[tab.id] || 0}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
 
-            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-violet-50/60 to-transparent px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                  <BookOpen className="h-4 w-4 text-violet-500" /> Sections
-                </h3>
-                <div className="w-64">
-                  <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
+              <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                    <BookOpen className="h-4 w-4 text-blue-500" /> Sections
+                  </h3>
+                  <div className="w-64">
+                    <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
+                  </div>
                 </div>
-              </div>
-              <BulkBar entityType="sections" entityName="section" />
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="w-12 bg-gray-50 px-4 py-3">
-                        <input type="checkbox" checked={selectedSections.length === paginatedSections.length && paginatedSections.length > 0}
-                          onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                      </th>
-                      <SortableHeader label="Name" field="name" sortConfig={sectionSort} onSort={toggleSort(setSectionSort)} />
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
-                      <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {paginatedSections.map((sec) => (
-                      <tr key={sec._id} className="transition hover:bg-amber-50/30">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedSections.includes(sec._id)}
-                            onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{sec.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sec.classId || "")] || "—"}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => setEditingSection(sec)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => deleteSection(sec._id)} disabled={deletingId === sec._id}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
+                <BulkBar entityType="sections" entityName="section" />
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="w-12 bg-gray-50 px-4 py-3">
+                          <input type="checkbox" checked={selectedSections.length === paginatedSections.length && paginatedSections.length > 0}
+                            onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                        </th>
+                        <SortableHeader label="Name" field="name" sortConfig={sectionSort} onSort={toggleSort(setSectionSort)} />
+                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
+                        <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {paginatedSections.length === 0 && <EmptyState search={searchSection} entity="sections" />}
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {paginatedSections.map((sec) => (
+                        <tr key={sec._id} className="transition hover:bg-blue-50/30">
+                          <td className="px-4 py-3">
+                            <input type="checkbox" checked={selectedSections.includes(sec._id)}
+                              onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{sec.name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sec.classId || "")] || "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setEditingSection(sec)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => deleteSection(sec._id)} disabled={deletingId === sec._id}
+                                className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {paginatedSections.length === 0 && <EmptyState search={searchSection} entity="sections" />}
+                </div>
+                <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
               </div>
-              <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
+              <StepNav prevKey="classes" nextKey="subjects" skippable />
             </div>
-            <StepNav prevKey="classes" nextKey="subjects" skippable />
-          </div>
-        )}
+          )}
 
-        {/* ═══════════════ SUBJECTS TAB ═══════════════ */}
-        {activeTab === "subjects" && (
-          <div className="space-y-4">
-            <StepHeader
-              icon={GraduationCap}
-              step={4}
-              question="What subjects are taught?"
-              explain="Type a subject and press Enter to add it. Add as many as you like — Math, Science, English..."
-            />
-              <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
-                <div className="border-b border-gray-100 px-5 py-3 bg-amber-50/40">
+          {/* ═══════════════ SUBJECTS TAB ═══════════════ */}
+          {activeTab === "subjects" && (
+            <div className="space-y-4">
+              <StepHeader
+                icon={GraduationCap}
+                step={4}
+                question="What subjects are taught?"
+                explain="Type a subject and press Enter to add it. Add as many as you like — Math, Science, English..."
+                illustration="subjects"
+              />
+              <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-gray-100 px-5 py-3 bg-blue-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">4</span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">4</span>
                     Add Subjects
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Type a name and press <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">,</kbd> to add it — create many subjects in one go.</p>
@@ -2282,13 +2491,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             key={c._id}
                             type="button"
                             onClick={() => {
-                              setSubjectTagClassIds(p => 
+                              setSubjectTagClassIds(p =>
                                 isSelected ? p.filter(id => id !== String(c._id)) : [...p, String(c._id)]
                               );
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                              isSelected ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-amber-400'
-                            }`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'
+                              }`}
                           >
                             {c.name}
                           </button>
@@ -2300,12 +2508,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   {/* Tag chip input */}
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">Subject names</label>
-                    <div className={`flex flex-wrap gap-1.5 rounded-lg border px-3 py-2 min-h-11 focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-100 transition-all ${subjectTags.length > 0 ? "border-amber-300 bg-amber-50/30" : "border-gray-200"}`}>
+                    <div className={`flex flex-wrap gap-1.5 rounded-lg border px-3 py-2 min-h-11 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all ${subjectTags.length > 0 ? "border-blue-300 bg-blue-50/30" : "border-gray-200"}`}>
                       {subjectTags.map((tag) => (
-                        <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium border border-amber-200">
+                        <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200">
                           {tag}
                           <button type="button" onClick={() => setSubjectTags((p) => p.filter((t) => t !== tag))}
-                            className="ml-0.5 rounded-full hover:bg-amber-300 w-3.5 h-3.5 flex items-center justify-center text-amber-700 font-bold">
+                            className="ml-0.5 rounded-full hover:bg-blue-300 w-3.5 h-3.5 flex items-center justify-center text-blue-700 font-bold">
                             ×
                           </button>
                         </span>
@@ -2341,15 +2549,14 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-2">Common subjects — click to add:</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {["Mathematics","Science","English","Hindi","Social Studies","Computer Science","Physics","Chemistry","Biology","History","Geography","Economics","Accountancy","Physical Education","Art & Craft","Music"].map((s) => (
+                      {["Mathematics", "Science", "English", "Hindi", "Social Studies", "Computer Science", "Physics", "Chemistry", "Biology", "History", "Geography", "Economics", "Accountancy", "Physical Education", "Art & Craft", "Music"].map((s) => (
                         <button key={s} type="button"
                           disabled={subjectTags.includes(s)}
                           onClick={() => setSubjectTags((p) => [...new Set([...p, s])])}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                            subjectTags.includes(s)
-                              ? "bg-amber-100 border-amber-300 text-amber-700 opacity-50 cursor-not-allowed"
-                              : "border-gray-200 text-gray-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
-                          }`}>
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${subjectTags.includes(s)
+                              ? "bg-blue-100 border-blue-300 text-blue-700 opacity-50 cursor-not-allowed"
+                              : "border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                            }`}>
                           {s}
                         </button>
                       ))}
@@ -2357,311 +2564,309 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </div>
 
                   <button type="submit" disabled={isSubmitting || (subjectTags.length === 0 && !subjectTagInput.trim())}
-                    className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
+                    className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
                     <Plus className="h-4 w-4" />
                     {isSubmitting ? "Creating…" : `Create ${subjectTags.length + (subjectTagInput.trim() ? subjectTagInput.split(",").filter((s) => s.trim()).length : 0)} Subject${subjectTags.length !== 1 ? "s" : ""}`}
                   </button>
                 </div>
               </form>
 
-            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
-              {classTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveSubjectClassId(tab.id)}
-                  className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${
-                    activeSubjectClassId === tab.id
-                      ? "bg-white text-gray-900 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {tab.name}
-                  {tab.id !== "all" && (
-                    <span
-                      className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        activeSubjectClassId === tab.id
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-200 text-gray-500"
+              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
+                {classTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveSubjectClassId(tab.id)}
+                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${activeSubjectClassId === tab.id
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
                       }`}
-                    >
-                      {subjectsByClass[tab.id] || 0}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-amber-50/60 to-transparent px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                  <GraduationCap className="h-4 w-4 text-amber-500" /> Subjects
-                </h3>
-                <div className="w-64">
-                  <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
-                </div>
-              </div>
-              <BulkBar entityType="subjects" entityName="subject" />
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="w-12 bg-gray-50 px-4 py-3">
-                        <input type="checkbox" checked={selectedSubjects.length === paginatedSubjects.length && paginatedSubjects.length > 0}
-                          onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                      </th>
-                      <SortableHeader label="Name" field="name" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} />
-                      {/* <SortableHeader label="Code" field="code" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} /> */}
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
-                      <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
-                      <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {paginatedSubjects.map((sub) => (
-                      <tr key={sub._id} className="transition hover:bg-amber-50/30">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedSubjects.includes(sub._id)}
-                            onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                        </td>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
-                        {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sub.classId || "")] || "—"}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => setEditingSubject(sub)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button onClick={() => deleteSubject(sub._id)} disabled={deletingId === sub._id}
-                              className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {paginatedSubjects.length === 0 && <EmptyState search={searchSubject} entity="subjects" />}
-              </div>
-              <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
-            </div>
-            <StepNav prevKey="sections" nextKey="class-teachers" />
-          </div>
-        )}
-
-        {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
-        {activeTab === "class-teachers" && (
-          <div className="space-y-4">
-            <StepHeader
-              icon={UserCheck}
-              step={5}
-              question="Who looks after each class?"
-              explain="Pick one teacher to be the main point of contact for a class and section. This step is optional — you can do it later too."
-            />
-            <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-amber-200"}`}>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">5</span>
-                  {editingClassTeacherId ? "Update Class Teacher" : "Assign Class Teacher"}
-                </h3>
-                {editingClassTeacherId && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
-                    <Edit3 className="h-3 w-3" /> Editing assignment
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Teacher</label>
-                  <select
-                    value={classTeacherForm.teacherId}
-                    onChange={(e) => setClassTeacherForm((p) => ({ ...p, teacherId: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                    required
                   >
-                    <option value="">Select teacher</option>
-                    {teachers.map((t) => (
-                      <option key={t._id} value={t._id}>
-                        {t.name || t.username || t.employeeCode || 'Teacher'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Year</label>
-                  <select
-                    value={classTeacherForm.yearId}
-                    onChange={(e) =>
-                      setClassTeacherForm((p) => ({ ...p, yearId: e.target.value, classId: "", sectionId: "" }))
-                    }
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                    required
-                  >
-                    <option value="">Select year</option>
-                    {activeYears.map((y) => (
-                      <option key={y._id} value={y._id}>
-                        {y.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
-                  <select
-                    value={classTeacherForm.classId}
-                    onChange={(e) =>
-                      setClassTeacherForm((p) => ({ ...p, classId: e.target.value, sectionId: "" }))
-                    }
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                    required
-                  >
-                    <option value="">Select class</option>
-                    {classTeacherClasses.map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Section</label>
-                  <select
-                    value={classTeacherForm.sectionId}
-                    onChange={(e) => setClassTeacherForm((p) => ({ ...p, sectionId: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                    required
-                  >
-                    <option value="">Select section</option>
-                    {classTeacherSections.map((s) => (
-                      <option key={s._id} value={s._id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="submit"
-                  disabled={savingClassTeacher}
-                  className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {savingClassTeacher ? "Saving..." : editingClassTeacherId ? "Update Class Teacher" : "Save Class Teacher"}
-                </button>
-                {editingClassTeacherId ? (
-                  <button
-                    type="button"
-                    onClick={() => { setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" }); setEditingClassTeacherId(null); }}
-                    className="rounded-lg border border-amber-300 px-4 py-2 text-sm text-amber-700 hover:bg-amber-50"
-                  >
-                    Cancel Edit
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" })}
-                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-black hover:bg-gray-50"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            </form>
-
-            <div className="rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur p-5 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-gray-800">
-                <UserCheck className="h-4 w-4 text-rose-500" /> Current Class Teachers
-              </h3>
-              <div className="space-y-3">
-                {classTeacherAllocations.length === 0 && (
-                  <EmptyState entity="class teachers" />
-                )}
-                {classTeacherAllocations.map((item) => (
-                  <div
-                    key={item._id}
-                    className={`flex items-center justify-between rounded-xl border px-4 py-3 transition ${
-                      editingClassTeacherId === item._id
-                        ? "border-amber-400 bg-amber-50"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-orange-400 text-xs font-bold text-white shadow-sm">
-                        {String(item.teacherId?.name || item.teacherId?.employeeCode || "T").slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">
-                          {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Class {item.classId?.name || "—"} | Section {item.sectionId?.name || "—"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleEditClassTeacher(item)}
-                        className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
-                        title="Edit class teacher"
+                    {tab.name}
+                    {tab.id !== "all" && (
+                      <span
+                        className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${activeSubjectClassId === tab.id
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-200 text-gray-500"
+                          }`}
                       >
-                        <Edit3 className="h-3.5 w-3.5" /> Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteClassTeacher(item._id)}
-                        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
-                        title="Remove class teacher"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Remove
-                      </button>
-                    </div>
-                  </div>
+                        {subjectsByClass[tab.id] || 0}
+                      </span>
+                    )}
+                  </button>
                 ))}
               </div>
-            </div>
-            <StepNav prevKey="subjects" nextKey={null} skippable finishLabel="Finish Setup" />
-          </div>
-        )}
 
-        {/* ═══════════════ DONE ═══════════════ */}
-        {activeTab === "done" && (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-[#DDE3EA] bg-white px-6 py-16 text-center shadow-sm">
-            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-[#DCEFE3]">
-              <Trophy className="h-9 w-9 text-[#2E8B57]" />
+              <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+                  <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                    <GraduationCap className="h-4 w-4 text-blue-500" /> Subjects
+                  </h3>
+                  <div className="w-64">
+                    <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
+                  </div>
+                </div>
+                <BulkBar entityType="subjects" entityName="subject" />
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="w-12 bg-gray-50 px-4 py-3">
+                          <input type="checkbox" checked={selectedSubjects.length === paginatedSubjects.length && paginatedSubjects.length > 0}
+                            onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                        </th>
+                        <SortableHeader label="Name" field="name" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} />
+                        {/* <SortableHeader label="Code" field="code" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} /> */}
+                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
+                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
+                        <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {paginatedSubjects.map((sub) => (
+                        <tr key={sub._id} className="transition hover:bg-blue-50/30">
+                          <td className="px-4 py-3">
+                            <input type="checkbox" checked={selectedSubjects.includes(sub._id)}
+                              onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
+                          {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sub.classId || "")] || "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setEditingSubject(sub)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                              <button onClick={() => deleteSubject(sub._id)} disabled={deletingId === sub._id}
+                                className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {paginatedSubjects.length === 0 && <EmptyState search={searchSubject} entity="subjects" />}
+                </div>
+                <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
+              </div>
+              <StepNav prevKey="sections" nextKey="class-teachers" />
             </div>
-            <h2 className="text-2xl font-bold text-[#14203B]">You're all set!</h2>
-            <p className="mt-2 max-w-md text-sm text-[#4B5768]">
-              Your school year is ready. You can fine-tune any of this anytime from this page.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              <ProgressChip label="Academic Year" value={years[0]?.name || "—"} filled />
-              <ProgressChip label="Classes" value={visibleClasses.length} filled />
-              <ProgressChip label="Sections" value={visibleSections.length} filled />
-              <ProgressChip label="Subjects" value={visibleSubjects.length} filled />
-              <ProgressChip label="Class Teachers" value={classTeacherAllocations.length} filled />
+          )}
+
+          {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
+          {activeTab === "class-teachers" && (
+            <div className="space-y-4">
+              <StepHeader
+                icon={UserCheck}
+                step={5}
+                question="Who looks after each class?"
+                explain="Pick one teacher to be the main point of contact for a class and section. This step is optional — you can do it later too."
+                illustration="teachers"
+              />
+              <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-blue-400 ring-2 ring-blue-100" : "border-blue-200"}`}>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">5</span>
+                    {editingClassTeacherId ? "Update Class Teacher" : "Assign Class Teacher"}
+                  </h3>
+                  {editingClassTeacherId && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+                      <Edit3 className="h-3 w-3" /> Editing assignment
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Teacher</label>
+                    <select
+                      value={classTeacherForm.teacherId}
+                      onChange={(e) => setClassTeacherForm((p) => ({ ...p, teacherId: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      required
+                    >
+                      <option value="">Select teacher</option>
+                      {teachers.map((t) => (
+                        <option key={t._id} value={t._id}>
+                          {t.name || t.username || t.employeeCode || 'Teacher'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Year</label>
+                    <select
+                      value={classTeacherForm.yearId}
+                      onChange={(e) =>
+                        setClassTeacherForm((p) => ({ ...p, yearId: e.target.value, classId: "", sectionId: "" }))
+                      }
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      required
+                    >
+                      <option value="">Select year</option>
+                      {activeYears.map((y) => (
+                        <option key={y._id} value={y._id}>
+                          {y.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
+                    <select
+                      value={classTeacherForm.classId}
+                      onChange={(e) =>
+                        setClassTeacherForm((p) => ({ ...p, classId: e.target.value, sectionId: "" }))
+                      }
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      required
+                    >
+                      <option value="">Select class</option>
+                      {classTeacherClasses.map((c) => (
+                        <option key={c._id} value={c._id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Section</label>
+                    <select
+                      value={classTeacherForm.sectionId}
+                      onChange={(e) => setClassTeacherForm((p) => ({ ...p, sectionId: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      required
+                    >
+                      <option value="">Select section</option>
+                      {classTeacherSections.map((s) => (
+                        <option key={s._id} value={s._id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-4 flex gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingClassTeacher}
+                    className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
+                  >
+                    {savingClassTeacher ? "Saving..." : editingClassTeacherId ? "Update Class Teacher" : "Save Class Teacher"}
+                  </button>
+                  {editingClassTeacherId ? (
+                    <button
+                      type="button"
+                      onClick={() => { setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" }); setEditingClassTeacherId(null); }}
+                      className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                    >
+                      Cancel Edit
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" })}
+                      className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-black hover:bg-gray-50"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <div className="rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur p-5 shadow-sm">
+                <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-gray-800">
+                  <UserCheck className="h-4 w-4 text-blue-500" /> Current Class Teachers
+                </h3>
+                <div className="space-y-3">
+                  {classTeacherAllocations.length === 0 && (
+                    <EmptyState entity="class teachers" />
+                  )}
+                  {classTeacherAllocations.map((item) => (
+                    <div
+                      key={item._id}
+                      className={`flex items-center justify-between rounded-xl border px-4 py-3 transition ${editingClassTeacherId === item._id
+                          ? "border-blue-400 bg-blue-50"
+                          : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-sm">
+                          {String(item.teacherId?.name || item.teacherId?.employeeCode || "T").slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Class {item.classId?.name || "—"} | Section {item.sectionId?.name || "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditClassTeacher(item)}
+                          className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                          title="Edit class teacher"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" /> Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteClassTeacher(item._id)}
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                          title="Remove class teacher"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <StepNav prevKey="subjects" nextKey={null} skippable finishLabel="Finish Setup" />
             </div>
-            <div className="mt-8 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab("years")}
-                className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#4B5768] hover:bg-gray-50"
-              >
-                Review Setup
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate("/admin/dashboard")}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-              >
-                Go to Dashboard <ArrowRight className="h-4 w-4" />
-              </button>
+          )}
+
+          {/* ═══════════════ DONE ═══════════════ */}
+          {activeTab === "done" && (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-[#DDE3EA] bg-white px-6 py-16 text-center shadow-sm">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-[#DCEFE3]">
+                <Trophy className="h-9 w-9 text-[#2E8B57]" />
+              </div>
+              <h2 className="text-2xl font-bold text-[#14203B]">You're all set!</h2>
+              <p className="mt-2 max-w-md text-sm text-[#4B5768]">
+                Your school year is ready. You can fine-tune any of this anytime from this page.
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                <ProgressChip label="Academic Year" value={years[0]?.name || "—"} filled />
+                <ProgressChip label="Classes" value={visibleClasses.length} filled />
+                <ProgressChip label="Sections" value={visibleSections.length} filled />
+                <ProgressChip label="Subjects" value={visibleSubjects.length} filled />
+                <ProgressChip label="Class Teachers" value={classTeacherAllocations.length} filled />
+              </div>
+              <div className="mt-8 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("years")}
+                  className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#4B5768] hover:bg-gray-50"
+                >
+                  Review Setup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/admin/dashboard")}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                >
+                  Go to Dashboard <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         </div>
 
@@ -2673,20 +2878,20 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Year Name</label>
               <input type="text" value={editingYear?.name || ""} onChange={(e) => setEditingYear((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">Start Date</label>
                 <input type="date" value={editingYear?.startDate?.split("T")[0] || ""}
                   onChange={(e) => setEditingYear((p) => ({ ...p, startDate: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">End Date</label>
                 <input type="date" value={editingYear?.endDate?.split("T")[0] || ""}
                   onChange={(e) => setEditingYear((p) => ({ ...p, endDate: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
               </div>
             </div>
             <div>
@@ -2701,11 +2906,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     key={opt.value}
                     type="button"
                     onClick={() => setEditingYear((p) => ({ ...p, status: opt.value }))}
-                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                      (editingYear?.status || (editingYear?.isActive ? "active" : "upcoming")) === opt.value
+                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${(editingYear?.status || (editingYear?.isActive ? "active" : "upcoming")) === opt.value
                         ? "border-blue-500 bg-blue-50 text-blue-700"
                         : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -2727,12 +2931,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Class Name</label>
               <input type="text" value={editingClass?.name || ""} onChange={(e) => setEditingClass((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
               <select value={editingClass?.academicYearId || ""} onChange={(e) => setEditingClass((p) => ({ ...p, academicYearId: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100">
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
                 <option value="">Select year</option>
                 {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
               </select>
@@ -2740,7 +2944,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Display Order</label>
               <input type="number" min="0" value={editingClass?.order ?? ""} onChange={(e) => setEditingClass((p) => ({ ...p, order: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" placeholder="0" />
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="0" />
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
@@ -2748,7 +2952,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 <select
                   value={editingClass?.standard ?? ""}
                   onChange={(e) => setEditingClass((p) => ({ ...p, standard: e.target.value || undefined }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">Optional</option>
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((level) => (
@@ -2763,7 +2967,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 <select
                   value={editingClass?.stream || ""}
                   onChange={(e) => setEditingClass((p) => ({ ...p, stream: e.target.value || undefined }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">No stream</option>
                   {SENIOR_SECONDARY_STREAM_OPTIONS.map((stream) => (
@@ -2783,12 +2987,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Section Name</label>
               <input type="text" value={editingSection?.name || ""} onChange={(e) => setEditingSection((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
               <select value={editingSection?.classId || ""} onChange={(e) => setEditingSection((p) => ({ ...p, classId: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required>
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required>
                 <option value="">Select class</option>
                 {visibleClasses.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
               </select>
@@ -2802,18 +3006,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Subject Name</label>
               <input type="text" value={editingSubject?.name || ""} onChange={(e) => setEditingSubject((p) => ({ ...p, name: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" required />
             </div>
             {/* <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Subject Code</label>
               <input type="text" value={editingSubject?.code || ""} onChange={(e) => setEditingSubject((p) => ({ ...p, code: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 placeholder="MATH101" />
             </div> */}
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
               <select value={editingSubject?.classId || ""} onChange={(e) => setEditingSubject((p) => ({ ...p, classId: e.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100">
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
                 <option value="">Optional</option>
                 {visibleClasses.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
               </select>
@@ -2823,7 +3027,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               <select
                 value={editingSubject?.stream || ""}
                 onChange={(e) => setEditingSubject((p) => ({ ...p, stream: e.target.value || undefined }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">No stream</option>
                 {SENIOR_SECONDARY_STREAM_OPTIONS.map((stream) => (

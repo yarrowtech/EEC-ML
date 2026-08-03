@@ -80,7 +80,7 @@ const AdminSidebar = ({
         `}
       >
         {/* ── Brand header ── */}
-        <div className="flex items-center gap-3 px-4 py-4 border-b border-gray-100 relative">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 relative">
           {/* Logo */}
           <div className={`
             shrink-0 rounded-xl overflow-hidden flex items-center justify-center
