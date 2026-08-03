@@ -3,7 +3,7 @@ import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
-  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight,
+  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight, Info, Smile,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -156,8 +156,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [editingClassTeacherId, setEditingClassTeacherId] = useState(null);
 
   // Search/filter
-  const [searchYear, setSearchYear] = useState("");
-  const [yearStatusFilter, setYearStatusFilter] = useState("active");
+  const [yearSuccessMessage, setYearSuccessMessage] = useState("");
+  const [showYearForm, setShowYearForm] = useState(true);
   const [searchClass, setSearchClass] = useState("");
   const [searchSection, setSearchSection] = useState("");
   const [searchSubject, setSearchSubject] = useState("");
@@ -185,8 +185,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [selectedSections, setSelectedSections] = useState([]);
   const [selectedSubjects, setSelectedSubjects] = useState([]);
 
-  // Show/hide add form
-  const [showAddForm, setShowAddForm] = useState(false);
   const [activeClassId, setActiveClassId] = useState("all");
   const [activeSubjectClassId, setActiveSubjectClassId] = useState("all");
 
@@ -301,21 +299,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   }, [subjects, classes]);
 
   /* ─── Filtered data ─── */
-  const filteredYears = useMemo(() => {
-    let sourceYears = activeYears;
-    if (yearStatusFilter === "inactive") {
-      sourceYears = years.filter((year) => !isYearActive(year));
-    } else if (yearStatusFilter === "all") {
-      sourceYears = years;
-    }
-    if (!searchYear.trim()) return sourceYears;
-    const q = searchYear.toLowerCase();
-    return sourceYears.filter(
-      (y) =>
-        y.name.toLowerCase().includes(q) ||
-        (y.startDate && new Date(y.startDate).toLocaleDateString().includes(q))
-    );
-  }, [activeYears, years, yearStatusFilter, searchYear]);
+  const filteredYears = years;
 
   const filteredClasses = useMemo(() => {
     if (!searchClass.trim()) return visibleClasses;
@@ -586,6 +570,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     loadClassTeachers().catch(() => {});
   }, [setShowAdminHeader]);
 
+  const showTransientSuccess = (setter, message, durationMs = 4000) => {
+    setter(message);
+    window.setTimeout(() => setter(""), durationMs);
+  };
+
   const handleCreate = async (endpoint, payload, onSuccess) => {
     setError("");
     setIsSubmitting(true);
@@ -616,7 +605,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     await handleCreate("/api/academic/years", yearForm, async () => {
       await loadAcademicData();
       setYearForm({ name: "", startDate: "", endDate: "", isActive: false });
-      setShowAddForm(false);
+      setShowYearForm(false);
+      showTransientSuccess(setYearSuccessMessage, "Academic year added successfully!");
     });
   };
 
@@ -652,7 +642,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     }
     await loadAcademicData();
     setIsSubmitting(false);
-    setShowAddForm(false);
     toast.success(`${created} class${created !== 1 ? "es" : ""} created${failed ? `, ${failed} failed` : ""}.`);
   };
 
@@ -676,7 +665,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     await loadAcademicData();
     setIsSubmitting(false);
     setClassCustomInput("");
-    setShowAddForm(false);
     toast.success(`${created} class${created !== 1 ? "es" : ""} created${failed ? `, ${failed} failed` : ""}.`);
   };
 
@@ -790,7 +778,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       }
 
       await loadAcademicData();
-      setShowAddForm(false);
       setSeniorSecondaryForm({
         standard: "11",
         stream: "science",
@@ -835,7 +822,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     await loadAcademicData();
     setIsSubmitting(false);
     setSectionBulkForm({ selected: [], custom: "", classIds: [] });
-    setShowAddForm(false);
     toast.success(`${created} section${created !== 1 ? "s" : ""} created${failed ? `, ${failed} failed` : ""}.`);
   };
 
@@ -865,7 +851,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     setSubjectTags([]);
     setSubjectTagInput("");
     setSubjectTagClassIds([]);
-    setShowAddForm(false);
     toast.success(`${created} subject${created !== 1 ? "s" : ""} created${failed ? `, ${failed} failed` : ""}.`);
   };
 
@@ -1205,14 +1190,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   /* ═══════════════════════ SUB-COMPONENTS ═══════════════════════ */
 
-  const StatCard = ({ icon, label, value, color }) => (
-    <div className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-gray-100 bg-white px-4 py-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gray-50 transition-colors group-hover:bg-amber-50" />
-      <div className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm ${color}`}>
-        {React.createElement(icon, { className: "h-5 w-5 text-white" })}
+  const StatCard = ({ icon, label, value, iconBg, iconColor }) => (
+    <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3.5 shadow-sm transition hover:shadow-md">
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+        {React.createElement(icon, { className: `h-5 w-5 ${iconColor}` })}
       </div>
-      <div className="relative">
-        <p className="text-2xl font-black text-gray-900">{value}</p>
+      <div>
+        <p className="text-2xl font-bold text-gray-900">{value}</p>
         <p className="text-xs text-gray-500">{label}</p>
       </div>
     </div>
@@ -1268,7 +1252,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-4 py-3 sm:flex-row">
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">
-            Showing <strong className="text-gray-700">{start}</strong>–<strong className="text-gray-700">{end}</strong> of <strong className="text-gray-700">{totalItems}</strong>
+            Showing <strong className="text-gray-700">{start}</strong> to <strong className="text-gray-700">{end}</strong> of <strong className="text-gray-700">{totalItems}</strong> entries
           </span>
           <select
             value={itemsPerPage}
@@ -1373,47 +1357,23 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ RENDER ═══════════════════════ */
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50/30 to-white p-4 md:p-6">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        {/* ─── Hero header ─── */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 p-6 md:p-8 shadow-lg shadow-amber-200/60">
-          <div className="pointer-events-none absolute -top-16 -right-10 h-56 w-56 rounded-full bg-white/10" />
-          <div className="pointer-events-none absolute -bottom-20 -left-16 h-64 w-64 rounded-full bg-black/10" />
-          <div className="pointer-events-none absolute top-1/2 right-16 h-20 w-20 rounded-full border border-yellow-200/20 bg-yellow-200/10" />
-          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/25 bg-white/15 shadow-inner backdrop-blur-sm">
-                <GraduationCap className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-2.5 py-0.5">
-                  <Sparkles className="h-3 w-3 text-yellow-200" />
-                  <span className="text-[11px] font-semibold tracking-wide text-white/90">Guided Setup</span>
-                </div>
-                <h1 className="text-xl font-black leading-tight text-white md:text-2xl">Academic Setup</h1>
-                <p className="mt-1 text-sm text-orange-50/80">
-                  Build your school year step by step — sessions, classes, sections, subjects and class teachers.
-                </p>
-              </div>
-            </div>
-            {activeTab !== "class-teachers" && (
-              <button
-                onClick={() => setShowAddForm((v) => !v)}
-                className="flex items-center gap-2 self-start rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-600 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg sm:self-auto"
-              >
-                <Plus className="h-4 w-4" />
-                {showAddForm ? "Hide Form" : "Add New"}
-              </button>
-            )}
-          </div>
+        {/* ─── Header ─── */}
+        <div>
+          <h1 className="text-2xl font-bold leading-tight text-gray-900">Academic Setup</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Build your school year step by step — sessions, classes, sections, subjects and class teachers.
+          </p>
         </div>
 
         {/* ─── Stat Cards ─── */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatCard icon={Calendar} label="Academic Years" value={activeYears.length} color="bg-gradient-to-br from-blue-500 to-indigo-500" />
-          <StatCard icon={Layers} label="Classes" value={visibleClasses.length} color="bg-gradient-to-br from-emerald-500 to-teal-500" />
-          <StatCard icon={BookOpen} label="Sections" value={visibleSections.length} color="bg-gradient-to-br from-violet-500 to-fuchsia-500" />
-          <StatCard icon={GraduationCap} label="Subjects" value={visibleSubjects.length} color="bg-gradient-to-br from-amber-500 to-orange-500" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+          <StatCard icon={Calendar} label="Academic Years" value={activeYears.length} iconBg="bg-amber-50" iconColor="text-amber-500" />
+          <StatCard icon={Layers} label="Classes" value={visibleClasses.length} iconBg="bg-emerald-50" iconColor="text-emerald-500" />
+          <StatCard icon={BookOpen} label="Sections" value={visibleSections.length} iconBg="bg-violet-50" iconColor="text-violet-500" />
+          <StatCard icon={GraduationCap} label="Subjects" value={visibleSubjects.length} iconBg="bg-orange-50" iconColor="text-orange-500" />
+          <StatCard icon={UserCheck} label="Class Teachers" value={classTeacherAllocations.length} iconBg="bg-blue-50" iconColor="text-blue-500" />
         </div>
 
         {/* ─── Error ─── */}
@@ -1424,40 +1384,31 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         )}
 
         {/* ─── Step pipeline ─── */}
-        <div className="relative flex items-center gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/80 p-2 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
           {tabs.map((t, idx) => {
             const active = activeTab === t.key;
             const done = t.count > 0;
             return (
               <React.Fragment key={t.key}>
                 <button
-                  onClick={() => { setActiveTab(t.key); setShowAddForm(false); }}
-                  className={`relative z-10 flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors ${
-                    active ? "text-white" : "text-gray-500 hover:text-gray-800"
+                  type="button"
+                  onClick={() => setActiveTab(t.key)}
+                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    active
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600"
                   }`}
                 >
-                  {active && (
-                    <Motion.span
-                      layoutId="academicStepIndicator"
-                      className="absolute inset-0 -z-10 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 shadow-md shadow-amber-200"
-                      transition={{ type: "spring", duration: 0.5, bounce: 0.2 }}
-                    />
-                  )}
                   <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                    active ? "bg-white/25 text-white" : done ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
+                    active ? "bg-amber-500 text-white" : done ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
                   }`}>
                     {done && !active ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
                   </span>
                   <t.icon className="h-4 w-4" />
                   {t.label}
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
-                  }`}>
-                    {t.count}
-                  </span>
                 </button>
                 {idx < tabs.length - 1 && (
-                  <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-300 sm:block" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
                 )}
               </React.Fragment>
             );
@@ -1468,75 +1419,160 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {activeTab === "years" && (
           <div className="space-y-4">
             {/* Add Form */}
-            {showAddForm && ( 
-              <form onSubmit={submitYear} className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 flex items-center gap-2.5">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">1</span>
-                  <h3 className="text-base font-bold text-gray-800">Add Academic Year</h3>
+            {showYearForm && (
+            <div className="rounded-2xl border border-amber-200 bg-white p-6 shadow-sm sm:p-8">
+              <div className="mx-auto mb-5 flex max-w-md flex-col items-center text-center">
+                <div className="relative mb-3 flex h-16 w-16 items-center justify-center">
+                  <Sparkles className="absolute -left-1 -top-1 h-4 w-4 text-amber-300" />
+                  <Sparkles className="absolute -bottom-1 -right-2 h-3 w-3 text-orange-300" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100">
+                    <Calendar className="h-8 w-8 text-amber-500" />
+                  </div>
+                  <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-white">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                  </span>
                 </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Year Name</label>
-                    <input type="text" value={yearForm.name} onChange={(e) => setYearForm((p) => ({ ...p, name: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                      placeholder="2025-2026" required />
+                <h3 className="text-lg font-bold text-gray-900">Add Academic Year</h3>
+                <p className="mt-1 text-xs font-bold uppercase tracking-wide text-amber-600">Step 1 of 5</p>
+                <p className="mt-1 text-sm text-gray-500">Add a new academic year for your school.</p>
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <form onSubmit={submitYear}>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                    <div>
+                      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600">
+                        Year Name <span className="text-red-400">*</span>
+                        <Info className="h-3 w-3 text-gray-300" title="Enter academic year (e.g. 2025-2026)" />
+                      </label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                        <input type="text" value={yearForm.name} onChange={(e) => setYearForm((p) => ({ ...p, name: e.target.value }))}
+                          className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                          placeholder="2025-2026" required />
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">Enter academic year (e.g. 2025-2026)</p>
+                    </div>
+                    <div>
+                      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600">
+                        Start Date <span className="text-red-400">*</span>
+                        <Info className="h-3 w-3 text-gray-300" title="Select the start date of the academic year" />
+                      </label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                        <input type="date" value={yearForm.startDate} onChange={(e) => setYearForm((p) => ({ ...p, startDate: e.target.value }))}
+                          className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">Select the start date of the academic year</p>
+                    </div>
+                    <div>
+                      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600">
+                        End Date <span className="text-red-400">*</span>
+                        <Info className="h-3 w-3 text-gray-300" title="Select the end date of the academic year" />
+                      </label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                        <input type="date" value={yearForm.endDate} onChange={(e) => setYearForm((p) => ({ ...p, endDate: e.target.value }))}
+                          className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" required />
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">Select the end date of the academic year</p>
+                    </div>
+                    <div>
+                      <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-600">
+                        Active
+                        <Info className="h-3 w-3 text-gray-300" title="Mark this academic year as the active session" />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setYearForm((p) => ({ ...p, isActive: !p.isActive }))}
+                        aria-pressed={yearForm.isActive}
+                        className={`flex h-9 w-14 items-center rounded-full border transition-colors ${
+                          yearForm.isActive ? "border-amber-500 bg-amber-500" : "border-gray-200 bg-gray-200"
+                        }`}
+                      >
+                        <span className={`h-7 w-7 rounded-full bg-white shadow-sm transition-transform ${
+                          yearForm.isActive ? "translate-x-6" : "translate-x-0.5"
+                        }`} />
+                      </button>
+                      <p className="mt-1 text-[11px] text-gray-400">Active academic year</p>
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Start Date</label>
-                    <input type="date" value={yearForm.startDate} onChange={(e) => setYearForm((p) => ({ ...p, startDate: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" />
+
+                  <div className="mt-5 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <span>💡</span>
+                    <p><strong>Note:</strong> Only one academic year can be active at a time. You can change it later.</p>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">End Date</label>
-                    <input type="date" value={yearForm.endDate} onChange={(e) => setYearForm((p) => ({ ...p, endDate: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100" />
-                  </div>
-                  <div className="flex items-end gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-600">
-                      <input type="checkbox" checked={yearForm.isActive} onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer focus:ring-amber-400" />
-                      Active
-                    </label>
+
+                  <div className="mt-5 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setYearForm({ name: "", startDate: "", endDate: "", isActive: false });
+                        setShowYearForm(false);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      <X className="h-4 w-4" /> Cancel
+                    </button>
                     <button type="submit" disabled={isSubmitting}
-                      className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50">
-                      <Plus className="h-4 w-4" /> Add
+                      className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-600 disabled:opacity-50">
+                      Next <ArrowRight className="h-4 w-4" />
                     </button>
                   </div>
-                </div>
-              </form>
+                </form>
+              </div>
+            </div>
             )}
 
-            {/* Table Card */}
-            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-transparent px-5 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                  <Calendar className="h-4 w-4 text-blue-500" /> Academic Years
-                </h3>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={yearStatusFilter}
-                    onChange={(e) => { setYearStatusFilter(e.target.value); setYearPage(1); }}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="all">All</option>
-                  </select>
-                  <div className="w-64">
-                  <SearchInput value={searchYear} onChange={setSearchYear} placeholder="Search years..." />
-                  </div>
-                </div>
+            {/* Tips banner */}
+            {showYearForm && (
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100">
+                <Smile className="h-5 w-5 text-amber-600" />
               </div>
-              <BulkBar entityType="years" entityName="academic year" />
+              <p className="text-sm text-gray-600">
+                <strong className="text-gray-800">Tips:</strong> After adding the academic year, you can add classes for this year in the next step.
+              </p>
+            </div>
+            )}
+
+            {/* Success banner */}
+            <AnimatePresence>
+              {yearSuccessMessage && (
+                <Motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {yearSuccessMessage}
+                </Motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Table Card */}
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">Academic Years</h3>
+                  <p className="mt-0.5 text-xs text-gray-500">Below is the list of all academic years in your school.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowYearForm(true);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-amber-500 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-600"
+                >
+                  <Plus className="h-4 w-4" /> Add Academic Year
+                </button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      <th className="w-12 bg-gray-50 px-4 py-3">
-                        <input type="checkbox" checked={selectedYears.length === paginatedYears.length && paginatedYears.length > 0}
-                          onChange={() => handleSelectAll("years", paginatedYears)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                      </th>
-                      <SortableHeader label="Name" field="name" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
+                      <SortableHeader label="Year Name" field="name" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
                       <SortableHeader label="Start Date" field="startDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
                       <SortableHeader label="End Date" field="endDate" sortConfig={yearSort} onSort={toggleSort(setYearSort)} />
                       <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
@@ -1546,10 +1582,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <tbody className="divide-y divide-gray-50">
                     {paginatedYears.map((year) => (
                       <tr key={year._id} className="transition hover:bg-amber-50/30">
-                        <td className="px-4 py-3">
-                          <input type="checkbox" checked={selectedYears.includes(year._id)}
-                            onChange={() => handleSelectItem("years", year._id)} className="h-4 w-4 rounded border-gray-300 accent-amber-500 cursor-pointer" />
-                        </td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">{year.name}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{year.startDate ? new Date(year.startDate).toLocaleDateString() : "—"}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{year.endDate ? new Date(year.endDate).toLocaleDateString() : "—"}</td>
@@ -1583,7 +1615,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     ))}
                   </tbody>
                 </table>
-                {paginatedYears.length === 0 && <EmptyState search={searchYear} entity="academic years" />}
+                {paginatedYears.length === 0 && <EmptyState search="" entity="academic years" />}
               </div>
               <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
             </div>
@@ -1593,12 +1625,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {/* ═══════════════ CLASSES TAB ═══════════════ */}
         {activeTab === "classes" && (
           <div className="space-y-4">
-            {showAddForm && (
-              <div className="rounded-2xl border border-emerald-200 bg-white shadow-sm overflow-hidden">
+              <div className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 {/* Mode switcher */}
                 <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-emerald-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white shadow-sm">2</span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">2</span>
                     Add Classes
                   </h3>
                   <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
@@ -1819,10 +1850,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </form>
                 )}
               </div>
-            )}
 
-            <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-emerald-50/60 to-transparent px-5 py-3">
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
                 <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
                   <Layers className="h-4 w-4 text-emerald-500" /> Classes
                 </h3>
@@ -1884,11 +1914,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {/* ═══════════════ SECTIONS TAB ═══════════════ */}
         {activeTab === "sections" && (
           <div className="space-y-4">
-            {showAddForm && (
-              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-violet-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-500 text-xs font-bold text-white shadow-sm">3</span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">3</span>
                     Add Sections
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Pick a class, tap quick letters and/or type custom names — all created in one click.</p>
@@ -1994,7 +2023,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </button>
                 </div>
               </form>
-            )}
 
             <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
               {classTabs.map((tab) => (
@@ -2080,7 +2108,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {/* ═══════════════ SUBJECTS TAB ═══════════════ */}
         {activeTab === "subjects" && (
           <div className="space-y-4">
-            {showAddForm && (
               <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-amber-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
@@ -2189,7 +2216,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </button>
                 </div>
               </form>
-            )}
 
             <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
               {classTabs.map((tab) => (
@@ -2281,10 +2307,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
         {activeTab === "class-teachers" && (
           <div className="space-y-4">
-            <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-rose-200"}`}>
+            <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-amber-200"}`}>
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white shadow-sm">5</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow-sm">5</span>
                   {editingClassTeacherId ? "Update Class Teacher" : "Assign Class Teacher"}
                 </h3>
                 {editingClassTeacherId && (

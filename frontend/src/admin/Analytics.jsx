@@ -140,6 +140,9 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [teacherEffectiveness, setTeacherEffectiveness] = useState([]);
   const [teacherEffLoading, setTeacherEffLoading] = useState(false);
+  // Pagination state for Teacher Effectiveness
+  const [teacherEffCurrentPage, setTeacherEffCurrentPage] = useState(1);
+  const teacherEffItemsPerPage = 10;
 
   useEffect(() => {
     setShowAdminHeader(true);
@@ -399,6 +402,10 @@ const Analytics = ({ setShowAdminHeader }) => {
     finally { setTeacherEffLoading(false); }
   }, []);
 
+  // Pagination logic for Teacher Effectiveness
+  const indexOfLastTeacherEff = teacherEffCurrentPage * teacherEffItemsPerPage;
+  const indexOfFirstTeacherEff = indexOfLastTeacherEff - teacherEffItemsPerPage;
+  const currentTeacherEffectiveness = teacherEffectiveness.slice(indexOfFirstTeacherEff, indexOfLastTeacherEff);
   useEffect(() => { fetchMasteryMatrix(); fetchTeacherEffectiveness(); }, [fetchMasteryMatrix, fetchTeacherEffectiveness]);
 
   const attendanceRate = useMemo(() => {
@@ -1376,8 +1383,32 @@ const Analytics = ({ setShowAdminHeader }) => {
                           ))}
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody> {/* Render only current page items */}
                         {teacherEffectiveness.map((t, i) => {
+                          const effColor =
+                            t.effectiveness === 'High' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                            t.effectiveness === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                            t.effectiveness === 'No data' ? 'bg-gray-50 text-gray-400 border-gray-200' :
+                            'bg-red-50 text-red-700 border-red-100';
+                          const scoreColor =
+                            t.avgClassMastery == null ? 'text-gray-300' :
+                            t.avgClassMastery >= 75 ? 'text-emerald-600 font-bold' :
+                            t.avgClassMastery >= 55 ? 'text-amber-600 font-bold' :
+                            'text-red-600 font-bold';
+                          return (
+                            <tr key={t.teacherId} className={`border-b border-gray-50 hover:bg-gray-50 transition ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                              <td className="px-3 py-3 font-semibold text-gray-800">{t.name}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.subject}</td>
+                              <td className={`px-3 py-3 ${scoreColor}`}>{t.avgClassMastery != null ? `${t.avgClassMastery}%` : '—'}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.studentCount}</td>
+                              <td className="px-3 py-3 text-gray-600">{t.topicsCovered}</td>
+                              <td className="px-3 py-3">
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${effColor}`}>{t.effectiveness}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {currentTeacherEffectiveness.map((t, i) => {
                           const effColor =
                             t.effectiveness === 'High' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
                             t.effectiveness === 'Moderate' ? 'bg-amber-50 text-amber-700 border-amber-100' :
@@ -1403,6 +1434,20 @@ const Analytics = ({ setShowAdminHeader }) => {
                         })}
                       </tbody>
                     </table>
+                    {/* Pagination Controls */}
+                    {teacherEffectiveness.length > teacherEffItemsPerPage && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <button onClick={() => setTeacherEffCurrentPage(prev => Math.max(1, prev - 1))} disabled={teacherEffCurrentPage === 1} className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50">Previous</button>
+                        {Array.from({ length: Math.ceil(teacherEffectiveness.length / teacherEffItemsPerPage) }, (_, i) => i + 1).map(page => (
+                          <button key={page} onClick={() => setTeacherEffCurrentPage(page)} className={`px-3 py-1.5 text-sm font-medium rounded-lg ${teacherEffCurrentPage === page ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}>{page}</button>
+                        ))}
+                        <button onClick={() => setTeacherEffCurrentPage(prev => Math.min(Math.ceil(teacherEffectiveness.length / teacherEffItemsPerPage), prev + 1))} disabled={teacherEffCurrentPage === Math.ceil(teacherEffectiveness.length / teacherEffItemsPerPage)} className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50">Next</button>
+                      </div>
+                    )}
+                    {/* Displaying current range */}
+                    <div className="text-center text-xs text-gray-500 mt-2">
+                      Showing {indexOfFirstTeacherEff + 1} - {Math.min(indexOfLastTeacherEff, teacherEffectiveness.length)} of {teacherEffectiveness.length} teachers
+                    </div>
                   </div>
                 )}
               </div>
