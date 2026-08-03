@@ -252,7 +252,7 @@ const AdminApp = () => {
       // 'Subjects',
       'Teachers',
       'Teacher Feedback',
-      'Routine Management',
+      'Routine',
       'Students',
       'Promotion & Leave',
       'Parents',

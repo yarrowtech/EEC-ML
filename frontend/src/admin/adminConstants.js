@@ -117,7 +117,7 @@ export const ADMIN_MENU_ITEMS = [
   },
   {
     icon: Calendar,
-    label: 'Routine Management',
+    label: 'Routine',
     path: '/admin/routines',
   },
   {
