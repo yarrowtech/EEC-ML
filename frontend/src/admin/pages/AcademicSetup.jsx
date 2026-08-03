@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
-  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight, Info, Smile,
+  FolderOpen, UserCheck, Sparkles, CheckCircle2, ArrowRight, Info, Smile, Trophy, School,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -118,6 +119,7 @@ const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = 
 );
 
 const AcademicSetup = ({ setShowAdminHeader }) => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("years");
   const [years, setYears] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -1190,17 +1192,61 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   /* ═══════════════════════ SUB-COMPONENTS ═══════════════════════ */
 
-  const StatCard = ({ icon, label, value, iconBg, iconColor }) => (
-    <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3.5 shadow-sm transition hover:shadow-md">
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        {React.createElement(icon, { className: `h-5 w-5 ${iconColor}` })}
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
+  const ProgressChip = ({ label, value, filled }) => (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm transition-colors ${
+        filled ? "border-[#2E8B57] bg-[#DCEFE3] text-[#2E8B57]" : "border-[#DDE3EA] bg-white text-[#4B5768]"
+      }`}
+    >
+      {label}: <strong className={filled ? "text-[#2E8B57]" : "text-[#14203B]"}>{value}</strong>
+    </span>
+  );
+
+  const StepNav = ({ prevKey, nextKey, skippable, finishLabel }) => (
+    <div className="flex items-center justify-between rounded-2xl border border-[#DDE3EA] bg-white px-5 py-4 shadow-sm">
+      {prevKey ? (
+        <button
+          type="button"
+          onClick={() => setActiveTab(prevKey)}
+          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-[#4B5768] hover:bg-gray-50"
+        >
+          ← Back
+        </button>
+      ) : <span />}
+      <div className="flex items-center gap-4">
+        {skippable && (
+          <button
+            type="button"
+            onClick={() => setActiveTab(nextKey || "done")}
+            className="text-sm font-semibold text-gray-400 underline underline-offset-2 hover:text-gray-600"
+          >
+            Skip this step
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setActiveTab(nextKey || "done")}
+          className="flex items-center gap-2 rounded-lg bg-[#F2994A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#D97A2E]"
+        >
+          {nextKey ? "Continue" : (finishLabel || "Finish Setup")} <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
+
+  const StepHeader = (props) => {
+    const StepIcon = props.icon;
+    return (
+      <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 shadow-sm sm:p-7">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FCE7D2]">
+          <StepIcon className="h-6 w-6 text-[#D97A2E]" />
+        </div>
+        <p className="mt-4 text-xs font-bold uppercase tracking-wide text-[#D97A2E]">Step {props.step} of 5</p>
+        <h2 className="mt-1 text-xl font-bold text-[#14203B]">{props.question}</h2>
+        <p className="mt-1.5 max-w-2xl text-sm text-[#4B5768]">{props.explain}</p>
+      </div>
+    );
+  };
 
   const SearchInput = ({ value, onChange, placeholder }) => (
     <div className="relative">
@@ -1347,33 +1393,38 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ TAB CONFIG ═══════════════════════ */
 
   const tabs = [
-    { key: "years", label: "Academic Years", icon: Calendar, count: activeYears.length },
-    { key: "classes", label: "Classes", icon: Layers, count: visibleClasses.length },
-    { key: "sections", label: "Sections", icon: BookOpen, count: visibleSections.length },
-    { key: "subjects", label: "Subjects", icon: GraduationCap, count: visibleSubjects.length },
-    { key: "class-teachers", label: "Class Teachers", icon: UserCheck, count: classTeacherAllocations.length },
+    { key: "years", label: "Academic Year", desc: "Set your school year", icon: Calendar, count: activeYears.length },
+    { key: "classes", label: "Classes", desc: "Add your grades", icon: Layers, count: visibleClasses.length },
+    { key: "sections", label: "Sections", desc: "Split classes if needed", icon: BookOpen, count: visibleSections.length },
+    { key: "subjects", label: "Subjects", desc: "What's being taught", icon: GraduationCap, count: visibleSubjects.length },
+    { key: "class-teachers", label: "Class Teachers", desc: "Who leads each class", icon: UserCheck, count: classTeacherAllocations.length },
   ];
 
   /* ═══════════════════════ RENDER ═══════════════════════ */
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen bg-[#F4F6F8] p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
         {/* ─── Header ─── */}
-        <div>
-          <h1 className="text-2xl font-bold leading-tight text-gray-900">Academic Setup</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Build your school year step by step — sessions, classes, sections, subjects and class teachers.
-          </p>
+        <div className="flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FCE7D2]">
+            <School className="h-5 w-5 text-[#D97A2E]" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold leading-tight text-[#14203B]">Academic Setup</h1>
+            <p className="mt-1 text-sm text-[#4B5768]">
+              A guided walkthrough — no tech skills needed. We'll take it one step at a time.
+            </p>
+          </div>
         </div>
 
-        {/* ─── Stat Cards ─── */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-          <StatCard icon={Calendar} label="Academic Years" value={activeYears.length} iconBg="bg-amber-50" iconColor="text-amber-500" />
-          <StatCard icon={Layers} label="Classes" value={visibleClasses.length} iconBg="bg-emerald-50" iconColor="text-emerald-500" />
-          <StatCard icon={BookOpen} label="Sections" value={visibleSections.length} iconBg="bg-violet-50" iconColor="text-violet-500" />
-          <StatCard icon={GraduationCap} label="Subjects" value={visibleSubjects.length} iconBg="bg-orange-50" iconColor="text-orange-500" />
-          <StatCard icon={UserCheck} label="Class Teachers" value={classTeacherAllocations.length} iconBg="bg-blue-50" iconColor="text-blue-500" />
+        {/* ─── Progress chips ─── */}
+        <div className="flex flex-wrap gap-2">
+          <ProgressChip label="Academic Year" value={years[0]?.name || "not set"} filled={years.length > 0} />
+          <ProgressChip label="Classes" value={visibleClasses.length} filled={visibleClasses.length > 0} />
+          <ProgressChip label="Sections" value={visibleSections.length} filled={visibleSections.length > 0} />
+          <ProgressChip label="Subjects" value={visibleSubjects.length} filled={visibleSubjects.length > 0} />
+          <ProgressChip label="Class Teachers" value={classTeacherAllocations.length} filled={classTeacherAllocations.length > 0} />
         </div>
 
         {/* ─── Error ─── */}
@@ -1383,37 +1434,50 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           </div>
         )}
 
-        {/* ─── Step pipeline ─── */}
-        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
-          {tabs.map((t, idx) => {
-            const active = activeTab === t.key;
-            const done = t.count > 0;
-            return (
-              <React.Fragment key={t.key}>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(t.key)}
-                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
-                    active
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "border-transparent text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-                  }`}
-                >
-                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                    active ? "bg-amber-500 text-white" : done ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
-                  }`}>
-                    {done && !active ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
-                  </span>
-                  <t.icon className="h-4 w-4" />
-                  {t.label}
-                </button>
-                {idx < tabs.length - 1 && (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[260px_1fr] lg:items-start">
+          {/* ─── Step rail ─── */}
+          <nav className="rounded-2xl border border-[#DDE3EA] bg-white px-4 shadow-sm lg:sticky lg:top-6">
+            <ol className="relative">
+              {tabs.map((t, idx) => {
+                const isCurrent = activeTab === t.key;
+                const isDone = t.count > 0 && !isCurrent;
+                return (
+                  <li key={t.key} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab(t.key)}
+                      className="flex w-full items-start gap-3 py-4 text-left"
+                    >
+                      {idx < tabs.length - 1 && (
+                        <span
+                          className={`absolute left-[15px] top-10 bottom-0 w-0.5 ${isDone ? "bg-[#2E8B57]/40" : "bg-[#DDE3EA]"}`}
+                        />
+                      )}
+                      <span
+                        className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold ${
+                          isCurrent
+                            ? "border-[#F2994A] bg-[#F2994A] text-white shadow-[0_0_0_4px_#FCE7D2]"
+                            : isDone
+                            ? "border-[#2E8B57] bg-[#2E8B57] text-white"
+                            : "border-[#DDE3EA] bg-[#F4F6F8] text-gray-400"
+                        }`}
+                      >
+                        {isDone ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
+                      </span>
+                      <span className="pt-1">
+                        <p className={`text-sm font-semibold ${isCurrent || isDone ? "text-[#14203B]" : "text-gray-400"}`}>
+                          {t.label}
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-400">{t.desc}</p>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+
+          <div className="min-w-0 space-y-4">
 
         {/* ═══════════════ YEARS TAB ═══════════════ */}
         {activeTab === "years" && (
@@ -1432,9 +1496,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <CheckCircle2 className="h-3.5 w-3.5 text-white" />
                   </span>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">Add Academic Year</h3>
+                <h3 className="text-lg font-bold text-gray-900">What school year is this for?</h3>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide text-amber-600">Step 1 of 5</p>
-                <p className="mt-1 text-sm text-gray-500">Add a new academic year for your school.</p>
+                <p className="mt-1 text-sm text-gray-500">Everything you add next — classes, subjects, teachers — will belong to this year. You can add another year later.</p>
               </div>
 
               <div className="border-t border-gray-100 pt-5">
@@ -1619,12 +1683,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
               <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
             </div>
+            <StepNav prevKey={null} nextKey="classes" />
           </div>
         )}
 
         {/* ═══════════════ CLASSES TAB ═══════════════ */}
         {activeTab === "classes" && (
           <div className="space-y-4">
+            <StepHeader
+              icon={Layers}
+              step={2}
+              question="Which classes does your school have?"
+              explain="Tap a quick-add group below, or type your own. You can rename or remove any class later."
+            />
               <div className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 {/* Mode switcher */}
                 <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3 bg-emerald-50/40">
@@ -1908,12 +1979,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
               <Pagination currentPage={classPage} totalItems={sortedClasses.length} onPageChange={setClassPage} />
             </div>
+            <StepNav prevKey="years" nextKey="sections" />
           </div>
         )}
 
         {/* ═══════════════ SECTIONS TAB ═══════════════ */}
         {activeTab === "sections" && (
           <div className="space-y-4">
+            <StepHeader
+              icon={BookOpen}
+              step={3}
+              question="Do your classes split into sections?"
+              explain="Pick a class, then tap the section letters it has — like Class 5-A and Class 5-B."
+            />
               <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-violet-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
@@ -2102,12 +2180,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
               <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
             </div>
+            <StepNav prevKey="classes" nextKey="subjects" skippable />
           </div>
         )}
 
         {/* ═══════════════ SUBJECTS TAB ═══════════════ */}
         {activeTab === "subjects" && (
           <div className="space-y-4">
+            <StepHeader
+              icon={GraduationCap}
+              step={4}
+              question="What subjects are taught?"
+              explain="Type a subject and press Enter to add it. Add as many as you like — Math, Science, English..."
+            />
               <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-amber-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-amber-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
@@ -2301,12 +2386,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </div>
               <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
             </div>
+            <StepNav prevKey="sections" nextKey="class-teachers" />
           </div>
         )}
 
         {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
         {activeTab === "class-teachers" && (
           <div className="space-y-4">
+            <StepHeader
+              icon={UserCheck}
+              step={5}
+              question="Who looks after each class?"
+              explain="Pick one teacher to be the main point of contact for a class and section. This step is optional — you can do it later too."
+            />
             <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-amber-400 ring-2 ring-amber-100" : "border-amber-200"}`}>
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
@@ -2469,8 +2561,48 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 ))}
               </div>
             </div>
+            <StepNav prevKey="subjects" nextKey={null} skippable finishLabel="Finish Setup" />
           </div>
         )}
+
+        {/* ═══════════════ DONE ═══════════════ */}
+        {activeTab === "done" && (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-[#DDE3EA] bg-white px-6 py-16 text-center shadow-sm">
+            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-[#DCEFE3]">
+              <Trophy className="h-9 w-9 text-[#2E8B57]" />
+            </div>
+            <h2 className="text-2xl font-bold text-[#14203B]">You're all set!</h2>
+            <p className="mt-2 max-w-md text-sm text-[#4B5768]">
+              Your school year is ready. You can fine-tune any of this anytime from this page.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <ProgressChip label="Academic Year" value={years[0]?.name || "—"} filled />
+              <ProgressChip label="Classes" value={visibleClasses.length} filled />
+              <ProgressChip label="Sections" value={visibleSections.length} filled />
+              <ProgressChip label="Subjects" value={visibleSubjects.length} filled />
+              <ProgressChip label="Class Teachers" value={classTeacherAllocations.length} filled />
+            </div>
+            <div className="mt-8 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveTab("years")}
+                className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#4B5768] hover:bg-gray-50"
+              >
+                Review Setup
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/admin/dashboard")}
+                className="flex items-center gap-2 rounded-lg bg-[#F2994A] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#D97A2E]"
+              >
+                Go to Dashboard <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+          </div>
+        </div>
 
         {/* ═══════════════ EDIT MODALS ═══════════════ */}
 
