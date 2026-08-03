@@ -11,7 +11,6 @@ import SchoolAdminsManagement from './pages/SchoolAdminsManagement';
 import Routines from './Routines';
 import FloorRoomManagement from './pages/FloorRoomManagement';
 import LessonPlanPage from './pages/LessonPlan';
-import TeacherTimetable from './pages/TeacherTimetable';
 import ExaminationManagement from './pages/ExaminationManagement';
 import ParentsManagement from './pages/ParentsManagement';
 import SubjectManagement from './pages/SubjectManagement';
@@ -354,7 +353,6 @@ const AdminApp = () => {
           <Route path="academics" element={<AcademicSetup setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="subjects" element={<SubjectManagement setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="examination" element={<ExaminationManagement setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="timetable" element={<TeacherTimetable setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="lesson-plans" element={<LessonPlanPage setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="result" element={<Result setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="report-cards" element={<ReportCardManagement setShowAdminHeader={setShowAdminHeader} />} />

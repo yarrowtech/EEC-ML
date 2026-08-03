@@ -119,19 +119,6 @@ export const ADMIN_MENU_ITEMS = [
     icon: Calendar,
     label: 'Routine Management',
     path: '/admin/routines',
-    hasSubmenu: true,
-    submenu: [
-      {
-        icon: Calendar,
-        label: 'Routines',
-        path: '/admin/routines'
-      },
-      {
-        icon: Calendar,
-        label: 'Teacher Timetable',
-        path: '/admin/timetable'
-      }
-    ]
   },
   {
     icon: UserCheck,
