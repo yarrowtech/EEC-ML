@@ -44,6 +44,17 @@ import * as XLSX from "xlsx";
 import CredentialGeneratorButton from "./components/CredentialGeneratorButton";
 
 const API_BASE = import.meta.env.VITE_API_URL;
+
+const escapeHtml = (value) => {
+  const str = String(value ?? "");
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+
 const STUDENTS_CACHE_PREFIX = "admin_students_cache_v1";
 const EXCLUDED_STUDENT_STATUSES = new Set(["leaving", "left", "expelled"]);
 const shouldHideLeavingStudent = (student) =>
@@ -931,9 +942,6 @@ const Students = ({ setShowAdminHeader }) => {
   const refreshArchivedStudents = async () => {
     try {
       const token = localStorage.getItem("token");
-      // console.log("Fetching archived students from:", `${API_BASE}/api/nif/students/archived`);
-      // console.log("Using token:", token ? "Present" : "Missing");
-      
       const res = await fetch(`${API_BASE}/api/nif/students/archived`, {
         method: "GET",
         headers: {
@@ -941,10 +949,8 @@ const Students = ({ setShowAdminHeader }) => {
           authorization: `Bearer ${token}`,
         },
       });
-      // console.log("Response status:", res.status);
       if (res.ok) {
         const data = await res.json();
-        // console.log("Archived students data:", data);
         setArchivedStudents(Array.isArray(data) ? data : []);
       } else {
         const errorText = await res.text();
@@ -1413,10 +1419,10 @@ const Students = ({ setShowAdminHeader }) => {
         title: "Student enrolled successfully!",
         html: `
           <div class="text-left space-y-2">
-          <div><strong>Student ID:</strong> ${studentId}</div>
-          ${studentPassword ? `<div><strong>Student Password:</strong> ${studentPassword}</div>` : ""}
-          ${parentId ? `<div><strong>Parent ID:</strong> ${parentId}</div>` : ""}
-          ${parentPassword ? `<div><strong>Parent Password:</strong> ${parentPassword}</div>` : ""}
+          <div><strong>Student ID:</strong> ${escapeHtml(studentId)}</div>
+          ${studentPassword ? `<div><strong>Student Password:</strong> ${escapeHtml(studentPassword)}</div>` : ""}
+          ${parentId ? `<div><strong>Parent ID:</strong> ${escapeHtml(parentId)}</div>` : ""}
+          ${parentPassword ? `<div><strong>Parent Password:</strong> ${escapeHtml(parentPassword)}</div>` : ""}
           </div>
         `,
         confirmButtonColor: "#EAB308",
@@ -1511,15 +1517,15 @@ const Students = ({ setShowAdminHeader }) => {
         title: "Credentials Issued Successfully",
         html: `
           <div class="text-left space-y-4">
-            <p class="text-gray-700 mb-4"><strong>${student.name}</strong> can now log in with these credentials:</p>
+            <p class="text-gray-700 mb-4"><strong>${escapeHtml(student.name)}</strong> can now log in with these credentials:</p>
 
             <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
               <div>
                 <p class="text-xs font-semibold text-yellow-700 uppercase mb-1">Student ID</p>
                 <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-yellow-100">
-                  <code class="text-sm font-mono text-gray-800">${loginId}</code>
+                  <code class="text-sm font-mono text-gray-800" id="swal-cred-id">${escapeHtml(loginId)}</code>
                   <button
-                    onclick="navigator.clipboard.writeText('${loginId}')"
+                    onclick="navigator.clipboard.writeText(document.getElementById('swal-cred-id').textContent)"
                     class="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded"
                     title="Copy ID"
                   >
@@ -1531,9 +1537,9 @@ const Students = ({ setShowAdminHeader }) => {
               <div>
                 <p class="text-xs font-semibold text-yellow-700 uppercase mb-1">Password</p>
                 <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-yellow-100">
-                  <code class="text-sm font-mono text-gray-800">${loginPassword}</code>
+                  <code class="text-sm font-mono text-gray-800" id="swal-cred-pw">${escapeHtml(loginPassword)}</code>
                   <button
-                    onclick="navigator.clipboard.writeText('${loginPassword}')"
+                    onclick="navigator.clipboard.writeText(document.getElementById('swal-cred-pw').textContent)"
                     class="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded"
                     title="Copy Password"
                   >
@@ -1591,20 +1597,22 @@ const Students = ({ setShowAdminHeader }) => {
         <div class="text-left space-y-3">
           <div>
             <div class="text-xs font-semibold text-gray-500 uppercase">Student ID</div>
-            <div class="font-mono text-sm text-gray-900">${loginId}</div>
+            <div class="font-mono text-sm text-gray-900">${escapeHtml(loginId)}</div>
           </div>
           <div>
             <div class="text-xs font-semibold text-gray-500 uppercase">Password</div>
-            <div class="font-mono text-sm text-gray-900">${passwordValue}</div>
+            <div class="font-mono text-sm text-gray-900" id="swal-view-spw">••••••••</div>
+            <button onclick="(function(){var e=document.getElementById('swal-view-spw');e.textContent=e.textContent==='••••••••'?${JSON.stringify(passwordValue)}:'••••••••';})()" class="text-xs text-indigo-600 underline mt-1">Show / Hide</button>
           </div>
           <div class="pt-2 border-t border-gray-200"></div>
           <div>
             <div class="text-xs font-semibold text-gray-500 uppercase">Parent ID</div>
-            <div class="font-mono text-sm text-gray-900">${parentId}</div>
+            <div class="font-mono text-sm text-gray-900">${escapeHtml(parentId)}</div>
           </div>
           <div>
             <div class="text-xs font-semibold text-gray-500 uppercase">Parent Password</div>
-            <div class="font-mono text-sm text-gray-900">${parentPassword}</div>
+            <div class="font-mono text-sm text-gray-900" id="swal-view-ppw">••••••••</div>
+            <button onclick="(function(){var e=document.getElementById('swal-view-ppw');e.textContent=e.textContent==='••••••••'?${JSON.stringify(parentPassword)}:'••••••••';})()" class="text-xs text-indigo-600 underline mt-1">Show / Hide</button>
           </div>
         </div>
       `,
@@ -1663,7 +1671,7 @@ const Students = ({ setShowAdminHeader }) => {
       // Update progress
       Swal.update({
         html: `<div>Processing: <strong>${i + 1}</strong> / ${studentsWithoutPortal.length}</div>
-               <div class="text-sm text-gray-600 mt-2">${student.name}</div>`,
+               <div class="text-sm text-gray-600 mt-2">${escapeHtml(student.name)}</div>`,
       });
 
       try {
@@ -2693,6 +2701,17 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const handleBulkFilePicked = async (file) => {
+    const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      await Swal.fire({
+        icon: "error",
+        title: "File Too Large",
+        text: `Import file must be under 10 MB. Selected file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`,
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     try {
       setIsImporting(true);
       startImportProgress();
@@ -2845,7 +2864,7 @@ const Students = ({ setShowAdminHeader }) => {
             <p>All rows were skipped due to validation errors:</p>
             <ul style="max-height: 300px; overflow-y: auto;">
               ${skippedRows.slice(0, 20).map(s =>
-                `<li>Row ${s.row}: ${s.reason}</li>`
+                `<li>Row ${escapeHtml(s.row)}: ${escapeHtml(s.reason)}</li>`
               ).join('')}
               ${skippedRows.length > 20 ? `<li>...and ${skippedRows.length - 20} more</li>` : ''}
             </ul>
@@ -2864,7 +2883,7 @@ const Students = ({ setShowAdminHeader }) => {
             <p><strong>${skippedRows.length}</strong> rows will be skipped:</p>
             <ul style="max-height: 200px; overflow-y: auto;">
               ${skippedRows.slice(0, 10).map(s =>
-                `<li>Row ${s.row}: ${s.reason}</li>`
+                `<li>Row ${escapeHtml(s.row)}: ${escapeHtml(s.reason)}</li>`
               ).join('')}
               ${skippedRows.length > 10 ? `<li>...and ${skippedRows.length - 10} more</li>` : ''}
             </ul>
@@ -2881,13 +2900,6 @@ const Students = ({ setShowAdminHeader }) => {
           return;
         }
       }
-
-      // Debug: Log first student to console
-      console.log("Sending to backend:", {
-        count: payload.length,
-        firstStudent: payload[0],
-        sample: payload[0]
-      });
 
       const res = await fetch(`${API_BASE}/api/nif/students/bulk`, {
         method: "POST",
@@ -2921,7 +2933,7 @@ const Students = ({ setShowAdminHeader }) => {
             `<p style="margin-top: 10px;"><strong>Errors:</strong></p>
              <ul style="max-height: 200px; overflow-y: auto; text-align: left;">
                ${data.errors.slice(0, 10).map(err =>
-                 `<li>Row ${err.index + 1}: ${err.message}</li>`
+                 `<li>Row ${escapeHtml(err.index + 1)}: ${escapeHtml(err.message)}</li>`
                ).join('')}
                ${data.errors.length > 10 ? `<li>...and ${data.errors.length - 10} more errors</li>` : ''}
              </ul>`

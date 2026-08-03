@@ -26,6 +26,8 @@ const adminActionLogger = require('./middleware/adminActionLogger');
 const rateLimit = require('./middleware/rateLimit');
 const { logSecurityEvent } = require('./utils/securityEventLogger');
 const { getClientIp } = require('./utils/request');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 let swaggerDocument;
 
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -305,6 +307,23 @@ app.use(
     origin: corsOrigin,
   })
 );
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'checkout.razorpay.com'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'fonts.googleapis.com'],
+        fontSrc: ["'self'", 'fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'res.cloudinary.com', '*.cloudinary.com'],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+      },
+    },
+  })
+);
 app.use(requestLogger);
 app.use(tokenReplayTelemetry);
 
@@ -365,8 +384,18 @@ const requireOrganizationDomain = (req, res, next) => {
 app.use('/api', generalApiLimiter);
 // Razorpay signs the exact request bytes; this must stay before express.json().
 app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '1mb' }), paymentWebhookController);
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use((req, _res, next) => {
+  if (req.body) req.body = mongoSanitize.sanitize(req.body);
+  if (req.params) req.params = mongoSanitize.sanitize(req.params);
+  if (req.query) {
+    const cleaned = mongoSanitize.sanitize({ ...req.query });
+    Object.keys(req.query).forEach((k) => { delete req.query[k]; });
+    Object.assign(req.query, cleaned);
+  }
+  next();
+});
 app.use(tenantResolver);
 
 try {
