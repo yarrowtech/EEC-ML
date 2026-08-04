@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, Save, Loader2, ChevronDown, ChevronUp, Check, BookOpen, X } from 'lucide-react';
+import { Plus, Trash2, Save, Loader2, ChevronDown, ChevronUp, Check, BookOpen, X, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -112,6 +112,9 @@ export default function RubricEditor({ rubricId = null, onSaved, onClose }) {
   const [form, setForm] = useState(emptyRubric());
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(rubricId));
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiTask, setAiTask] = useState('');
+  const [aiError, setAiError] = useState('');
 
   const token = localStorage.getItem('token');
 
@@ -138,6 +141,49 @@ export default function RubricEditor({ rubricId = null, onSaved, onClose }) {
   };
 
   const totalScore = form.criteria.reduce((s, c) => s + (Number(c.maxScore) || 0), 0);
+
+  const handleAIGenerate = async () => {
+    if (!form.subject.trim() && !aiTask.trim()) {
+      toast.error('Enter a subject or describe the task first');
+      return;
+    }
+    setAiGenerating(true);
+    setAiError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/rubrics/ai-generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          subject: form.subject || aiTask,
+          taskDescription: aiTask || `Assessment rubric for ${form.subject}`,
+          gradeLevel: '',
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'AI request failed');
+      const rubric = payload.data?.rubric;
+      if (rubric && Array.isArray(rubric.criteria)) {
+        setForm((f) => ({
+          ...f,
+          title: rubric.title || f.title,
+          description: rubric.description || f.description,
+          criteria: rubric.criteria.map((c) => ({
+            name: c.name || '',
+            description: c.description || '',
+            maxScore: c.maxScore || 4,
+            levels: Array.isArray(c.levels) ? c.levels : LEVEL_PRESETS.map((l) => ({ ...l })),
+          })),
+        }));
+        toast.success('Rubric generated — review and adjust as needed');
+      } else {
+        setAiError('AI returned unstructured output — try again with a more specific task description.');
+      }
+    } catch (err) {
+      setAiError(err.message || 'Failed to generate rubric');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.title.trim()) return toast.error('Rubric title is required');
@@ -201,6 +247,29 @@ export default function RubricEditor({ rubricId = null, onSaved, onClose }) {
             placeholder="Brief description of what this rubric evaluates"
             className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-indigo-400 focus:outline-none" />
         </div>
+      </div>
+
+      {/* AI Generate */}
+      <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-violet-600" />
+          <p className="text-sm font-semibold text-violet-800">AI-Generate Rubric</p>
+        </div>
+        <input
+          value={aiTask}
+          onChange={(e) => setAiTask(e.target.value)}
+          placeholder="Describe the task, e.g. 'Grade 5 persuasive essay on climate change'"
+          className="w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm focus:border-violet-400 focus:outline-none"
+        />
+        {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+        <button
+          type="button"
+          onClick={handleAIGenerate}
+          disabled={aiGenerating}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-500/20 hover:shadow-lg disabled:opacity-60 transition-all"
+        >
+          {aiGenerating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating…</> : <><Sparkles className="w-3.5 h-3.5" /> Generate Criteria</>}
+        </button>
       </div>
 
       {/* Criteria */}

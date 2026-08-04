@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, BookOpen, Loader2, RefreshCw, TrendingDown, Users } from 'lucide-react';
+import { AlertTriangle, BookOpen, Brain, Loader2, RefreshCw, Sparkles, TrendingDown, Users } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const authH = () => ({ Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
@@ -8,6 +8,9 @@ export default function TeacherInterventionScreen() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lowMastery, setLowMastery] = useState([]);
+  const [aiPlan, setAiPlan] = useState('');
+  const [aiPlanLoading, setAiPlanLoading] = useState(false);
+  const [aiPlanError, setAiPlanError] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -27,6 +30,42 @@ export default function TeacherInterventionScreen() {
 
   const flaggedStudents = data?.flaggedStudents || [];
   const reteachPlans   = data?.reteachPlans    || [];
+
+  const generatePlan = async () => {
+    setAiPlanLoading(true);
+    setAiPlanError('');
+    setAiPlan('');
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/intervention-plan`, {
+        method: 'POST',
+        headers: { ...authH(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flaggedStudents, reteachPlans, lowMastery }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'AI request failed');
+      setAiPlan(payload.data?.content || '');
+    } catch (err) {
+      setAiPlanError(err.message || 'Failed to generate plan');
+    } finally {
+      setAiPlanLoading(false);
+    }
+  };
+
+  const SimpleMarkdown = ({ text }) => {
+    if (!text) return null;
+    return (
+      <div className="space-y-1 text-sm text-gray-700 leading-relaxed">
+        {text.split('\n').map((line, i) => {
+          if (/^##\s/.test(line)) return <p key={i} className="font-bold text-gray-900 mt-3 first:mt-0">{line.replace(/^##\s/, '')}</p>;
+          if (/^\*\*(.+)\*\*$/.test(line)) return <p key={i} className="font-semibold text-gray-800">{line.replace(/\*\*/g, '')}</p>;
+          if (/^[-•]\s/.test(line)) return <p key={i} className="pl-3 before:content-['•'] before:mr-2 before:text-indigo-400">{line.replace(/^[-•]\s/, '').replace(/\*\*/g, '')}</p>;
+          if (/^\d+\.\s/.test(line)) return <p key={i} className="pl-3">{line.replace(/\*\*/g, '')}</p>;
+          if (!line.trim()) return <div key={i} className="h-1" />;
+          return <p key={i}>{line.replace(/\*\*/g, '')}</p>;
+        })}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -159,6 +198,42 @@ export default function TeacherInterventionScreen() {
           </div>
         </div>
       )}
+
+      {/* AI Intervention Plan */}
+      <div className="rounded-2xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-indigo-600" />
+            <p className="text-sm font-bold text-indigo-900">AI Intervention Plan</p>
+          </div>
+          <button
+            onClick={generatePlan}
+            disabled={aiPlanLoading || (!flaggedStudents.length && !reteachPlans.length && !lowMastery.length)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
+          >
+            {aiPlanLoading
+              ? <><Loader2 className="h-3 w-3 animate-spin" /> Generating…</>
+              : <><Sparkles className="h-3 w-3" /> Generate Plan</>}
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          {!aiPlan && !aiPlanLoading && !aiPlanError && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Click "Generate Plan" to get an AI-powered week-by-week intervention strategy based on your flagged data.
+            </p>
+          )}
+          {aiPlanLoading && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <Loader2 className="h-7 w-7 animate-spin text-indigo-400" />
+              <p className="text-sm text-gray-500">Analysing intervention data with AI…</p>
+            </div>
+          )}
+          {aiPlanError && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-4 py-2">{aiPlanError}</p>
+          )}
+          {aiPlan && <SimpleMarkdown text={aiPlan} />}
+        </div>
+      </div>
     </div>
   );
 }

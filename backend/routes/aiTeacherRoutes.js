@@ -535,6 +535,67 @@ router.post('/worksheet', authTeacher, async (req, res) => {
   }
 });
 
+// ── POST /api/ai-teacher/intervention-plan ────────────────────────────────────
+router.post('/intervention-plan', authTeacher, async (req, res) => {
+  try {
+    const { flaggedStudents = [], reteachPlans = [], lowMastery = [] } = req.body || {};
+
+    const studentLines = flaggedStudents.slice(0, 10).map((f) => {
+      const name = f.studentId?.name || 'Student';
+      return `  - ${name}: ${f.subject} | ${f.score}% avg after ${f.attemptCount} attempts`;
+    });
+
+    const reteachLines = reteachPlans.slice(0, 8).map((p) =>
+      `  - "${p.title}" (${p.subject}) — class avg fell below ${p.exitQuizThreshold}% threshold`
+    );
+
+    const masteryLines = lowMastery.slice(0, 6).map((lm) =>
+      `  - ${lm._id}: ${Math.round(lm.avgScore)}% class avg (${lm.studentCount} students assessed)`
+    );
+
+    const context = [
+      `Flagged Students (score <40% after 3+ attempts): ${flaggedStudents.length}`,
+      studentLines.length ? studentLines.join('\n') : '  None',
+      `\nLessons Flagged for Re-teaching: ${reteachPlans.length}`,
+      reteachLines.length ? reteachLines.join('\n') : '  None',
+      `\nLow Mastery Subjects (class avg <50%): ${lowMastery.length}`,
+      masteryLines.length ? masteryLines.join('\n') : '  None',
+    ].join('\n');
+
+    const aiRes = await callTeacherAI('intervention_plan', 'Multiple Subjects', 'Class Intervention Plan', null, context);
+    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-teacher/rubric-generate ─────────────────────────────────────
+router.post('/rubric-generate', authTeacher, async (req, res) => {
+  try {
+    const { subject, taskDescription, gradeLevel } = req.body || {};
+    if (!subject || !taskDescription) {
+      return res.status(400).json({ error: 'subject and taskDescription are required' });
+    }
+    const aiRes = await callTeacherAI('rubric_generate', subject, taskDescription, gradeLevel || null, null, null);
+    const raw = (aiRes.data?.content || '').trim();
+
+    let rubric = null;
+    try {
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start !== -1 && end > start) {
+        rubric = JSON.parse(raw.slice(start, end + 1));
+      }
+    } catch (_) { /* fall through */ }
+
+    return res.json({ success: true, data: { rubric, raw } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/ai-teacher/cohort-report ────────────────────────────────────────
 router.post('/cohort-report', authTeacher, async (req, res) => {
   try {

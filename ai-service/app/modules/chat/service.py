@@ -357,6 +357,45 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "## Teacher's Note\n"
         "Tone: professional but warm. Be specific, data-backed, and encouraging. Keep under 350 words."
     ),
+    "intervention_plan": (
+        "You are an experienced educational intervention coordinator. Based on the flagged student data, "
+        "re-teach lessons, and low-mastery subjects provided, generate a structured class-wide intervention plan.\n"
+        "Structure your response as:\n"
+        "## Priority Intervention Areas\n"
+        "List the top 3 subjects/topics that need immediate attention based on the data, with brief reasoning.\n\n"
+        "## Student Grouping Strategy\n"
+        "Recommend how to group students (e.g. 3 tiers: foundation, core, extension) with a one-line rationale.\n\n"
+        "## Week-by-Week Action Plan (2 weeks)\n"
+        "For each week: 2-3 specific teaching activities or strategies to address the flagged gaps.\n\n"
+        "## Re-teaching Priorities\n"
+        "For each flagged lesson, name one specific re-teaching technique (e.g. worked examples, peer teaching, visual models).\n\n"
+        "## Quick Wins\n"
+        "2-3 actions the teacher can take this week to immediately support the most at-risk students.\n\n"
+        "Be concrete and actionable. Keep under 350 words. Professional, teacher-facing tone."
+    ),
+    "rubric_generate": (
+        "You are an expert assessment designer. Based on the subject and task provided, generate a complete assessment rubric.\n"
+        "Return ONLY valid JSON — no explanation, no markdown fences, no extra text.\n"
+        "Format:\n"
+        "{\n"
+        '  "title": "Rubric title",\n'
+        '  "description": "What this rubric evaluates",\n'
+        '  "criteria": [\n'
+        "    {\n"
+        '      "name": "Criterion name",\n'
+        '      "description": "What this criterion measures",\n'
+        '      "maxScore": 4,\n'
+        '      "levels": [\n'
+        '        {"label": "Excellent", "score": 4, "descriptor": "Specific description of excellent performance"},\n'
+        '        {"label": "Good", "score": 3, "descriptor": "Specific description of good performance"},\n'
+        '        {"label": "Developing", "score": 2, "descriptor": "Specific description of developing performance"},\n'
+        '        {"label": "Beginning", "score": 1, "descriptor": "Specific description of beginning performance"}\n'
+        "      ]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "Include 4-5 criteria relevant to the subject and task. Make descriptors specific and measurable."
+    ),
 }
 
 

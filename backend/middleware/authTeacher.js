@@ -20,9 +20,6 @@ module.exports = function (req, res, next) {
     req.campusId = decoded.campusId || null;
     req.campusName = decoded.campusName || null;
     req.campusType = decoded.campusType || null;
-    if (!req.campusId) {
-      return res.status(400).json({ error: 'campusId is required' });
-    }
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });

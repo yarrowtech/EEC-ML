@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   TrendingUp, TrendingDown, Users, AlertTriangle,
-  BarChart3, Activity, Loader2, RefreshCcw,
+  BarChart3, Activity, Loader2, RefreshCcw, Brain, Sparkles,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -56,6 +56,11 @@ export default function TeacherAnalyticsDashboard() {
   // Cohort state
   const [cohortData, setCohortData] = useState([]);
   const [loadingCohort, setLoadingCohort] = useState(false);
+
+  // AI summary state
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState('');
 
   const fetchTrends = async () => {
     setLoadingTrends(true);
@@ -110,6 +115,46 @@ export default function TeacherAnalyticsDashboard() {
     } catch { /* silent */ } finally {
       setLoadingCohort(false);
     }
+  };
+
+  const generateSummary = async () => {
+    setAiSummaryLoading(true);
+    setAiSummaryError('');
+    setAiSummary('');
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/class-summary`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          className: trends?.className || '',
+          section: trends?.section || '',
+          subject: activeSubject || '',
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'AI request failed');
+      setAiSummary(payload.data?.content || '');
+    } catch (err) {
+      setAiSummaryError(err.message || 'Failed to generate summary');
+    } finally {
+      setAiSummaryLoading(false);
+    }
+  };
+
+  const SimpleMarkdown = ({ text }) => {
+    if (!text) return null;
+    return (
+      <div className="space-y-1 text-sm text-gray-700 leading-relaxed">
+        {text.split('\n').map((line, i) => {
+          if (/^##\s/.test(line)) return <p key={i} className="font-bold text-gray-900 mt-3 first:mt-0">{line.replace(/^##\s/, '')}</p>;
+          if (/^\*\*(.+)\*\*/.test(line)) return <p key={i} className="font-semibold text-gray-800">{line.replace(/\*\*/g, '')}</p>;
+          if (/^[-•]\s/.test(line)) return <p key={i} className="pl-3 before:content-['•'] before:mr-2 before:text-indigo-400">{line.replace(/^[-•]\s/, '').replace(/\*\*/g, '')}</p>;
+          if (/^\d+\.\s/.test(line)) return <p key={i} className="pl-3">{line.replace(/\*\*/g, '')}</p>;
+          if (!line.trim()) return <div key={i} className="h-1" />;
+          return <p key={i}>{line.replace(/\*\*/g, '')}</p>;
+        })}
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -328,6 +373,42 @@ export default function TeacherAnalyticsDashboard() {
             })}
           </div>
         )}
+      </div>
+
+      {/* AI Class Summary */}
+      <div className="rounded-2xl border border-indigo-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4 text-indigo-600" />
+            <h2 className="text-sm font-bold text-indigo-900">AI Class Narrative</h2>
+          </div>
+          <button
+            onClick={generateSummary}
+            disabled={aiSummaryLoading || loadingTrends}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
+          >
+            {aiSummaryLoading
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+              : <><Sparkles className="w-3 h-3" /> Generate Summary</>}
+          </button>
+        </div>
+        <div className="px-5 py-4">
+          {!aiSummary && !aiSummaryLoading && !aiSummaryError && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Click "Generate Summary" for an AI-written narrative about your class performance, strengths, and priorities.
+            </p>
+          )}
+          {aiSummaryLoading && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
+              <p className="text-sm text-gray-500">Analysing class data with AI…</p>
+            </div>
+          )}
+          {aiSummaryError && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-4 py-2">{aiSummaryError}</p>
+          )}
+          {aiSummary && <SimpleMarkdown text={aiSummary} />}
+        </div>
       </div>
       </>)}
 

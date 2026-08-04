@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Trash2, Edit3, Loader2, X, Plus, CheckCircle, HelpCircle } from 'lucide-react';
+import { BookOpen, Trash2, Edit3, Loader2, X, Plus, CheckCircle, HelpCircle, Sparkles, Brain } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -24,6 +24,8 @@ const PracticeQuestions = () => {
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const selectedAllocation = useMemo(
     () => allocations.find((item) => item._id === selectedAllocationId) || null,
@@ -149,6 +151,45 @@ const PracticeQuestions = () => {
       setError(err.message || 'Failed to save question');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!selectedAllocation) { setError('Select an allocation first'); return; }
+    const headers = getAuthHeaders();
+    if (!headers) { setError('Login required'); return; }
+    setAiGenerating(true);
+    setAiError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/quiz-generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          subject: selectedAllocation.subjectId?.name || '',
+          topic: selectedAllocation.subjectId?.name || '',
+          gradeLevel: selectedAllocation.classId?.name || '',
+          count: 1,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'AI request failed');
+      const first = Array.isArray(data?.data?.questions) ? data.data.questions[0] : null;
+      if (first) {
+        setQuestionType('mcq');
+        setQuestionText(first.questionText || '');
+        const opts = (first.options || []).map((o) => (typeof o === 'string' ? o : o.text || ''));
+        setOptions([...opts, '', '', '', ''].slice(0, 4));
+        const correctOpt = (first.options || []).find((o) => o.isCorrect);
+        setCorrectAnswer(typeof correctOpt === 'string' ? correctOpt : correctOpt?.text || '');
+        setExplanation(first.explanation || '');
+      } else if (data?.data?.raw) {
+        setAiError('AI returned unstructured text — try again or edit below.');
+        setQuestionText(data.data.raw.slice(0, 300));
+      }
+    } catch (err) {
+      setAiError(err.message || 'Failed to generate question');
+    } finally {
+      setAiGenerating(false);
     }
   };
 
@@ -361,7 +402,10 @@ const PracticeQuestions = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            {aiError && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{aiError}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
               <button
                 onClick={handleSave}
                 disabled={saving}
@@ -376,6 +420,16 @@ const PracticeQuestions = () => {
                 className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 {editingId ? 'Cancel Edit' : 'Clear'}
+              </button>
+              <button
+                onClick={handleAIGenerate}
+                type="button"
+                disabled={aiGenerating || !selectedAllocation}
+                title={!selectedAllocation ? 'Select an allocation first' : 'Generate a question with AI'}
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl shadow-md shadow-violet-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
+              >
+                {aiGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {aiGenerating ? 'Generating…' : 'AI Generate'}
               </button>
             </div>
           </div>

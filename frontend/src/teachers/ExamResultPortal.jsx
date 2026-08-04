@@ -3,7 +3,7 @@ import { useParams, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   CalendarDays, CheckCircle2, Clock3, Edit2,
-  GraduationCap, Loader2, Save, Search, Trash2, X,
+  GraduationCap, Loader2, Save, Search, Trash2, X, Brain, Sparkles,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -147,6 +147,10 @@ const ExamResultPortal = () => {
   const [editResultForm, setEditResultForm] = useState(EMPTY_RESULT);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const [aiAnalysis, setAiAnalysis] = useState('');
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisError, setAiAnalysisError] = useState('');
+
   // ── API helper ─────────────────────────────────────────────
   const apiFetch = useCallback(async (path, opts = {}) => {
     const h = { Authorization: `Bearer ${token}`, ...(opts.headers || {}) };
@@ -268,6 +272,64 @@ const ExamResultPortal = () => {
     const passRate = results.length ? Math.round((pass / results.length) * 100) : 0;
     return { total, published, completed, upcoming, passRate };
   }, [exams, results]);
+
+  const generateAnalysis = async () => {
+    setAiAnalysisLoading(true);
+    setAiAnalysisError('');
+    setAiAnalysis('');
+    try {
+      // Build wrong-answer patterns from results grouped by exam
+      const examMap = {};
+      results.forEach((r) => {
+        const examTitle = r.examId?.title || 'Exam';
+        const subject = r.examId?.subject || subjectOptions[0]?.name || 'General';
+        const max = r.examId?.marks || 100;
+        const pct = max > 0 ? Math.round((r.marks / max) * 100) : 0;
+        if (String(r.status).toLowerCase() === 'fail' || pct < 50) {
+          const key = `${examTitle}|${subject}`;
+          if (!examMap[key]) examMap[key] = { topic: examTitle, subject, wrongAnswer: 'Below 50%', count: 0, pct: 0 };
+          examMap[key].count += 1;
+        }
+      });
+      const patterns = Object.values(examMap).map((p) => ({
+        ...p,
+        pct: results.length > 0 ? Math.round((p.count / results.length) * 100) : 0,
+      }));
+      if (!patterns.length) {
+        setAiAnalysis('No failing results to analyse — great performance across all exams!');
+        return;
+      }
+      const subject = subjectOptions[0]?.name || 'General';
+      const res = await fetch(`${API_BASE}/api/ai-teacher/misconception-report`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, wrongAnswerPatterns: patterns }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'AI request failed');
+      setAiAnalysis(payload.data?.content || '');
+    } catch (err) {
+      setAiAnalysisError(err.message || 'Failed to generate analysis');
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  };
+
+  const SimpleMarkdown = ({ text }) => {
+    if (!text) return null;
+    return (
+      <div className="space-y-1 text-sm text-gray-700 leading-relaxed">
+        {text.split('\n').map((line, i) => {
+          if (/^##\s/.test(line)) return <p key={i} className="font-bold text-gray-900 mt-3 first:mt-0">{line.replace(/^##\s/, '')}</p>;
+          if (/^\*\*(.+)\*\*/.test(line)) return <p key={i} className="font-semibold text-gray-800">{line.replace(/\*\*/g, '')}</p>;
+          if (/^[-•]\s/.test(line)) return <p key={i} className="pl-3 before:content-['•'] before:mr-2 before:text-indigo-400">{line.replace(/^[-•]\s/, '').replace(/\*\*/g, '')}</p>;
+          if (/^\d+\.\s/.test(line)) return <p key={i} className="pl-3">{line.replace(/\*\*/g, '')}</p>;
+          if (!line.trim()) return <div key={i} className="h-1" />;
+          return <p key={i}>{line.replace(/\*\*/g, '')}</p>;
+        })}
+      </div>
+    );
+  };
 
   // ── Handlers ──────────────────────────────────────────────
   const handleCreateExam = async (e) => {
@@ -630,6 +692,43 @@ const ExamResultPortal = () => {
           ))}
         </div>
       </Card>
+
+      {/* ── 6. AI Post-Exam Analysis ─────────────────────── */}
+      <div className="mb-5 rounded-2xl border border-indigo-200 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3.5">
+          <div className="flex items-center gap-2">
+            <Brain size={15} className="text-indigo-600" />
+            <span className="text-sm font-semibold text-indigo-900">AI Exam Analysis</span>
+          </div>
+          <button
+            type="button"
+            onClick={generateAnalysis}
+            disabled={aiAnalysisLoading || !results.length}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
+          >
+            {aiAnalysisLoading
+              ? <><Loader2 size={12} className="animate-spin" /> Analysing…</>
+              : <><Sparkles size={12} /> Analyse Results</>}
+          </button>
+        </div>
+        <div className="px-4 py-4 bg-[#fafbfc]">
+          {!aiAnalysis && !aiAnalysisLoading && !aiAnalysisError && (
+            <p className="py-4 text-center text-sm text-slate-400">
+              Click "Analyse Results" to get AI insights on misconceptions and re-teaching priorities.
+            </p>
+          )}
+          {aiAnalysisLoading && (
+            <div className="flex flex-col items-center gap-3 py-8">
+              <Loader2 size={28} className="animate-spin text-indigo-400" />
+              <p className="text-sm text-slate-500">Identifying misconception patterns…</p>
+            </div>
+          )}
+          {aiAnalysisError && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-4 py-2">{aiAnalysisError}</p>
+          )}
+          {aiAnalysis && <SimpleMarkdown text={aiAnalysis} />}
+        </div>
+      </div>
 
       {/* ── Edit Exam Modal ──────────────────────────────── */}
       <AnimatePresence>

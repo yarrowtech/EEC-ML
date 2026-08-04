@@ -1,8 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const axios = require('axios');
 const authTeacher = require('../middleware/authTeacher');
 const Rubric = require('../models/Rubric');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+// ── POST /api/rubrics/ai-generate — AI-powered rubric criteria generation ─────
+router.post('/ai-generate', authTeacher, async (req, res) => {
+  try {
+    const { subject, taskDescription, gradeLevel } = req.body || {};
+    if (!subject && !taskDescription) {
+      return res.status(400).json({ error: 'subject or taskDescription is required' });
+    }
+    const aiRes = await axios.post(
+      `${AI_SERVICE_URL}/generate/teacher`,
+      {
+        mode: 'rubric_generate',
+        subject: subject || taskDescription,
+        topic: taskDescription || `Assessment rubric for ${subject}`,
+        gradeLevel: gradeLevel || null,
+        context: null,
+        question: null,
+      },
+      { timeout: 120_000 }
+    );
+    const raw = (aiRes.data?.content || '').trim();
+    let rubric = null;
+    try {
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start !== -1 && end > start) rubric = JSON.parse(raw.slice(start, end + 1));
+    } catch (_) { /* fall through */ }
+    return res.json({ success: true, data: { rubric, raw } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // ── POST /api/rubrics — create rubric ─────────────────────────────────────────
 router.post('/', authTeacher, async (req, res) => {
