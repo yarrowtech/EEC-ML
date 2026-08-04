@@ -88,7 +88,17 @@ const writeAcademicCache = (key, data) => {
   }
 };
 
-const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = false }) => (
+const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = false }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && !isSubmitting) onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
+  return (
   <AnimatePresence>
     {isOpen && (
       <Motion.div
@@ -130,7 +140,8 @@ const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = 
       </Motion.div>
     )}
   </AnimatePresence>
-);
+  );
+};
 
 const AcademicSetup = ({ setShowAdminHeader }) => {
   const navigate = useNavigate();
@@ -613,6 +624,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showYearForm]);
+
+  /* Close the Add Classes modal on Escape */
+  useEffect(() => {
+    if (!showAddClassesModal) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setShowAddClassesModal(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showAddClassesModal]);
 
   const showTransientSuccess = (setter, message, durationMs = 4000) => {
     setter(message);
@@ -1543,7 +1564,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         >
           <div>
             <h1 className="flex items-center gap-2 text-[1.7rem] font-bold leading-tight text-gray-900">
-              Let's setup your school <Sparkles className="h-5 w-5 text-blue-400" />
+              Let's setup your school 
+              {/* <Sparkles className="h-5 w-5 text-blue-400" /> */}
             </h1>
             <p className="mt-1 text-sm text-gray-500">We'll guide you through everything in just a few simple steps.</p>
             {/* <img src="/academic_setup_image.png" alt="" className='inline w-[] h-20' /> */}
@@ -1584,7 +1606,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 type="button"
                 key={t.key}
                 onClick={() => setActiveTab(t.key)}
-                className="flex min-w-0 flex-col items-center gap-2 text-center"
+                className="flex min-w-0 flex-col items-center gap-2 text-center cursor-pointer"
               >
                 <div className="relative flex w-full items-center justify-center">
                   {idx < tabs.length - 1 && (
@@ -2071,9 +2093,24 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              {showAddClassesModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 h-full" onClick={() => setShowAddClassesModal(false)}>
-                  <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <AnimatePresence>
+                {showAddClassesModal && (
+                  <Motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 h-full"
+                    onClick={() => setShowAddClassesModal(false)}
+                  >
+                  <Motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 14 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 14 }}
+                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                    className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="border-b border-gray-100 bg-blue-100 px-5 pt-4 rounded-t-2xl">
                       <div className="flex items-center justify-between pb-3">
                         <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
@@ -2313,9 +2350,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         </button>
                       </form>
                     )}
-                  </div>
-                </div>
-              )}
+                  </Motion.div>
+                  </Motion.div>
+                )}
+              </AnimatePresence>
 
               <StepNav prevKey="years" nextKey="sections" />
             </Motion.div>
