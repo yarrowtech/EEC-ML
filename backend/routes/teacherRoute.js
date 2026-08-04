@@ -177,18 +177,19 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    if (!user.campusId) {
-      logAuthEvent(req, {
-        action: 'login',
-        outcome: 'failure',
-        userType: 'teacher',
-        identifier: username,
-        userId: user._id,
-        schoolId: user.schoolId,
-        reason: 'campusId missing',
-        statusCode: 400,
-      });
-      return res.status(400).json({ error: 'campusId is required for this account' });
+    if (!user.campusId && user.schoolId) {
+      const schoolDoc = await School.findById(user.schoolId).select('campuses').lean();
+      const campuses = schoolDoc?.campuses || [];
+      const defaultCampus = campuses.find((c) => c.campusType === 'Main') || campuses[0] || null;
+      if (defaultCampus) {
+        user.campusId = String(defaultCampus._id);
+        user.campusName = user.campusName || defaultCampus.name;
+        user.campusType = user.campusType || defaultCampus.campusType;
+        await TeacherUser.updateOne(
+          { _id: user._id },
+          { $set: { campusId: user.campusId, campusName: user.campusName, campusType: user.campusType } }
+        );
+      }
     }
     if (!user.employeeCode && user.schoolId) {
       user.employeeCode = await generateTeacherCode(user.schoolId);

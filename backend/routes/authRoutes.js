@@ -83,7 +83,22 @@ const tryAdmin = async ({ admin, password, rememberMe }) => {
 const tryTeacher = async ({ user, password, rememberMe }) => {
   if (!user) return null;
   if (!(await bcrypt.compare(password, user.password))) return null;
-  if (!user.campusId) return { errorStatus: 400, error: 'campusId is required for this account', userType: 'Teacher' };
+  if (!user.campusId && user.schoolId) {
+    const schoolDoc = await School.findById(user.schoolId).select('campuses').lean();
+    const campuses = schoolDoc?.campuses || [];
+    const defaultCampus = campuses.find((c) => c.campusType === 'Main') || campuses[0] || null;
+    if (defaultCampus) {
+      const updates = {
+        campusId: String(defaultCampus._id),
+        campusName: user.campusName || defaultCampus.name,
+        campusType: user.campusType || defaultCampus.campusType,
+      };
+      await TeacherUser.updateOne({ _id: user._id }, { $set: updates });
+      user.campusId = updates.campusId;
+      user.campusName = updates.campusName;
+      user.campusType = updates.campusType;
+    }
+  }
   if (!user.employeeCode && user.schoolId) {
     runInBackground(async () => {
       const employeeCode = await generateTeacherCode(user.schoolId);

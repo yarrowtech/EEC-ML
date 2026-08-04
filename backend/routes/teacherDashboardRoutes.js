@@ -534,24 +534,95 @@ router.get('/allocations', authTeacher, async (req, res) => {
       return res.status(400).json({ error: 'schoolId and teacherId are required' });
     }
 
-    let items = await TeacherAllocation.find({
-      schoolId,
-      ...(campusId
-        ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
-        : {}),
-      teacherId,
-    })
+    // campusId-aware filter: always include null-campusId records so teachers
+    // created by school-level admins (campusId: null) still see their allocations.
+    const campusFilter = campusId
+      ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : {};
+
+    let items = await TeacherAllocation.find({ schoolId, ...campusFilter, teacherId })
       .populate('subjectId', 'name code classId')
       .populate('classId', 'name academicYearId')
       .populate('sectionId', 'name classId')
       .sort({ createdAt: -1 })
       .lean();
 
+    // For class-teacher allocations (subjectId: null), supplement with subjects
+    // from the timetable for that class/section, then fall back to the teacher's
+    // registered subject field so the portal always shows something meaningful.
+    const classTeacherItems = items.filter((a) => !a.subjectId);
+    if (classTeacherItems.length) {
+      const teacher = await TeacherUser.findById(teacherId).select('subject').lean();
+      const fallbackSubjectName = teacher?.subject || '';
+
+      // Collect class/section pairs to look up timetable subjects
+      const pairKeys = new Set(
+        classTeacherItems.map((a) => `${a.classId?._id}_${a.sectionId?._id}`)
+      );
+
+      // Timetable lookup — use same $or campusId pattern so null-campusId timetables match
+      const timetableFilter = {
+        schoolId,
+        'entries.teacherId': new mongoose.Types.ObjectId(teacherId),
+        ...campusFilter,
+      };
+      const timetables = await Timetable.find(timetableFilter)
+        .populate('classId', 'name academicYearId')
+        .populate('sectionId', 'name classId')
+        .populate('entries.subjectId', 'name code classId')
+        .lean();
+
+      // Build a map of classId_sectionId → [subjectId objects]
+      const ttSubjectMap = new Map();
+      timetables.forEach((tt) => {
+        const key = `${tt.classId?._id}_${tt.sectionId?._id}`;
+        if (!pairKeys.has(key)) return;
+        (tt.entries || []).forEach((entry) => {
+          if (String(entry.teacherId) !== String(teacherId)) return;
+          if (!entry.subjectId) return;
+          if (!ttSubjectMap.has(key)) ttSubjectMap.set(key, new Map());
+          ttSubjectMap.get(key).set(String(entry.subjectId._id), entry.subjectId);
+        });
+      });
+
+      // Expand class-teacher allocations into one record per subject.
+      // If timetable has subjects → use those; otherwise use teacher.subject fallback.
+      const expanded = [];
+      for (const alloc of classTeacherItems) {
+        const key = `${alloc.classId?._id}_${alloc.sectionId?._id}`;
+        const ttSubjects = ttSubjectMap.has(key)
+          ? [...ttSubjectMap.get(key).values()]
+          : [];
+
+        if (ttSubjects.length) {
+          for (const subj of ttSubjects) {
+            expanded.push({ ...alloc, subjectId: subj, isClassTeacher: true });
+          }
+        } else if (fallbackSubjectName) {
+          // Synthetic subject from TeacherUser.subject registration field
+          expanded.push({
+            ...alloc,
+            subjectId: null,
+            subjectName: fallbackSubjectName,
+            isClassTeacher: true,
+          });
+        } else {
+          // No subject info at all — still include so class/section shows
+          expanded.push(alloc);
+        }
+      }
+
+      // Replace class-teacher items with expanded version; keep subject-level items as-is
+      const subjectItems = items.filter((a) => a.subjectId);
+      items = [...subjectItems, ...expanded];
+    }
+
+    // Timetable fallback: used only when TeacherAllocation has NO records at all.
     if (!items.length) {
       const timetableFilter = {
         schoolId,
-        'entries.teacherId': teacherId,
-        ...(campusId ? { campusId } : {}),
+        'entries.teacherId': new mongoose.Types.ObjectId(teacherId),
+        ...campusFilter,
       };
       const timetables = await Timetable.find(timetableFilter)
         .populate('classId', 'name academicYearId')
@@ -569,12 +640,7 @@ router.get('/allocations', authTeacher, async (req, res) => {
           if (!classId || !sectionId || !subjectId) return;
           const key = `${classId._id}_${sectionId._id}_${subjectId._id}`;
           if (map.has(key)) return;
-          map.set(key, {
-            _id: key,
-            classId,
-            sectionId,
-            subjectId,
-          });
+          map.set(key, { _id: key, classId, sectionId, subjectId });
         });
       });
       items = Array.from(map.values());
