@@ -348,7 +348,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
         {/* ── Mobile hamburger ── */}
         <button
           onClick={onOpenMobileSidebar}
-          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 transition-all shrink-0"
+          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 active:scale-95 transition-all shrink-0"
           aria-label="Open menu"
         >
           <Menu size={20} />
@@ -357,7 +357,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
         {/* ── School branding (mobile) ── */}
         <div className="flex items-center gap-2 lg:hidden min-w-0 flex-1">
           {schoolLogoSrc && (
-            <img src={schoolLogoSrc} alt={schoolName} className="w-7 h-7 rounded-lg object-cover shrink-0" />
+            <img src={schoolLogoSrc} alt={schoolName} className="w-7 h-7 rounded-lg object-cover shrink-0 ring-1 ring-gray-100" />
           )}
           {schoolName && (
             <span className="text-sm font-bold text-gray-800 truncate">{schoolName}</span>
@@ -384,7 +384,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                   ? `desktop-search-option-${activeSuggestionIndex}`
                   : undefined
               }
-              className="w-full pl-9 pr-24 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 focus:bg-white transition-all placeholder-gray-400"
+              className="w-full pl-9 pr-24 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 focus:bg-white transition-all placeholder-gray-400"
             />
             {searchQuery && (
               <button
@@ -397,7 +397,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
             )}
             <button
               type="submit"
-              className="absolute right-2 px-3 py-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg transition-colors"
+              className="absolute right-2 px-3 py-1 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white text-xs font-semibold rounded-lg transition-all"
             >
               Search
             </button>
@@ -408,7 +408,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
             <div
               id={DESKTOP_SEARCH_LISTBOX_ID}
               role="listbox"
-              className="absolute top-full left-0 right-0 mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl z-50 overflow-hidden"
+              className="absolute top-full left-0 right-0 mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
             >
               {suggestions.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-gray-400">No results</div>
@@ -450,8 +450,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
 
           {/* Live clock — desktop only */}
           <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-100">
-            <Clock size={14} className="text-gray-400 shrink-0" />
-            <span className="text-xs text-gray-500 font-medium tabular-nums">
+            <Clock size={14} className="text-indigo-400 shrink-0" />
+            <span className="text-xs text-gray-600 font-semibold tabular-nums">
               {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             <span className="text-xs text-gray-400">
@@ -461,7 +461,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
 
           {/* Mobile search toggle */}
           <button
-            className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 transition-all"
+            className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 active:scale-95 transition-all"
             onClick={() => setShowSearch((p) => !p)}
             aria-label="Search"
           >
@@ -472,19 +472,22 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
           <div className="relative" data-dropdown>
             <button
               onClick={handleToggleNotifications}
-              className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 border border-gray-100 transition-all"
+              className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 active:scale-95 border border-gray-100 transition-all"
               aria-label="Notifications"
             >
               <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                  <span className="relative min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
                 </span>
               )}
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-80 bg-white rounded-2xl shadow-xl ring-1 ring-black/5 border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                   <div className="flex items-center gap-2">
@@ -574,14 +577,14 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
           <div className="relative" data-dropdown>
             <button
               onClick={() => { setShowProfileMenu((p) => !p); setShowNotifications(false); }}
-              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-2xl border border-gray-100 hover:bg-gray-50 transition-all"
+              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-2xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 active:scale-[0.98] transition-all"
             >
               {/* Avatar */}
-              <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center overflow-hidden shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white shadow-sm">
                 {!isSuperAdmin && schoolLogoSrc ? (
                   <img src={schoolLogoSrc} alt={schoolName} className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-indigo-700 font-bold text-sm">{profileInit}</span>
+                  <span className="text-white font-bold text-sm">{profileInit}</span>
                 )}
               </div>
               {/* Name — desktop */}
@@ -593,7 +596,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-52 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl ring-1 ring-black/5 border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
                 {/* User card */}
                 <div className="px-4 py-3 border-b border-gray-50">
                   <p className="text-sm font-bold text-gray-900 truncate">{profileName}</p>
@@ -627,7 +630,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
 
       {/* ── Mobile search bar (expanded) ── */}
       {showSearch && (
-        <div ref={mobileSearchRef} className="lg:hidden px-4 pb-3">
+        <div ref={mobileSearchRef} className="lg:hidden px-4 pb-3 animate-in fade-in slide-in-from-top-1 duration-150">
           <form className="relative flex items-center" onSubmit={handleSearch}>
             <Search className="absolute left-3 w-4 h-4 text-gray-400 pointer-events-none" />
             <input
@@ -647,12 +650,12 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                   ? `mobile-search-option-${activeSuggestionIndex}`
                   : undefined
               }
-              className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all"
+              className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 focus:bg-white transition-all"
             />
             <button
               type="button"
               onClick={() => { setShowSearch(false); setSearchQuery(''); setShowSuggestions(false); setActiveSuggestionIndex(-1); }}
-              className="absolute right-3 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 text-gray-400 hover:text-gray-600 active:scale-95 transition-transform"
             >
               <X size={16} />
             </button>
@@ -661,7 +664,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
             <div
               id={MOBILE_SEARCH_LISTBOX_ID}
               role="listbox"
-              className="mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl overflow-hidden"
+              className="mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
             >
               {suggestions.length > 0 ? (
                 <ul className="divide-y divide-gray-50">

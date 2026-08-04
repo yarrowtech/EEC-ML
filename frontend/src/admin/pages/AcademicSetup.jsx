@@ -192,9 +192,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   // Pagination
   const [yearPage, setYearPage] = useState(1);
   const [classPage, setClassPage] = useState(1);
-  const [sectionPage, setSectionPage] = useState(1);
+  const [sectionPage, setSectionPage] = useState(1); 
   const [subjectPage, setSubjectPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(4); // For classes, sections, subjects
+  const [yearItemsPerPage, setYearItemsPerPage] = useState(2); // For academic years
 
   // Bulk selection
   const [selectedYears, setSelectedYears] = useState([]);
@@ -584,8 +585,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     setShowAdminHeader?.(true);
     setError("");
     loadAcademicData().catch(handleApiError);
-    loadClassTeachers().catch(() => { });
+    loadClassTeachers().catch(() => {});
   }, [setShowAdminHeader]);
+
+  /* Close the Add Academic Year modal on Escape */
+  useEffect(() => {
+    if (!showYearForm) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setShowYearForm(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showYearForm]);
 
   const showTransientSuccess = (setter, message, durationMs = 4000) => {
     setter(message);
@@ -1393,6 +1404,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             onChange={(e) => setItemsPerPage(Number(e.target.value))}
             className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-200"
           >
+            <option value={5}>5</option>
             <option value={10}>10</option>
             <option value={25}>25</option>
             <option value={50}>50</option>
@@ -1568,36 +1580,45 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           {activeTab === "years" && (
             <div className="space-y-4">
               {/* Add Academic Year modal */}
-              {showYearForm && ( // This is the modal to update
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowYearForm(false)}>
-                  <div
+              <AnimatePresence>
+                {showYearForm && (
+                  <Motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 h-full"
+                    onClick={() => setShowYearForm(false)}
+                  >
+                  <Motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: 14 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: 14 }}
+                    transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                     className="max-h-[92vh] w-full max-w-3xl overflow-y-auto overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center justify-end px-4 pt-4">
+                    <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gray-100 px-6 pt-5 pb-4 sm:px-8">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-100">
+                          <Calendar className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-gray-900">Academic Year</h3>
+                          <p className="text-xs text-gray-500">Create the academic session your school will use.</p>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowYearForm(false)}
-                        className="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+                        className="rounded-lg p-1.5 text-gray-400 transition hover:bg-white hover:text-gray-600"
                       >
                         <X className="h-5 w-5" />
                       </button>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
                       {/* Left: form */}
-                      <div className="px-6 pb-6 pt-0 sm:px-8 sm:pb-8">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50">
-                            <Calendar className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <h3 className="text-base font-bold text-gray-900">Academic Year</h3>
-                            <p className="text-xs text-gray-500">Create the academic session your school will use.</p>
-                          </div>
-                        </div>
-
-                        <div className="my-5 border-t border-gray-100" />
-
+                      <div className="px-6 pb-6 pt-5 sm:px-8 sm:pb-8">
                         <form onSubmit={submitYear} className="space-y-4">
                           <div>
                             <label className="mb-1.5 block text-xs font-semibold text-gray-600">Academic Year Name</label>
@@ -1630,11 +1651,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
                           <div>
                             <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                               {[
                                 { value: "upcoming", label: "Upcoming" },
                                 { value: "active", label: "Active" },
-                                { value: "archived", label: "Archived" },
                               ].map((opt) => (
                                 <button
                                   key={opt.value}
@@ -1665,22 +1685,30 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             Make this the default academic year
                           </label>
 
-                          <div className="flex flex-col gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="flex items-center gap-1.5 text-xs text-gray-400">
+                          <div className="flex flex-col gap-3 border-t border-gray-100 pt-5 sm:items-center sm:justify-between">
+                            <p className="flex items-start gap-1.5 text-xs text-gray-400 text-left justify-start w-full">
                               <Info className="h-3.5 w-3.5" /> You can always edit these details later.
                             </p>
-                            <div className="flex items-center gap-2">
-                              <button
+                            <div className="flex items-center gap-2 w-full ">
+                              {/* <button
                                 type="button"
                                 onClick={saveYearAsDraft}
                                 disabled={isSubmitting}
                                 className="flex items-center gap-1.5 rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50"
                               >
                                 Save as Draft
-                              </button>
+                              </button> */}
                               <button type="submit" disabled={isSubmitting}
-                                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
-                                Save &amp; Continue <ArrowRight className="h-4 w-4" />
+                                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed w-full text-center">
+                                {isSubmitting ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                                  </>
+                                ) : (
+                                  <>
+                                    Save &amp; Continue <ArrowRight className="h-4 w-4" />
+                                  </>
+                                )}
                               </button>
                             </div>
                           </div>
@@ -1688,8 +1716,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       </div>
 
                       {/* Right: live preview */}
-                      <div className="relative overflow-hidden border-t border-gray-100 bg-gradient-to-br from-blue-500 to-indigo-600 p-6 text-white sm:border-l sm:border-t-0">
-                        <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-40 opacity-20" />
+                      <div className="relative overflow-hidden border-t border-gray-100 bg-blue-500/50 p-6 text-white sm:border-l sm:border-t-0">
+                        <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-full opacity-60" />
                         <div className="relative z-10">
                           <p className="flex items-center gap-1.5 text-xs font-bold text-white/80">
                             <Calendar size={16} /> Academic Year Preview
@@ -1715,9 +1743,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  </Motion.div>
+                  </Motion.div>
+                )}
+              </AnimatePresence>
 
 
               {/* Success banner */}
@@ -1736,7 +1765,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
                 {/* Current academic year card */}
-                <div className="relative overflow-hidden rounded-2xl bg-blue-500/50 p-6 shadow-lg shadow-blue-200/50">
+                <div className="relative overflow-hidden rounded-2xl bg-blue-500/50 p-6 text-white shadow-lg shadow-blue-200/50">
                   <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-20 w-full h-full object-cover" />
                   <div className="relative z-10">
                     <p className="flex items-center gap-1.5 text-xs font-bold">
@@ -1777,7 +1806,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
                 {/* Table Card */}
                 <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-blue-50/40 px-5 py-4">
                     <div>
                       <h3 className="text-sm font-bold text-gray-800">Academic Years</h3>
                       <p className="mt-0.5 text-xs text-gray-500">Below is the list of all academic years in your school.</p>
@@ -1785,7 +1814,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     <button
                       type="button"
                       onClick={() => setShowYearForm(true)}
-                      className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                      className="flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-95"
                     >
                       <Plus className="h-4 w-4" /> Add Academic Year
                     </button>
@@ -1972,6 +2001,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       </tbody>
                     </table>
                     {paginatedClasses.length === 0 && (
+                      // The EmptyState component is already present and will be displayed when there are no classes.
                       <EmptyState
                         search={searchClass}
                         entity="classes"
@@ -1980,14 +2010,15 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       />
                     )}
                   </div>
+                  {/* Add Pagination for Classes table */}
                   <Pagination currentPage={classPage} totalItems={sortedClasses.length} onPageChange={setClassPage} />
                 </div>
               </div>
 
               {showAddClassesModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setShowAddClassesModal(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 h-full" onClick={() => setShowAddClassesModal(false)}>
                   <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                    <div className="border-b border-gray-100 bg-blue-50/40 px-5 pt-4">
+                    <div className="border-b border-gray-100 bg-blue-100 px-5 pt-4 rounded-t-2xl">
                       <div className="flex items-center justify-between pb-3">
                         <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
                           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">2</span>
@@ -2010,7 +2041,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                               key={preset.key}
                               type="button"
                               onClick={() => setClassAddMode(preset.key)}
-                              className={`flex items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-xs font-semibold transition ${isActive ? "border-blue-500 bg-white text-blue-700" : "border-transparent text-gray-500 hover:bg-white/60 hover:text-gray-700"}`}
+                              className={`flex items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-xs font-semibold transition ${isActive ? "border-transparent bg-white text-blue-700" : "border-transparent text-gray-500 hover:bg-white/60 hover:text-gray-700"}`}
                             >
                               <PresetIcon className="h-3.5 w-3.5" /> {preset.title}
                             </button>
@@ -2080,13 +2111,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <form onSubmit={submitClassCustom} className="p-5 space-y-4">
                         <p className="text-xs text-gray-500">Type class names separated by commas — e.g. <span className="font-mono bg-gray-100 px-1 rounded">Nursery, LKG, UKG, 1, 2, 3</span></p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="md:col-span-2">
-                            <label className="mb-1 block text-xs font-medium text-gray-600">Class names (comma-separated)</label>
-                            <input type="text" value={classCustomInput}
-                              onChange={(e) => setClassCustomInput(e.target.value)}
-                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                              placeholder="Nursery, LKG, UKG, 1, 2, 3, 4, 5" required />
-                          </div>
                           <div>
                             <label className="mb-1 block text-xs font-medium text-gray-600">Academic Year</label>
                             <select value={classCustomYear} onChange={(e) => setClassCustomYear(e.target.value)}
@@ -2094,6 +2118,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                               <option value="">Select year</option>
                               {activeYears.map((y) => <option key={y._id} value={y._id}>{y.name}</option>)}
                             </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Class names (comma-separated)</label>
+                            <input type="text" value={classCustomInput}
+                              onChange={(e) => setClassCustomInput(e.target.value)}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                              placeholder="Nursery, LKG, UKG, 1, 2, 3, 4, 5" required />
                           </div>
                         </div>
                         {/* Preview chips */}
@@ -2631,7 +2662,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
                           {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
                           <td className="px-4 py-3 text-sm text-gray-500">
-                            {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "—"}
+                            {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "No Stream"}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sub.classId || "")] || "—"}</td>
                           <td className="px-4 py-3 text-right">
@@ -2896,11 +2927,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: "upcoming", label: "Upcoming" },
                   { value: "active", label: "Active" },
-                  { value: "archived", label: "Archived" },
                 ].map((opt) => (
                   <button
                     key={opt.value}
