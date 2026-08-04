@@ -5,6 +5,7 @@ import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
   FolderOpen, UserCheck, Sparkles, CheckCircle2, Check, ArrowRight, Info, Trophy, ListOrdered, Type,
+  RefreshCw,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -182,6 +183,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   // Loading
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Sorting
   const [yearSort, setYearSort] = useState({ field: "name", order: "asc" });
@@ -587,6 +589,20 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     loadAcademicData().catch(handleApiError);
     loadClassTeachers().catch(() => {});
   }, [setShowAdminHeader]);
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setError("");
+    try {
+      await Promise.all([loadAcademicData(), loadClassTeachers()]);
+      toast.success("Data Refreshed");
+    } catch (err) {
+      handleApiError(err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   /* Close the Add Academic Year modal on Escape */
   useEffect(() => {
@@ -1511,16 +1527,38 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ RENDER ═══════════════════════ */
 
   return (
-    <div className="min-h-screen p-4 md:p-6">
+    <Motion.div
+      className="min-h-screen p-4 md:p-6"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+    >
       <div className="mx-auto max-w-6xl space-y-6">
         {/* ─── Header ─── */}
-        <div className="relative overflow-hidden">
-          <h1 className="flex items-center gap-2 text-[1.7rem] font-bold leading-tight text-gray-900">
-            Let's setup your school <Sparkles className="h-5 w-5 text-blue-400" />
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">We'll guide you through everything in just a few simple steps.</p>
-          {/* <img src="/academic_setup_image.png" alt="" className='inline w-[] h-20' /> */}
-        </div>
+        <Motion.div
+          className="relative flex items-start justify-between gap-3 overflow-hidden"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <div>
+            <h1 className="flex items-center gap-2 text-[1.7rem] font-bold leading-tight text-gray-900">
+              Let's setup your school <Sparkles className="h-5 w-5 text-blue-400" />
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">We'll guide you through everything in just a few simple steps.</p>
+            {/* <img src="/academic_setup_image.png" alt="" className='inline w-[] h-20' /> */}
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            title="Refresh"
+            className="mt-1 flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </Motion.div>
 
         {/* ─── Error ─── */}
         {error && (
@@ -1530,7 +1568,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         )}
 
         {/* ─── Step pipeline (horizontal) ─── */}
-        <div className="grid w-full items-start gap-2" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+        <Motion.div
+          className="grid w-full items-start gap-2"
+          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+        >
           {tabs.map((t, idx) => {
             const isCurrent = activeTab === t.key;
             const isDone = t.count > 0 && !isCurrent;
@@ -1572,13 +1616,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </button>
             );
           })}
-        </div>
+        </Motion.div>
 
         <div className="space-y-4">
 
           {/* ═══════════════ YEARS TAB ═══════════════ */}
           {activeTab === "years" && (
-            <div className="space-y-4">
+            <Motion.div
+              key="years"
+              className="space-y-4"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               {/* Add Academic Year modal */}
               <AnimatePresence>
                 {showYearForm && (
@@ -1880,12 +1930,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </div>
               <StepNav prevKey={null} nextKey="classes" />
-            </div>
+            </Motion.div>
           )}
 
           {/* ═══════════════ CLASSES TAB ═══════════════ */}
           {activeTab === "classes" && (
-            <div className="space-y-4">
+            <Motion.div
+              key="classes"
+              className="space-y-4"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               {/* <StepHeader
                 icon={Layers}
                 step={2}
@@ -2262,9 +2318,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               )}
 
               <StepNav prevKey="years" nextKey="sections" />
-            </div>
+            </Motion.div>
           )}
-          
+
           {/* Add/Edit Class Modal */}
           <EditModal
             isOpen={showClassForm || editingClass !== null}
@@ -2289,7 +2345,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
           {/* ═══════════════ SECTIONS TAB ═══════════════ */}
           {activeTab === "sections" && (
-            <div className="space-y-4">
+            <Motion.div
+              key="sections"
+              className="space-y-4"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               <StepHeader
                 icon={BookOpen}
                 step={3}
@@ -2482,12 +2544,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
               </div>
               <StepNav prevKey="classes" nextKey="subjects" skippable />
-            </div>
+            </Motion.div>
           )}
 
           {/* ═══════════════ SUBJECTS TAB ═══════════════ */}
           {activeTab === "subjects" && (
-            <div className="space-y-4">
+            <Motion.div
+              key="subjects"
+              className="space-y-4"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               <StepHeader
                 icon={GraduationCap}
                 step={4}
@@ -2685,12 +2753,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
               </div>
               <StepNav prevKey="sections" nextKey="class-teachers" />
-            </div>
+            </Motion.div>
           )}
 
           {/* ═══════════════ CLASS TEACHERS TAB ═══════════════ */}
           {activeTab === "class-teachers" && (
-            <div className="space-y-4">
+            <Motion.div
+              key="class-teachers"
+              className="space-y-4"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            >
               <StepHeader
                 icon={UserCheck}
                 step={5}
@@ -2860,12 +2934,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </div>
               <StepNav prevKey="subjects" nextKey={null} skippable finishLabel="Finish Setup" />
-            </div>
+            </Motion.div>
           )}
 
           {/* ═══════════════ DONE ═══════════════ */}
           {activeTab === "done" && (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-[#DDE3EA] bg-white px-6 py-16 text-center shadow-sm">
+            <Motion.div
+              key="done"
+              className="flex flex-col items-center justify-center rounded-2xl border border-[#DDE3EA] bg-white px-6 py-16 text-center shadow-sm"
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            >
               <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-[#DCEFE3]">
                 <Trophy className="h-9 w-9 text-[#2E8B57]" />
               </div>
@@ -2896,7 +2976,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   Go to Dashboard <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
-            </div>
+            </Motion.div>
           )}
 
         </div>
@@ -3070,7 +3150,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           </div>
         </EditModal>
       </div>
-    </div>
+    </Motion.div>
   );
 };
 
