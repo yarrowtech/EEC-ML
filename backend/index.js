@@ -121,6 +121,8 @@ const { syncAllocationGroupThreads } = require('./utils/chatGroupProvisioning');
 const { startHolidayReminderScheduler } = require('./utils/holidayNotificationScheduler');
 const { startTeacherFeedbackReminderScheduler } = require('./utils/teacherFeedbackReminderScheduler');
 const { sendSpacedRepetitionNudges } = require('./services/engagementScorer');
+const readingAssessmentRoutes = require('./routes/readingAssessmentRoutes');
+const writingAssessmentRoutes = require('./routes/writingAssessmentRoutes');
 
 const fixChatThreadIndexes = async () => {
   try {
@@ -545,6 +547,8 @@ app.use('/api/achievements', achievementRoutes);
 app.use('/api/teaching-materials', uploadApiLimiter, teachingMaterialRoutes);
 app.use('/api/practice-papers', writeHeavyApiLimiter, practicePaperRoutes);
 app.use('/api/practice-sections', writeHeavyApiLimiter, practiceSectionRoutes);
+app.use('/api/reading-assessment', readingAssessmentRoutes);
+app.use('/api/writing-assessment', writingAssessmentRoutes);
 
 app.use("/api/uploads", uploadApiLimiter, uploadRoutes);
 app.use('/api', organizationRoutes);

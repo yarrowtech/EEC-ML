@@ -312,6 +312,36 @@ const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPo
 const authStudent = require('../middleware/authStudent');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const axios = require('axios');
+const StudentMemorySummary = require('../models/StudentMemorySummary');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const SESSION_SUMMARISE_TURN_THRESHOLD = 6; // summarise after 6+ messages in a conversation
+
+async function triggerSessionSummarise(studentId, schoolId, messages) {
+  try {
+    if (!messages || messages.length < SESSION_SUMMARISE_TURN_THRESHOLD) return;
+    const turns = messages.map((m) => `${m.role === 'assistant' ? 'Tutor' : 'Student'}: ${String(m.text || '').slice(0, 300)}`).join('\n');
+    const resp = await axios.post(
+      `${AI_SERVICE_URL}/generate/summarize-session`,
+      { conversation: turns },
+      { timeout: 60000 }
+    );
+    const { summary = '', keyInsights = [] } = resp.data || {};
+    if (!summary) return;
+    await StudentMemorySummary.findOneAndUpdate(
+      { studentId, schoolId },
+      {
+        $set: { summary, lastSummarizedAt: new Date() },
+        $addToSet: { keyInsights: { $each: keyInsights.slice(0, 5) } },
+        $inc: { sessionCount: 1 },
+      },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+  } catch {
+    // Non-critical — summarisation failure must not break conversation save
+  }
+}
 
 // Register Student
 router.post('/register', adminAuth, async (req, res) => {
@@ -1368,6 +1398,10 @@ router.put('/tutor-conversations/:clientId', authStudent, async (req, res) => {
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
+    // Fire-and-forget: summarise session into long-term memory when enough turns accumulate
+    triggerSessionSummarise(req.user.id, req.schoolId, cleanMessages).catch(() => {});
+
     res.json({ conversation });
     logStudentPortalEvent(req, {
       feature: 'ai_tutor',

@@ -2,11 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, Search, Loader, Play, NotebookPen,
-  CheckCircle, Clock, Award, Zap, FileText, Home, ArrowUpRight
+  CheckCircle, Clock, Award, Zap, FileText, Home, ArrowUpRight,
+  Mic, PenLine,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import PracticeTestInterface from './PracticeTestInterface';
 import { saveLearningActivity } from '../utils/learningContinuity';
+import ReadingPracticePage from './ReadingPracticePage';
+import WritingPracticePage from './WritingPracticePage';
 
 // Joins subject → chapter → topic into a single meta line, skipping blanks.
 const paperContextLine = (item) => {
@@ -35,10 +39,19 @@ const ContextBadges = ({ item }) => {
   );
 };
 
+const SUB_TABS = [
+  { key: 'papers', label: 'Practice Papers', icon: Zap, hint: 'MCQ tests & class work' },
+  { key: 'reading', label: 'Reading Practice', icon: Mic, hint: 'Read aloud & get scored' },
+  { key: 'writing', label: 'Writing Practice', icon: PenLine, hint: 'Write & get evaluated' },
+];
+
 const PracticePapersPortal = () => {
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
   const token = localStorage.getItem('token');
   const navigate = useNavigate();
+
+  // Sub-tab state
+  const [activeSubTab, setActiveSubTab] = useState('papers');
 
   // State
   const [papers, setPapers] = useState([]);
@@ -279,6 +292,65 @@ const PracticePapersPortal = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Sub-tab navigation */}
+        <div className="mb-6">
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-[#E7E3D9] bg-white/80 backdrop-blur-sm p-1.5 sm:p-2">
+            {SUB_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = tab.key === activeSubTab;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveSubTab(tab.key)}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-all ${
+                    active
+                      ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-200/60'
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className={`flex w-8 h-8 shrink-0 items-center justify-center rounded-lg ${
+                    active ? 'bg-white/20' : 'bg-indigo-50 text-indigo-500'
+                  }`}>
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <span className="min-w-0 hidden sm:block">
+                    <span className="block text-sm font-bold leading-tight truncate">{tab.label}</span>
+                    <span className={`block text-[11px] truncate ${active ? 'text-white/75' : 'text-gray-400'}`}>{tab.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Reading Practice tab */}
+        {activeSubTab === 'reading' && (
+          <Motion.div
+            key="reading"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <ReadingPracticePage />
+          </Motion.div>
+        )}
+
+        {/* Writing Practice tab */}
+        {activeSubTab === 'writing' && (
+          <Motion.div
+            key="writing"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <WritingPracticePage />
+          </Motion.div>
+        )}
+
+        {/* Practice Papers tab (existing content below) */}
+        {activeSubTab === 'papers' && (<>
+
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
@@ -514,6 +586,7 @@ const PracticePapersPortal = () => {
             </div>
           )}
         </section>
+        </>)}
       </div>
     </div>
   );

@@ -1,6 +1,11 @@
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# hf_xet binary wheel is not compatible with Python 3.14; force HTTP fallback
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logger import setup_logging
 from app.modules.admin.router import router as admin_router
+from app.modules.assessment.router import router as assessment_router
 from app.modules.chat.router import router as chat_router
 from app.modules.documents.router import router as ingest_router
+from app.modules.language_memory.router import router as memory_router
+from app.modules.speech.router import router as speech_router
 from app.modules.summaries.router import router as summaries_router
 
 setup_logging()
@@ -27,6 +35,9 @@ app.include_router(ingest_router)
 app.include_router(summaries_router)
 app.include_router(chat_router)
 app.include_router(admin_router)
+app.include_router(speech_router)
+app.include_router(assessment_router)
+app.include_router(memory_router)
 
 
 @app.get("/health")

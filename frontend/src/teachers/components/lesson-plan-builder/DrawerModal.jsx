@@ -13,6 +13,8 @@ import {
   FlaskConical,
   Lightbulb,
   ListChecks,
+  Mic,
+  PenLine,
   Play,
   Plus,
   RefreshCcw,
@@ -50,6 +52,7 @@ const STEPS = [
   { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
   { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
+  { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
   { key: 'publish',    label: 'Evaluate & Publish', icon: Send,           color: 'emerald' },
 ];
@@ -64,6 +67,7 @@ const stepAccent = {
   rose:    { ring: 'ring-rose-500',    text: 'text-rose-700 dark:text-rose-300',     banner: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'     },
   pink:    { ring: 'ring-pink-500',    text: 'text-pink-700 dark:text-pink-300',     banner: 'bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300'     },
   emerald: { ring: 'ring-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', banner: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  indigo:  { ring: 'ring-indigo-500',  text: 'text-indigo-700 dark:text-indigo-300',   banner: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'   },
 };
 
 const Field = ({ label, children }) => (
@@ -116,6 +120,18 @@ const DrawerModal = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
+
+  // Language Practice step state
+  const [langTab, setLangTab] = useState('reading'); // 'reading' | 'writing'
+  const [langSaving, setLangSaving] = useState(false);
+  const [langItems, setLangItems] = useState({ reading: [], writing: [] });
+  const [langLoaded, setLangLoaded] = useState(false);
+  const [readingForm, setReadingForm] = useState({
+    title: '', contentType: 'paragraph', content: '', difficulty: 'medium',
+  });
+  const [writingForm, setWritingForm] = useState({
+    title: '', promptType: 'essay', question: '', instructions: '', difficulty: 'medium', wordLimit: '',
+  });
 
   // Curriculum map topic picker
   const [curriculumTopics, setCurriculumTopics] = useState([]);
@@ -193,6 +209,29 @@ const DrawerModal = ({
       return next;
     });
   };
+
+  // Load existing reading materials & writing prompts when language step becomes active
+  React.useEffect(() => {
+    const isLangStep = STEPS[currentStep]?.key === 'language';
+    if (!isLangStep || langLoaded || !classId) return;
+    const hdrs = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` };
+    const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+    Promise.all([
+      fetch(`${base}/api/reading-assessment/teacher/materials`, { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${base}/api/writing-assessment/teacher/prompts`,   { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
+    ]).then(([rm, wp]) => {
+      // Filter to materials for this chapter only (by chapter title match or just show all if no chapter)
+      const chTitle = chapter?.title || '';
+      const filterByChapter = (arr) => chTitle
+        ? arr.filter((x) => !x.chapter || x.chapter === chTitle)
+        : arr;
+      setLangItems({
+        reading: filterByChapter(rm.data || []),
+        writing: filterByChapter(wp.data || []),
+      });
+      setLangLoaded(true);
+    });
+  }, [currentStep, langLoaded, classId, chapter?.title]);
 
   React.useEffect(() => {
     if (Number.isInteger(externalStep) && externalStep !== currentStep) {
@@ -682,6 +721,352 @@ const DrawerModal = ({
 
           </div>
         );
+
+      /* ─── LANGUAGE PRACTICE ─────────────────────────────────── */
+      case 'language': {
+        const subjectName = localStorage.getItem('selectedSubjectName') || '';
+
+        const saveReading = async () => {
+          if (!readingForm.title.trim() || !readingForm.content.trim()) {
+            toast.error('Title and passage are required');
+            return;
+          }
+          if (!classId || !sectionId) {
+            toast.error('Select class and section first');
+            return;
+          }
+          setLangSaving(true);
+          try {
+            const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+            const resp = await fetch(`${base}/api/reading-assessment/teacher/materials`, {
+              method: 'POST',
+              headers: authHdrs(),
+              body: JSON.stringify({
+                ...readingForm,
+                subject: subjectName,
+                chapter: chapter?.title || '',
+                classId,
+                sectionId,
+                isPublished: true,
+              }),
+            });
+            if (!resp.ok) throw new Error('Save failed');
+            const data = await resp.json();
+            setLangItems((prev) => ({ ...prev, reading: [data.data, ...prev.reading] }));
+            setReadingForm({ title: '', contentType: 'paragraph', content: '', difficulty: 'medium' });
+            toast.success('Reading passage saved & published to students');
+          } catch (err) {
+            toast.error(err.message || 'Save failed');
+          } finally {
+            setLangSaving(false);
+          }
+        };
+
+        const saveWriting = async () => {
+          if (!writingForm.title.trim() || !writingForm.question.trim()) {
+            toast.error('Title and prompt are required');
+            return;
+          }
+          if (!classId || !sectionId) {
+            toast.error('Select class and section first');
+            return;
+          }
+          setLangSaving(true);
+          try {
+            const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+            const resp = await fetch(`${base}/api/writing-assessment/teacher/prompts`, {
+              method: 'POST',
+              headers: authHdrs(),
+              body: JSON.stringify({
+                ...writingForm,
+                wordLimit: Number(writingForm.wordLimit) || 0,
+                subject: subjectName,
+                chapter: chapter?.title || '',
+                classId,
+                sectionId,
+                isPublished: true,
+              }),
+            });
+            if (!resp.ok) throw new Error('Save failed');
+            const data = await resp.json();
+            setLangItems((prev) => ({ ...prev, writing: [data.data, ...prev.writing] }));
+            setWritingForm({ title: '', promptType: 'essay', question: '', instructions: '', difficulty: 'medium', wordLimit: '' });
+            toast.success('Writing prompt saved & published to students');
+          } catch (err) {
+            toast.error(err.message || 'Save failed');
+          } finally {
+            setLangSaving(false);
+          }
+        };
+
+        const deleteItem = async (id, mode) => {
+          if (!confirm('Remove this item?')) return;
+          const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+          const url = mode === 'reading'
+            ? `${base}/api/reading-assessment/teacher/materials/${id}`
+            : `${base}/api/writing-assessment/teacher/prompts/${id}`;
+          await fetch(url, { method: 'DELETE', headers: authHdrs() }).catch(() => {});
+          setLangItems((prev) => ({ ...prev, [mode]: prev[mode].filter((x) => x._id !== id) }));
+          toast.success('Removed');
+        };
+
+        const DIFF_COLORS = {
+          easy: 'bg-emerald-100 text-emerald-700',
+          medium: 'bg-amber-100 text-amber-700',
+          hard: 'bg-red-100 text-red-700',
+        };
+
+        const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+        const selectCls = inputCls;
+
+        return (
+          <div className="space-y-4">
+            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
+              Add reading passages students will read aloud, or writing prompts they will respond to. Both are published instantly to the student portal.
+            </p>
+
+            {/* Sub-tab toggle */}
+            <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60 w-fit">
+              {[
+                { key: 'reading', label: 'Reading', icon: Mic },
+                { key: 'writing', label: 'Writing', icon: PenLine },
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setLangTab(key)}
+                  className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
+                    langTab === key
+                      ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  <Icon className="size-3.5" /> {label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── READING form ── */}
+            {langTab === 'reading' && (
+              <Card>
+                <SectionTitle icon={Mic} iconColor="text-indigo-500">New Reading Passage</SectionTitle>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Title *</label>
+                    <input
+                      className={inputCls}
+                      placeholder="e.g. The Tortoise and the Hare"
+                      value={readingForm.title}
+                      onChange={(e) => setReadingForm((f) => ({ ...f, title: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Type</label>
+                      <select
+                        className={selectCls}
+                        value={readingForm.contentType}
+                        onChange={(e) => setReadingForm((f) => ({ ...f, contentType: e.target.value }))}
+                      >
+                        {['story', 'paragraph', 'poem', 'article', 'dialogue'].map((t) => (
+                          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Difficulty</label>
+                      <select
+                        className={selectCls}
+                        value={readingForm.difficulty}
+                        onChange={(e) => setReadingForm((f) => ({ ...f, difficulty: e.target.value }))}
+                      >
+                        {['easy', 'medium', 'hard'].map((d) => (
+                          <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Passage *{' '}
+                      <span className="font-normal normal-case text-slate-400">
+                        ({readingForm.content.trim().split(/\s+/).filter(Boolean).length} words)
+                      </span>
+                    </label>
+                    <textarea
+                      className={`${inputCls} resize-y leading-7`}
+                      rows={6}
+                      placeholder="Paste or type the reading passage here…"
+                      value={readingForm.content}
+                      onChange={(e) => setReadingForm((f) => ({ ...f, content: e.target.value }))}
+                      style={{ fontFamily: 'Georgia, serif' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={saveReading}
+                    disabled={langSaving}
+                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Passage</>}
+                  </button>
+                </div>
+
+                {/* Existing passages for this chapter */}
+                {langItems.reading.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved Passages</p>
+                    {langItems.reading.map((item) => (
+                      <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.title}</p>
+                          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
+                            <span className="capitalize">{item.contentType}</span>
+                            <span>·</span>
+                            <span>{item.wordCount || 0} words</span>
+                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${DIFF_COLORS[item.difficulty] || ''}`}>
+                              {item.difficulty}
+                            </span>
+                            {item.isPublished && <span className="text-emerald-600 font-medium">Published</span>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteItem(item._id, 'reading')}
+                          className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* ── WRITING form ── */}
+            {langTab === 'writing' && (
+              <Card>
+                <SectionTitle icon={PenLine} iconColor="text-emerald-500">New Writing Prompt</SectionTitle>
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Title *</label>
+                    <input
+                      className={inputCls}
+                      placeholder="e.g. My Favourite Season"
+                      value={writingForm.title}
+                      onChange={(e) => setWritingForm((f) => ({ ...f, title: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Type</label>
+                      <select
+                        className={selectCls}
+                        value={writingForm.promptType}
+                        onChange={(e) => setWritingForm((f) => ({ ...f, promptType: e.target.value }))}
+                      >
+                        {['essay', 'paragraph', 'question', 'letter', 'creative'].map((t) => (
+                          <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Difficulty</label>
+                      <select
+                        className={selectCls}
+                        value={writingForm.difficulty}
+                        onChange={(e) => setWritingForm((f) => ({ ...f, difficulty: e.target.value }))}
+                      >
+                        {['easy', 'medium', 'hard'].map((d) => (
+                          <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Prompt / Question *</label>
+                    <textarea
+                      className={`${inputCls} resize-y`}
+                      rows={3}
+                      placeholder="e.g. Write an essay on global warming and its effects on the environment."
+                      value={writingForm.question}
+                      onChange={(e) => setWritingForm((f) => ({ ...f, question: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Instructions <span className="font-normal normal-case text-slate-400">(optional)</span></label>
+                    <textarea
+                      className={`${inputCls} resize-y`}
+                      rows={2}
+                      placeholder="e.g. Use paragraphs. Include an introduction and conclusion. Write 150–200 words."
+                      value={writingForm.instructions}
+                      onChange={(e) => setWritingForm((f) => ({ ...f, instructions: e.target.value }))}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Word Limit <span className="font-normal normal-case text-slate-400">(0 = no limit)</span></label>
+                    <input
+                      type="number"
+                      min={0}
+                      className={inputCls}
+                      placeholder="e.g. 200"
+                      value={writingForm.wordLimit}
+                      onChange={(e) => setWritingForm((f) => ({ ...f, wordLimit: e.target.value }))}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={saveWriting}
+                    disabled={langSaving}
+                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  >
+                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Prompt</>}
+                  </button>
+                </div>
+
+                {/* Existing prompts for this chapter */}
+                {langItems.writing.length > 0 && (
+                  <div className="mt-5 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved Prompts</p>
+                    {langItems.writing.map((item) => (
+                      <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.title}</p>
+                          <p className="mt-0.5 truncate text-[11px] text-slate-400">{item.question}</p>
+                          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
+                            <span className="capitalize">{item.promptType}</span>
+                            {item.wordLimit > 0 && <><span>·</span><span>{item.wordLimit} word limit</span></>}
+                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${DIFF_COLORS[item.difficulty] || ''}`}>
+                              {item.difficulty}
+                            </span>
+                            {item.isPublished && <span className="text-emerald-600 font-medium">Published</span>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteItem(item._id, 'writing')}
+                          className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+          </div>
+        );
+      }
 
       /* ─── TRYOUT ──────────────────────────────────────────────── */
       case 'tryout':

@@ -6,6 +6,11 @@ class Candidate(BaseModel):
     text: str
 
 
+class ConversationTurn(BaseModel):
+    role: str   # "user" | "assistant"
+    text: str
+
+
 class TutorGenerateRequest(BaseModel):
     mode: str
     subject: str
@@ -20,6 +25,13 @@ class TutorGenerateRequest(BaseModel):
     chapterTitle: str | None = None
     difficulty: str | None = None
     wrongAnswer: str | None = None
+    # Student personalisation fields
+    studentContext: str | None = None          # built by studentContextBuilder.js
+    conversationHistory: list[ConversationTurn] | None = None  # recent 3 turns
+
+
+class SummariseSessionRequest(BaseModel):
+    conversation: str   # raw joined conversation text
 
 
 class MasteryDimension(BaseModel):

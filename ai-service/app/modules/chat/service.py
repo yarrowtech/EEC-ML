@@ -494,6 +494,17 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         "at its first occurrence and skip all repeats. Keep the tone age-appropriate."
     )
 
+    # Inject student learning profile into system prompt for personalised responses.
+    # This is placed after the base rules so the LLM applies it as a behavioural lens.
+    if req.studentContext:
+        base_system = (
+            base_system
+            + f"\n\n{req.studentContext}\n\n"
+            "PERSONALISATION RULE: Use the student profile above to calibrate your response. "
+            "Match complexity, vocabulary, and depth to the student's current TIER. "
+            "Do not mention the profile or scores to the student — just let it shape how you explain."
+        )
+
     # Reinforce Socratic constraint at system level for homework_help so the LLM cannot ignore it.
     if req.mode == "homework_help":
         system = (

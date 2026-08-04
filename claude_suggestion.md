@@ -383,8 +383,7 @@
 
 ---
 
-### SECTION 6D — Admin Dashboard Tracking
-
+### SECTION 6D — Admin Dashboard Tracking [Done]
 | Item | Status | Notes |
 |------|--------|-------|
 | School-wide mastery view | ❌ MISSING | No mastery view in admin `Analytics.jsx` |

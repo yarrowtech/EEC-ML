@@ -54,6 +54,7 @@ import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
 import ClassNotes from './ClassNotes';
 import PracticeQuestions from './PracticeQuestions';
+import LanguagePracticeManager from './LanguagePracticeManager';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
 import ExamResultPortal from './ExamResultPortal';
@@ -105,6 +106,7 @@ const teachingSectionLinks = [
   { label: 'Lesson Planner Wizard', to: 'lesson-planner-wizard' },
   { label: 'Class Notes', to: 'class-notes' },
   { label: 'Practice Questions', to: 'practice-questions' },
+  { label: 'Language Practice', to: 'language-practice' },
   { label: 'Study Materials', to: 'study-materials' },
   { label: 'AI Teaching Assistant', to: 'ai-assistant' },
 ];
@@ -1561,6 +1563,7 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
                 <Route path="teaching/class-notes" element={<ClassNotes />} />
                 <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
+                <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
                 <Route path="teaching/study-materials" element={<TeacherAlcove />} />
                 <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
                 <Route path="assignments" element={<AssignmentPortal />} />
@@ -1633,6 +1636,7 @@ const TeacherPortalShell = () => {
               <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
               <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
               <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
+              <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
               <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
               <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
               <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />

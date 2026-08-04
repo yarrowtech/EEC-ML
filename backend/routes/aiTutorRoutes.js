@@ -6,6 +6,7 @@ const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
+const { buildStudentContext } = require('../utils/studentContextBuilder');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary'];
@@ -208,6 +209,23 @@ router.post('/generate', authStudent, async (req, res) => {
       materials,
     });
 
+    // Build student context for personalised LLM response — fire and forget on error
+    let studentContext = '';
+    let conversationHistory = [];
+    try {
+      const ctx = await buildStudentContext({
+        studentId,
+        schoolId,
+        subject: normalizeString(subject),
+        topicId: normalizeString(topic),
+        gradeLevel: student.grade ? `Grade ${student.grade}` : '',
+      });
+      studentContext = ctx.contextBlock;
+      conversationHistory = ctx.conversationHistory;
+    } catch {
+      // Non-critical — fall back to generic response if context build fails
+    }
+
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
       mode: normalizedMode,
       subject: normalizeString(subject) || 'General Knowledge',
@@ -222,6 +240,8 @@ router.post('/generate', authStudent, async (req, res) => {
       chapterTitle: resolvedChapterTitle,
       difficulty: normalizeString(difficulty) || null,
       wrongAnswer: normalizeString(wrongAnswer) || null,
+      studentContext: studentContext || null,
+      conversationHistory: conversationHistory.length ? conversationHistory : null,
     }, { timeout: 180000 });
 
     return res.json({

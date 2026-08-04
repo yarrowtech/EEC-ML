@@ -4,13 +4,13 @@ import random
 import re
 
 from fastapi import APIRouter, HTTPException
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import Runnable
 from langchain_ollama import ChatOllama
 
 from app.core.config import settings
-from app.modules.chat.schemas import LearningPathRequest, TeacherAIRequest, TutorGenerateRequest
+from app.modules.chat.schemas import LearningPathRequest, SummariseSessionRequest, TeacherAIRequest, TutorGenerateRequest
 from app.modules.chat.service import NOT_FOUND_MESSAGE, build_prompt, retrieve_relevant_chunks
 from app.modules.parser.cleaner import _strip_teacher_notes
 
@@ -47,20 +47,34 @@ _DEFAULT_TEMPERATURE = 0.7
 
 
 def _create_chain(mode: str = "") -> Runnable:
-    num_predict = (
-        settings.ollama_num_predict_extended
-        if mode in _LONG_OUTPUT_MODES
-        else settings.ollama_num_predict
-    )
     temperature = _MODE_TEMPERATURE.get(mode, _DEFAULT_TEMPERATURE)
-    llm = ChatOllama(
-        base_url=settings.ollama_url,
-        model=settings.ollama_model,
-        num_ctx=settings.ollama_num_ctx,
-        num_predict=num_predict,
-        temperature=temperature,
-        seed=random.randint(1, 2**31 - 1),  # prevent Ollama KV-cache reuse across requests
-    )
+
+    if settings.openrouter_api_key:
+        # Production: use OpenRouter API (any model, e.g. google/gemini-flash-1.5)
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(
+            base_url=settings.openrouter_base_url,
+            api_key=settings.openrouter_api_key,
+            model=settings.openrouter_model,
+            temperature=temperature,
+            max_tokens=settings.ollama_num_predict_extended if mode in _LONG_OUTPUT_MODES else settings.ollama_num_predict,
+        )
+    else:
+        # Development: use local Ollama
+        num_predict = (
+            settings.ollama_num_predict_extended
+            if mode in _LONG_OUTPUT_MODES
+            else settings.ollama_num_predict
+        )
+        llm = ChatOllama(
+            base_url=settings.ollama_url,
+            model=settings.ollama_model,
+            num_ctx=settings.ollama_num_ctx,
+            num_predict=num_predict,
+            temperature=temperature,
+            seed=random.randint(1, 2**31 - 1),  # prevent Ollama KV-cache reuse across requests
+        )
+
     return llm | StrOutputParser()
 
 
@@ -79,21 +93,70 @@ async def generate_tutor_content(req: TutorGenerateRequest) -> dict:
     context = _strip_teacher_notes("\n\n".join(relevant_chunks))
     system, user_prompt = build_prompt(req, context)
     chain = _create_chain(mode=req.mode)
+
+    # Build message list: system + optional prior conversation turns + current user prompt.
+    # Conversation history gives the LLM memory of what was discussed in this session.
+    messages: list = [SystemMessage(content=system)]
+    if req.conversationHistory:
+        for turn in req.conversationHistory:
+            if turn.role == "assistant":
+                messages.append(AIMessage(content=turn.text))
+            else:
+                messages.append(HumanMessage(content=turn.text))
+    messages.append(HumanMessage(content=user_prompt))
+
     try:
-        content = chain.invoke([
-            SystemMessage(content=system),
-            HumanMessage(content=user_prompt),
-        ])
+        content = chain.invoke(messages)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
+    active_model = settings.openrouter_model if settings.openrouter_api_key else settings.ollama_model
     return {
         "mode": req.mode,
-        "model": settings.ollama_model,
+        "model": active_model,
         "content": content,
         "groundedInMaterial": True,
         "noMaterialFound": False,
     }
+
+
+@router.post("/summarize-session")
+async def summarize_session(req: SummariseSessionRequest) -> dict:
+    """
+    Condenses a tutor conversation into a rolling memory summary and key insights.
+    Called fire-and-forget after a session crosses the turn threshold.
+    """
+    if not req.conversation or len(req.conversation.strip()) < 50:
+        return {"summary": "", "keyInsights": []}
+
+    system = (
+        "You are an educational memory assistant. Your job is to compress a student's tutoring "
+        "conversation into a short persistent memory so future tutoring sessions can be personalised.\n\n"
+        "From the conversation below, extract:\n"
+        "1. A 2-3 sentence SUMMARY of what the student learned, struggled with, and their general engagement level.\n"
+        "2. Up to 5 KEY INSIGHTS — short bullet facts about this student's learning style or knowledge gaps.\n\n"
+        "Return ONLY valid JSON in this exact format (no markdown fences):\n"
+        '{"summary": "...", "keyInsights": ["...", "..."]}\n\n'
+        "Rules:\n"
+        "- Do NOT include the student's name or any identifying information.\n"
+        "- Focus on learning patterns, not lesson content.\n"
+        "- Keep summary under 80 words. Keep each insight under 20 words."
+    )
+    user_prompt = f"Tutoring session transcript:\n\n{req.conversation[:4000]}"
+
+    chain = _create_chain(mode="summarize")
+    try:
+        raw = chain.invoke([SystemMessage(content=system), HumanMessage(content=user_prompt)])
+        # Strip markdown fences if the model wrapped it anyway
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        data = json.loads(cleaned)
+        return {
+            "summary": str(data.get("summary", ""))[:500],
+            "keyInsights": [str(i) for i in data.get("keyInsights", [])[:5]],
+        }
+    except Exception:
+        # JSON parse or LLM failure — return empty so the caller ignores it gracefully
+        return {"summary": "", "keyInsights": []}
 
 
 _BLOOM_LEVELS = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
