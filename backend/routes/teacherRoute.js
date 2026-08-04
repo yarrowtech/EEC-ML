@@ -49,7 +49,22 @@ router.post('/register', adminAuth, async (req, res) => {
     if (!resolvedSchoolId) {
       return res.status(400).json({ error: 'schoolId is required' });
     }
-    const resolvedCampusId = req.campusId || (req.isSuperAdmin ? req.body?.campusId : null);
+
+    // Resolve campusId — fall back to school's Main (or first) campus when admin has none
+    let resolvedCampusId = req.campusId || (req.isSuperAdmin ? req.body?.campusId : null);
+    let resolvedCampusName = req.isSuperAdmin ? req.body?.campusName : req.admin?.campusName;
+    let resolvedCampusType = req.isSuperAdmin ? req.body?.campusType : req.admin?.campusType;
+    if (!resolvedCampusId) {
+      const schoolDoc = await School.findById(resolvedSchoolId).select('campuses').lean();
+      const campuses = schoolDoc?.campuses || [];
+      const defaultCampus =
+        campuses.find((c) => c.campusType === 'Main') || campuses[0] || null;
+      if (defaultCampus) {
+        resolvedCampusId = String(defaultCampus._id);
+        resolvedCampusName = resolvedCampusName || defaultCampus.name;
+        resolvedCampusType = resolvedCampusType || defaultCampus.campusType;
+      }
+    }
 
     let adminUsername = req.admin?.username || '';
     if (!adminUsername && req.admin?.id) {
@@ -64,8 +79,8 @@ router.post('/register', adminAuth, async (req, res) => {
       initialPassword: password,
       schoolId: resolvedSchoolId,
       campusId: resolvedCampusId,
-      campusName: req.isSuperAdmin ? req.body?.campusName : req.admin?.campusName,
-      campusType: req.isSuperAdmin ? req.body?.campusType : req.admin?.campusType,
+      campusName: resolvedCampusName,
+      campusType: resolvedCampusType,
       employeeCode,
       name,
       gender: normalizeGender(gender),
