@@ -494,9 +494,11 @@ const ChatMessage = ({
   return (
   <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
     <div
-      className={`max-w-[78%] w-fit rounded-xl px-4 py-1 text-sm shadow-sm
-        ${isMine ? 'text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm'}`}
-      style={isMine ? { backgroundColor: t.color } : {}}
+      className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
+        ${isMine
+          ? 'text-white rounded-br-[4px] shadow-[0_2px_8px_rgba(37,99,235,0.25)]'
+          : 'bg-white text-[#0f172a] rounded-bl-[4px] border border-white/60'}`}
+      style={isMine ? { background: `linear-gradient(135deg, ${t.color}, ${t.hover})` } : {}}
     >
       {showSenderLabel && (
         <div
@@ -554,26 +556,28 @@ const ChatMessage = ({
           {links.map((url) => (
             <MessageLinkPreview key={url} url={url} isMine={isMine} theme={t} />
           ))}
-          <div className="whitespace-pre-wrap leading-relaxed break-words flex justify-between items-end">
-            {textParts.map((part, index) => (
-              part.type === 'link' ? (
-                <a
-                  key={`${part.href}-${index}`}
-                  href={part.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline break-all"
-                  style={{ color: isMine ? 'rgba(255,255,255,0.96)' : t.color }}
-                >
-                  {part.label}
-                </a>
-              ) : (
-                <React.Fragment key={`text-${index}`}>{part.value}</React.Fragment>
-              )
-            ))}
+          <div className="flex flex-wrap justify-between items-end gap-x-2">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap leading-relaxed break-words">
+              {textParts.map((part, index) => (
+                part.type === 'link' ? (
+                  <a
+                    key={`${part.href}-${index}`}
+                    href={part.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline break-all"
+                    style={{ color: isMine ? 'rgba(255,255,255,0.96)' : t.color }}
+                  >
+                    {part.label}
+                  </a>
+                ) : (
+                  <React.Fragment key={`text-${index}`}>{part.value}</React.Fragment>
+                )
+              ))}
+            </span>
             <span
-              className={`inline-flex items-center gap-1 ml-2 text-[11px] whitespace-nowrap align-baseline ${!isMine ? 'text-gray-400' : ''}`}
-              style={isMine ? { color: 'rgba(255,255,255,0.75)' } : {}}
+              className={`inline-flex items-center gap-1 ml-2 text-[11px] whitespace-nowrap align-baseline shrink-0 ${!isMine ? 'text-[#94a3b8]' : ''}`}
+              style={isMine ? { color: 'rgba(255,255,255,0.78)' } : {}}
             >
               {msg?.isEdited && <span>(edited)</span>}
               <span>{formatMessageTime(msg.createdAt || msg.ts)}</span>
@@ -639,6 +643,8 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
           src={other?.avatar}
           name={name}
           className="h-11 w-11 text-sm"
+          themeColor={t.color}
+          style={isActive ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${t.color}` } : {}}
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -646,7 +652,7 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
           <span className={`text-sm truncate ${unread > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
             {name}
           </span>
-          <span className="text-xs text-gray-400 ml-2 shrink-0">{formatTime(thread.lastMessageAt)}</span>
+          <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{formatTime(thread.lastMessageAt)}</span>
         </div>
         <div className="flex items-center justify-between mt-0.5">
           <span
@@ -657,7 +663,7 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
           </span>
           {unread > 0 && (
             <span
-              className="ml-2 shrink-0 h-5 min-w-5 px-1.5 rounded-full text-white text-xs flex items-center justify-center font-semibold"
+              className="ml-2 flex-shrink-0 h-5 min-w-[20px] px-1.5 rounded-full text-white text-xs flex items-center justify-center font-semibold"
               style={{ backgroundColor: t.color }}
             >
               {unread}
@@ -672,28 +678,22 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
 // ── ContactItem ────────────────────────────────────────────────────────────────
 const ContactItem = ({ contact, onClick, theme }) => {
   const t = theme || THEMES.blue;
-  const initials = getInitials(contact.name);
   return (
     <button
       onClick={onClick}
       className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
     >
-      <div
-        className="h-10 w-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0"
-        style={{ background: `linear-gradient(135deg, ${t.color}99, ${t.color})` }}
-      >
-        {initials}
-      </div>
+      <UserAvatar src={contact.avatar} name={contact.name} className="h-11 w-11 text-sm" themeColor={t.color} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-800 truncate">{contact.name}</div>
-        <div className="text-xs text-gray-500">{contact.subtitle}</div>
+        <div className="text-sm font-semibold text-gray-800 truncate">{contact.name}</div>
+        <div className="text-xs text-gray-500 truncate">{contact.subtitle || 'Student'}</div>
       </div>
-      <GraduationCap className="h-4 w-4 shrink-0" style={{ color: t.color }} />
+      <MessageSquare className="h-4 w-4 shrink-0" style={{ color: t.color }} />
     </button>
   );
 };
 
-const UserAvatar = ({ src, name, className = '' }) => {
+const UserAvatar = ({ src, name, className = '', themeColor = '#3b82f6', style = {} }) => {
   const [error, setError] = useState(false);
   const resolved = resolveImg(src);
   if (resolved && !error) {
@@ -703,11 +703,15 @@ const UserAvatar = ({ src, name, className = '' }) => {
         alt={name || 'User'}
         onError={() => setError(true)}
         className={`h-7 w-7 rounded-full object-cover ${className}`}
+        style={style}
       />
     );
   }
   return (
-    <div className={`h-7 w-7 rounded-full bg-blue-200 flex items-center justify-center text-xs font-semibold text-blue-800 ${className}`}>
+    <div
+      className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-semibold text-white ${className}`}
+      style={{ background: `linear-gradient(135deg, ${themeColor}bb, ${themeColor})`, ...style }}
+    >
       {getInitials(name || 'T')}
     </div>
   );
@@ -908,7 +912,7 @@ const TeacherChat = () => {
   const [typingUsers, setTypingUsers] = useState({});
   const [presenceByUser, setPresenceByUser] = useState({});
   const [isMobileView, setIsMobileView] = useState(false);
-  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'doodle');
+  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'plain');
   const [themeKey, setThemeKey]             = useState(() => localStorage.getItem('teacher_chat_theme')     || 'blue');
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState('');
@@ -1339,7 +1343,7 @@ const TeacherChat = () => {
 
   // ── Resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const check = () => setIsMobileView(window.innerWidth < 768);
+    const check = () => setIsMobileView(window.innerWidth < 1024);
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -1782,20 +1786,21 @@ const TeacherChat = () => {
           });
         }}
       />
-      <div className="h-full flex bg-gray-50 overflow-hidden">
+      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-4 lg:p-5 overflow-hidden">
+        <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full max-w-[1280px] max-h-[900px] flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
       {/* ── Sidebar ── */}
       {showSidebar && (
-        <div className="w-full md:w-[320px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full relative">
+        <div className="w-full lg:w-[320px] flex-shrink-0 bg-white/95 border-r border-[#e9edf2] flex flex-col h-full relative">
           {/* Header */}
-          <div className="px-4 py-4 border-b border-gray-100">
+          <div className="px-5 py-4 border-b border-[#e9edf2]">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.light }}>
+                <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.lighter }}>
                   <MessageSquare className="h-5 w-5" style={{ color: theme.color }} />
                 </div>
                 <div>
-                  <h1 className="font-bold text-gray-900 text-sm">Messages</h1>
-                  <p className="text-xs text-gray-500">Chat with your students</p>
+                  <h1 className="font-bold text-[#0f172a] text-sm">Messages</h1>
+                  <p className="text-xs text-[#64748b]">Chat with your students</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1818,7 +1823,7 @@ const TeacherChat = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 bg-[#f4f6fa] rounded-xl px-3 py-2 border border-transparent focus-within:border-blue-200">
               <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
               <input
                 value={query}
@@ -1831,7 +1836,7 @@ const TeacherChat = () => {
 
           {/* Contacts overlay */}
           {showContacts && (
-            <div className="absolute left-0 top-0 w-full h-full bg-white z-50 flex flex-col shadow-xl">
+            <div className="absolute inset-0 w-full h-full bg-white z-50 flex flex-col shadow-xl">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <h2 className="font-semibold text-gray-800 text-sm">New Conversation</h2>
                 <button onClick={() => { setShowContacts(false); setContactQuery(''); }}
@@ -1969,11 +1974,11 @@ const TeacherChat = () => {
           <div className="flex-1 overflow-y-auto">
             {loadingThreads ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
+                <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
               </div>
             ) : syncingThreads && filteredThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2">
-                <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
+                <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
                 <p className="text-xs text-gray-500">Loading conversations...</p>
               </div>
             ) : filteredThreads.length === 0 ? (
@@ -2003,10 +2008,10 @@ const TeacherChat = () => {
               ))
             )}
             {syncingThreads && filteredThreads.length > 0 && (
-              <div className="text-center px-4 py-2 border-t border-gray-100 bg-white/90 backdrop-blur-sm">
-                <div className="inline-flex items-center justify-center text-center gap-1.5 text-[11px] text-gray-500">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Syncing latest chats...
+              <div className="px-4 py-2 border-t border-gray-100 bg-white/90 backdrop-blur-sm">
+                <div className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-gray-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
+                  <span className="text-center">Syncing latest chats...</span>
                 </div>
               </div>
             )}
@@ -2017,7 +2022,7 @@ const TeacherChat = () => {
             <div className="flex items-center gap-2.5">
               <UserAvatar src={me?.avatar} name={me?.name || 'Teacher'} />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-700 truncate">{me?.name || 'Teacher'}</p>
+                <p className="text-xs font-semibold text-gray-700 truncate">{me?.name || 'Teacher'}</p>
                 <p className="text-xs text-gray-400">Teacher</p>
               </div>
               {totalUnreadCount > 0 && (
@@ -2036,11 +2041,11 @@ const TeacherChat = () => {
 
       {/* ── Main Chat Area ── */}
       {showMain && (
-        <div className="flex-1 flex flex-col h-full min-w-0">
+        <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white">
           {activeThreadId ? (
             <>
               {/* Header */}
-              <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between flex-shrink-0">
+              <div className="px-5 py-4 border-b border-[#e9edf2] bg-white/90 backdrop-blur-md flex items-center justify-between flex-shrink-0 sticky top-0 z-20">
                 <div className="flex items-center gap-3">
                   {isMobileView && (
                     <button onClick={() => { setActiveThreadId(null); activeThreadIdRef.current = null; }}
@@ -2048,21 +2053,42 @@ const TeacherChat = () => {
                       <ChevronLeft className="h-5 w-5 text-gray-500" />
                     </button>
                   )}
-                  <div
-                    className="shrink-0"
+                  <button
+                    type="button"
+                    className="shrink-0 focus:outline-none"
+                    title={isGroupActiveThread ? 'View group members' : 'View student profile'}
+                    onClick={() => {
+                      if (isGroupActiveThread) {
+                        setShowGroupMembersModal(true);
+                        return;
+                      }
+                      openStudentProfile();
+                    }}
                   >
                     <UserAvatar
                       src={activeThread?.otherParticipant?.avatar}
                       name={activeThread?.otherParticipant?.name || activeParticipantLabel}
-                      className="h-9 w-9 text-sm"
+                      className="h-11 w-11 text-sm hover:opacity-90 transition-opacity cursor-pointer"
+                      themeColor={theme.color}
+                      style={{ boxShadow: `0 0 0 2px white, 0 0 0 4px ${theme.color}` }}
                     />
-                  </div>
+                  </button>
                   <div>
-                    <div className="font-semibold text-gray-900 text-sm">
+                    <div className="font-semibold text-[#0f172a] text-[1.05rem] tracking-[-0.01em] flex items-center gap-2 flex-wrap">
                       {activeThread?.otherParticipant?.name || activeParticipantLabel}
+                      <span className="text-[0.6rem] font-semibold uppercase tracking-wide rounded-full px-2.5 py-0.5 bg-[#e9edf2] text-[#475569]">
+                        {activeParticipantLabel}
+                      </span>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      <span style={isTypingInActive ? { color: theme.color, fontWeight: 500 } : {}}>{activeParticipantStatus}</span>
+                    <div className="text-xs text-[#475569] flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={`h-2 w-2 rounded-full ${activeParticipantPresence?.online ? 'bg-green-500' : 'bg-slate-300'}`} aria-hidden="true" />
+                        <span style={isTypingInActive ? { color: theme.color, fontWeight: 500 } : {}}>{activeParticipantStatus}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[#e9edf2] bg-[#f4f6fa] px-2.5 py-0.5 text-[0.68rem] text-[#94a3b8]">
+                        <Lock className="h-3 w-3" aria-hidden="true" />
+                        End-to-end encrypted
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -2087,24 +2113,25 @@ const TeacherChat = () => {
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
-                className="relative flex-1 overflow-y-auto px-4 py-4"
-                style={wallpaperStyle}
+                className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
+                style={{ ...wallpaperStyle, backgroundColor: wallpaperKey === 'plain' ? '#fafcff' : undefined }}
               >
-                <div className="flex justify-center mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium">
-                    <Lock className="h-3 w-3" />
-                    Messages are end-to-end encrypted
-                  </span>
-                </div>
+                <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(#e9edf2 1px, transparent 1px)', backgroundSize: '24px 24px' }} aria-hidden="true" />
+                <div className="relative z-[1]">
                 {loadingMessages ? (
                   <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
+                    <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center bg-white p-5 rounded-2xl">
-                      <MessageSquare className="h-10 w-10 text-gray-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">No messages yet. Say hello!</p>
+                  <div className="flex flex-col items-center justify-center h-full gap-3">
+                    <UserAvatar
+                      src={activeThread?.otherParticipant?.avatar}
+                      name={activeThread?.otherParticipant?.name || activeParticipantLabel}
+                      className="h-16 w-16 text-lg"
+                    />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-gray-700">{activeThread?.otherParticipant?.name || activeParticipantLabel}</p>
+                      <p className="text-xs text-gray-400 mt-1">No messages yet — say hello!</p>
                     </div>
                   </div>
                 ) : (
@@ -2116,8 +2143,8 @@ const TeacherChat = () => {
                       return (
                         <React.Fragment key={msg._id}>
                           {showDateSeparator && (
-                            <div className="flex justify-center my-3">
-                              <span className="text-[11px] px-3 py-1 rounded-full bg-gray-200 text-gray-600 font-medium">
+                            <div className="flex justify-center my-3 relative z-[1]">
+                              <span className="text-[11px] px-4 py-1 rounded-full bg-[#f4f6fa] border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
                                 {formatDaySeparator(currentTs)}
                               </span>
                             </div>
@@ -2143,7 +2170,7 @@ const TeacherChat = () => {
                     })}
                     {isTypingInActive && (
                       <div className="flex justify-start mb-3">
-                        <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm">
+                        <div className="bg-white rounded-[16px] rounded-bl-[4px] border border-[#e9edf2] px-4 py-2.5 shadow-sm">
                           <div className="flex gap-1 items-center h-4">
                             <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                             <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -2166,12 +2193,13 @@ const TeacherChat = () => {
                     <ChevronDown className="h-4 w-4" />
                   </button>
                 )}
+                </div>
               </div>
 
               {/* Input */}
-              <div className="border-t border-gray-200 bg-white px-4 py-3 flex-shrink-0">
+              <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-5 pt-4 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-4 flex-shrink-0 sticky bottom-0 z-20">
                 <div className="flex items-end gap-2">
-                  <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5">
+                  <div className="flex-1 bg-[#f4f6fa] rounded-full border-[1.5px] border-[#e9edf2] px-4 py-2.5 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10">
                     <textarea
                       rows={1}
                       value={draft}
@@ -2183,22 +2211,24 @@ const TeacherChat = () => {
                         }
                       }}
                       placeholder="Type a message..."
-                      className="w-full resize-none bg-transparent text-sm focus:outline-none placeholder-gray-400 min-h-[20px] max-h-28"
+                      className="w-full resize-none bg-transparent text-sm text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] min-h-[20px] max-h-28"
+                      style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
                     />
                   </div>
                   <button
                     onClick={sendMessage}
                     disabled={!draft.trim()}
-                    className="h-10 w-10 rounded-full text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-                    style={{ backgroundColor: theme.color }}
+                    className="h-[46px] min-w-[46px] px-3 rounded-full text-white flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.02] active:scale-95 shrink-0 shadow-[0_2px_8px_rgba(37,99,235,0.2)]"
+                    style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}
                   >
                     <Send className="h-4 w-4" />
+                    <span className="hidden sm:inline text-sm font-semibold">Send</span>
                   </button>
                 </div>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-8">
+            <div className="flex-1 flex flex-col items-center justify-center bg-[#fafcff] p-8">
               <div className="text-center max-w-xs">
                 <div className="h-16 w-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: theme.light }}>
                   <MessageSquare className="h-8 w-8" style={{ color: theme.color }} />
@@ -2220,6 +2250,7 @@ const TeacherChat = () => {
           )}
         </div>
       )}
+        </div>
       </div>
     </>
   );
