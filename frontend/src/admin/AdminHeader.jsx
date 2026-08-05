@@ -13,9 +13,14 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../utils/authSession';
-import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import {
+  useDesktopNotificationBridge,
+} from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const API_BASE = (
+  import.meta.env.VITE_API_URL || window.location.origin
+).replace(/\/$/, '');
 const DESKTOP_SEARCH_LISTBOX_ID = 'admin-header-search-suggestions-desktop';
 const MOBILE_SEARCH_LISTBOX_ID = 'admin-header-search-suggestions-mobile';
 
@@ -89,6 +94,22 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
     }, 15_000);
 
     // Also re-fetch immediately when the user returns to the tab
+    const socket = window.io?.(API_BASE, {
+      transports: ['websocket', 'polling'],
+      auth: { token: localStorage.getItem('token') },
+    });
+
+    if (socket) {
+      socket.on('connect', () => console.log('%c[Socket.IO] Admin notifications connected!', 'color: #22c55e; font-weight: bold;'));
+      socket.on('disconnect', (reason) => console.warn('[Socket.IO] Admin notifications disconnected:', reason));
+      socket.on('connect_error', (err) => console.error('[Socket.IO] Admin notifications connection error:', err.message));
+
+      socket.on('new_notification', (notification) => {
+        console.log('Received new notification via WebSocket:', notification);
+        fetchNotifs(); // Re-fetch all notifications to update the list
+      });
+    }
+
     const onVisible = () => { if (document.visibilityState === 'visible') fetchNotifs(); };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -96,7 +117,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchNotifs]);
+  }, [fetchNotifs, isSuperAdmin]);
 
   const unreadCount = useMemo(
     () => notifications.filter((n) => !n?.isRead).length,

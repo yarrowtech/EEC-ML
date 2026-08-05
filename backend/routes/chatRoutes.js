@@ -510,6 +510,24 @@ const ensureTeacherCanAccessParent = async (req, parent) => {
   return students.some((student) => studentMatchesCombos(student, combos));
 };
 
+const emitChatMessageEvents = (io, { threadId, thread, message, senderId }) => {
+  if (!io || !threadId || !thread || !message) return;
+  const payload = typeof message.toObject === 'function' ? message.toObject() : message;
+
+  io.to(`thread:${threadId}`).emit('new-message', payload);
+
+  for (const participant of thread.participants || []) {
+    const participantId = String(participant?.userId || '');
+    if (!participantId || participantId === String(senderId || '')) continue;
+    io.to(`user:${participantId}`).emit('thread-updated', {
+      threadId,
+      lastMessage: payload?.text || '[Encrypted message]',
+      lastMessageAt: payload?.createdAt || new Date().toISOString(),
+      message: payload,
+    });
+  }
+};
+
 const markThreadMessagesSeen = async ({ threadId, schoolId, campusId, userId }) => {
   if (!threadId || !schoolId || !userId) return;
   const seenEntry = { userId, seenAt: new Date() };
@@ -1596,6 +1614,15 @@ router.post('/threads/:threadId/messages', async (req, res) => {
       hasEncrypted,
       hasPlainText: Boolean(plainText),
     });
+
+    const io = req.app.get('io');
+    emitChatMessageEvents(io, {
+      threadId,
+      thread,
+      message: msg,
+      senderId: userId,
+    });
+
     res.status(201).json(msg);
   } catch (err) {
     logStudentPortalError(req, {

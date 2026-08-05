@@ -34,6 +34,8 @@ import {
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
 
+const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
+
 const TEACHERS_CACHE_PREFIX = 'admin_teachers_cache_v1';
 const TEACHERS_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -282,23 +284,23 @@ const Teachers = ({setShowAdminHeader}) => {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const [teachersRes, attendanceRes, timetableRes, principalsRes, leavesRes] = await Promise.all([
-      fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/get-teachers`, {
+      fetch(`${API_BASE}/api/admin/users/get-teachers`, {
         method: 'GET',
         headers
       }),
-      fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teacher-attendance?month=${encodeURIComponent(monthKey)}`, {
+      fetch(`${API_BASE}/api/admin/users/teacher-attendance?month=${encodeURIComponent(monthKey)}`, {
         method: 'GET',
         headers
       }),
-      fetch(`${import.meta.env.VITE_API_URL}/api/timetable/all`, {
+      fetch(`${API_BASE}/api/timetable/all`, {
         method: 'GET',
         headers
       }),
-      fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/get-principals`, {
+      fetch(`${API_BASE}/api/admin/users/get-principals`, {
         method: 'GET',
         headers
       }),
-      fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teacher-leaves?status=Approved`, {
+      fetch(`${API_BASE}/api/admin/users/teacher-leaves?status=Approved`, {
         method: 'GET',
         headers
       })
@@ -402,7 +404,7 @@ const Teachers = ({setShowAdminHeader}) => {
   const fetchPrincipals = async () => {
     setLoadingPrincipals(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/get-principals`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/get-principals`, {
         headers: {
           'Content-Type': 'application/json',
           authorization: `Bearer ${localStorage.getItem('token')}`
@@ -424,7 +426,7 @@ const Teachers = ({setShowAdminHeader}) => {
     if (!principalId) return;
     setPrincipalCredLoadingId(principalId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/principals/${principalId}/credentials`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/principals/${principalId}/credentials`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -459,7 +461,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
     setPrincipalDeleteLoadingId(principalId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/principals/${principalId}`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/principals/${principalId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -637,7 +639,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
       const isEditMode = Boolean(editingTeacherId);
       const endpoint = isEditMode
-        ? `${import.meta.env.VITE_API_URL}/api/admin/users/teachers/${editingTeacherId}`
+        ? `${API_BASE}/api/admin/users/teachers/${editingTeacherId}`
         : `${import.meta.env.VITE_API_URL}/api/teacher/auth/register`;
       const method = isEditMode ? 'PUT' : 'POST';
 
@@ -693,7 +695,7 @@ const Teachers = ({setShowAdminHeader}) => {
     if (!teacherId) return;
     setCredentialLoadingId(teacherId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teachers/${teacherId}/credentials`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}/credentials`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -729,7 +731,7 @@ const Teachers = ({setShowAdminHeader}) => {
     if (!teacherId) return;
     setCredentialLoadingId(teacherId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teachers/${teacherId}/credentials`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}/credentials`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -774,7 +776,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
     setDeletingTeacherId(teacherId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teachers/${teacherId}`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -959,7 +961,7 @@ const Teachers = ({setShowAdminHeader}) => {
         throw new Error('No teacher rows found in the uploaded file.');
       }
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/bulk-create-users`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/bulk-create-users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1000,7 +1002,7 @@ const Teachers = ({setShowAdminHeader}) => {
     if (!teacherId) return;
     setPrincipalLoadingId(teacherId);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/teachers/${teacherId}/make-principal`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}/make-principal`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

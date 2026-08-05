@@ -50,9 +50,9 @@ import {
 } from "./components/StudentFormSections";
 import Swal from "sweetalert2";
 import * as XLSX from "xlsx";
-import CredentialGeneratorButton from "./components/CredentialGeneratorButton";
+import CredentialGeneratorButton from './components/CredentialGeneratorButton';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
 const escapeHtml = (value) => {
   const str = String(value ?? "");
