@@ -258,7 +258,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [editingSection, setEditingSection] = useState(null);
   const [editingSubject, setEditingSubject] = useState(null);
   const [savingClassTeacher, setSavingClassTeacher] = useState(false);
-  const [editingClassTeacherId, setEditingClassTeacherId] = useState(null);
+  const [editingClassTeacher, setEditingClassTeacher] = useState(null);
+  const [editClassTeacherForm, setEditClassTeacherForm] = useState({ teacherId: "", yearId: "", classId: "", sectionId: "" });
 
   // Search/filter
   const [yearSuccessMessage, setYearSuccessMessage] = useState("");
@@ -502,6 +503,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     return visibleSections.filter((s) => String(s.classId) === String(classTeacherForm.classId));
   }, [visibleSections, classTeacherForm.classId]);
 
+  const editClassTeacherClasses = useMemo(() => {
+    if (!editClassTeacherForm.yearId) return [];
+    return visibleClasses.filter((c) => String(c.academicYearId) === String(editClassTeacherForm.yearId));
+  }, [visibleClasses, editClassTeacherForm.yearId]);
+
+  const editClassTeacherSections = useMemo(() => {
+    if (!editClassTeacherForm.classId) return [];
+    return visibleSections.filter((s) => String(s.classId) === String(editClassTeacherForm.classId));
+  }, [visibleSections, editClassTeacherForm.classId]);
+
   const classRangeFromRaw = String(classRangeForm.from ?? "").trim();
   const classRangeToRaw = String(classRangeForm.to ?? "").trim();
   const classRangeFromNumber = Number(classRangeFromRaw);
@@ -528,7 +539,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     setSavingClassTeacher(true);
     setError("");
     try {
-      const allocationId = editingClassTeacherId || classTeacherAllocations.find(
+      const allocationId = classTeacherAllocations.find(
         (a) =>
           String(a.classId?._id || a.classId) === String(classTeacherForm.classId) &&
           String(a.sectionId?._id || a.sectionId) === String(classTeacherForm.sectionId)
@@ -553,8 +564,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await res.json().catch(() => ({}));
       await loadClassTeachers();
       setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" });
-      setEditingClassTeacherId(null);
-      toast.success(editingClassTeacherId ? "Class teacher updated." : "Class teacher saved.");
+      toast.success(allocationId ? "Class teacher updated." : "Class teacher saved.");
     } catch (err) {
       setError(err.message);
       toast.error(err.message);
@@ -563,18 +573,51 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     }
   };
 
-  const handleEditClassTeacher = (item) => {
+  const openEditClassTeacherModal = (item) => {
     const classId = item.classId?._id || item.classId;
     const cls = classes.find((c) => String(c._id) === String(classId));
     const yearId = cls?.academicYearId || "";
-    setClassTeacherForm({
+    setEditClassTeacherForm({
       teacherId: String(item.teacherId?._id || item.teacherId || ""),
       yearId: String(yearId),
       classId: String(classId),
       sectionId: String(item.sectionId?._id || item.sectionId || ""),
     });
-    setEditingClassTeacherId(item._id);
-    document.getElementById("class-teacher-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setEditingClassTeacher(item);
+  };
+
+  const handleUpdateClassTeacher = async (e) => {
+    e.preventDefault();
+    if (!editingClassTeacher) return;
+    if (!editClassTeacherForm.teacherId || !editClassTeacherForm.yearId || !editClassTeacherForm.classId || !editClassTeacherForm.sectionId) {
+      toast("Teacher, year, class, and section are required.", { icon: "⚠️" });
+      return;
+    }
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/teacher-allocations/${editingClassTeacher._id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({
+          teacherId: editClassTeacherForm.teacherId,
+          classId: editClassTeacherForm.classId,
+          sectionId: editClassTeacherForm.sectionId,
+          isClassTeacher: true,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Unable to update class teacher");
+      }
+      await loadClassTeachers();
+      setEditingClassTeacher(null);
+      toast.success("Class teacher updated.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const deleteClassTeacher = async (id) => {
@@ -2974,105 +3017,93 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 explain="Pick one teacher to be the main point of contact for a class and section. This step is optional — you can do it later too."
                 illustration="teachers"
               /> */}
-              <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-blue-400 ring-2 ring-blue-100" : "border-blue-200"}`}>
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">5</span>
-                    {editingClassTeacherId ? "Update Class Teacher" : "Assign Class Teacher"}
-                  </h3>
-                  {editingClassTeacherId && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-                      <Edit3 className="h-3 w-3" /> Editing assignment
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Teacher</label>
-                    <select
-                      value={classTeacherForm.teacherId}
-                      onChange={(e) => setClassTeacherForm((p) => ({ ...p, teacherId: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      required
-                    >
-                      <option value="">Select teacher</option>
-                      {teachers.map((t) => (
-                        <option key={t._id} value={t._id}>
-                          {t.name || t.username || t.employeeCode || 'Teacher'}
-                        </option>
-                      ))}
-                    </select>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+                {/* ─── Left: Assign Class Teacher ─── */}
+                <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">5</span>
+                      Assign Class Teacher
+                    </h3>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Year</label>
-                    <select
-                      value={classTeacherForm.yearId}
-                      onChange={(e) =>
-                        setClassTeacherForm((p) => ({ ...p, yearId: e.target.value, classId: "", sectionId: "" }))
-                      }
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      required
-                    >
-                      <option value="">Select year</option>
-                      {activeYears.map((y) => (
-                        <option key={y._id} value={y._id}>
-                          {y.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">Teacher</label>
+                      <select
+                        value={classTeacherForm.teacherId}
+                        onChange={(e) => setClassTeacherForm((p) => ({ ...p, teacherId: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        required
+                      >
+                        <option value="">Select teacher</option>
+                        {teachers.map((t) => (
+                          <option key={t._id} value={t._id}>
+                            {t.name || t.username || t.employeeCode || 'Teacher'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">Year</label>
+                      <select
+                        value={classTeacherForm.yearId}
+                        onChange={(e) =>
+                          setClassTeacherForm((p) => ({ ...p, yearId: e.target.value, classId: "", sectionId: "" }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        required
+                      >
+                        <option value="">Select year</option>
+                        {activeYears.map((y) => (
+                          <option key={y._id} value={y._id}>
+                            {y.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
+                      <select
+                        value={classTeacherForm.classId}
+                        onChange={(e) =>
+                          setClassTeacherForm((p) => ({ ...p, classId: e.target.value, sectionId: "" }))
+                        }
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        required
+                      >
+                        <option value="">Select class</option>
+                        {classTeacherClasses.map((c) => (
+                          <option key={c._id} value={c._id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">Section</label>
+                      <select
+                        value={classTeacherForm.sectionId}
+                        onChange={(e) => setClassTeacherForm((p) => ({ ...p, sectionId: e.target.value }))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        required
+                      >
+                        <option value="">Select section</option>
+                        {classTeacherSections.map((s) => (
+                          <option key={s._id} value={s._id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
-                    <select
-                      value={classTeacherForm.classId}
-                      onChange={(e) =>
-                        setClassTeacherForm((p) => ({ ...p, classId: e.target.value, sectionId: "" }))
-                      }
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      required
-                    >
-                      <option value="">Select class</option>
-                      {classTeacherClasses.map((c) => (
-                        <option key={c._id} value={c._id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Section</label>
-                    <select
-                      value={classTeacherForm.sectionId}
-                      onChange={(e) => setClassTeacherForm((p) => ({ ...p, sectionId: e.target.value }))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                      required
-                    >
-                      <option value="">Select section</option>
-                      {classTeacherSections.map((s) => (
-                        <option key={s._id} value={s._id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="mt-4 flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={savingClassTeacher}
-                    className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
-                  >
-                    {savingClassTeacher ? "Saving..." : editingClassTeacherId ? "Update Class Teacher" : "Save Class Teacher"}
-                  </button>
-                  {editingClassTeacherId ? (
+                  <div className="mt-4 flex flex-col gap-2">
                     <button
-                      type="button"
-                      onClick={() => { setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" }); setEditingClassTeacherId(null); }}
-                      className="rounded-lg border border-blue-300 px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                      type="submit"
+                      disabled={savingClassTeacher}
+                      className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
                     >
-                      Cancel Edit
+                      {savingClassTeacher ? "Saving..." : "Save Class Teacher"}
                     </button>
-                  ) : (
                     <button
                       type="button"
                       onClick={() => setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" })}
@@ -3080,60 +3111,59 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     >
                       Clear
                     </button>
-                  )}
-                </div>
-              </form>
+                  </div>
+                </form>
 
-              <div className="rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur p-5 shadow-sm">
-                <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-gray-800">
-                  <UserCheck className="h-4 w-4 text-blue-500" /> Current Class Teachers
-                </h3>
-                <div className="space-y-3">
-                  {classTeacherAllocations.length === 0 && (
-                    <EmptyState entity="class teachers" />
-                  )}
-                  {classTeacherAllocations.map((item) => (
-                    <div
-                      key={item._id}
-                      className={`flex items-center justify-between rounded-xl border px-4 py-3 transition ${editingClassTeacherId === item._id
-                          ? "border-blue-400 bg-blue-50"
-                          : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-sm">
-                          {String(item.teacherId?.name || item.teacherId?.employeeCode || "T").slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-800">
-                            {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Class {item.classId?.name || "—"} | Section {item.sectionId?.name || "—"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditClassTeacher(item)}
-                          className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                          title="Edit class teacher"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteClassTeacher(item._id)}
-                          disabled={deletingId === item._id}
-                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                          title="Remove class teacher"
-                        >
-                          {deletingId === item._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                {/* ─── Right: Current Class Teachers ─── */}
+                <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+                  <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                      <UserCheck className="h-4 w-4 text-blue-500" /> Current Class Teachers
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">{classTeacherAllocations.length}</span>
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Teacher</th>
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
+                          <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Section</th>
+                          <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {classTeacherAllocations.map((item) => (
+                          <tr key={item._id} className="transition hover:bg-blue-50/30">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2.5">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-bold text-white shadow-sm">
+                                  {String(item.teacherId?.name || item.teacherId?.employeeCode || "T").slice(0, 2).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium text-gray-900">
+                                  {item.teacherId?.name || item.teacherId?.employeeCode || "Teacher"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{item.classId?.name || "—"}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{item.sectionId?.name || "—"}</td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => openEditClassTeacherModal(item)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                  <Edit3 className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => deleteClassTeacher(item._id)} disabled={deletingId === item._id}
+                                  className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                  {deletingId === item._id ? <Loader2 className="h-4 w-4 animate-spin text-red-500" /> : <Trash2 className="h-4 w-4" />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {classTeacherAllocations.length === 0 && <EmptyState entity="class teachers" />}
+                  </div>
                 </div>
               </div>
               <StepNav prevKey="subjects" nextKey={null} skippable finishLabel="Finish Setup" />
@@ -3346,6 +3376,80 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 {SENIOR_SECONDARY_STREAM_OPTIONS.map((stream) => (
                   <option key={stream.value} value={stream.value}>
                     {stream.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </EditModal>
+
+        {/* Edit Class Teacher */}
+        <EditModal isOpen={editingClassTeacher !== null} onClose={() => setEditingClassTeacher(null)} title="Edit Class Teacher" onSubmit={handleUpdateClassTeacher} isSubmitting={isSubmitting}>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Teacher</label>
+              <select
+                value={editClassTeacherForm.teacherId}
+                onChange={(e) => setEditClassTeacherForm((p) => ({ ...p, teacherId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                required
+              >
+                <option value="">Select teacher</option>
+                {teachers.map((t) => (
+                  <option key={t._id} value={t._id}>
+                    {t.name || t.username || t.employeeCode || 'Teacher'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Year</label>
+              <select
+                value={editClassTeacherForm.yearId}
+                onChange={(e) =>
+                  setEditClassTeacherForm((p) => ({ ...p, yearId: e.target.value, classId: "", sectionId: "" }))
+                }
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                required
+              >
+                <option value="">Select year</option>
+                {activeYears.map((y) => (
+                  <option key={y._id} value={y._id}>
+                    {y.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
+              <select
+                value={editClassTeacherForm.classId}
+                onChange={(e) =>
+                  setEditClassTeacherForm((p) => ({ ...p, classId: e.target.value, sectionId: "" }))
+                }
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                required
+              >
+                <option value="">Select class</option>
+                {editClassTeacherClasses.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Section</label>
+              <select
+                value={editClassTeacherForm.sectionId}
+                onChange={(e) => setEditClassTeacherForm((p) => ({ ...p, sectionId: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                required
+              >
+                <option value="">Select section</option>
+                {editClassTeacherSections.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name}
                   </option>
                 ))}
               </select>
