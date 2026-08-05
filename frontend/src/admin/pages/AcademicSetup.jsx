@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
   FolderOpen, UserCheck, Sparkles, CheckCircle2, Check, ArrowRight, Info, Trophy, ListOrdered, Type,
-  RefreshCw,
+  RefreshCw, Loader2,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -143,9 +143,88 @@ const EditModal = ({ isOpen, onClose, title, children, onSubmit, isSubmitting = 
   );
 };
 
+const ClassFilterTabs = ({ tabs, activeId, onChange, countsByClassId }) => {
+  const scrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  };
+
+  useEffect(() => {
+    updateScrollState();
+    const el = scrollRef.current;
+    if (!el) return;
+    const onResize = () => updateScrollState();
+    el.addEventListener("scroll", updateScrollState);
+    window.addEventListener("resize", onResize);
+    const resizeObserver = new ResizeObserver(updateScrollState);
+    resizeObserver.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", onResize);
+      resizeObserver.disconnect();
+    };
+  }, [tabs.length]);
+
+  const scrollByAmount = (dir) => scrollRef.current?.scrollBy({ left: dir * 220, behavior: "smooth" });
+
+  return (
+    <div className="flex items-center gap-1 rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
+      {canScrollLeft && (
+        <button
+          type="button"
+          onClick={() => scrollByAmount(-1)}
+          className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      )}
+      <div ref={scrollRef} className="flex flex-1 gap-1 overflow-x-hidden scroll-smooth">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${activeId === tab.id
+                ? "bg-blue-100 text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+              }`}
+          >
+            {tab.name}
+            {tab.id !== "all" && (
+              <span
+                className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${activeId === tab.id
+                    ? "bg-blue-200 text-blue-700"
+                    : "bg-gray-200 text-gray-500"
+                  }`}
+              >
+                {countsByClassId[tab.id] || 0}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      {canScrollRight && (
+        <button
+          type="button"
+          onClick={() => scrollByAmount(1)}
+          className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 const AcademicSetup = ({ setShowAdminHeader }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("years");
+  const [selectedYearId, setSelectedYearId] = useState(null);
   const [years, setYears] = useState([]);
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
@@ -166,13 +245,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [seniorSecondaryForm, setSeniorSecondaryForm] = useState({
     standard: "11",
     stream: "science",
-    subjectsInput: "",
-    subjectTags: [],
   });
   const [sectionBulkForm, setSectionBulkForm] = useState({ selected: [], custom: "", classIds: [] });
   const [subjectTags, setSubjectTags] = useState([]);
   const [subjectTagInput, setSubjectTagInput] = useState("");
-  const [subjectTagClassIds, setSubjectTagClassIds] = useState([]);
+  const [assignClassId, setAssignClassId] = useState("");
+  const [assignSubjectIds, setAssignSubjectIds] = useState([]);
 
   // Edit states
   const [editingYear, setEditingYear] = useState(null);
@@ -207,7 +285,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [classPage, setClassPage] = useState(1);
   const [sectionPage, setSectionPage] = useState(1); 
   const [subjectPage, setSubjectPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(4); // For classes, sections, subjects
+  const [itemsPerPage, setItemsPerPage] = useState(5); // For classes, sections, subjects
   const [yearItemsPerPage, setYearItemsPerPage] = useState(2); // For academic years
 
   // Bulk selection
@@ -246,14 +324,27 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     () => new Set(activeYears.map((year) => String(year?._id || "")).filter(Boolean)),
     [activeYears]
   );
+  const selectedYear = useMemo(
+    () => years.find((y) => String(y?._id || "") === String(selectedYearId)) || null,
+    [years, selectedYearId]
+  );
+  const classCountByYearId = useMemo(() => {
+    const map = {};
+    classes.forEach((c) => {
+      const yearId = String(c?.academicYearId || "").trim();
+      if (yearId) map[yearId] = (map[yearId] || 0) + 1;
+    });
+    return map;
+  }, [classes]);
   const visibleClasses = useMemo(
     () =>
       classes.filter((item) => {
         const yearId = String(item?.academicYearId || "").trim();
+        if (selectedYearId) return yearId === String(selectedYearId);
         if (!yearId) return true;
         return activeYearIdSet.has(yearId);
       }),
-    [classes, activeYearIdSet]
+    [classes, activeYearIdSet, selectedYearId]
   );
   const visibleClassIdSet = useMemo(
     () => new Set(visibleClasses.map((item) => String(item?._id || "")).filter(Boolean)),
@@ -317,8 +408,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     ];
   }, [visibleClasses]);
 
+  const unassignedSubjects = useMemo(
+    () => subjects.filter((s) => !String(s?.classId || "").trim()),
+    [subjects]
+  );
+
+  const subjectClassTabs = useMemo(() => {
+    return [
+      { id: "all", name: "All Classes" },
+      { id: "unassigned", name: "Unassigned" },
+      ...visibleClasses.map((c) => ({ id: String(c._id), name: c.name })),
+    ];
+  }, [visibleClasses]);
+
   const subjectsByClass = useMemo(() => {
-    const map = {};
+    const map = { unassigned: unassignedSubjects.length };
     classes.forEach((c) => { map[String(c._id)] = 0; });
     subjects.forEach((s) => {
       const cId = String(s.classId || "");
@@ -327,7 +431,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       }
     });
     return map;
-  }, [subjects, classes]);
+  }, [subjects, classes, unassignedSubjects]);
 
   /* ─── Filtered data ─── */
   const filteredYears = years;
@@ -359,11 +463,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   const filteredSubjects = useMemo(() => {
     let list = visibleSubjects;
-    if (activeSubjectClassId !== "all") {
-      list = list.filter((s) => {
-        const classId = String(s.classId || "").trim();
-        return !classId || classId === activeSubjectClassId;
-      });
+    if (activeSubjectClassId === "unassigned") {
+      list = list.filter((s) => !String(s.classId || "").trim());
+    } else if (activeSubjectClassId !== "all") {
+      list = list.filter((s) => String(s.classId || "").trim() === activeSubjectClassId);
     }
     if (!searchSubject.trim()) return list;
     const q = searchSubject.toLowerCase();
@@ -485,6 +588,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       confirmButtonColor: "#dc2626",
     });
     if (!confirm.isConfirmed) return;
+    setDeletingId(id);
     try {
       const res = await fetch(`${API_BASE}/api/teacher-allocations/${id}`, {
         method: "DELETE",
@@ -495,10 +599,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         throw new Error(data.error || "Unable to delete");
       }
       await loadClassTeachers();
-      toast.success("Removed.");
+      Swal.fire({ title: "Deleted!", text: "Class teacher assignment has been removed.", icon: "success", timer: 2000, showConfirmButton: false });
     } catch (err) {
       setError(err.message);
-      toast.error(err.message);
+      Swal.fire({ title: "Error", text: err.message, icon: "error" });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -601,6 +707,14 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     loadClassTeachers().catch(() => {});
   }, [setShowAdminHeader]);
 
+  /* Jump back to page 1 whenever the underlying filter changes — otherwise a
+     class filter/search can leave the current page past the new (smaller)
+     result set, making the table look empty until the page is reset. */
+  useEffect(() => { setClassPage(1); }, [searchClass, selectedYearId]);
+  useEffect(() => { setSectionPage(1); }, [searchSection, activeClassId, selectedYearId]);
+  useEffect(() => { setSubjectPage(1); }, [searchSubject, activeSubjectClassId, selectedYearId]);
+  useEffect(() => { setAssignClassId(""); setAssignSubjectIds([]); }, [selectedYearId]);
+
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -694,6 +808,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const openClassAddMode = (mode) => {
     setClassAddMode(mode);
     setShowAddClassesModal(true);
+    if (selectedYearId) {
+      setClassRangeForm((p) => ({ ...p, academicYearId: selectedYearId }));
+      setClassCustomYear(selectedYearId);
+    }
   };
   const applyQuickClassPreset = (preset) => {
     if (preset.mode === "range") {
@@ -763,30 +881,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   const submitSeniorSecondaryStreamSetup = async (e) => {
     e.preventDefault();
-    if (!currentAcademicYear?._id) {
-      setError("No active academic year found. Please activate a session first.");
+    const targetYear = selectedYear || currentAcademicYear;
+    if (!targetYear?._id) {
+      toast("No active academic year found. Please activate a session first.", { icon: "⚠️" });
       return;
     }
 
     const standardValue = Number(seniorSecondaryForm.standard);
     if (![11, 12].includes(standardValue)) {
-      setError("Only Class 11 or Class 12 can be added from this setup.");
+      toast("Only Class 11 or Class 12 can be added from this setup.", { icon: "⚠️" });
       return;
     }
 
     const streamValue = String(seniorSecondaryForm.stream || "").trim().toLowerCase();
     if (!streamValue) {
-      setError("Select a stream.");
-      return;
-    }
-
-    const inlineSubjects = seniorSecondaryForm.subjectsInput
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const allSubjects = [...new Set([...seniorSecondaryForm.subjectTags, ...inlineSubjects])];
-    if (!allSubjects.length) {
-      setError("Add at least one subject.");
+      toast("Select a stream.", { icon: "⚠️" });
       return;
     }
 
@@ -797,93 +906,39 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     setIsSubmitting(true);
     setError("");
 
-    let classId = "";
-    let classCreated = false;
-
     try {
       const existingClass = classes.find(
         (item) =>
-          String(item.academicYearId || "") === String(currentAcademicYear._id) &&
+          String(item.academicYearId || "") === String(targetYear._id) &&
           Number(item.standard) === standardValue &&
           String(item.stream || "").toLowerCase() === streamValue
       );
 
       if (existingClass?._id) {
-        classId = String(existingClass._id);
-      } else {
-        const classRes = await fetch(`${API_BASE}/api/academic/classes`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({
-            name: className,
-            academicYearId: currentAcademicYear._id,
-            order: standardValue,
-            standard: standardValue,
-            stream: streamValue,
-          }),
-        });
-        const classData = await classRes.json().catch(() => ({}));
-        if (!classRes.ok) {
-          throw new Error(classData.error || "Unable to create class");
-        }
-        classId = String(classData?._id || "");
-        classCreated = true;
+        toast("This class already exists for the selected year.", { icon: "⚠️" });
+        return;
       }
 
-      if (!classId) throw new Error("Unable to resolve class for stream setup");
-
-      const existingSubjectNames = new Set(
-        subjects
-          .filter((item) => String(item.classId || "") === classId)
-          .map((item) => String(item.name || "").trim().toLowerCase())
-          .filter(Boolean)
-      );
-
-      let createdSubjects = 0;
-      let failedSubjects = 0;
-      let skippedSubjects = 0;
-
-      for (const subjectName of allSubjects) {
-        const key = subjectName.toLowerCase();
-        if (existingSubjectNames.has(key)) {
-          skippedSubjects += 1;
-          continue;
-        }
-        try {
-          const subjectRes = await fetch(`${API_BASE}/api/academic/subjects`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({
-              name: subjectName,
-              classId,
-              stream: streamValue,
-            }),
-          });
-          if (subjectRes.ok) {
-            createdSubjects += 1;
-            existingSubjectNames.add(key);
-          } else {
-            failedSubjects += 1;
-          }
-        } catch {
-          failedSubjects += 1;
-        }
+      const classRes = await fetch(`${API_BASE}/api/academic/classes`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          name: className,
+          academicYearId: targetYear._id,
+          order: standardValue,
+          standard: standardValue,
+          stream: streamValue,
+        }),
+      });
+      const classData = await classRes.json().catch(() => ({}));
+      if (!classRes.ok) {
+        throw new Error(classData.error || "Unable to create class");
       }
 
       await loadAcademicData();
-      setSeniorSecondaryForm({
-        standard: "11",
-        stream: "science",
-        subjectsInput: "",
-        subjectTags: [],
-      });
-      toast.success(
-        `${classCreated ? "Class created, " : ""}${createdSubjects} subject${createdSubjects !== 1 ? "s" : ""} added` +
-        `${skippedSubjects ? `, ${skippedSubjects} skipped` : ""}` +
-        `${failedSubjects ? `, ${failedSubjects} failed` : ""}.`
-      );
+      setSeniorSecondaryForm({ standard: "11", stream: "science" });
+      toast.success(`${className} created.`);
     } catch (err) {
-      setError(err.message || "Unable to complete stream setup");
       toast.error(err.message || "Unable to complete stream setup");
     } finally {
       setIsSubmitting(false);
@@ -918,33 +973,55 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     toast.success(`${created} section${created !== 1 ? "s" : ""} created${failed ? `, ${failed} failed` : ""}.`);
   };
 
-  /* ─── Bulk submit: subjects ─── */
+  /* ─── Bulk submit: subjects (school-wide catalog, unassigned) ─── */
   const submitSubjectsBulk = async (e) => {
     e.preventDefault();
     const extra = subjectTagInput.split(",").map((s) => s.trim()).filter(Boolean);
     const allNames = [...new Set([...subjectTags, ...extra])];
-    if (!allNames.length) { setError("Add at least one subject."); return; }
+    if (!allNames.length) { toast("Add at least one subject.", { icon: "⚠️" }); return; }
     setIsSubmitting(true);
     setError("");
     let created = 0, failed = 0;
-    const targetClasses = subjectTagClassIds.length > 0 ? subjectTagClassIds : [undefined];
-    for (const cId of targetClasses) {
-      for (const name of allNames) {
-        try {
-          const res = await fetch(`${API_BASE}/api/academic/subjects`, {
-            method: "POST", headers: authHeaders,
-            body: JSON.stringify({ name, classId: cId }),
-          });
-          if (res.ok) created++; else failed++;
-        } catch { failed++; }
-      }
+    for (const name of allNames) {
+      try {
+        const res = await fetch(`${API_BASE}/api/academic/subjects`, {
+          method: "POST", headers: authHeaders,
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) created++; else failed++;
+      } catch { failed++; }
     }
     await loadAcademicData();
     setIsSubmitting(false);
     setSubjectTags([]);
     setSubjectTagInput("");
-    setSubjectTagClassIds([]);
-    toast.success(`${created} subject${created !== 1 ? "s" : ""} created${failed ? `, ${failed} failed` : ""}.`);
+    toast.success(`${created} subject${created !== 1 ? "s" : ""} added to the catalog${failed ? `, ${failed} failed` : ""}.`);
+  };
+
+  /* ─── Assign existing unassigned subjects to a class ─── */
+  const submitAssignSubjects = async (e) => {
+    e.preventDefault();
+    if (!assignClassId) { toast("Select a class to assign subjects to.", { icon: "⚠️" }); return; }
+    if (!assignSubjectIds.length) { toast("Select at least one subject to assign.", { icon: "⚠️" }); return; }
+    setIsSubmitting(true);
+    setError("");
+    let assigned = 0, failed = 0;
+    for (const subjectId of assignSubjectIds) {
+      const subject = subjects.find((s) => String(s._id) === subjectId);
+      if (!subject) { failed++; continue; }
+      try {
+        const res = await fetch(`${API_BASE}/api/academic/subjects/${subjectId}`, {
+          method: "PUT", headers: authHeaders,
+          body: JSON.stringify({ name: subject.name, code: subject.code, classId: assignClassId }),
+        });
+        if (res.ok) assigned++; else failed++;
+      } catch { failed++; }
+    }
+    await loadAcademicData();
+    setIsSubmitting(false);
+    setAssignSubjectIds([]);
+    const className = visibleClasses.find((c) => String(c._id) === assignClassId)?.name || "the class";
+    toast.success(`${assigned} subject${assigned !== 1 ? "s" : ""} assigned to ${className}${failed ? `, ${failed} failed` : ""}.`);
   };
 
   /* ─── Update handlers ─── */
@@ -1538,7 +1615,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ═══════════════════════ TAB CONFIG ═══════════════════════ */
 
   const tabs = [
-    { key: "years", label: "Academic Year", desc: "Set your school year", icon: Calendar, count: activeYears.length },
     { key: "classes", label: "Classes", desc: "Add your grades", icon: Layers, count: visibleClasses.length },
     { key: "sections", label: "Sections", desc: "Split classes if needed", icon: BookOpen, count: visibleSections.length },
     { key: "subjects", label: "Subjects", desc: "What's being taught", icon: GraduationCap, count: visibleSubjects.length },
@@ -1588,6 +1664,25 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             {error}
           </div>
         )}
+
+        <AnimatePresence>
+        {activeTab !== "years" && (
+          <Motion.div
+            key="stepper-nav"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-4"
+          >
+            <button
+              type="button"
+              onClick={() => { setActiveTab("years"); setSelectedYearId(null); }}
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 transition hover:text-blue-600"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Back to Academic Years
+              {selectedYear && <span className="ml-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600">{selectedYear.name}</span>}
+            </button>
 
         {/* ─── Step pipeline (horizontal) ─── */}
         <Motion.div
@@ -1639,6 +1734,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             );
           })}
         </Motion.div>
+          </Motion.div>
+        )}
+        </AnimatePresence>
 
         <div className="space-y-4">
 
@@ -1731,7 +1829,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 <button
                                   key={opt.value}
                                   type="button"
-                                  onClick={() => setYearForm((p) => ({ ...p, status: opt.value }))}
+                                  onClick={() => setYearForm((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" ? true : (opt.value === "upcoming" ? false : p.isActive) }))}
                                   className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${yearForm.status === opt.value
                                       ? "border-blue-500 bg-blue-50 text-blue-700"
                                       : "border-gray-200 text-gray-500 hover:bg-gray-50"
@@ -1751,7 +1849,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             <input
                               type="checkbox"
                               checked={yearForm.isActive}
-                              onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked }))}
+                              onChange={(e) => setYearForm((p) => ({ ...p, isActive: e.target.checked, status: e.target.checked ? "active" : (p.status === "active" ? "upcoming" : p.status) }))}
                               className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400"
                             />
                             Make this the default academic year
@@ -1834,6 +1932,106 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </Motion.div>
                 )}
               </AnimatePresence>
+
+              {/* Select an academic year to manage its classes/sections/subjects/class teachers */}
+              <div>
+                <p className="mb-0.5 text-xs font-bold uppercase tracking-widest text-blue-500">Step 1</p>
+                <h2 className="mb-4 text-lg font-bold text-gray-900">Select a year to manage</h2>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {sortedYears.map((year, idx) => {
+                    const statusLabel = year.status || (year.isActive ? "active" : "upcoming");
+                    const isLive = statusLabel === "active";
+                    const statusStyles = {
+                      active: "bg-emerald-50 text-emerald-700",
+                      upcoming: "bg-blue-50 text-blue-700",
+                      archived: "bg-gray-100 text-gray-500",
+                    };
+                    const statusDot = {
+                      active: "bg-emerald-500",
+                      upcoming: "bg-blue-500",
+                      archived: "bg-gray-400",
+                    };
+                    const classCount = classCountByYearId[String(year._id)] || 0;
+                    return (
+                      <Motion.button
+                        key={year._id}
+                        type="button"
+                        onClick={() => { setSelectedYearId(year._id); setActiveTab("classes"); }}
+                        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                        whileHover={{ y: -6 }}
+                        whileTap={{ scale: 0.97 }}
+                        className={`group relative flex flex-col items-start gap-1 text-black overflow-hidden rounded-3xl p-5 text-left shadow-sm transition-shadow duration-300 hover:shadow-xl cursor-pointer ${isLive
+                            ? "bg-gradient-to-br from-blue-400 via-blue-300 to-indigo-300 text-white shadow-blue-200"
+                            : "border border-gray-200 bg-white hover:border-blue-200 hover:shadow-blue-100"
+                          }`}
+                      >
+                        <div
+                          className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl transition-opacity duration-300 ${isLive ? "bg-white/20 opacity-100" : "bg-blue-100 opacity-0 group-hover:opacity-100"
+                            }`}
+                        />
+
+                        <div className="relative flex w-full items-start justify-between">
+                          <div
+                            className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${isLive ? "bg-white/15 text-white" : "bg-blue-50 text-blue-600"
+                              }`}
+                          >
+                            <Calendar className="h-5 w-5" />
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${isLive ? "bg-green-200/40 text-green-500" : statusStyles[statusLabel] || statusStyles.upcoming
+                              }`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : statusDot[statusLabel] || statusDot.upcoming}`} />
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        <p className={`relative mt-3 text-xl font-extrabold tracking-tight ${isLive ? "text-white" : "text-gray-900"}`}>{year.name}</p>
+                        <p className={`relative text-xs ${isLive ? "text-white/75" : "text-gray-500"}`}>
+                          {year.startDate ? new Date(year.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                          {" – "}
+                          {year.endDate ? new Date(year.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        </p>
+
+                        <div
+                          className={`relative mt-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${isLive ? "bg-white/15 text-white" : "bg-gray-50 text-gray-600"
+                            }`}
+                        >
+                          <Layers className="h-3.5 w-3.5" /> {classCount} {classCount === 1 ? "class" : "classes"}
+                        </div>
+
+                        <div className={`relative mt-4 flex w-full items-center justify-between border-t pt-3 ${isLive ? "border-white/20" : "border-gray-100"}`}>
+                          <span className={`text-xs font-bold ${isLive ? "text-white" : "text-blue-600"}`}>Manage this year</span>
+                          <span
+                            className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform duration-300 group-hover:translate-x-1 ${isLive ? "bg-white/20 text-white" : "bg-blue-50 text-blue-600"
+                              }`}
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </span>
+                        </div>
+                      </Motion.button>
+                    );
+                  })}
+
+                  <Motion.button
+                    type="button"
+                    onClick={() => setShowYearForm(true)}
+                    initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.35, delay: sortedYears.length * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                    whileHover={{ y: -6 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="group flex min-h-48 flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-5 text-center text-gray-400 transition-all duration-300 hover:border-blue-400 hover:bg-blue-50/60 hover:text-blue-600"
+                  >
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-gray-400 shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-lg group-hover:shadow-blue-200">
+                      <Plus className="h-6 w-6" />
+                    </span>
+                    <span className="text-sm font-bold">Add Academic Year</span>
+                  </Motion.button>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
                 {/* Current academic year card */}
@@ -1938,7 +2136,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 </button>
                                 <button onClick={() => deleteYear(year._id)} disabled={deletingId === year._id}
                                   className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                                  <Trash2 className="h-4 w-4" />
+                                  {deletingId === year._id ? <Loader2 className="h-4 w-4 animate-spin text-red-500" /> : <Trash2 className="h-4 w-4" />}
                                 </button>
                               </div>
                             </td>
@@ -1951,7 +2149,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
                 </div>
               </div>
-              <StepNav prevKey={null} nextKey="classes" />
             </Motion.div>
           )}
 
@@ -2059,7 +2256,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                   {String(cls.stream)}
                                 </span>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <span className="text-xs text-gray-400">No stream</span>
                               )}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-500">{yearNameById[String(cls.academicYearId || "")] || "—"}</td>
@@ -2070,7 +2267,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 </button>
                                 <button onClick={() => deleteClass(cls._id)} disabled={deletingId === cls._id}
                                   className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                                  <Trash2 className="h-4 w-4" />
+                                  {deletingId === cls._id ? <Loader2 className="h-4 w-4 animate-spin text-red-500" /> : <Trash2 className="h-4 w-4" />}
                                 </button>
                               </div>
                             </td>
@@ -2244,14 +2441,14 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     ) : (
                       <form onSubmit={submitSeniorSecondaryStreamSetup} className="p-5 space-y-4">
                         <p className="text-xs text-gray-500">
-                          Create Class 11 or 12 with a stream and subjects in the <span className="font-medium">current active session</span>.
+                          Create Class 11 or 12 with a stream in <span className="font-medium">{(selectedYear || currentAcademicYear)?.name || "the selected session"}</span>. You can add subjects for it afterwards from the Subjects step.
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-600">Current Session</label>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">Session</label>
                             <input
                               type="text"
-                              value={currentAcademicYear?.name || "No active year"}
+                              value={(selectedYear || currentAcademicYear)?.name || "No active year"}
                               disabled
                               className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
                             />
@@ -2283,70 +2480,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                           </div>
                         </div>
 
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-600">Subjects (comma separated)</label>
-                          <div className="flex flex-wrap gap-1.5 rounded-lg border border-gray-200 px-3 py-2 min-h-11 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
-                            {seniorSecondaryForm.subjectTags.map((tag) => (
-                              <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200">
-                                {tag}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setSeniorSecondaryForm((p) => ({
-                                      ...p,
-                                      subjectTags: p.subjectTags.filter((item) => item !== tag),
-                                    }))
-                                  }
-                                  className="ml-0.5 rounded-full hover:bg-blue-300 w-3.5 h-3.5 flex items-center justify-center text-blue-700 font-bold"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                            <input
-                              type="text"
-                              value={seniorSecondaryForm.subjectsInput}
-                              onChange={(e) => setSeniorSecondaryForm((p) => ({ ...p, subjectsInput: e.target.value }))}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === ",") {
-                                  e.preventDefault();
-                                  const names = seniorSecondaryForm.subjectsInput
-                                    .split(",")
-                                    .map((s) => s.trim())
-                                    .filter(Boolean);
-                                  if (!names.length) return;
-                                  setSeniorSecondaryForm((p) => ({
-                                    ...p,
-                                    subjectTags: [...new Set([...p.subjectTags, ...names])],
-                                    subjectsInput: "",
-                                  }));
-                                }
-                              }}
-                              onBlur={() => {
-                                const names = seniorSecondaryForm.subjectsInput
-                                  .split(",")
-                                  .map((s) => s.trim())
-                                  .filter(Boolean);
-                                if (!names.length) return;
-                                setSeniorSecondaryForm((p) => ({
-                                  ...p,
-                                  subjectTags: [...new Set([...p.subjectTags, ...names])],
-                                  subjectsInput: "",
-                                }));
-                              }}
-                              className="flex-1 min-w-40 bg-transparent text-sm outline-none placeholder:text-gray-400"
-                              placeholder="Physics, Chemistry, Biology..."
-                            />
-                          </div>
-                        </div>
-
                         <button
                           type="submit"
-                          disabled={isSubmitting || !currentAcademicYear?._id}
+                          disabled={isSubmitting || !(selectedYear || currentAcademicYear)?._id}
                           className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50"
                         >
                           <Plus className="h-4 w-4" />
-                          {isSubmitting ? "Saving…" : "Create Class + Stream Subjects"}
+                          {isSubmitting ? "Saving…" : "Create Class"}
                         </button>
                       </form>
                     )}
@@ -2355,7 +2495,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 )}
               </AnimatePresence>
 
-              <StepNav prevKey="years" nextKey="sections" />
+              <StepNav prevKey={null} nextKey="sections" />
             </Motion.div>
           )}
 
@@ -2390,14 +2530,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             >
-              <StepHeader
+              {/* <StepHeader
                 icon={BookOpen}
                 step={3}
                 question="Do your classes split into sections?"
                 explain="Pick a class, then tap the section letters it has — like Class 5-A and Class 5-B."
                 illustration="sections"
-              />
-              <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+              /> */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+                {/* ─── Left: Add Sections ─── */}
+                <form onSubmit={submitSectionsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-blue-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">3</span>
@@ -2498,88 +2640,69 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   })()}
 
                   <button type="submit" disabled={isSubmitting}
-                    className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
-                    <Plus className="h-4 w-4" />
-                    {isSubmitting ? "Creating…" : "Create Sections"}
+                    className="w-full flex justify-center items-center rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
+                    <Plus className="" />
+                   <span className='text-sm font-medium ml-2'> {isSubmitting ? "Creating…" : "Create Sections"} </span>
                   </button>
                 </div>
               </form>
 
-              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
-                {classTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveClassId(tab.id)}
-                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${activeClassId === tab.id
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                      }`}
-                  >
-                    {tab.name}
-                    {tab.id !== "all" && (
-                      <span
-                        className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${activeClassId === tab.id
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-200 text-gray-500"
-                          }`}
-                      >
-                        {sectionsByClass[tab.id] || 0}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+                {/* ─── Right: class filter + sections list ─── */}
+                <div className="space-y-4">
+                  <ClassFilterTabs tabs={classTabs} activeId={activeClassId} onChange={setActiveClassId} countsByClassId={sectionsByClass} />
 
-              <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                  <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                    <BookOpen className="h-4 w-4 text-blue-500" /> Sections
-                  </h3>
-                  <div className="w-64">
-                    <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
+                  <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+                      <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                        <BookOpen className="h-4 w-4 text-blue-500" /> Sections
+                      </h3>
+                      <div className="w-64">
+                        <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
+                      </div>
+                    </div>
+                    <BulkBar entityType="sections" entityName="section" />
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="w-12 bg-gray-50 px-4 py-3">
+                              <input type="checkbox" checked={selectedSections.length === paginatedSections.length && paginatedSections.length > 0}
+                                onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                            </th>
+                            <SortableHeader label="Name" field="name" sortConfig={sectionSort} onSort={toggleSort(setSectionSort)} />
+                            <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
+                            <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {paginatedSections.map((sec) => (
+                            <tr key={sec._id} className="transition hover:bg-blue-50/30">
+                              <td className="px-4 py-3">
+                                <input type="checkbox" checked={selectedSections.includes(sec._id)}
+                                  onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                              </td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{sec.name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sec.classId || "")] || "—"}</td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button onClick={() => setEditingSection(sec)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                    <Edit3 className="h-4 w-4" />
+                                  </button>
+                                  <button onClick={() => deleteSection(sec._id)} disabled={deletingId === sec._id}
+                                    className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                    {deletingId === sec._id ? <Loader2 className="h-4 w-4 animate-spin text-red-500" /> : <Trash2 className="h-4 w-4" />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {paginatedSections.length === 0 && <EmptyState search={searchSection} entity="sections" />}
+                    </div>
+                    <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
                   </div>
                 </div>
-                <BulkBar entityType="sections" entityName="section" />
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="w-12 bg-gray-50 px-4 py-3">
-                          <input type="checkbox" checked={selectedSections.length === paginatedSections.length && paginatedSections.length > 0}
-                            onChange={() => handleSelectAll("sections", paginatedSections)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
-                        </th>
-                        <SortableHeader label="Name" field="name" sortConfig={sectionSort} onSort={toggleSort(setSectionSort)} />
-                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
-                        <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {paginatedSections.map((sec) => (
-                        <tr key={sec._id} className="transition hover:bg-blue-50/30">
-                          <td className="px-4 py-3">
-                            <input type="checkbox" checked={selectedSections.includes(sec._id)}
-                              onChange={() => handleSelectItem("sections", sec._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
-                          </td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{sec.name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sec.classId || "")] || "—"}</td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => setEditingSection(sec)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                                <Edit3 className="h-4 w-4" />
-                              </button>
-                              <button onClick={() => deleteSection(sec._id)} disabled={deletingId === sec._id}
-                                className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {paginatedSections.length === 0 && <EmptyState search={searchSection} entity="sections" />}
-                </div>
-                <Pagination currentPage={sectionPage} totalItems={sortedSections.length} onPageChange={setSectionPage} />
               </div>
               <StepNav prevKey="classes" nextKey="subjects" skippable />
             </Motion.div>
@@ -2594,54 +2717,25 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             >
-              <StepHeader
+              {/* <StepHeader
                 icon={GraduationCap}
                 step={4}
                 question="What subjects are taught?"
                 explain="Type a subject and press Enter to add it. Add as many as you like — Math, Science, English..."
                 illustration="subjects"
-              />
-              <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
+              /> */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+                {/* ─── Left: Add Subjects + Assign to Class ─── */}
+                <div className="space-y-4">
+                <form onSubmit={submitSubjectsBulk} className="rounded-2xl border border-blue-200 bg-white shadow-sm overflow-hidden">
                 <div className="border-b border-gray-100 px-5 py-3 bg-blue-50/40">
                   <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white shadow-sm">4</span>
                     Add Subjects
                   </h3>
-                  <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Type a name and press <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">,</kbd> to add it — create many subjects in one go.</p>
+                  <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Type a name and press <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px]">,</kbd> to add it to the school's subject catalog.</p>
                 </div>
                 <div className="p-5 space-y-4">
-                  {/* Class selector */}
-                  <div>
-                    <label className="mb-2 block text-xs font-medium text-gray-600">Select Classes <span className="text-gray-400">(optional — applies to all selected)</span></label>
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg bg-gray-50">
-                      <button
-                        type="button"
-                        onClick={() => setSubjectTagClassIds(p => p.length === visibleClasses.length ? [] : visibleClasses.map(c => String(c._id)))}
-                        className="px-2 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-100 text-black font-medium"
-                      >
-                        {subjectTagClassIds.length === visibleClasses.length && visibleClasses.length > 0 ? "Deselect All" : "Select All"}
-                      </button>
-                      {visibleClasses.map((c) => {
-                        const isSelected = subjectTagClassIds.includes(String(c._id));
-                        return (
-                          <button
-                            key={c._id}
-                            type="button"
-                            onClick={() => {
-                              setSubjectTagClassIds(p =>
-                                isSelected ? p.filter(id => id !== String(c._id)) : [...p, String(c._id)]
-                              );
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-gray-300 text-gray-700 hover:border-blue-400'
-                              }`}
-                          >
-                            {c.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   {/* Tag chip input */}
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-600">Subject names</label>
@@ -2708,87 +2802,157 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </form>
 
-              <div className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200/70 bg-white/70 p-1.5 shadow-sm backdrop-blur">
-                {classTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveSubjectClassId(tab.id)}
-                    className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition ${activeSubjectClassId === tab.id
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                      }`}
-                  >
-                    {tab.name}
-                    {tab.id !== "all" && (
-                      <span
-                        className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${activeSubjectClassId === tab.id
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-200 text-gray-500"
-                          }`}
-                      >
-                        {subjectsByClass[tab.id] || 0}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
-                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
-                  <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                    <GraduationCap className="h-4 w-4 text-blue-500" /> Subjects
+              {/* ─── Assign Subjects to Class ─── */}
+              <form onSubmit={submitAssignSubjects} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+                <div className="border-b border-gray-100 px-5 py-3 bg-gray-50">
+                  <h3 className="flex items-center gap-2.5 text-sm font-bold text-gray-800">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-500 text-xs font-bold text-white shadow-sm">
+                      <UserCheck className="h-3.5 w-3.5" />
+                    </span>
+                    Assign Subjects to Class
                   </h3>
-                  <div className="w-64">
-                    <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
+                  <p className="text-xs text-gray-500 mt-0.5 pl-9.5">Pick a class, then pick from the unassigned catalog below.</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Class</label>
+                    <select
+                      value={assignClassId}
+                      onChange={(e) => setAssignClassId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="">Select class</option>
+                      {visibleClasses.map((c) => (
+                        <option key={c._id} value={c._id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Unassigned subjects <span className="text-gray-400">({unassignedSubjects.length})</span>
+                      </label>
+                      {unassignedSubjects.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAssignSubjectIds((p) =>
+                              p.length === unassignedSubjects.length ? [] : unassignedSubjects.map((s) => String(s._id))
+                            )
+                          }
+                          className="text-[11px] font-semibold text-blue-600 hover:underline"
+                        >
+                          {assignSubjectIds.length === unassignedSubjects.length ? "Deselect all" : "Select all"}
+                        </button>
+                      )}
+                    </div>
+                    {unassignedSubjects.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center text-xs text-gray-400">
+                        Every subject is already assigned to a class.
+                      </p>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+                        {unassignedSubjects.map((s) => {
+                          const isSelected = assignSubjectIds.includes(String(s._id));
+                          return (
+                            <label
+                              key={s._id}
+                              className={`flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm transition-colors ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() =>
+                                  setAssignSubjectIds((p) =>
+                                    isSelected ? p.filter((id) => id !== String(s._id)) : [...p, String(s._id)]
+                                  )
+                                }
+                                className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer"
+                              />
+                              <span className={`truncate ${isSelected ? "font-medium text-blue-700" : "text-gray-700"}`}>{s.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !assignClassId || assignSubjectIds.length === 0}
+                    className="flex items-center gap-2 rounded-lg bg-gray-800 px-5 py-2 text-sm font-medium text-white hover:bg-gray-900 disabled:opacity-50"
+                  >
+                    <Check className="h-4 w-4" />
+                    {isSubmitting ? "Assigning…" : `Assign ${assignSubjectIds.length || ""} Subject${assignSubjectIds.length !== 1 ? "s" : ""}`}
+                  </button>
+                </div>
+              </form>
+                </div>
+
+                {/* ─── Right: class filter + subjects list ─── */}
+                <div className="space-y-4">
+                  <ClassFilterTabs tabs={subjectClassTabs} activeId={activeSubjectClassId} onChange={setActiveSubjectClassId} countsByClassId={subjectsByClass} />
+
+                  <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 backdrop-blur shadow-sm">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+                      <h3 className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                        <GraduationCap className="h-4 w-4 text-blue-500" /> Subjects
+                      </h3>
+                      <div className="w-64">
+                        <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
+                      </div>
+                    </div>
+                    <BulkBar entityType="subjects" entityName="subject" />
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="w-12 bg-gray-50 px-4 py-3">
+                              <input type="checkbox" checked={selectedSubjects.length === paginatedSubjects.length && paginatedSubjects.length > 0}
+                                onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                            </th>
+                            <SortableHeader label="Name" field="name" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} />
+                            {/* <SortableHeader label="Code" field="code" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} /> */}
+                            <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
+                            <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
+                            <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {paginatedSubjects.map((sub) => (
+                            <tr key={sub._id} className="transition hover:bg-blue-50/30">
+                              <td className="px-4 py-3">
+                                <input type="checkbox" checked={selectedSubjects.includes(sub._id)}
+                                  onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
+                              </td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
+                              {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
+                              <td className="px-4 py-3 text-sm text-gray-500">
+                                {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "No Stream"}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sub.classId || "")] || "—"}</td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <button onClick={() => setEditingSubject(sub)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
+                                    <Edit3 className="h-4 w-4" />
+                                  </button>
+                                  <button onClick={() => deleteSubject(sub._id)} disabled={deletingId === sub._id}
+                                    className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
+                                    {deletingId === sub._id ? <Loader2 className="h-4 w-4 animate-spin text-red-500" /> : <Trash2 className="h-4 w-4" />}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {paginatedSubjects.length === 0 && <EmptyState search={searchSubject} entity="subjects" />}
+                    </div>
+                    <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
                   </div>
                 </div>
-                <BulkBar entityType="subjects" entityName="subject" />
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="w-12 bg-gray-50 px-4 py-3">
-                          <input type="checkbox" checked={selectedSubjects.length === paginatedSubjects.length && paginatedSubjects.length > 0}
-                            onChange={() => handleSelectAll("subjects", paginatedSubjects)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
-                        </th>
-                        <SortableHeader label="Name" field="name" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} />
-                        {/* <SortableHeader label="Code" field="code" sortConfig={subjectSort} onSort={toggleSort(setSubjectSort)} /> */}
-                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Stream</th>
-                        <th className="bg-gray-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Class</th>
-                        <th className="bg-gray-50 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {paginatedSubjects.map((sub) => (
-                        <tr key={sub._id} className="transition hover:bg-blue-50/30">
-                          <td className="px-4 py-3">
-                            <input type="checkbox" checked={selectedSubjects.includes(sub._id)}
-                              onChange={() => handleSelectItem("subjects", sub._id)} className="h-4 w-4 rounded border-gray-300 accent-blue-500 cursor-pointer" />
-                          </td>
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{sub.name}</td>
-                          {/* <td className="px-4 py-3 text-sm text-gray-500">{sub.code || "—"}</td> */}
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {sub.stream ? String(sub.stream).replace(/^./, (ch) => ch.toUpperCase()) : "No Stream"}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{classNameById[String(sub.classId || "")] || "—"}</td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => setEditingSubject(sub)} className="rounded-md p-1.5 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
-                                <Edit3 className="h-4 w-4" />
-                              </button>
-                              <button onClick={() => deleteSubject(sub._id)} disabled={deletingId === sub._id}
-                                className="rounded-md p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50" title="Delete">
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {paginatedSubjects.length === 0 && <EmptyState search={searchSubject} entity="subjects" />}
-                </div>
-                <Pagination currentPage={subjectPage} totalItems={sortedSubjects.length} onPageChange={setSubjectPage} />
               </div>
               <StepNav prevKey="sections" nextKey="class-teachers" />
             </Motion.div>
@@ -2803,13 +2967,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             >
-              <StepHeader
+              {/* <StepHeader
                 icon={UserCheck}
                 step={5}
                 question="Who looks after each class?"
                 explain="Pick one teacher to be the main point of contact for a class and section. This step is optional — you can do it later too."
                 illustration="teachers"
-              />
+              /> */}
               <form id="class-teacher-form" onSubmit={handleSaveClassTeacher} className={`rounded-2xl border bg-white p-5 shadow-sm ${editingClassTeacherId ? "border-blue-400 ring-2 ring-blue-100" : "border-blue-200"}`}>
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="flex items-center gap-2.5 text-base font-bold text-gray-800">
@@ -2961,10 +3125,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         <button
                           type="button"
                           onClick={() => deleteClassTeacher(item._id)}
-                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                          disabled={deletingId === item._id}
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                           title="Remove class teacher"
                         >
-                          <Trash2 className="h-3.5 w-3.5" /> Remove
+                          {deletingId === item._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Remove
                         </button>
                       </div>
                     </div>
@@ -2992,7 +3157,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 Your school year is ready. You can fine-tune any of this anytime from this page.
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-2">
-                <ProgressChip label="Academic Year" value={years[0]?.name || "—"} filled />
+                <ProgressChip label="Academic Year" value={selectedYear?.name || years[0]?.name || "—"} filled />
                 <ProgressChip label="Classes" value={visibleClasses.length} filled />
                 <ProgressChip label="Sections" value={visibleSections.length} filled />
                 <ProgressChip label="Subjects" value={visibleSubjects.length} filled />
@@ -3001,7 +3166,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               <div className="mt-8 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("years")}
+                  onClick={() => setActiveTab("classes")}
                   className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-[#4B5768] hover:bg-gray-50"
                 >
                   Review Setup
@@ -3053,7 +3218,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setEditingYear((p) => ({ ...p, status: opt.value }))}
+                    onClick={() => setEditingYear((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" ? true : (opt.value === "upcoming" ? false : p.isActive) }))}
                     className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${(editingYear?.status || (editingYear?.isActive ? "active" : "upcoming")) === opt.value
                         ? "border-blue-500 bg-blue-50 text-blue-700"
                         : "border-gray-200 text-gray-500 hover:bg-gray-50"
@@ -3066,7 +3231,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             </div>
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={editingYear?.isActive || false}
-                onChange={(e) => setEditingYear((p) => ({ ...p, isActive: e.target.checked }))}
+                onChange={(e) => setEditingYear((p) => ({ ...p, isActive: e.target.checked, status: e.target.checked ? "active" : (p.status === "active" ? "upcoming" : p.status) }))}
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-400" />
               Make this the default academic year
             </label>

@@ -240,7 +240,13 @@ const resolveYearStatusFields = ({ status, isActive }) => {
     throw new Error('Status must be Upcoming, Active or Archived');
   }
   const resolvedIsActive = Boolean(isActive);
-  const resolvedStatus = resolvedIsActive ? 'active' : (status || 'upcoming');
+  // A year can only carry the "active" label if it's actually the isActive
+  // year — otherwise it silently downgrades to "upcoming" instead of showing
+  // "Active" while isActive stays false (which broke isActive-gated checks
+  // like the Class 11/12 stream setup).
+  const resolvedStatus = resolvedIsActive
+    ? 'active'
+    : (status === 'active' ? 'upcoming' : (status || 'upcoming'));
   return { isActive: resolvedIsActive, status: resolvedStatus };
 };
 
