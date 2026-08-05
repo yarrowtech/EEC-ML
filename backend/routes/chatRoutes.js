@@ -51,6 +51,13 @@ const isAcademicYearMatch = (studentAcademicYear, comboAcademicYear) => {
     const studentLast = studentTokens[studentTokens.length - 1];
     const comboLast = comboTokens[comboTokens.length - 1];
     if (studentFirst === comboFirst && studentLast === comboLast) return true;
+    // Treat abbreviated academic years such as 2025-26 and 2025-2026 as the
+    // same cohort when their starting year and ending-year suffix agree.
+    if (
+      studentFirst === comboFirst
+      && ((studentLast.length === 2 && comboLast.endsWith(studentLast))
+        || (comboLast.length === 2 && studentLast.endsWith(comboLast)))
+    ) return true;
   }
 
   return false;
@@ -386,6 +393,41 @@ const getStudentTeachers = async ({ student, schoolId }) => {
     });
   });
 
+  // Allocations are also an authoritative source of assignment. This keeps
+  // chat permissions aligned with the admin/teacher allocation screens even
+  // when a timetable row has not been created yet.
+  const allocationFilter = {
+    schoolId,
+    classId: classDoc._id,
+    ...(sectionDoc ? { sectionId: sectionDoc._id } : {}),
+  };
+  const allocationCampus = buildCampusCondition(student?.campusId);
+  if (allocationCampus) allocationFilter.$or = allocationCampus.$or;
+  const allocations = await TeacherAllocation.find(allocationFilter)
+    .populate('teacherId', 'name subject employeeCode profilePic email')
+    .populate('subjectId', 'name code')
+    .lean();
+
+  allocations.forEach((allocation) => {
+    const teacher = allocation.teacherId;
+    if (!teacher?._id) return;
+    const teacherId = String(teacher._id);
+    if (!teacherSubjectMap.has(teacherId)) {
+      teacherSubjectMap.set(teacherId, { teacher, subjects: new Set() });
+    }
+    const subjectName = allocation.subjectId?.name || allocation.subjectId?.code || '';
+    if (subjectName) teacherSubjectMap.get(teacherId).subjects.add(subjectName);
+  });
+
+  // A class teacher may be configured without a timetable/allocation row.
+  const classTeacher = await findClassTeacherForStudent({ student, schoolId });
+  if (classTeacher?._id && !teacherSubjectMap.has(String(classTeacher._id))) {
+    teacherSubjectMap.set(String(classTeacher._id), {
+      teacher: classTeacher,
+      subjects: new Set(),
+    });
+  }
+
   return Array.from(teacherSubjectMap.values());
 };
 
@@ -462,6 +504,74 @@ const studentMatchesCombos = (student, combos = []) => {
   });
 };
 
+const studentsShareChatCohort = (left, right) => {
+  const leftGrade = normalizeValue(left?.grade).toLowerCase();
+  const rightGrade = normalizeValue(right?.grade).toLowerCase();
+  const leftSection = normalizeValue(left?.section).toLowerCase();
+  const rightSection = normalizeValue(right?.section).toLowerCase();
+  if (!leftGrade || !rightGrade || leftGrade !== rightGrade) return false;
+  // Section is part of the boundary; do not fall back to grade-only access.
+  if (!leftSection || !rightSection || leftSection !== rightSection) return false;
+  const leftYear = normalizeValue(left?.academicYear);
+  const rightYear = normalizeValue(right?.academicYear);
+  return !leftYear || !rightYear || isAcademicYearMatch(leftYear, rightYear);
+};
+
+const getChatStudent = async ({ userId, schoolId, campusId }) => {
+  if (!userId || !schoolId) return null;
+  return StudentUser.findOne({
+    _id: userId,
+    schoolId,
+    ...(campusId ? { campusId } : {}),
+  })
+    .select('_id grade section campusId academicYear name username studentCode profilePic')
+    .lean();
+};
+
+const ensureStudentCanAccessStudent = async ({ student, targetStudent, campusId }) => {
+  if (!studentsShareChatCohort(student, targetStudent)) return false;
+  const requestedCampusId = campusId ? String(campusId) : '';
+  const targetCampusId = targetStudent?.campusId ? String(targetStudent.campusId) : '';
+  return !requestedCampusId || !targetCampusId || requestedCampusId === targetCampusId;
+};
+
+const ensureStudentCanAccessTeacher = async ({ student, teacherId, schoolId }) => {
+  if (!student || !teacherId || !schoolId) return false;
+  const teachers = await getStudentTeachers({ student, schoolId });
+  return teachers.some(({ teacher }) => String(teacher?._id || '') === String(teacherId));
+};
+
+const ensureStudentAccessToThread = async (context, thread) => {
+  const user = context?.user || context;
+  if (String(user?.userType || '').toLowerCase() !== 'student') return true;
+  if (!thread) return false;
+  if (String(thread.threadType || '').toLowerCase() === 'group') return true;
+
+  const schoolId = context?.schoolId || user?.schoolId;
+  const campusId = context?.campusId ?? user?.campusId ?? null;
+  const student = await getChatStudent({ userId: user?.id || user?._id, schoolId, campusId });
+  const myId = String(user?.id || user?._id || '');
+  const other = thread.participants?.find((participant) => String(participant?.userId || '') !== myId);
+  if (!student || !other) return false;
+
+  if (String(other.userType || '').toLowerCase() === 'student') {
+    const target = await getChatStudent({ userId: other.userId, schoolId, campusId: null });
+    return ensureStudentCanAccessStudent({ student, targetStudent: target, campusId });
+  }
+  if (String(other.userType || '').toLowerCase() === 'teacher') {
+    return ensureStudentCanAccessTeacher({ student, teacherId: other.userId, schoolId });
+  }
+  return false;
+};
+
+const ensureChatAccessToThread = async (context, thread) => {
+  const user = context?.user || context;
+  const userType = String(user?.userType || '').toLowerCase();
+  if (userType === 'student') return ensureStudentAccessToThread(context, thread);
+  if (userType === 'teacher') return ensureTeacherAccessToThread(context, thread);
+  return true;
+};
+
 const ensureTeacherCanAccessStudent = async (req, studentOrId) => {
   if (!isTeacherRequest(req)) return true;
   const combos = await getTeacherCombos(req);
@@ -515,6 +625,7 @@ const emitChatMessageEvents = (io, { threadId, thread, message, senderId }) => {
   const payload = typeof message.toObject === 'function' ? message.toObject() : message;
 
   io.to(`thread:${threadId}`).emit('new-message', payload);
+  io.to(`user:${String(senderId)}`).emit('message-sent', payload);
 
   for (const participant of thread.participants || []) {
     const participantId = String(participant?.userId || '');
@@ -681,7 +792,7 @@ router.get('/threads/:threadId/keys', async (req, res) => {
       'participants.userId': userId,
     }).lean();
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const participantIds = (thread.participants || []).map((p) => p.userId).filter(Boolean);
@@ -826,7 +937,7 @@ router.get('/parents/:parentId/profile', async (req, res) => {
 });
 
 // GET /api/chat/contacts — list people you can message
-// Students see teachers, teachers see students
+// Students see same-section classmates and assigned teachers; teachers see assigned students.
 router.get('/contacts', async (req, res) => {
   try {
     const { userType } = req.user;
@@ -876,7 +987,7 @@ router.get('/contacts', async (req, res) => {
         ? `Class ${student.grade}${student.section ? ` - ${student.section}` : ''}`
         : 'Allocated teacher';
 
-      const contacts = Array.from(teacherMap.values()).map(({ teacher, subjects }) => ({
+      const teacherContacts = Array.from(teacherMap.values()).map(({ teacher, subjects }) => ({
         _id: teacher._id,
         name: teacher.name || teacher.employeeCode || 'Teacher',
         subtitle: subjects.size ? Array.from(subjects).join(', ') : classLabel,
@@ -884,7 +995,30 @@ router.get('/contacts', async (req, res) => {
         avatar: teacher.profilePic || null,
       }));
 
-      return res.json(contacts);
+      const classmateFilter = {
+        schoolId,
+        _id: { $ne: student._id },
+        grade: { $regex: `^${escapeRegex(student.grade || '')}$`, $options: 'i' },
+      };
+      if (student.section) {
+        classmateFilter.section = { $regex: `^${escapeRegex(student.section)}$`, $options: 'i' };
+      }
+      const classmateCampus = buildCampusCondition(campusId);
+      if (classmateCampus) classmateFilter.$or = classmateCampus.$or;
+      const classmates = await StudentUser.find(classmateFilter)
+        .select('_id name username studentCode profilePic grade section campusId academicYear')
+        .lean();
+      const classmateContacts = classmates
+        .filter((classmate) => studentsShareChatCohort(student, classmate))
+        .map((classmate) => ({
+          _id: classmate._id,
+          name: classmate.name || classmate.username || classmate.studentCode || 'Student',
+          subtitle: classLabel,
+          userType: 'student',
+          avatar: classmate.profilePic || null,
+        }));
+
+      return res.json([...teacherContacts, ...classmateContacts]);
     }
 
     if (userType === 'parent') {
@@ -1055,6 +1189,16 @@ router.get('/threads', async (req, res) => {
       } catch {
         // ignore sync failures and continue with empty list
       }
+    }
+
+    if (userType === 'student') {
+      const accessResults = await Promise.all(
+        threads.map(async (thread) => ({
+          thread,
+          allowed: await ensureChatAccessToThread(req, thread),
+        }))
+      );
+      threads = accessResults.filter(({ allowed }) => allowed).map(({ thread }) => thread);
     }
 
     const result = threads.map(t => {
@@ -1273,12 +1417,33 @@ router.post('/threads/direct', async (req, res) => {
     if (normalizedTargetType === 'teacher') {
       otherUser = await TeacherUser.findOne(targetLookup).select('name subject employeeCode profilePic campusId').lean();
     } else if (normalizedTargetType === 'student') {
-      otherUser = await StudentUser.findOne(targetLookup).select('name username studentCode grade section profilePic campusId').lean();
+      otherUser = await StudentUser.findOne(targetLookup).select('name username studentCode grade section academicYear profilePic campusId').lean();
     } else if (normalizedTargetType === 'parent') {
       otherUser = await ParentUser.findOne(targetLookup).select('name username campusId').lean();
     }
     if (!otherUser) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (normalizedUserType === 'student') {
+      const student = await getChatStudent({ userId: myId, schoolId, campusId });
+      let allowed = false;
+      if (normalizedTargetType === 'student') {
+        allowed = await ensureStudentCanAccessStudent({
+          student,
+          targetStudent: otherUser,
+          campusId,
+        });
+      } else if (normalizedTargetType === 'teacher') {
+        allowed = await ensureStudentCanAccessTeacher({
+          student,
+          teacherId: otherId,
+          schoolId,
+        });
+      }
+      if (!allowed) {
+        return res.status(403).json({ error: 'You can message only classmates in your section or assigned teachers' });
+      }
     }
 
     if (normalizedUserType === 'teacher' && normalizedTargetType === 'student') {
@@ -1421,7 +1586,7 @@ router.get('/threads/:threadId/messages', async (req, res) => {
 
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const messages = await ChatMessage.find({
@@ -1479,7 +1644,7 @@ router.get('/threads/:threadId/presence', async (req, res) => {
 
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const presence = {};
@@ -1541,7 +1706,7 @@ router.post('/threads/:threadId/messages', async (req, res) => {
 
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const normalizedSenderType = String(userType || '').toLowerCase();
@@ -1666,7 +1831,7 @@ router.patch('/threads/:threadId/messages/:messageId', async (req, res) => {
     }).lean();
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const message = await ChatMessage.findOne({
@@ -1772,7 +1937,7 @@ router.put('/threads/:threadId/seen', async (req, res) => {
 
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-    const allowed = await ensureTeacherAccessToThread(req, thread);
+    const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     await ChatThread.updateOne(
@@ -1786,5 +1951,10 @@ router.put('/threads/:threadId/seen', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Socket.IO is initialized beside the Express router. Expose the exact same
+// authorization guard so REST and live events cannot drift apart.
+router.ensureChatAccessToThread = ensureChatAccessToThread;
+router.studentsShareChatCohort = studentsShareChatCohort;
 
 module.exports = router;

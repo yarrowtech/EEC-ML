@@ -7,7 +7,7 @@ import {
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const API_URL = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000')).replace(/\/$/, '');
 const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
 const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1143,7 +1143,10 @@ const TeacherChat = () => {
     const socket = io(API_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
+      timeout: 20000,
     });
     socketRef.current = socket;
 
@@ -1202,6 +1205,20 @@ const TeacherChat = () => {
       if (isActiveThread && isIncomingForMe) {
         socket.emit('mark-seen', { threadId });
       }
+    });
+
+    socket.on('message-sent', async (rawMsg) => {
+      const msg = await decryptForUI(rawMsg);
+      const threadId = String(msg?.threadId || '');
+      if (!threadId || String(activeThreadIdRef.current) !== threadId) return;
+      setMessages((prev) => {
+        if (prev.some((item) => String(item?._id) === String(msg?._id))) return prev;
+        const optimisticIndex = prev.findLastIndex((item) => item?._optimistic && isSameId(item.senderId, msg.senderId));
+        if (optimisticIndex === -1) return [...prev, msg];
+        const next = [...prev];
+        next[optimisticIndex] = msg;
+        return next;
+      });
     });
 
     socket.on('thread-updated', async ({ threadId, lastMessage, lastMessageAt, message }) => {
@@ -1286,6 +1303,38 @@ const TeacherChat = () => {
       socket.disconnect();
     };
   }, [decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
+
+  // Catch up through REST when a reverse proxy, reconnect, or multi-process
+  // deployment causes a Socket.IO event to be missed.
+  useEffect(() => {
+    if (!activeThreadId || !me?.id) return undefined;
+    let cancelled = false;
+    const refreshMessages = async () => {
+      try {
+        const rawMessages = await apiFetch(`/api/chat/threads/${activeThreadId}/messages`);
+        const freshMessages = await Promise.all((Array.isArray(rawMessages) ? rawMessages : []).map((msg) => decryptForUI(msg)));
+        if (cancelled) return;
+        setMessages((previous) => {
+          const optimistic = previous.filter((msg) => msg?._optimistic);
+          const merged = new Map(freshMessages.map((msg) => [String(msg?._id), msg]));
+          optimistic.forEach((msg) => {
+            if (!merged.has(String(msg?._id))) merged.set(String(msg?._id), msg);
+          });
+          return Array.from(merged.values()).sort((left, right) => (
+            new Date(left?.createdAt || left?.ts || 0).getTime()
+            - new Date(right?.createdAt || right?.ts || 0).getTime()
+          ));
+        });
+      } catch {
+        // Retry on the next interval; Socket.IO remains the primary path.
+      }
+    };
+    const interval = window.setInterval(refreshMessages, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeThreadId, me?.id, decryptForUI]);
 
   // ── Resize ────────────────────────────────────────────────────────────────
   useEffect(() => {

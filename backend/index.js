@@ -103,6 +103,7 @@ const promotionRoutes = require('./routes/promotionRoutes');
 const holidayRoutes = require('./routes/holidayRoutes');
 const departmentRoutes = require('./routes/departmentRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const ensureChatAccessToThread = chatRoutes.ensureChatAccessToThread || (async () => true);
 const achievementRoutes = require('./routes/achievementRoutes');
 const teachingMaterialRoutes = require('./routes/teachingMaterialRoutes');
 const studentMaterialRoutes = require('./routes/studentMaterialRoutes');
@@ -629,6 +630,12 @@ const io = new SocketServer(httpServer, {
     origin: corsOrigin,
     methods: ['GET', 'POST'],
   },
+  // Keep connections alive through an EC2 reverse proxy and allow a clean
+  // fallback to long-polling when WebSocket upgrades are temporarily blocked.
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  connectTimeout: 20000,
+  transports: ['websocket', 'polling'],
 });
 app.set('io', io);
 require('./utils/socketRegistry').set(io);
@@ -740,6 +747,7 @@ io.on('connection', (socket) => {
       .select('participants.userId participants.name')
       .lean();
     if (!thread) return;
+    if (!(await ensureChatAccessToThread({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) return;
 
     const myParticipant = (thread.participants || []).find(
       (participant) => String(participant?.userId || '') === userId
@@ -779,8 +787,12 @@ io.on('connection', (socket) => {
         ...(user.campusId ? { campusId: user.campusId } : {}),
         'participants.userId': userId,
       }).lean();
-      if (!thread) return;
-      socket.join(`thread:${threadId}`);
+    if (!thread) return;
+    if (!(await ensureChatAccessToThread({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
+      socket.emit('error', { message: 'Access denied' });
+      return;
+    }
+    socket.join(`thread:${threadId}`);
 
       // Mark as read when joining
       await ChatThread.updateOne(
@@ -828,6 +840,10 @@ io.on('connection', (socket) => {
       }).lean();
 
       if (!thread) return;
+      if (!(await ensureChatAccessToThread({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
+        socket.emit('error', { message: 'Access denied' });
+        return;
+      }
 
       const myParticipant = thread.participants?.find(p => p.userId?.toString() === userId);
       const senderName = myParticipant?.name || user.userType || 'User';
@@ -882,6 +898,11 @@ io.on('connection', (socket) => {
 
       const payload = msg.toObject();
 
+      // A sender may emit before the async join-thread query finishes. Send a
+      // direct acknowledgement so the optimistic client message is replaced
+      // even when the sender is not yet in the thread room.
+      socket.emit('message-sent', payload);
+
       // Broadcast to thread room
       io.to(`thread:${threadId}`).emit('new-message', payload);
 
@@ -910,6 +931,15 @@ io.on('connection', (socket) => {
 
   socket.on('mark-seen', async ({ threadId }) => {
     try {
+      const thread = await ChatThread.findOne({
+        _id: threadId,
+        schoolId: user.schoolId,
+        ...(user.campusId ? { campusId: user.campusId } : {}),
+        'participants.userId': userId,
+      }).lean();
+      if (!thread || !(await ensureChatAccessToThread({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
+        return;
+      }
       await ChatThread.updateOne(
         { _id: threadId, 'unreadCounts.userId': userId },
         { $set: { 'unreadCounts.$.count': 0 } }

@@ -69,6 +69,22 @@ server {
         proxy_pass http://127.0.0.1:5000;
     }
 
+    # Socket.IO must be proxied to the backend with HTTP/1.1 upgrades. Without
+    # this block the chat may appear to work only after a manual refresh.
+    location /socket.io/ {
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;
+        proxy_pass http://127.0.0.1:5000/socket.io/;
+    }
+
     location / {
         proxy_set_header Host $host;
         proxy_pass http://127.0.0.1:5173;
