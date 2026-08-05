@@ -59,6 +59,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [isChatBoxOpen, setIsChatBoxOpen] = useState(false);
   const journalRef = useRef(null);
   const wasDesktopRef = useRef(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
@@ -76,7 +77,9 @@ const Dashboard = () => {
   // composer pinned to the bottom) instead of flowing/scrolling like a normal
   // page, so they skip the trailing bottom-nav spacer and get flex-1/min-h-0
   // treatment to receive a definite height from their ancestors.
-  const isFullscreenView = effectiveView === 'chat' || effectiveView === 'excuse-letter' || effectiveView === 'assignments-journal';
+  const isFullscreenView = effectiveView === 'excuse-letter'
+    || effectiveView === 'assignments-journal'
+    || (effectiveView === 'chat' && isChatBoxOpen);
 
   // Fade/remount key for the content area: LearningHub tabs share one key so
   // its own tab bar stays mounted while only its content swaps underneath.
@@ -177,7 +180,13 @@ const Dashboard = () => {
     const Component = viewComponents[effectiveView];
 
     if (Component) {
-      return <Component key={pageKey} setActiveView={setActiveView} />;
+      return (
+        <Component
+          key={pageKey}
+          setActiveView={setActiveView}
+          onChatOpenChange={setIsChatBoxOpen}
+        />
+      );
     } else {
       return <DashboardHome key={`dashboard-fallback:${location.pathname}`} setActiveView={setActiveView} />;
     }
@@ -195,11 +204,13 @@ const Dashboard = () => {
           className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
             } ${isFullscreenView ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
-          <Header
-            sidebarOpen={sidebarOpen}
-            setSidebarOpen={setSidebarOpen}
-            onOpenProfile={() => navigate('/student/profile')}
-          />
+          {!isChatBoxOpen && (
+            <Header
+              sidebarOpen={sidebarOpen}
+              setSidebarOpen={setSidebarOpen}
+              onOpenProfile={() => navigate('/student/profile')}
+            />
+          )}
           <main className={`flex-1 min-h-0 ${isFullscreenView ? 'p-0' : ''} w-full flex flex-col`}>
             <Motion.div
               key={pageKey}
@@ -215,7 +226,9 @@ const Dashboard = () => {
             )}
           </main>
         </div>
-        <MobileBottomNav activeView={effectiveView} onSaveJournal={handleSaveJournal} />
+        {!isChatBoxOpen && (
+          <MobileBottomNav activeView={effectiveView} onSaveJournal={handleSaveJournal} />
+        )}
       </div>
       {showOnboarding && (
         <StudentOnboarding

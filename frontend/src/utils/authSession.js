@@ -1,4 +1,5 @@
 export const AUTH_NOTICE_KEY = 'auth_notice';
+export const AUTH_LOGOUT_EVENT = 'eec:auth-logout';
 
 const resetBrowserBranding = () => {
   document.title = 'Electronic Educare';
@@ -66,6 +67,9 @@ export const logoutAndRedirect = ({
   replace = true,
 } = {}) => {
   clearAuthData({ clearAllLocalStorage });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+  }
   setAuthNotice(notice);
   if (typeof navigate === 'function') {
     navigate('/', { replace, state: { authNotice: notice } });

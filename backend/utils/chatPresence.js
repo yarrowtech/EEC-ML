@@ -1,3 +1,4 @@
+const ChatThread = require('../models/ChatThread');
 const presenceStore = new Map();
 
 const getPresenceSnapshot = (userId) => {
@@ -42,8 +43,39 @@ const markUserOffline = (userId) => {
   return { changed: false, online: true, lastSeen: existing.lastSeen || null };
 };
 
+const notifyPresenceChange = async (io, { user, targetUserId, online, lastSeen }) => {
+  if (!io || !user || !targetUserId) return;
+
+  try {
+    const threads = await ChatThread.find({
+      schoolId: user.schoolId,
+      ...(user.campusId ? { campusId: user.campusId } : {}),
+      'participants.userId': targetUserId,
+    })
+      .select('_id participants')
+      .lean();
+
+    const notified = new Set();
+    threads.forEach((thread) => {
+      (thread.participants || []).forEach((participant) => {
+        const pid = String(participant.userId || '');
+        if (!pid || pid === String(targetUserId) || notified.has(pid)) return;
+        notified.add(pid);
+        io.to(`user:${pid}`).emit('presence-update', {
+          userId: String(targetUserId),
+          online,
+          lastSeen,
+        });
+      });
+    });
+  } catch {
+    // ignore presence fan-out issues
+  }
+};
+
 module.exports = {
   getPresenceSnapshot,
   markUserOnline,
   markUserOffline,
+  notifyPresenceChange,
 };

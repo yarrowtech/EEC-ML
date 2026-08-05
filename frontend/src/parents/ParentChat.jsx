@@ -7,8 +7,18 @@ import {
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
+import { AUTH_LOGOUT_EVENT } from '../utils/authSession';
 
-const API_URL = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000')).replace(/\/$/, '');
+const resolveApiBaseUrl = () => {
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '').replace(/\/api$/, '');
+  if (configured) return configured;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'http://localhost:5000';
+};
+
+const API_URL = resolveApiBaseUrl();
 const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
 const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -548,6 +558,24 @@ const ParentChat = () => {
     [threads, activeThreadId]
   );
 
+  useEffect(() => {
+    const disconnectSocket = () => {
+      socketRef.current?.disconnect();
+    };
+    const handleStorage = (event) => {
+      if (event.key === 'token' || event.key === null) {
+        disconnectSocket();
+      }
+    };
+
+    window.addEventListener(AUTH_LOGOUT_EVENT, disconnectSocket);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(AUTH_LOGOUT_EVENT, disconnectSocket);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
   const decryptForUI = useCallback(async (rawMsg) => {
     if (!rawMsg) return rawMsg;
     if (rawMsg.text && String(rawMsg.text).trim()) return rawMsg;
@@ -628,11 +656,7 @@ const ParentChat = () => {
     const socket = io(API_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
-      tryAllTransports: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
-      timeout: 20000,
+      reconnectionAttempts: 5,
     });
     socketRef.current = socket;
 

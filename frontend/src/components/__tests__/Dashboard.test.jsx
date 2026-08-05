@@ -7,6 +7,7 @@ let mockPathname = '/student';
 const mockAssignmentHandle = { saveJournal: jest.fn() };
 let latestMobileNavProps = null;
 let latestDashboardHomeProps = null;
+let latestStudentChatProps = null;
 
 jest.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: mockPathname }),
@@ -86,7 +87,10 @@ jest.mock('../TeacherFeedback', () => {
 
 jest.mock('../StudentChat', () => {
   const React = require('react');
-  return () => React.createElement('div', { 'data-testid': 'student-chat-view' });
+  return (props) => {
+    latestStudentChatProps = props;
+    return React.createElement('div', { 'data-testid': 'student-chat-view' });
+  };
 });
 
 jest.mock('../ExcuseLetter', () => {
@@ -123,6 +127,7 @@ jest.mock('../StudentDashboardContext', () => {
   const React = require('react');
   return {
     StudentDashboardProvider: ({ children }) => React.createElement('div', { 'data-testid': 'student-dashboard-provider' }, children),
+    useStudentDashboard: () => ({ profile: null }),
   };
 });
 
@@ -146,6 +151,7 @@ describe('Dashboard', () => {
     mockAssignmentHandle.saveJournal.mockClear();
     latestMobileNavProps = null;
     latestDashboardHomeProps = null;
+    latestStudentChatProps = null;
   });
 
   test('renders attendance view for /student/attendance', () => {
@@ -155,6 +161,23 @@ describe('Dashboard', () => {
 
     expect(screen.getByTestId('attendance-view')).toBeInTheDocument();
     expect(latestMobileNavProps?.activeView).toBe('attendance');
+  });
+
+  test('hides the student header and mobile footer when the chat box is open', () => {
+    mockPathname = '/student/chat';
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId('student-chat-view')).toBeInTheDocument();
+    expect(screen.getByTestId('header')).toBeInTheDocument();
+    expect(screen.getByTestId('mobile-bottom-nav')).toBeInTheDocument();
+
+    act(() => {
+      latestStudentChatProps.onChatOpenChange(true);
+    });
+
+    expect(screen.queryByTestId('header')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('mobile-bottom-nav')).not.toBeInTheDocument();
   });
 
   test('normalizes /dashboard paths to /student equivalents', async () => {

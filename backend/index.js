@@ -10,7 +10,7 @@ require('./utils/registerTenantPlugin');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const { Server: SocketServer } = require('socket.io');
-const { configureSocketIoRedisAdapter } = require('./utils/socketIoRedisAdapter');
+const { createAdapter } = require('@socket.io/redis-adapter');
 const jwt = require('jsonwebtoken');
 let swaggerUi = null;
 try {
@@ -51,7 +51,7 @@ assertProductionConfiguration();
 const { bindConsoleToLogger, logger } = require('./utils/logger');
 bindConsoleToLogger();
 logger.info('Pino logger initialized');
-const { connectRedis } = require('./utils/redisClient');
+const { connectRedis, client: redisClient } = require('./utils/redisClient');
 if (process.env.NODE_ENV !== 'test') {
   connectRedis();
 }
@@ -135,7 +135,12 @@ const Admin = require('./models/Admin');
 const Organization = require('./models/Organization');
 const { isStrongPassword } = require('./utils/passwordPolicy');
 const principalDashboardRoutes = require('./routes/principalDashboardRoutes');
-const { getPresenceSnapshot, markUserOnline, markUserOffline } = require('./utils/chatPresence');
+const {
+  getPresenceSnapshot,
+  markUserOnline,
+  markUserOffline,
+  notifyPresenceChange,
+} = require('./utils/chatPresence');
 const { syncAllocationGroupThreads } = require('./utils/chatGroupProvisioning');
 const { startHolidayReminderScheduler } = require('./utils/holidayNotificationScheduler');
 const { startTeacherFeedbackReminderScheduler } = require('./utils/teacherFeedbackReminderScheduler');
@@ -638,6 +643,21 @@ const io = new SocketServer(httpServer, {
   connectTimeout: 20000,
   transports: ['websocket', 'polling'],
 });
+
+app.set('io', io);
+if (process.env.REDIS_URL) {
+  (async () => {
+    try {
+      const pubClient = redisClient.duplicate();
+      const subClient = redisClient.duplicate();
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+      io.adapter(createAdapter(pubClient, subClient));
+      logger.info('Socket.IO Redis adapter enabled');
+    } catch (err) {
+      logger.warn({ err }, 'Socket.IO Redis adapter unavailable; falling back to in-process sockets');
+    }
+  })();
+}
 app.set('io', io);
 require('./utils/socketRegistry').set(io);
 

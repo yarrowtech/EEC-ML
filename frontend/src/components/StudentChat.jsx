@@ -8,8 +8,18 @@ import {
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
+import { AUTH_LOGOUT_EVENT } from '../utils/authSession';
 
-const API_URL = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000')).replace(/\/$/, '');
+const resolveApiBaseUrl = () => {
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '').replace(/\/api$/, '');
+  if (configured) return configured;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'http://localhost:5000';
+};
+
+const API_URL = resolveApiBaseUrl();
 const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
 const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -857,7 +867,7 @@ const ContactItem = ({ contact, onClick, theme }) => {
 };
 
 // ── Main StudentChat ───────────────────────────────────────────────────────────
-const StudentChat = () => {
+const StudentChat = ({ onChatOpenChange } = {}) => {
   const [me, setMe]                         = useState(null);
   const [threads, setThreads]               = useState([]);
   const [activeThreadId, setActiveThreadId] = useState(null);
@@ -898,6 +908,29 @@ const StudentChat = () => {
     [threads, activeThreadId]
   );
   const isGroupActiveThread = String(activeThread?.threadType || '').toLowerCase() === 'group';
+
+  useEffect(() => {
+    onChatOpenChange?.(Boolean(activeThreadId));
+    return () => onChatOpenChange?.(false);
+  }, [activeThreadId, onChatOpenChange]);
+
+  useEffect(() => {
+    const disconnectSocket = () => {
+      socketRef.current?.disconnect();
+    };
+    const handleStorage = (event) => {
+      if (event.key === 'token' || event.key === null) {
+        disconnectSocket();
+      }
+    };
+
+    window.addEventListener(AUTH_LOGOUT_EVENT, disconnectSocket);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(AUTH_LOGOUT_EVENT, disconnectSocket);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   const decryptForUI = useCallback(async (rawMsg) => {
     if (!rawMsg) return rawMsg;
@@ -1025,14 +1058,8 @@ const StudentChat = () => {
 
     const socket = io(API_URL, {
       auth: { token },
-      // Prefer WebSocket in PM2 cluster mode (polling would require sticky
-      // sessions), but retain explicit polling fallback for short outages.
       transports: ['websocket', 'polling'],
-      tryAllTransports: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
-      timeout: 20000,
+      reconnectionAttempts: 5,
     });
     socketRef.current = socket;
 
@@ -1969,9 +1996,9 @@ const StudentChat = () => {
                 </div>
 
                 {/* Input */}
-                <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-5 pt-4 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-4 flex-shrink-0 sticky bottom-0 z-20">
+                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
                   <div className="flex items-end gap-2">
-                    <div className="flex-1 bg-[#f4f6fa] rounded-full border-[1.5px] border-[#e9edf2] px-4 py-2.5 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10">
+                    <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5">
                       <textarea
                         rows={1}
                         value={draft}
