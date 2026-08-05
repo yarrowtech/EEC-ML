@@ -342,8 +342,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
 
   return (
     <>
-    <header className="bg-white border-b border-gray-100 shadow-sm z-30">
-      <div className="flex items-center gap-3 px-4 py-3 h-[60px]">
+    <header className="sticky top-0 bg-white border-b border-gray-100 shadow-sm z-30">
+      <div className="flex items-center gap-3 px-4 py-3 h-[63.4px]">
 
         {/* ── Mobile hamburger ── */}
         <button

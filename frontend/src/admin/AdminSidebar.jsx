@@ -122,7 +122,7 @@ const AdminSidebar = ({
             onClick={onToggleSidebar}
             className={`
               hidden lg:flex shrink-0 items-center justify-center rounded-lg
-              transition-all duration-200
+              transition-all duration-200 z-50
               ${collapsed
                 ? 'w-9 h-9 bg-yellow-500 hover:bg-yellow-600 text-white shadow-md hover:shadow-lg'
                 : 'w-7 h-7 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50'}
