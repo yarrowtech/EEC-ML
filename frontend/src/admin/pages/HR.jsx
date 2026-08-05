@@ -490,11 +490,11 @@ const HR = ({ setShowAdminHeader }) => {
     }
   };
 
-  const [jobs, setJobs] = useState([
+  const [jobs] = useState([
     { id: 'J1', title: 'Science Teacher', openings: 2, status: 'Open' },
     { id: 'J2', title: 'Office Assistant', openings: 1, status: 'Open' },
   ]);
-  const [candidates, setCandidates] = useState([
+  const [candidates] = useState([
     { id: 'C1', name: 'Rohit Das', for: 'Science Teacher', status: 'Screening' },
     { id: 'C2', name: 'Meera N', for: 'Office Assistant', status: 'Interview' },
   ]);
@@ -522,7 +522,7 @@ const HR = ({ setShowAdminHeader }) => {
 
       // Helper function to load image as base64
       const loadImageAsBase64 = (url) => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
@@ -620,7 +620,7 @@ const HR = ({ setShowAdminHeader }) => {
             pdf.setFontSize(7);
             pdf.text('PHOTO', 20, photoY + 16, { align: 'center' });
           }
-        } catch (error) {
+        } catch {
           // Fallback photo placeholder
           pdf.setDrawColor(r, g, b);
           pdf.setFillColor(248, 250, 252);
@@ -693,7 +693,7 @@ const HR = ({ setShowAdminHeader }) => {
           pdf.setTextColor(120, 120, 120);
           pdf.text('QR CODE', 87, y + 10, { align: 'center' });
         }
-      } catch (error) {
+      } catch {
         // Modern QR placeholder
         pdf.setDrawColor(200, 200, 200);
         pdf.setFillColor(250, 250, 250);
@@ -929,10 +929,12 @@ const HR = ({ setShowAdminHeader }) => {
                               <FileText size={14} className="mr-1" /> Payslip
                             </button>
                             <button
-                              onClick={() => setHrNotice({ type: 'info', text: 'Payment recorded (demo).' })}
-                              className="inline-flex items-center px-3 py-1 rounded text-white bg-green-600 hover:bg-green-700"
+                              type="button"
+                              disabled
+                              title="Payroll payment integration is not available yet"
+                              className="inline-flex items-center px-3 py-1 rounded text-gray-500 bg-gray-100 cursor-not-allowed"
                             >
-                              Pay
+                              Payment unavailable
                             </button>
                           </div>
                         </td>
@@ -966,10 +968,12 @@ const HR = ({ setShowAdminHeader }) => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{v.due.toLocaleString()}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
-                          onClick={() => setHrNotice({ type: 'info', text: 'Vendor payment recorded (demo).' })}
-                          className="inline-flex items-center px-3 py-1 rounded text-white bg-green-600 hover:bg-green-700"
+                          type="button"
+                          disabled
+                          title="Vendor payment integration is not available yet"
+                          className="inline-flex items-center px-3 py-1 rounded text-gray-500 bg-gray-100 cursor-not-allowed"
                         >
-                          Pay
+                          Payment unavailable
                         </button>
                       </td>
                     </tr>

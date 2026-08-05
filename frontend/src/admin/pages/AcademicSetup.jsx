@@ -287,7 +287,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [sectionPage, setSectionPage] = useState(1); 
   const [subjectPage, setSubjectPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5); // For classes, sections, subjects
-  const [yearItemsPerPage, setYearItemsPerPage] = useState(2); // For academic years
 
   // Bulk selection
   const [selectedYears, setSelectedYears] = useState([]);
@@ -844,9 +843,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     e.preventDefault();
     submitYearWithMode("continue");
   };
-  const saveYearAsDraft = () => submitYearWithMode("draft");
-
-
   /* ─── Quick-add preset: pre-fill mode + form, then open the modal ─── */
   const openClassAddMode = (mode) => {
     setClassAddMode(mode);
@@ -1112,6 +1108,31 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       standard: editingClass.standard,
       stream: editingClass.stream,
     }, async () => { await loadAcademicData(); setEditingClass(null); });
+  };
+
+  const createSingleClass = async (e) => {
+    e.preventDefault();
+    const name = String(editingClass?.name || '').trim();
+    const academicYearId = editingClass?.academicYearId || selectedYearId || currentAcademicYear?._id;
+    if (!name) {
+      setError('Class name is required.');
+      return;
+    }
+    if (!academicYearId) {
+      setError('Select an academic year before adding a class.');
+      return;
+    }
+    await handleCreate('/api/academic/classes', {
+      name,
+      academicYearId,
+      order: Number(editingClass?.order) || 0,
+      standard: editingClass?.standard,
+      stream: editingClass?.stream,
+    }, async () => {
+      await loadAcademicData();
+      setEditingClass(null);
+      setShowClassForm(false);
+    });
   };
 
   const updateSection = async (e) => {
@@ -2547,7 +2568,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             isOpen={showClassForm || editingClass !== null}
             onClose={() => { setShowClassForm(false); setEditingClass(null); }}
             title={editingClass ? "Edit Class" : "Add Class"}
-            onSubmit={editingClass ? updateClass : (e) => { e.preventDefault(); /* TODO: Add single class logic */ }}
+            onSubmit={editingClass?._id ? updateClass : createSingleClass}
             isSubmitting={isSubmitting}
           >
             <div className="space-y-4">

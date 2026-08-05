@@ -7,6 +7,7 @@ const API_BASE = import.meta.env.VITE_API_URL;
 const ArchivedStudents = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
   const fetchArchived = async () => {
@@ -33,8 +34,29 @@ const ArchivedStudents = () => {
     fetchArchived();
   }, []);
 
-  const downloadCSV = () => {
-    window.location.href = `${API_BASE}/api/nif/students/archived/export`;
+  const downloadCSV = async () => {
+    try {
+      setExporting(true);
+      setError('');
+      const res = await fetch(`${API_BASE}/api/nif/students/archived/export`, {
+        headers: { authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!res.ok) throw new Error('Unable to export archived students');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'archived-students.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export archived students:', err);
+      setError('Failed to export archived students.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -48,10 +70,11 @@ const ArchivedStudents = () => {
 
           <button
             onClick={downloadCSV}
+            disabled={exporting}
             className="bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
           >
             <FileDown size={16} />
-            Download CSV
+            {exporting ? 'Exporting…' : 'Download CSV'}
           </button>
         </div>
         {error ? (

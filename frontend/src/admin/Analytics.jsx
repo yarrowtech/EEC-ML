@@ -40,7 +40,13 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-// Renders AI-generated markdown (bold, headings, lists) without a full MD library.
+const renderInlineMarkdown = (content) => String(content || '')
+  .split(/(\*\*[^*]+\*\*)/g)
+  .map((part, index) => part.startsWith('**') && part.endsWith('**')
+    ? <strong key={index}>{part.slice(2, -2)}</strong>
+    : <span key={index}>{part}</span>);
+
+// Renders AI-generated markdown (bold, headings, lists) without injecting HTML.
 const SimpleMarkdown = ({ text }) => {
   if (!text) return null;
   const lines = text.split('\n');
@@ -61,7 +67,7 @@ const SimpleMarkdown = ({ text }) => {
           return (
             <div key={i} className="flex gap-2 pl-2">
               <span className="text-indigo-400 flex-shrink-0 mt-0.5">•</span>
-              <span dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+              <span>{renderInlineMarkdown(content)}</span>
             </div>
           );
         }
@@ -70,13 +76,13 @@ const SimpleMarkdown = ({ text }) => {
           return (
             <div key={i} className="flex gap-2 pl-2">
               <span className="text-indigo-500 font-bold flex-shrink-0 min-w-[18px]">{num}.</span>
-              <span dangerouslySetInnerHTML={{ __html: content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+              <span>{renderInlineMarkdown(content)}</span>
             </div>
           );
         }
         if (!line.trim()) return <div key={i} className="h-1" />;
         return (
-          <p key={i} dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />
+          <p key={i}>{renderInlineMarkdown(line)}</p>
         );
       })}
     </div>
@@ -834,31 +840,41 @@ const Analytics = ({ setShowAdminHeader }) => {
     }
     if (teacherEffectiveness.length) {
       exportToCSV(
-        teacherEffectiveness.map(({ teacherId: _id, ...rest }) => rest),
+        teacherEffectiveness.map((row) => {
+          const copy = { ...row };
+          delete copy.teacherId;
+          return copy;
+        }),
         `teacher-effectiveness-${date}.csv`
       );
     }
     if (dropoutRisk.length) {
       exportToCSV(
-        dropoutRisk.map(({ studentId: _id, reasons, ...rest }) => ({
-          ...rest,
-          reasons: Array.isArray(reasons) ? reasons.join('; ') : reasons,
-        })),
+        dropoutRisk.map((row) => {
+          const copy = { ...row, reasons: Array.isArray(row.reasons) ? row.reasons.join('; ') : row.reasons };
+          delete copy.studentId;
+          return copy;
+        }),
         `dropout-risk-${date}.csv`
       );
     }
     if (contentUsage.data.length) {
       exportToCSV(
-        contentUsage.data.map(({ id: _id, ...rest }) => rest),
+        contentUsage.data.map((row) => {
+          const copy = { ...row };
+          delete copy.id;
+          return copy;
+        }),
         `content-usage-${date}.csv`
       );
     }
     if (examIntegrity.data.length) {
       exportToCSV(
-        examIntegrity.data.map(({ attemptId: _id, issues, ...rest }) => ({
-          ...rest,
-          issues: Array.isArray(issues) ? issues.join('; ') : issues,
-        })),
+        examIntegrity.data.map((row) => {
+          const copy = { ...row, issues: Array.isArray(row.issues) ? row.issues.join('; ') : row.issues };
+          delete copy.attemptId;
+          return copy;
+        }),
         `exam-integrity-${date}.csv`
       );
     }

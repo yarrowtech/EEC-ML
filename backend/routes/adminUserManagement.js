@@ -177,7 +177,6 @@ const getModelByRole = (role) => {
   }
 };
 
-const PASSWORD_RESET_DEFAULT = 'Pass@123';
 const PASSWORD_RESET_ALLOWED_ROLES = new Set(['teacher', 'student', 'parent', 'principal']);
 
 const getPasswordResetModelByRole = (role) => {
@@ -670,9 +669,12 @@ router.post('/password-reset/reset', adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found for this institution/campus' });
     }
 
-    user.password = PASSWORD_RESET_DEFAULT;
+    const temporaryPassword = generatePassword(16);
+    user.password = temporaryPassword;
     if (Object.prototype.hasOwnProperty.call(user, 'initialPassword')) {
-      user.initialPassword = PASSWORD_RESET_DEFAULT;
+      // Do not persist the temporary secret in plaintext. It is returned once
+      // to the authorized admin and must be changed during first login.
+      user.initialPassword = '';
     }
     if (Object.prototype.hasOwnProperty.call(user, 'lastLoginAt')) {
       user.lastLoginAt = null;
@@ -685,7 +687,7 @@ router.post('/password-reset/reset', adminAuth, async (req, res) => {
       userId: user._id,
       name: user.name || 'Unnamed User',
       loginId: getUserIdentifier(role, user),
-      password: PASSWORD_RESET_DEFAULT,
+      password: temporaryPassword,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Unable to reset password' });

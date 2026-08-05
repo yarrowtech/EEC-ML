@@ -24,7 +24,6 @@ import {
   Star
 } from 'lucide-react';
 
-const SUPPORT_QUEUE_KEY = 'adminSupportRequests';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const PASSWORD_RESET_ROLES = [
   { value: 'teacher', label: 'Teacher' },
@@ -66,13 +65,9 @@ const Support = ({ setShowAdminHeader }) => {
   const [complaintForm, setComplaintForm] = useState(defaultComplaint);
   const [submitting, setSubmitting] = useState('');
   const [statusBanner, setStatusBanner] = useState(null);
-  const [queuedRequests, setQueuedRequests] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored = window.localStorage.getItem(SUPPORT_QUEUE_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch { return []; }
-  });
+  // Keep failed support requests in memory only. Support payloads can contain
+  // student/staff details and must not persist in browser storage.
+  const [queuedRequests, setQueuedRequests] = useState([]);
   const [syncingQueue, setSyncingQueue] = useState(false);
   const [recentRequests, setRecentRequests] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
@@ -143,7 +138,6 @@ const Support = ({ setShowAdminHeader }) => {
 
   const persistQueue = (queue) => {
     setQueuedRequests(queue);
-    if (typeof window !== 'undefined') window.localStorage.setItem(SUPPORT_QUEUE_KEY, JSON.stringify(queue));
   };
 
   const saveOfflineRequest = (payload) => {
@@ -234,8 +228,8 @@ const Support = ({ setShowAdminHeader }) => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to reset password');
-      setPasswordResetResult({ name: data?.name || selectedPasswordResetUser.name, loginId: data?.loginId || selectedPasswordResetUser.userId, password: data?.password || 'Pass@123' });
-      setStatusBanner({ type: 'success', title: 'Password reset completed.', description: 'Default password has been set to Pass@123.' });
+      setPasswordResetResult({ name: data?.name || selectedPasswordResetUser.name, loginId: data?.loginId || selectedPasswordResetUser.userId, password: data?.password || '' });
+      setStatusBanner({ type: 'success', title: 'Password reset completed.', description: 'A unique temporary password was generated. Share it securely and ask the user to change it after login.' });
     } catch (error) {
       setStatusBanner({ type: 'error', title: 'Reset failed.', description: error.message || 'Please retry.' });
     } finally { setSubmitting(''); }
@@ -462,7 +456,7 @@ const Support = ({ setShowAdminHeader }) => {
               <button type="submit" disabled={submitting === 'password-reset'}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-white py-2.5 text-sm font-bold hover:from-blue-700 hover:to-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-wait">
                 {submitting === 'password-reset' ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                Reset to Pass@123
+                Generate temporary password
               </button>
             </form>
           </section>

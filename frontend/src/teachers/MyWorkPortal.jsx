@@ -525,7 +525,11 @@ const MyWorkPortal = () => {
         const uploadForm = new FormData();
         uploadForm.append('file', expenseForm.receiptFile);
         uploadForm.append('folder', 'teacher_expenses');
-        const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, { method: 'POST', body: uploadForm });
+        const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+          body: uploadForm,
+        });
         const uploadData = await uploadRes.json().catch(() => ({}));
         if (!uploadRes.ok || !uploadData?.files?.[0]?.secure_url) throw new Error('Unable to upload receipt');
         receiptUrl = uploadData.files[0].secure_url;
@@ -639,7 +643,11 @@ const MyWorkPortal = () => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('folder', 'teacher_profiles');
-      const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, { method: 'POST', body: formData });
+      const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+        body: formData,
+      });
       const uploadData = await uploadRes.json().catch(() => ({}));
       const uploadedUrl = uploadData?.files?.[0]?.secure_url;
       if (!uploadRes.ok || !uploadedUrl) throw new Error('Unable to upload image');

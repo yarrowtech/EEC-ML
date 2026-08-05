@@ -1,6 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const School = require('../models/School');
+const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const rateLimit = require('../middleware/rateLimit');
 const { sendWebhook, WEBHOOK_EVENTS } = require('../utils/webhookSender');
 const { sendSchoolRegistrationConfirmationEmail } = require('../utils/mailer');
@@ -16,6 +18,12 @@ const ALLOWED_ACADEMIC_STRUCTURES = ['Semester', 'Trimester', 'Quarter'];
 const ALLOWED_USER_RANGES = ['<100', '100-500', '500-1000', '1000+'];
 const ALLOWED_CAMPUS_TYPES = ['Main', 'Branch'];
 const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const registrationUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+});
+const REGISTRATION_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const REGISTRATION_DOCUMENT_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
@@ -33,6 +41,49 @@ const hasDangerousKeys = (value, depth = 0) => {
     return hasDangerousKeys(nested, depth + 1);
   });
 };
+
+const uploadRegistrationAsset = async (req, res, { bulk = false } = {}) => {
+  const files = bulk ? req.files : (req.file ? [req.file] : []);
+  if (!files.length) return res.status(400).json({ message: 'No file received' });
+
+  const allowedTypes = bulk ? REGISTRATION_DOCUMENT_TYPES : REGISTRATION_IMAGE_TYPES;
+  if (files.some((file) => !allowedTypes.has(file.mimetype))) {
+    return res.status(400).json({ message: 'Unsupported registration file type' });
+  }
+
+  try {
+    const uploaded = await Promise.all(files.map(async (file) => {
+      const result = await uploadBufferToCloudinary(file.buffer, {
+        folder: bulk ? 'school_verification_docs' : 'school_logos',
+        resource_type: 'auto',
+        access_mode: 'public',
+        use_filename: true,
+        unique_filename: true,
+        overwrite: false,
+      });
+      return {
+        originalName: file.originalname,
+        public_id: result.public_id,
+        secure_url: result.secure_url,
+        resource_type: result.resource_type,
+        format: result.format,
+        bytes: result.bytes,
+      };
+    }));
+    return res.json({ uploaded: uploaded.length, files: uploaded });
+  } catch (err) {
+    console.error('School registration upload error:', err);
+    return res.status(500).json({ message: 'Upload failed' });
+  }
+};
+
+router.post('/uploads/single', registrationUpload.single('file'), (req, res) =>
+  uploadRegistrationAsset(req, res)
+);
+
+router.post('/uploads/bulk', registrationUpload.array('files', 5), (req, res) =>
+  uploadRegistrationAsset(req, res, { bulk: true })
+);
 
 const asString = (value) => {
   if (value === undefined || value === null) return undefined;

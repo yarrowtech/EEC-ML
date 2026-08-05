@@ -31,6 +31,22 @@ const mongoSanitize = require('express-mongo-sanitize');
 let swaggerDocument;
 
 dotenv.config({ path: path.join(__dirname, '.env') });
+
+const assertProductionConfiguration = () => {
+  if (process.env.NODE_ENV !== 'production') return;
+  const jwtSecret = String(process.env.JWT_SECRET || '');
+  const paymentKey = String(process.env.PAYMENT_ENCRYPTION_KEY || '');
+  const isPlaceholder = (value) => !value || value.includes('replace-with') || value.includes('change-me');
+  if (isPlaceholder(jwtSecret) || jwtSecret.length < 32) {
+    throw new Error('JWT_SECRET must be a strong production secret of at least 32 characters');
+  }
+  if (isPlaceholder(paymentKey)) {
+    throw new Error('PAYMENT_ENCRYPTION_KEY must be configured in production');
+  }
+};
+
+assertProductionConfiguration();
+
 const { bindConsoleToLogger, logger } = require('./utils/logger');
 bindConsoleToLogger();
 logger.info('Pino logger initialized');
@@ -80,6 +96,7 @@ const teacherAllocationRoutes = require('./routes/teacherAllocationRoutes');
 const practiceRoutes = require('./routes/practiceRoutes');
 const excuseLetterRoutes = require('./routes/excuseLetterRoutes');
 const nifStudentRoutes = require('./routes/nifStudentRoutes');
+const wellbeingRoutes = require('./routes/wellbeingRoute');
 const lessonPlanRoutes = require('./routes/lessonPlanRoutes');
 const aiTutorRoutes = require('./routes/aiTutorRoutes');
 const promotionRoutes = require('./routes/promotionRoutes');
@@ -171,7 +188,9 @@ const seedSuperAdmin = async () => {
   try {
     const existing = await Admin.findOne({ username: normalizedUsername });
     if (existing) {
-      existing.password = password;
+      if (process.env.RESET_SUPER_ADMIN_PASSWORD === 'true') {
+        existing.password = password;
+      }
       existing.name = name;
       existing.role = 'super_admin';
       existing.schoolId = null;
@@ -315,8 +334,8 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'checkout.razorpay.com'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'fonts.googleapis.com'],
+        scriptSrc: ["'self'", 'cdn.jsdelivr.net', 'checkout.razorpay.com'],
+        styleSrc: ["'self'", 'fonts.googleapis.com'],
         fontSrc: ["'self'", 'fonts.gstatic.com'],
         imgSrc: ["'self'", 'data:', 'res.cloudinary.com', '*.cloudinary.com'],
         connectSrc: ["'self'"],
@@ -399,6 +418,26 @@ app.use((req, _res, next) => {
   next();
 });
 app.use(tenantResolver);
+
+// Route handlers log detailed exceptions server-side, but never expose those
+// details in production 5xx responses (database paths, driver messages, etc.).
+app.use((_req, res, next) => {
+  const sendJson = res.json.bind(res);
+  res.json = (payload) => {
+    if (res.statusCode >= 500 && payload && typeof payload === 'object') {
+      const sanitized = { ...payload };
+      if (Object.prototype.hasOwnProperty.call(sanitized, 'error')) {
+        sanitized.error = 'Internal server error';
+      }
+      if (Object.prototype.hasOwnProperty.call(sanitized, 'message')) {
+        sanitized.message = 'Internal server error';
+      }
+      return sendJson(sanitized);
+    }
+    return sendJson(payload);
+  };
+  next();
+});
 
 try {
   swaggerDocument = require('./swagger-output.json');
@@ -525,6 +564,7 @@ app.use('/api/teacher-allocations', writeHeavyApiLimiter, teacherAllocationRoute
 app.use('/api/practice', practiceRoutes);
 app.use('/api/excuse-letters', excuseLetterRoutes);
 app.use('/api/nif', authApiLimiter, nifStudentRoutes);
+app.use('/api/wellbeing', writeHeavyApiLimiter, wellbeingRoutes);
 app.use('/api/lesson-plans', writeHeavyApiLimiter, lessonPlanRoutes);
 app.use('/api/ai-tutor', aiApiLimiter, aiTutorRoutes);
 app.use('/api/spaced-repetition', spacedRepetitionRoutes);

@@ -280,7 +280,7 @@ const AILearningCoursesReference = () => {
     };
 
     load();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // Fetch real published teaching materials when the topic changes.
   // Uses fetchCachedJson so repeated visits to the same topic are instant.
@@ -322,7 +322,7 @@ const AILearningCoursesReference = () => {
       .catch(() => {
         // Non-critical — fall back to smart learning map data
       });
-  }, [subjectSlug, topicSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [subjectSlug, topicSlug]);  
 
   const assignedMentors = useMemo(() => {
     const teacherSet = new Set();

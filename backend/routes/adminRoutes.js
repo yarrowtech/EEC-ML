@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
@@ -46,6 +47,14 @@ const resolveSchoolIdOrError = async (schoolId, res) => {
   return schoolId;
 };
 
+const hasValidBootstrapSecret = (provided, expected) => {
+  const providedBuffer = Buffer.from(String(provided || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return providedBuffer.length > 0
+    && providedBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+};
+
 // Register
 router.post('/register', async (req, res) => {
   // #swagger.tags = ['Admin Auth']
@@ -83,6 +92,15 @@ router.post('/register', async (req, res) => {
         });
         return res.status(201).json({ message: 'Admin registered' });
       });
+    }
+
+    const bootstrapSecret = process.env.SUPER_ADMIN_BOOTSTRAP_SECRET;
+    const suppliedBootstrapSecret = req.get('x-super-admin-bootstrap-secret');
+    if (process.env.NODE_ENV === 'production' && !bootstrapSecret) {
+      return res.status(503).json({ error: 'Initial administrator bootstrap is not configured' });
+    }
+    if (bootstrapSecret && !hasValidBootstrapSecret(suppliedBootstrapSecret, bootstrapSecret)) {
+      return res.status(403).json({ error: 'Bootstrap authorization required' });
     }
     if (schoolId) {
       return res.status(400).json({ error: 'schoolId is not allowed for initial super admin' });

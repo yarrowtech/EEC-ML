@@ -55,10 +55,6 @@ const AdminSidebar = ({
     setExpandedMenus((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
-  const handleLogout = () => {
-    logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
-  };
-
   return (
     <>
       {/* Mobile backdrop */}

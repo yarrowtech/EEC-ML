@@ -320,7 +320,7 @@ const SchoolRegistrationForm = () => {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('folder', 'school_logos');
-      const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, { method: 'POST', body: fd });
+      const res = await fetch(`${API_BASE}/api/school-registration/uploads/single`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error('Upload failed');
       const result = await res.json();
       const f = result.files[0];
@@ -352,7 +352,7 @@ const SchoolRegistrationForm = () => {
       const fd = new FormData();
       files.forEach(f => fd.append('files', f));
       fd.append('folder', 'school_verification_docs');
-      const res = await fetch(`${API_BASE}/api/uploads/cloudinary/bulk`, { method: 'POST', body: fd });
+      const res = await fetch(`${API_BASE}/api/school-registration/uploads/bulk`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error('Upload failed');
       const result = await res.json();
       const uploaded = result.files.map(f => ({ public_id: f.public_id, secure_url: f.secure_url, originalName: f.originalName }));

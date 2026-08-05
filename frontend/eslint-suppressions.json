@@ -1,0 +1,2145 @@
+{
+  "__mocks__/fileMock.js": {
+    "no-undef": {
+      "count": 1
+    }
+  },
+  "dist/assets/index-CSaQvOin.js": {
+    "getter-return": {
+      "count": 12
+    },
+    "no-case-declarations": {
+      "count": 7
+    },
+    "no-cond-assign": {
+      "count": 67
+    },
+    "no-constant-binary-expression": {
+      "count": 1
+    },
+    "no-constant-condition": {
+      "count": 5
+    },
+    "no-control-regex": {
+      "count": 22
+    },
+    "no-debugger": {
+      "count": 4
+    },
+    "no-duplicate-case": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 190
+    },
+    "no-fallthrough": {
+      "count": 109
+    },
+    "no-func-assign": {
+      "count": 150
+    },
+    "no-misleading-character-class": {
+      "count": 2
+    },
+    "no-prototype-builtins": {
+      "count": 80
+    },
+    "no-redeclare": {
+      "count": 71
+    },
+    "no-self-assign": {
+      "count": 2
+    },
+    "no-sparse-arrays": {
+      "count": 6
+    },
+    "no-undef": {
+      "count": 83
+    },
+    "no-unreachable": {
+      "count": 1
+    },
+    "no-unsafe-finally": {
+      "count": 27
+    },
+    "no-unused-vars": {
+      "count": 328
+    },
+    "no-useless-catch": {
+      "count": 1
+    },
+    "no-useless-escape": {
+      "count": 77
+    },
+    "react/display-name": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 146
+    },
+    "valid-typeof": {
+      "count": 2
+    }
+  },
+  "dist/assets/index.es-VGdEk0Ey.js": {
+    "no-cond-assign": {
+      "count": 3
+    },
+    "no-empty": {
+      "count": 15
+    },
+    "no-func-assign": {
+      "count": 3
+    },
+    "no-irregular-whitespace": {
+      "count": 1
+    },
+    "no-prototype-builtins": {
+      "count": 2
+    },
+    "no-redeclare": {
+      "count": 1
+    },
+    "no-self-assign": {
+      "count": 5
+    },
+    "no-undef": {
+      "count": 8
+    },
+    "no-unused-vars": {
+      "count": 24
+    },
+    "require-yield": {
+      "count": 2
+    }
+  },
+  "dist/assets/purify.es-BgtpMKW3.js": {
+    "no-cond-assign": {
+      "count": 2
+    },
+    "no-control-regex": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 4
+    },
+    "no-useless-escape": {
+      "count": 3
+    }
+  },
+  "dist/assets/quill-BtsobID9.js": {
+    "no-cond-assign": {
+      "count": 5
+    },
+    "no-empty": {
+      "count": 1
+    },
+    "no-fallthrough": {
+      "count": 1
+    },
+    "no-prototype-builtins": {
+      "count": 11
+    },
+    "no-redeclare": {
+      "count": 9
+    },
+    "no-self-assign": {
+      "count": 1
+    },
+    "no-undef": {
+      "count": 4
+    },
+    "no-unsafe-finally": {
+      "count": 10
+    },
+    "no-unused-vars": {
+      "count": 58
+    },
+    "no-useless-escape": {
+      "count": 3
+    }
+  },
+  "dist/draco/draco_decoder.js": {
+    "no-constant-condition": {
+      "count": 961
+    },
+    "no-empty": {
+      "count": 2
+    },
+    "no-fallthrough": {
+      "count": 15
+    },
+    "no-undef": {
+      "count": 16
+    },
+    "no-unused-vars": {
+      "count": 57
+    },
+    "no-useless-escape": {
+      "count": 3
+    }
+  },
+  "dist/draco/draco_wasm_wrapper.js": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-undef": {
+      "count": 14
+    },
+    "no-unused-vars": {
+      "count": 12
+    }
+  },
+  "dist/sw.js": {
+    "no-undef": {
+      "count": 3
+    },
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "jest.setup.js": {
+    "no-undef": {
+      "count": 10
+    }
+  },
+  "public/draco/draco_decoder.js": {
+    "no-constant-condition": {
+      "count": 961
+    },
+    "no-empty": {
+      "count": 2
+    },
+    "no-fallthrough": {
+      "count": 15
+    },
+    "no-undef": {
+      "count": 16
+    },
+    "no-unused-vars": {
+      "count": 57
+    },
+    "no-useless-escape": {
+      "count": 3
+    }
+  },
+  "public/draco/draco_wasm_wrapper.js": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-undef": {
+      "count": 14
+    },
+    "no-unused-vars": {
+      "count": 12
+    }
+  },
+  "public/sw.js": {
+    "no-undef": {
+      "count": 3
+    },
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/404/NotFound.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/App.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 52
+    }
+  },
+  "src/Super Admin/SuperAdminApp.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 30
+    }
+  },
+  "src/Super Admin/SuperAdminLayout.jsx": {
+    "react/prop-types": {
+      "count": 24
+    },
+    "react/react-in-jsx-scope": {
+      "count": 71
+    }
+  },
+  "src/Super Admin/components/ToastProvider.jsx": {
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 7
+    }
+  },
+  "src/Super Admin/pages/ActiveSchools.jsx": {
+    "react/prop-types": {
+      "count": 36
+    },
+    "react/react-in-jsx-scope": {
+      "count": 142
+    }
+  },
+  "src/Super Admin/pages/Credentials.jsx": {
+    "react/prop-types": {
+      "count": 6
+    },
+    "react/react-in-jsx-scope": {
+      "count": 69
+    }
+  },
+  "src/Super Admin/pages/Feedback.jsx": {
+    "react/prop-types": {
+      "count": 8
+    },
+    "react/react-in-jsx-scope": {
+      "count": 37
+    }
+  },
+  "src/Super Admin/pages/IDPass.jsx": {
+    "react/prop-types": {
+      "count": 3
+    },
+    "react/react-in-jsx-scope": {
+      "count": 61
+    }
+  },
+  "src/Super Admin/pages/Issues.jsx": {
+    "react/prop-types": {
+      "count": 24
+    },
+    "react/react-in-jsx-scope": {
+      "count": 71
+    }
+  },
+  "src/Super Admin/pages/Operations.jsx": {
+    "no-unused-vars": {
+      "count": 5
+    },
+    "react/prop-types": {
+      "count": 20
+    },
+    "react/react-in-jsx-scope": {
+      "count": 109
+    }
+  },
+  "src/Super Admin/pages/Organizations.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 51
+    }
+  },
+  "src/Super Admin/pages/Overview.jsx": {
+    "react/prop-types": {
+      "count": 20
+    },
+    "react/react-in-jsx-scope": {
+      "count": 107
+    }
+  },
+  "src/Super Admin/pages/PaymentStatus.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 98
+    }
+  },
+  "src/Super Admin/pages/RequestDetails.jsx": {
+    "react/prop-types": {
+      "count": 12
+    },
+    "react/react-in-jsx-scope": {
+      "count": 109
+    }
+  },
+  "src/Super Admin/pages/Requests.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 47
+    },
+    "react/react-in-jsx-scope": {
+      "count": 141
+    }
+  },
+  "src/__tests__/example.test.jsx": {
+    "no-undef": {
+      "count": 7
+    },
+    "react/prop-types": {
+      "count": 2
+    },
+    "react/react-in-jsx-scope": {
+      "count": 3
+    }
+  },
+  "src/admin/AdminApp.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 2
+    },
+    "react/react-in-jsx-scope": {
+      "count": 90
+    }
+  },
+  "src/admin/AdminDashboard.jsx": {
+    "no-undef": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/admin/AdminHeader.jsx": {
+    "react/prop-types": {
+      "count": 9
+    },
+    "react/react-in-jsx-scope": {
+      "count": 99
+    }
+  },
+  "src/admin/AdminLayout.jsx": {
+    "react/prop-types": {
+      "count": 9
+    },
+    "react/react-in-jsx-scope": {
+      "count": 16
+    }
+  },
+  "src/admin/AdminSidebar.jsx": {
+    "react/prop-types": {
+      "count": 21
+    },
+    "react/react-in-jsx-scope": {
+      "count": 55
+    }
+  },
+  "src/admin/Analytics.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 9
+    },
+    "react/react-in-jsx-scope": {
+      "count": 512
+    }
+  },
+  "src/admin/Avatar.jsx": {
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/admin/Dashboard.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 28
+    }
+  },
+  "src/admin/ProgressBar.jsx": {
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/admin/Routines.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 100
+    }
+  },
+  "src/admin/Staff.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/Students.jsx": {
+    "no-unused-vars": {
+      "count": 26
+    },
+    "react/no-unescaped-entities": {
+      "count": 6
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/Teachers.jsx": {
+    "no-unused-vars": {
+      "count": 7
+    },
+    "no-useless-escape": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/adminConstants.js": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/admin/components/CredentialGeneratorButton.jsx": {
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/admin/components/IDCard.jsx": {
+    "react/prop-types": {
+      "count": 21
+    }
+  },
+  "src/admin/components/LessonPlanForm.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/admin/components/StudentFormSections.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 94
+    }
+  },
+  "src/admin/pages/AcademicSetup.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 45
+    }
+  },
+  "src/admin/pages/AdminSettings.jsx": {
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/admin/pages/Assignments.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/AttendanceManagement.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/DepartmentManagement.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/ExaminationManagement.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 11
+    }
+  },
+  "src/admin/pages/FeesCollection.jsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/FeesDashboard.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/FeesManagement.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/FloorRoomManagement.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/admin/pages/HR.jsx": {
+    "react/prop-types": {
+      "count": 25
+    }
+  },
+  "src/admin/pages/HolidayList.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/LessonPlan.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/NewAdd.jsx": {
+    "react/prop-types": {
+      "count": 25
+    }
+  },
+  "src/admin/pages/NoticeDetail.jsx": {
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/admin/pages/NoticeManagement.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/admin/pages/ParentsManagement.jsx": {
+    "no-unused-vars": {
+      "count": 10
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/PaymentGatewaySettings.jsx": {
+    "react/prop-types": {
+      "count": 6
+    },
+    "react/react-in-jsx-scope": {
+      "count": 79
+    }
+  },
+  "src/admin/pages/ReportCardManagement.jsx": {
+    "react/prop-types": {
+      "count": 43
+    }
+  },
+  "src/admin/pages/Result.jsx": {
+    "no-unused-vars": {
+      "count": 7
+    },
+    "react/prop-types": {
+      "count": 17
+    }
+  },
+  "src/admin/pages/SchoolAdminsManagement.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/admin/pages/SchoolRegistrations.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/admin/pages/SchoolsManagement.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/admin/pages/StudentFeeDetails.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/StudentPromotion.jsx": {
+    "react/prop-types": {
+      "count": 8
+    }
+  },
+  "src/admin/pages/SubjectManagement.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/admin/pages/SuperAdminDashboard.jsx": {
+    "no-unused-vars": {
+      "count": 12
+    },
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/admin/pages/Support.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 219
+    }
+  },
+  "src/admin/pages/TeacherFeedbackOverview.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 17
+    }
+  },
+  "src/admin/pages/TeacherTimetable.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 21
+    }
+  },
+  "src/admin/pages/Wellbeing.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/admin/pages/__tests__/StudentPromotion.test.jsx": {
+    "no-undef": {
+      "count": 25
+    },
+    "react/react-in-jsx-scope": {
+      "count": 3
+    }
+  },
+  "src/components/AILearningCoursesLanding.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/components/AILearningCoursesReference.jsx": {
+    "no-unused-vars": {
+      "count": 9
+    },
+    "react/prop-types": {
+      "count": 8
+    }
+  },
+  "src/components/AILearningTryoutSection.jsx": {
+    "react/prop-types": {
+      "count": 25
+    }
+  },
+  "src/components/AITutorHomeScreen.jsx": {
+    "no-unused-vars": {
+      "count": 22
+    },
+    "react/jsx-no-undef": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 111
+    }
+  },
+  "src/components/AcademicAlcove.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/AchievementCard.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/AchievementsView.jsx": {
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/components/Assignment.jsx": {
+    "no-unused-vars": {
+      "count": 12
+    },
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/components/AssignmentHub.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    }
+  },
+  "src/components/AssignmentView.jsx": {
+    "no-empty": {
+      "count": 2
+    },
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/AttendanceView.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/components/AuthSessionManager.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 14
+    }
+  },
+  "src/components/BaselineQuiz.jsx": {
+    "no-empty": {
+      "count": 2
+    },
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/components/CourseProgress.jsx": {
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/components/DashboardHome.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/components/DashboardPet.jsx": {
+    "react/prop-types": {
+      "count": 13
+    }
+  },
+  "src/components/DesktopNotificationPermissionModal.jsx": {
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/components/ErrorAnalysisView.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/ExamRoutineTable.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ExcuseLetter.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/components/FeedbackForm.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/components/FloatingButtons.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/components/FloatingGamesButton.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    }
+  },
+  "src/components/FloatingPetButton.jsx": {
+    "no-unreachable": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/components/Header.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/HolidayListView.jsx": {
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/components/LanguageRadarChart.jsx": {
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/components/LearningPathMapView.jsx": {
+    "react/prop-types": {
+      "count": 34
+    }
+  },
+  "src/components/LessonPlanStatusView.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/components/LessonViewer.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/components/LoginForm.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/MasteryView.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 20
+    }
+  },
+  "src/components/MobileBottomNav.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/MockExamView.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/components/NoticeBoard.jsx": {
+    "no-unused-vars": {
+      "count": 6
+    },
+    "react/prop-types": {
+      "count": 27
+    }
+  },
+  "src/components/PanelContent.jsx": {
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 4
+    }
+  },
+  "src/components/PointsBadge.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/PostExamFeedbackView.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 11
+    }
+  },
+  "src/components/PracticePapersPortal.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/PracticeTestInterface.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ProfileUpdate.jsx": {
+    "no-case-declarations": {
+      "count": 2
+    },
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/components/ProtectedRoute.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/QuickStats.jsx": {
+    "react/prop-types": {
+      "count": 15
+    }
+  },
+  "src/components/ReadingPracticePage.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 38
+    }
+  },
+  "src/components/ReadingScoreCard.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 59
+    }
+  },
+  "src/components/RecommendationWidget.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/ResultsView.jsx": {
+    "no-unused-vars": {
+      "count": 5
+    },
+    "react/prop-types": {
+      "count": 56
+    }
+  },
+  "src/components/SchoolRegistrationForm.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 14
+    }
+  },
+  "src/components/SchoolRegistrationSuccess.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/components/Sidebar.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/components/StudentChat.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 67
+    }
+  },
+  "src/components/StudentDashboardContext.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/StudentExamsView.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 22
+    }
+  },
+  "src/components/StudentNotificationCenter.jsx": {
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/components/StudentOnboarding.jsx": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/components/StudentWellbeing.jsx": {
+    "no-unused-vars": {
+      "count": 15
+    }
+  },
+  "src/components/StudyMaterials.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/components/TeacherFeedback.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/TeacherLearningPaths.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    }
+  },
+  "src/components/ThemeCustomizer.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/Tryout.jsx": {
+    "no-undef": {
+      "count": 4
+    },
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 19
+    }
+  },
+  "src/components/WelcomeHeader.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 3
+    }
+  },
+  "src/components/WorksheetSubmitModal.jsx": {
+    "react/prop-types": {
+      "count": 8
+    }
+  },
+  "src/components/WritingPracticePage.jsx": {
+    "no-unused-vars": {
+      "count": 6
+    },
+    "react/prop-types": {
+      "count": 40
+    }
+  },
+  "src/components/WritingScoreCard.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 30
+    }
+  },
+  "src/components/WrongAnswerReviewView.jsx": {
+    "react/prop-types": {
+      "count": 17
+    }
+  },
+  "src/components/__tests__/AssignmentView.test.jsx": {
+    "no-undef": {
+      "count": 31
+    },
+    "react/display-name": {
+      "count": 2
+    }
+  },
+  "src/components/__tests__/AttendanceView.test.jsx": {
+    "no-undef": {
+      "count": 21
+    },
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/components/__tests__/AuthSessionManager.test.jsx": {
+    "no-undef": {
+      "count": 18
+    }
+  },
+  "src/components/__tests__/Dashboard.test.jsx": {
+    "no-undef": {
+      "count": 67
+    },
+    "react/display-name": {
+      "count": 22
+    },
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/__tests__/LoginForm.test.jsx": {
+    "no-undef": {
+      "count": 114
+    },
+    "react/react-in-jsx-scope": {
+      "count": 23
+    }
+  },
+  "src/components/__tests__/PanelContent.test.jsx": {
+    "no-undef": {
+      "count": 9
+    }
+  },
+  "src/components/__tests__/PointsBadge.test.jsx": {
+    "no-undef": {
+      "count": 12
+    }
+  },
+  "src/components/__tests__/ProtectedRoute.test.jsx": {
+    "no-undef": {
+      "count": 20
+    }
+  },
+  "src/components/__tests__/SchoolRegistrationForm.test.jsx": {
+    "no-undef": {
+      "count": 132
+    }
+  },
+  "src/components/ui/avatar.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ui/badge.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ui/button.jsx": {
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/components/ui/card.jsx": {
+    "react/prop-types": {
+      "count": 8
+    }
+  },
+  "src/components/ui/checkbox.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/ui/dialog.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/components/ui/input.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/components/ui/label.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/ui/progress.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/components/ui/scroll-area.jsx": {
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/components/ui/select.jsx": {
+    "react/prop-types": {
+      "count": 14
+    }
+  },
+  "src/components/ui/separator.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ui/tabs.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/components/ui/textarea.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/ui/tooltip.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/context/TenantContext.jsx": {
+    "react-refresh/only-export-components": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 1
+    }
+  },
+  "src/context/__tests__/TenantContext.test.jsx": {
+    "no-undef": {
+      "count": 27
+    },
+    "react/react-in-jsx-scope": {
+      "count": 9
+    }
+  },
+  "src/contexts/ThemeContext.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/CalculatorGames.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/CalculatorMemoryGame.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/DigitalChallenge.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/FacialRecall.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/GamesMenu.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/games/GamesOverlay.jsx": {
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/games/GamesPage.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/games/GroceryGame.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/MapIdentifier.jsx": {
+    "no-unused-vars": {
+      "count": 6
+    },
+    "react/jsx-no-undef": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/no-unknown-property": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/games/MindTrainingGames.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/games/ReshapedGame.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/main.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 2
+    }
+  },
+  "src/pages/FeedbackPage.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/parents/AcademicReport.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/parents/AchievementsView.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/parents/AttendanceReport.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    }
+  },
+  "src/parents/ComplaintManagementSystem.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/parents/CoursesView.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/parents/FeesPayment.jsx": {
+    "no-undef": {
+      "count": 3
+    },
+    "no-unused-vars": {
+      "count": 8
+    },
+    "react/prop-types": {
+      "count": 15
+    }
+  },
+  "src/parents/HealthReport.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/parents/PTMPortal.jsx": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/parents/ParentChat.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 52
+    }
+  },
+  "src/parents/ParentDashboard.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/parents/ParentObservation.jsx": {
+    "no-unused-vars": {
+      "count": 6
+    },
+    "react/no-unescaped-entities": {
+      "count": 4
+    }
+  },
+  "src/parents/ParentObservationNonAcademic.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    }
+  },
+  "src/parents/ParentPortal.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/parents/ResultsView.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/jsx-no-undef": {
+      "count": 1
+    }
+  },
+  "src/parents/__tests__/FeesPayment.test.jsx": {
+    "no-undef": {
+      "count": 85
+    },
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/parents/__tests__/ParentPortal.test.jsx": {
+    "no-undef": {
+      "count": 127
+    },
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/parents/__tests__/__utils__/testUtils.js": {
+    "no-undef": {
+      "count": 60
+    },
+    "no-unused-vars": {
+      "count": 8
+    },
+    "react/react-in-jsx-scope": {
+      "count": 2
+    }
+  },
+  "src/principal/AcademicAnalytics.jsx": {
+    "no-unused-vars": {
+      "count": 7
+    }
+  },
+  "src/principal/FinancialDashboard.jsx": {
+    "no-unused-vars": {
+      "count": 5
+    }
+  },
+  "src/principal/NotificationCenter.jsx": {
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/principal/OverviewPage.jsx": {
+    "no-unused-vars": {
+      "count": 8
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/no-unknown-property": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 26
+    }
+  },
+  "src/principal/PrincipalChatPanel.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/principal/PrincipalDashboard.jsx": {
+    "no-unused-vars": {
+      "count": 36
+    }
+  },
+  "src/principal/PrincipalHeader.jsx": {
+    "react/prop-types": {
+      "count": 14
+    }
+  },
+  "src/principal/PrincipalProfile.jsx": {
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/principal/PrincipalSidebar.jsx": {
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/principal/StaffManagement.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/principal/principalUi.jsx": {
+    "react/prop-types": {
+      "count": 18
+    }
+  },
+  "src/teachers/AILearningPath.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    }
+  },
+  "src/teachers/AIPoweredTeaching.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/teachers/AssignmentEvaluation.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/teachers/AssignmentHub.jsx": {
+    "no-unused-vars": {
+      "count": 9
+    }
+  },
+  "src/teachers/AssignmentManagement.jsx": {
+    "no-unused-vars": {
+      "count": 10
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    }
+  },
+  "src/teachers/AssignmentPortal.jsx": {
+    "no-unused-vars": {
+      "count": 10
+    },
+    "react/prop-types": {
+      "count": 207
+    }
+  },
+  "src/teachers/AttendanceManagement.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/teachers/BaselineManager.jsx": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/teachers/ClassRoutine.jsx": {
+    "react/prop-types": {
+      "count": 79
+    }
+  },
+  "src/teachers/ExamResultPortal.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/teachers/GenerateAIPathPortal.jsx": {
+    "no-unused-vars": {
+      "count": 8
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 24
+    }
+  },
+  "src/teachers/HealthUpdates.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/teachers/HealthUpdatesAdvanced.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/teachers/HolidayList.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 41
+    }
+  },
+  "src/teachers/LanguagePracticeManager.jsx": {
+    "no-unused-vars": {
+      "count": 8
+    },
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 32
+    }
+  },
+  "src/teachers/MyWorkPortal.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 28
+    }
+  },
+  "src/teachers/OneClickLessonStudio.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 41
+    }
+  },
+  "src/teachers/ParentMeetings.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/teachers/PracticeQuestions.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    }
+  },
+  "src/teachers/ResultManagement.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    }
+  },
+  "src/teachers/RubricEditor.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 19
+    }
+  },
+  "src/teachers/StudentAnalyticsPortal.jsx": {
+    "no-unused-vars": {
+      "count": 10
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    },
+    "react/no-unescaped-entities": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 204
+    }
+  },
+  "src/teachers/StudentObservation.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    }
+  },
+  "src/teachers/StudentObservationOverview.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 16
+    }
+  },
+  "src/teachers/StudentProgress.jsx": {
+    "no-unused-vars": {
+      "count": 4
+    },
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/teachers/TeacherAIToolsPanel.jsx": {
+    "no-unused-vars": {
+      "count": 7
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/teachers/TeacherAchievements.jsx": {
+    "react/prop-types": {
+      "count": 30
+    }
+  },
+  "src/teachers/TeacherAlcove.jsx": {
+    "no-unused-vars": {
+      "count": 9
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 142
+    }
+  },
+  "src/teachers/TeacherAnalyticsDashboard.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/teachers/TeacherChat.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 72
+    }
+  },
+  "src/teachers/TeacherDashboard.jsx": {
+    "react/prop-types": {
+      "count": 49
+    }
+  },
+  "src/teachers/TeacherFeedbackPortal.jsx": {
+    "react/prop-types": {
+      "count": 12
+    }
+  },
+  "src/teachers/TeacherInterventionScreen.jsx": {
+    "react/no-unescaped-entities": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/teachers/TeacherPortal.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 12
+    }
+  },
+  "src/teachers/WeakStudentIdentification.jsx": {
+    "no-unused-vars": {
+      "count": 5
+    }
+  },
+  "src/teachers/__tests__/TeacherPortal.test.jsx": {
+    "no-undef": {
+      "count": 24
+    },
+    "react/react-in-jsx-scope": {
+      "count": 5
+    }
+  },
+  "src/teachers/components/LessonPlannerWizard.jsx": {
+    "react/prop-types": {
+      "count": 72
+    },
+    "react/react-in-jsx-scope": {
+      "count": 152
+    }
+  },
+  "src/teachers/components/PracticePaperBuilder.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/teachers/components/RichTextMaterialEditor.jsx": {
+    "react/prop-types": {
+      "count": 24
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/AssessmentCard.jsx": {
+    "react/prop-types": {
+      "count": 7
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/ChapterItem.jsx": {
+    "react/prop-types": {
+      "count": 21
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/DrawerModal.jsx": {
+    "no-unused-vars": {
+      "count": 5
+    },
+    "react/no-unescaped-entities": {
+      "count": 5
+    },
+    "react/prop-types": {
+      "count": 87
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/FileUploadCard.jsx": {
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/HeaderActions.jsx": {
+    "react/prop-types": {
+      "count": 12
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/ProgressBar.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/RichTextEditor.jsx": {
+    "react/prop-types": {
+      "count": 3
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/Sidebar.jsx": {
+    "react/prop-types": {
+      "count": 27
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/TryoutBuilder.jsx": {
+    "no-unused-vars": {
+      "count": 2
+    },
+    "react/prop-types": {
+      "count": 50
+    }
+  },
+  "src/teachers/components/lesson-plan-builder/UploadDropzone.jsx": {
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/tryout/cloze_drag_drop.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/tryout/cloze_drop_down.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 4
+    }
+  },
+  "src/tryout/cloze_text.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 2
+    }
+  },
+  "src/tryout/image_highlighter.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/tryout/lab.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/tryout/match_list.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 5
+    }
+  },
+  "src/tryout/rich_text.jsx": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "react/prop-types": {
+      "count": 1
+    },
+    "react/react-in-jsx-scope": {
+      "count": 9
+    }
+  },
+  "src/tryout/sort_list.jsx": {
+    "no-unused-vars": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 7
+    },
+    "react/react-in-jsx-scope": {
+      "count": 7
+    }
+  },
+  "src/utils/__tests__/logger.test.js": {
+    "no-undef": {
+      "count": 33
+    }
+  },
+  "src/utils/__tests__/studentApiCache.test.js": {
+    "no-undef": {
+      "count": 13
+    }
+  },
+  "src/utils/feeReceiptPdf.js": {
+    "no-undef": {
+      "count": 2
+    },
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/utils/quill.jsx": {
+    "react/prop-types": {
+      "count": 5
+    },
+    "react/react-in-jsx-scope": {
+      "count": 43
+    }
+  },
+  "src/utils/reportCardPdf.js": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-unused-vars": {
+      "count": 4
+    }
+  }
+}

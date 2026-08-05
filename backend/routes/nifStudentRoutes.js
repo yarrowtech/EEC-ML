@@ -23,6 +23,13 @@ const resolveSchoolId = (req, res) => {
 
 const resolveCampusId = (req) => req.campusId || req.admin?.campusId || null;
 
+const escapeCsvCell = (value) => {
+  const normalized = value === null || value === undefined ? '' : String(value);
+  return /[",\n\r]/.test(normalized)
+    ? `"${normalized.replace(/"/g, '""')}"`
+    : normalized;
+};
+
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const padNumber = (value, size = 3) => String(value).padStart(size, '0');
 const normalizeOrgPrefix = (adminUsername) => {
@@ -324,6 +331,37 @@ router.get('/students/archived', adminAuth, async (req, res) => {
     res.json(students);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load archived students' });
+  }
+});
+
+router.get('/students/archived/export', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const filter = { schoolId, isArchived: true };
+    if (campusId) filter.campusId = campusId;
+
+    const students = await StudentUser.find(filter)
+      .select('name course batchCode archivedAt status archivedPlacement')
+      .sort({ archivedAt: -1 })
+      .lean();
+    const headers = ['Name', 'Course', 'Batch', 'Passed Out Year', 'Status', 'Archived At'];
+    const rows = students.map((student) => [
+      student.name || '',
+      student.course || '',
+      student.batchCode || '',
+      student.archivedPlacement?.previousStatus === 'Passed Out' ? new Date(student.archivedAt).getFullYear() : '',
+      student.status || 'Archived',
+      student.archivedAt ? new Date(student.archivedAt).toISOString() : '',
+    ]);
+    const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="archived-students.csv"');
+    return res.send(`\ufeff${csv}\r\n`);
+  } catch (err) {
+    return res.status(500).json({ error: 'Unable to export archived students' });
   }
 });
 
