@@ -1583,9 +1583,9 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
   const activeStatusText = isTypingInActive
     ? `${isTypingInActive} is typing...`
     : activePresence?.online
-    ? 'online'
-    : activePresence?.lastSeen
-    ? `last seen ${formatLastSeen(activePresence.lastSeen)}`
+    ? 'Online'
+    : activePresence
+    ? (activePresence.lastSeen ? `Offline · last seen ${formatLastSeen(activePresence.lastSeen)}` : 'Offline')
     : (activeParticipantType === 'group'
       ? 'Group'
       : (activeTeacher?.subject || activeTeacher?.subjects?.[0] || 'Teacher'));

@@ -15,6 +15,15 @@ export const AUTH_NOTICE = Object.freeze({
   LOGGED_OUT: 'logged_out',
 });
 
+const resolveApiBaseUrl = () => {
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '').replace(/\/api$/, '');
+  if (configured) return configured;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'http://localhost:5000';
+};
+
 export const clearAuthData = ({ clearAllLocalStorage = false } = {}) => {
   if (clearAllLocalStorage) {
     localStorage.clear();
@@ -66,6 +75,18 @@ export const logoutAndRedirect = ({
   clearAllLocalStorage = false,
   replace = true,
 } = {}) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    const apiBaseUrl = resolveApiBaseUrl();
+    void fetch(`${apiBaseUrl}/api/chat/presence/logout`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      keepalive: true,
+    }).catch(() => {});
+  }
   clearAuthData({ clearAllLocalStorage });
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));

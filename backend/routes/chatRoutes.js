@@ -13,7 +13,11 @@ const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ChatKey = require('../models/ChatKey');
-const { getPresenceSnapshot } = require('../utils/chatPresence');
+const {
+  getPresenceSnapshot,
+  markUserOffline,
+  notifyPresenceChange,
+} = require('../utils/chatPresence');
 const { syncAllocationGroupThreads, syncTimetableGroupThreads } = require('../utils/chatGroupProvisioning');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
@@ -1671,6 +1675,47 @@ router.get('/threads/:threadId/presence', async (req, res) => {
       err,
       targetType: 'chat_thread',
       targetId: req.params.threadId,
+    });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/chat/presence/logout — mark the current user offline before redirecting away
+router.post('/presence/logout', async (req, res) => {
+  try {
+    const io = req.app.get('io');
+    const presenceOffline = markUserOffline(req.user.id);
+    if (presenceOffline.changed) {
+      await notifyPresenceChange(io, {
+        user: req.user,
+        targetUserId: req.user.id,
+        online: false,
+        lastSeen: presenceOffline.lastSeen,
+      });
+    }
+
+    logStudentPortalEvent(req, {
+      feature: 'chat',
+      action: 'presence.logout',
+      outcome: 'success',
+      statusCode: 200,
+      targetType: 'user',
+      targetId: req.user.id,
+    });
+
+    res.json({
+      ok: true,
+      online: false,
+      lastSeen: presenceOffline.lastSeen || null,
+    });
+  } catch (err) {
+    logStudentPortalError(req, {
+      feature: 'chat',
+      action: 'presence.logout',
+      statusCode: 500,
+      err,
+      targetType: 'user',
+      targetId: req.user?.id,
     });
     res.status(500).json({ error: err.message });
   }

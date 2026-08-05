@@ -712,35 +712,6 @@ io.on('connection', (socket) => {
   const user = socket.user;
   const userId = user.id?.toString();
 
-  const notifyPresenceChange = async ({ targetUserId, online, lastSeen }) => {
-    if (!targetUserId) return;
-    try {
-      const threads = await ChatThread.find({
-        schoolId: user.schoolId,
-        ...(user.campusId ? { campusId: user.campusId } : {}),
-        'participants.userId': targetUserId,
-      })
-        .select('_id participants')
-        .lean();
-
-      const notified = new Set();
-      threads.forEach((thread) => {
-        (thread.participants || []).forEach((participant) => {
-          const pid = String(participant.userId || '');
-          if (!pid || pid === String(targetUserId) || notified.has(pid)) return;
-          notified.add(pid);
-          io.to(`user:${pid}`).emit('presence-update', {
-            userId: String(targetUserId),
-            online,
-            lastSeen,
-          });
-        });
-      });
-    } catch {
-      // ignore presence fan-out issues
-    }
-  };
-
   const markThreadMessagesSeenSocket = async ({ threadId, schoolId, campusId, currentUserId }) => {
     if (!threadId || !schoolId || !currentUserId) return;
     await ChatMessage.updateMany(
@@ -793,7 +764,8 @@ io.on('connection', (socket) => {
   socket.join(`user:${userId}`);
   const presenceOnline = markUserOnline(userId);
   if (presenceOnline.changed) {
-    notifyPresenceChange({
+    notifyPresenceChange(io, {
+      user,
       targetUserId: userId,
       online: true,
       lastSeen: presenceOnline.lastSeen,
@@ -1015,7 +987,8 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const presenceOffline = markUserOffline(userId);
     if (presenceOffline.changed) {
-      notifyPresenceChange({
+      notifyPresenceChange(io, {
+        user,
         targetUserId: userId,
         online: false,
         lastSeen: presenceOffline.lastSeen,

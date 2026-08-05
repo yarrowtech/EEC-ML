@@ -1777,9 +1777,9 @@ const TeacherChat = () => {
   const activeParticipantStatus = isTypingInActive
     ? `${isTypingInActive} is typing...`
     : activeParticipantPresence?.online
-    ? 'online'
-    : activeParticipantPresence?.lastSeen
-    ? `last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}`
+    ? 'Online'
+    : activeParticipantPresence
+    ? (activeParticipantPresence.lastSeen ? `Offline · last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}` : 'Offline')
     : activeParticipantLabel;
 
   return (
