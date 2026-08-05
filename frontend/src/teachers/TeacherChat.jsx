@@ -1142,7 +1142,8 @@ const TeacherChat = () => {
 
     const socket = io(API_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      tryAllTransports: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,

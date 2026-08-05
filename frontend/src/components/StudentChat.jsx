@@ -1025,7 +1025,10 @@ const StudentChat = () => {
 
     const socket = io(API_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      // EC2/Nginx may temporarily reject WebSocket upgrades. Start with the
+      // reliable HTTP polling transport, then upgrade when WebSockets work.
+      transports: ['polling', 'websocket'],
+      tryAllTransports: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
