@@ -18,6 +18,10 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 
 const router = express.Router();
 
+// Matches the typeLabel attendanceRoutes.js stamps on attendance-marked
+// notifications — kept as a plain string here to avoid a cross-route import.
+const ATTENDANCE_UPDATE_TYPE_LABEL = 'attendance_marked';
+
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
   if (!schoolId) {
@@ -364,6 +368,10 @@ router.get('/', adminAuth, async (req, res) => {
     const campusId = req.campusId || null;
     const items = await Notification.find({
       schoolId,
+      // Attendance-marked entries are system notifications for students/
+      // parents, not admin-authored notices — keep them out of the Notice
+      // Board console (they still reach students/parents via /user).
+      typeLabel: { $ne: ATTENDANCE_UPDATE_TYPE_LABEL },
       ...(campusId
         ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
         : {}),

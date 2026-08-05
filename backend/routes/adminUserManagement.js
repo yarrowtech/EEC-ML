@@ -1274,29 +1274,58 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
-    // Fetch counts from all user types
-    const [studentCount, teacherCount, parentCount, staffCount, principalCount] = await Promise.all([
-      StudentUser.countDocuments(filter),
-      TeacherUser.countDocuments(filter),
-      ParentUser.countDocuments(filter),
-      StaffUser.countDocuments(filter),
-      Principal.countDocuments(filter)
-    ]);
-
-    // Calculate additional stats
-    const totalUsers = studentCount + teacherCount + parentCount + staffCount + principalCount;
 
     // Get recent registrations (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const [recentStudents, recentTeachers, recentParents, recentStaff, recentPrincipals] = await Promise.all([
-      StudentUser.countDocuments({ ...filter, createdAt: { $gte: thirtyDaysAgo } }),
+    // Only count active students — same rule as /admin/users/get-students —
+    // so a student who has left/been expelled/been archived doesn't inflate
+    // the dashboard total.
+    const activeStudentFilter = {
+      ...filter,
+      isArchived: { $ne: true },
+      status: { $nin: EXITED_STUDENT_STATUSES },
+    };
+
+    // Parents whose linked children have ALL exited/been archived are excluded
+    // here too, so this total matches what /admin/users/get-parents actually
+    // lists (a parent with zero children is still counted).
+    const parentDocsPromise = ParentUser.find(filter)
+      .select('childrenIds createdAt')
+      .populate({ path: 'childrenIds', select: 'status isArchived' })
+      .lean();
+
+    // Fetch counts from all user types
+    const [studentCount, teacherCount, parentDocs, staffCount, principalCount] = await Promise.all([
+      StudentUser.countDocuments(activeStudentFilter),
+      TeacherUser.countDocuments(filter),
+      parentDocsPromise,
+      StaffUser.countDocuments(filter),
+      Principal.countDocuments(filter)
+    ]);
+
+    const activeParentDocs = parentDocs.filter((parent) => {
+      const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+      const activeChildren = populatedChildren.filter(
+        (child) => child && child.isArchived !== true && !isExitedStudentStatus(child.status)
+      );
+      return !(populatedChildren.length > 0 && activeChildren.length === 0);
+    });
+    const parentCount = activeParentDocs.length;
+
+    // Calculate additional stats
+    const totalUsers = studentCount + teacherCount + parentCount + staffCount + principalCount;
+
+    const [recentStudents, recentTeachers, recentStaff, recentPrincipals] = await Promise.all([
+      StudentUser.countDocuments({ ...activeStudentFilter, createdAt: { $gte: thirtyDaysAgo } }),
       TeacherUser.countDocuments({ ...filter, createdAt: { $gte: thirtyDaysAgo } }),
-      ParentUser.countDocuments({ ...filter, createdAt: { $gte: thirtyDaysAgo } }),
       StaffUser.countDocuments({ ...filter, createdAt: { $gte: thirtyDaysAgo } }),
       Principal.countDocuments({ ...filter, createdAt: { $gte: thirtyDaysAgo } })
     ]);
+    const recentParents = activeParentDocs.filter(
+      (parent) => parent.createdAt && new Date(parent.createdAt) >= thirtyDaysAgo
+    ).length;
 
     res.status(200).json({
       students: {
