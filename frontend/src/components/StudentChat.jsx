@@ -1025,9 +1025,9 @@ const StudentChat = () => {
 
     const socket = io(API_URL, {
       auth: { token },
-      // EC2/Nginx may temporarily reject WebSocket upgrades. Start with the
-      // reliable HTTP polling transport, then upgrade when WebSockets work.
-      transports: ['polling', 'websocket'],
+      // Prefer WebSocket in PM2 cluster mode (polling would require sticky
+      // sessions), but retain explicit polling fallback for short outages.
+      transports: ['websocket', 'polling'],
       tryAllTransports: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,

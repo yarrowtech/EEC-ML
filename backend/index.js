@@ -10,6 +10,7 @@ require('./utils/registerTenantPlugin');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const { Server: SocketServer } = require('socket.io');
+const { configureSocketIoRedisAdapter } = require('./utils/socketIoRedisAdapter');
 const jwt = require('jsonwebtoken');
 let swaggerUi = null;
 try {
@@ -1041,7 +1042,13 @@ const pingKeepAliveUrl = () => {
   }
 };
 
-const startServer = (host) => {
+let socketAdapterConfigured = false;
+
+const startServer = async (host) => {
+  if (!socketAdapterConfigured && process.env.NODE_ENV !== 'test') {
+    socketAdapterConfigured = true;
+    await configureSocketIoRedisAdapter(io);
+  }
   httpServer.listen(PORT, host, () => {
     console.log(`Server running on ${host}:${PORT}`);
 
@@ -1060,10 +1067,17 @@ httpServer.on('error', (err) => {
   // If IPv6 host is unavailable on this machine, retry with IPv4 bind.
   if (err && err.code === 'EADDRNOTAVAIL' && HOST === '::') {
     console.warn('[server] IPv6 bind unavailable. Retrying on 0.0.0.0');
-    setTimeout(() => startServer('0.0.0.0'), 250);
+    setTimeout(() => {
+      startServer('0.0.0.0').catch((startErr) => {
+        console.error('[server] Failed to restart on IPv4:', startErr.message);
+      });
+    }, 250);
     return;
   }
   throw err;
 });
 
-startServer(HOST);
+startServer(HOST).catch((err) => {
+  console.error('[server] Startup failed:', err.message);
+  process.exitCode = 1;
+});

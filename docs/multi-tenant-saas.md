@@ -94,6 +94,22 @@ server {
 
 Use a wildcard TLS certificate and set Express `TRUST_PROXY` to match the trusted Nginx hop. Never accept a client-provided organization ID as authority; hostname resolution and the signed token are the authorities.
 
+### Socket.IO with multiple PM2 workers
+
+When the backend runs in PM2 cluster mode or has multiple Node workers, all
+workers must use the same Redis instance. Otherwise a message handled by one
+worker cannot reach a browser socket connected to another worker.
+
+```env
+REDIS_URL=redis://127.0.0.1:6379
+SOCKET_IO_REDIS_ENABLED=true
+SOCKET_IO_REDIS_REQUIRED=true
+```
+
+The backend configures `@socket.io/redis-adapter` before accepting connections.
+Keep Redis running and restart every PM2 worker after deploying dependency or
+environment changes.
+
 ## Render free instance keep-alive
 
 The backend sends a health request every 10 minutes. On Render it automatically targets `RENDER_EXTERNAL_URL`; elsewhere set `KEEP_ALIVE_URL` explicitly.
