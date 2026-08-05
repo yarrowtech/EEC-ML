@@ -24,7 +24,38 @@ const TYPE_LABELS = {
   dialogue: 'Dialogue',
 };
 
-// Animated waveform bars
+// Animated bar visualizer (matches the HTML design)
+const BarVisualizer = ({ active, color = '#4f46e5' }) => {
+  const delays = [0, 0.15, 0.3, 0.45, 0.6, 0.75];
+  return (
+    <div className="flex items-end gap-1" style={{ height: 28 }}>
+      {delays.map((delay, i) => (
+        <Motion.span
+          key={i}
+          style={{
+            display: 'inline-block',
+            width: 4,
+            borderRadius: 4,
+            background: active ? '#f59e0b' : color,
+            transformOrigin: 'bottom',
+          }}
+          animate={active
+            ? { scaleY: [0.15, 0.95, 0.5, 0.15], height: 28 }
+            : { scaleY: 0.2, height: 28 }}
+          transition={active ? {
+            duration: 0.9,
+            repeat: Infinity,
+            repeatType: 'mirror',
+            delay,
+            ease: 'easeInOut',
+          } : { duration: 0.3 }}
+        />
+      ))}
+    </div>
+  );
+};
+
+// Legacy waveform kept for history display
 const Waveform = ({ active }) => (
   <div className="flex items-center gap-0.5 h-8">
     {Array.from({ length: 20 }).map((_, i) => (
@@ -96,10 +127,10 @@ const MaterialCard = ({ material, onStart }) => (
 );
 
 // Reading session view
-const ReadingSession = ({ material, token, onComplete, onCancel }) => {
-  const [phase, setPhase] = useState('preview'); // preview | recording | processing | results
-  const [isRecording, setIsRecording] = useState(false);
+const ReadingSession = ({ material, token, onCancel }) => {
+  const [phase, setPhase] = useState('preview'); // preview | recording | processing | error | results
   const [isPaused, setIsPaused] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [wordsPerMinute, setWordsPerMinute] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -134,25 +165,53 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
     recognitionRef.current = rec;
   }, []);
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
+    // ── resolve getUserMedia across browsers / legacy prefixes ─────────────
+    let getMedia;
+    if (navigator.mediaDevices?.getUserMedia) {
+      getMedia = (c) => navigator.mediaDevices.getUserMedia(c);
+    } else {
+      const legacyFn = navigator.getUserMedia ||
+                       navigator.webkitGetUserMedia ||
+                       navigator.mozGetUserMedia;
+      if (!legacyFn) {
+        setErrorMsg(
+          'Audio recording is not supported in this browser. ' +
+          'On iPhone/iPad use Safari 14.5+; on Android use Chrome 74+.'
+        );
+        setPhase('error');
+        return;
+      }
+      getMedia = (c) => new Promise((res, rej) => legacyFn.call(navigator, c, res, rej));
+    }
+
+    // ── pick the best supported MIME type ─────────────────────────────────
+    const MIME_CANDIDATES = ['audio/webm', 'audio/mp4', 'audio/ogg'];
+    const mimeType = MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const stream = await getMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+        },
+      });
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       audioChunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
-      recorder.start(500); // collect chunks every 500ms
+      recorder.start(500);
       mediaRecorderRef.current = recorder;
       startTimeRef.current = Date.now();
-      setIsRecording(true);
       setIsPaused(false);
+      setElapsed(0);
       setPhase('recording');
 
-      // Start live timer
       timerRef.current = setInterval(() => {
         const secs = Math.floor((Date.now() - startTimeRef.current) / 1000);
         setElapsed(secs);
@@ -162,9 +221,29 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
 
       startLiveSpeech();
     } catch (err) {
-      toast.error('Microphone permission denied. Please allow microphone access.');
+      // Map DOMException names to actionable messages for mobile users
+      const name = err?.name || '';
+      let msg;
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        msg =
+          'Microphone access was denied. ' +
+          'On iPhone: Settings → Safari → Microphone → Allow. ' +
+          'On Android: tap the lock icon in the address bar → Microphone → Allow.';
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        msg = 'No microphone was found on this device. Please connect one and try again.';
+      } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+        msg = 'Microphone is in use by another app. Close other apps using the mic and try again.';
+      } else if (name === 'SecurityError') {
+        msg = 'Microphone access requires a secure connection (HTTPS). Please contact your school administrator.';
+      } else if (name === 'AbortError') {
+        msg = 'Microphone request was cancelled. Please try again.';
+      } else {
+        msg = `Could not access microphone: ${err?.message || 'unknown error'}. Please try again.`;
+      }
+      setErrorMsg(msg);
+      setPhase('error');
     }
-  };
+  }, [startLiveSpeech, liveTranscript]);
 
   const pauseRecording = () => {
     if (mediaRecorderRef.current?.state === 'recording') {
@@ -187,7 +266,7 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
     }
   };
 
-  const finishRecording = async () => {
+  const finishRecording = useCallback(async () => {
     clearInterval(timerRef.current);
     recognitionRef.current?.stop();
 
@@ -199,15 +278,28 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
       if (recorder.state !== 'inactive') recorder.stop();
     });
 
-    // Stop all tracks
     recorder.stream?.getTracks().forEach((t) => t.stop());
-    setIsRecording(false);
+    mediaRecorderRef.current = null;
     setPhase('processing');
+    setErrorMsg('');
+
+    const controller = new AbortController();
+    // 3-minute hard timeout — AI pipeline should finish well within this
+    const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000);
 
     try {
-      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+      const blobType = recorder.mimeType || 'audio/webm';
+      const blob = new Blob(audioChunksRef.current, { type: blobType });
+      if (blob.size === 0) {
+        setErrorMsg('No audio was captured. Please check your microphone and try again.');
+        setPhase('error');
+        return;
+      }
+
+      // Derive file extension from MIME so the server's ffmpeg picks the right decoder
+      const ext = blobType.includes('mp4') ? 'mp4' : blobType.includes('ogg') ? 'ogg' : 'webm';
       const formData = new FormData();
-      formData.append('audio', blob, 'recording.webm');
+      formData.append('audio', blob, `recording.${ext}`);
       formData.append('materialId', material._id);
       formData.append('audioDurationSeconds', String(elapsed));
 
@@ -215,24 +307,49 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
+        signal: controller.signal,
       });
 
-      if (!resp.ok) throw new Error(await resp.text());
+      if (!resp.ok) {
+        let detail = 'Evaluation failed on the server.';
+        try { detail = (await resp.json()).message || detail; } catch { /* raw text */ }
+        throw new Error(detail);
+      }
+
       const data = await resp.json();
       setAssessment(data.data);
       setPhase('results');
     } catch (err) {
-      console.error(err);
-      toast.error('Evaluation failed. Please try again.');
-      setPhase('recording');
+      console.error('[ReadingEval]', err);
+      const isAbort = err.name === 'AbortError';
+      setErrorMsg(
+        isAbort
+          ? 'Evaluation timed out (3 min). The AI service may be overloaded — please try again.'
+          : err.message || 'Evaluation failed. Please try again.'
+      );
+      setPhase('error');
+    } finally {
+      clearTimeout(timeoutId);
     }
-  };
+  }, [material, token, elapsed]);
 
   useEffect(() => () => {
     clearInterval(timerRef.current);
     recognitionRef.current?.stop();
     mediaRecorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
   }, []);
+
+  // Space = start / finish (matches HTML design keyboard shortcut)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== ' ' || e.repeat || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      if (phase === 'recording') finishRecording();
+      else if (phase === 'preview') startRecording();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [phase, finishRecording, startRecording]);
 
   if (phase === 'results' && assessment) {
     return (
@@ -250,145 +367,280 @@ const ReadingSession = ({ material, token, onComplete, onCancel }) => {
     );
   }
 
+  if (phase === 'processing') {
+    return (
+      <div className="max-w-3xl mx-auto flex items-center justify-center min-h-64">
+        <Motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-3xl shadow-xl border border-white/50 p-12 text-center w-full"
+        >
+          <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-5">
+            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+          </div>
+          <h3 className="font-bold text-gray-900 text-lg mb-2">Analysing your reading…</h3>
+          <p className="text-sm text-gray-500 max-w-sm mx-auto">
+            Transcribing audio and evaluating pronunciation, fluency, and grammar. This may take up to 60 seconds.
+          </p>
+        </Motion.div>
+      </div>
+    );
+  }
+
+  if (phase === 'error') {
+    return (
+      <div className="max-w-3xl mx-auto flex items-center justify-center min-h-64">
+        <Motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-3xl shadow-xl border border-red-100 p-12 text-center w-full"
+        >
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-5">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <h3 className="font-bold text-gray-900 text-lg mb-2">Evaluation failed</h3>
+          <p className="text-sm text-gray-500 max-w-sm mx-auto mb-7">
+            {errorMsg || 'Something went wrong on the server. Your recording was not lost.'}
+          </p>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <button
+              onClick={() => {
+                setPhase('preview');
+                setElapsed(0);
+                setLiveTranscript('');
+                setErrorMsg('');
+                audioChunksRef.current = [];
+              }}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold text-white"
+              style={{ background: 'linear-gradient(135deg, #4f46e5, #0ea5e9)' }}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                <path d="M3 12a9 9 0 1 0 9-9m0 0v6m0-6h-6" />
+              </svg>
+              Try again
+            </button>
+            <button
+              onClick={onCancel}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to materials
+            </button>
+          </div>
+        </Motion.div>
+      </div>
+    );
+  }
+
+  const isActive = phase === 'recording' && !isPaused;
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      {/* Back */}
-      <button onClick={onCancel} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+    <div className="max-w-3xl mx-auto">
+      {/* Back link */}
+      <button
+        onClick={onCancel}
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-5"
+      >
         <ArrowLeft className="w-4 h-4" /> Back to materials
       </button>
 
-      {/* Material header */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <div className="flex flex-wrap gap-2 mb-3">
-          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${DIFFICULTY_COLORS[material.difficulty] || 'bg-gray-100 text-gray-600'}`}>
-            {material.difficulty}
+      {/* ── Main card ── */}
+      <Motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+        className="bg-white rounded-[28px] shadow-xl border border-white/50 px-10 py-9 transition-all duration-300"
+        style={{
+          boxShadow: phase === 'recording'
+            ? '0 24px 60px rgba(15,23,42,0.12), 0 0 0 2px #4f46e5, 0 0 0 6px rgba(79,70,229,0.12)'
+            : '0 24px 60px rgba(15,23,42,0.08)',
+        }}
+      >
+        {/* Top row: chip + meta */}
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-indigo-100/80 px-4 py-1.5 rounded-full border border-indigo-100">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 inline-block" />
+            Read aloud
           </span>
-          {material.subject && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium">{material.subject}</span>
-          )}
-          {material.chapter && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">{material.chapter}</span>
-          )}
-          <span className="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 font-medium">
-            {TYPE_LABELS[material.contentType] || material.contentType}
-          </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              <FileText className="w-3.5 h-3.5" /> {material.wordCount || 0} words
+            </span>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              <Clock className="w-3.5 h-3.5" /> ~{material.estimatedReadingTime || 1} min
+            </span>
+            {material.difficulty && (
+              <span className={`text-xs px-3 py-1 rounded-full font-medium ${DIFFICULTY_COLORS[material.difficulty] || 'bg-gray-100 text-gray-600'}`}>
+                {material.difficulty}
+              </span>
+            )}
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-1">{material.title}</h2>
-        <div className="flex gap-4 text-xs text-gray-400">
-          <span className="flex items-center gap-1"><FileText className="w-3.5 h-3.5" /> {material.wordCount} words</span>
-          <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> ~{material.estimatedReadingTime} min</span>
-        </div>
-      </div>
 
-      {/* Text content */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Reading Passage</h3>
-        <div className="prose prose-sm max-w-none">
-          <p className="text-gray-800 leading-8 text-base font-['Georgia',serif] whitespace-pre-wrap">
-            {material.content}
+        {/* Title */}
+        <div className="mb-5">
+          <h1
+            className="text-3xl font-semibold leading-tight tracking-tight"
+            style={{
+              fontFamily: "'Source Serif 4', Georgia, serif",
+              background: 'linear-gradient(135deg, #4f46e5, #0ea5e9)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            {material.title}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
+            <span>{TYPE_LABELS[material.contentType] || material.contentType}</span>
+            {material.subject && <><span className="opacity-30">·</span><span>{material.subject}</span></>}
+            {material.chapter && <><span className="opacity-30">·</span><span className="text-slate-400">{material.chapter}</span></>}
           </p>
         </div>
-      </div>
 
-      {/* Controls */}
-      <AnimatePresence mode="wait">
-        {phase === 'preview' && (
-          <Motion.div
-            key="preview"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-indigo-50 rounded-2xl p-6 text-center"
-          >
-            <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Mic className="w-7 h-7 text-indigo-600" />
-            </div>
-            <h3 className="font-bold text-gray-900 mb-1">Ready to read aloud?</h3>
-            <p className="text-sm text-gray-500 mb-5">Read the passage above clearly. We'll record your voice and evaluate your reading.</p>
-            <button
-              onClick={startRecording}
-              className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors flex items-center gap-2 mx-auto"
+        {/* Passage */}
+        <div
+          className="rounded-2xl px-8 py-7 mb-7 transition-all duration-500"
+          style={{
+            fontFamily: "'Source Serif 4', Georgia, serif",
+            fontSize: '1.08rem',
+            lineHeight: 1.9,
+            color: '#0f172a',
+            background: phase === 'recording' ? '#fffbeb' : '#f8fafc',
+            borderLeft: `5px solid ${phase === 'recording' ? '#f59e0b' : '#4f46e5'}`,
+            boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.02)',
+          }}
+        >
+          {material.content?.split('\n').filter(Boolean).map((para, i) => (
+            <p key={i} className={i < material.content.split('\n').filter(Boolean).length - 1 ? 'mb-5' : ''}>
+              {para}
+            </p>
+          ))}
+        </div>
+
+        {/* Live transcript during recording */}
+        <AnimatePresence>
+          {phase === 'recording' && liveTranscript && (
+            <Motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden mb-5"
             >
-              <Play className="w-5 h-5" /> Start Reading
-            </button>
-          </Motion.div>
-        )}
+              <div className="bg-slate-50 rounded-xl px-5 py-4 border border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Live Transcript</p>
+                <p className="text-sm text-slate-700 leading-relaxed">{liveTranscript}</p>
+              </div>
+            </Motion.div>
+          )}
+        </AnimatePresence>
 
-        {phase === 'recording' && (
-          <Motion.div
-            key="recording"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-white rounded-2xl border border-red-100 shadow-sm p-6 space-y-5"
-          >
-            {/* Status bar */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`} />
-                <span className="text-sm font-semibold text-gray-700">{isPaused ? 'Paused' : 'Recording...'}</span>
-              </div>
-              <div className="flex items-center gap-4 text-sm font-mono text-gray-600">
-                <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{formatTime(elapsed)}</span>
-                <span className="flex items-center gap-1.5"><Gauge className="w-4 h-4" />{wordsPerMinute} WPM</span>
-              </div>
+        {/* Controls */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          {/* Status + visualizer */}
+          <div className="flex items-center gap-3">
+            {/* Status dot */}
+            <Motion.span
+              className="inline-block w-3.5 h-3.5 rounded-full shrink-0"
+              style={{
+                background: phase === 'recording'
+                  ? (isPaused ? '#f59e0b' : '#ef4444')
+                  : '#94a3b8',
+              }}
+              animate={phase === 'recording' && !isPaused
+                ? { boxShadow: ['0 0 0 0px rgba(239,68,68,0.4)', '0 0 0 8px rgba(239,68,68,0)', '0 0 0 0px rgba(239,68,68,0.4)'] }
+                : { boxShadow: '0 0 0 0px transparent' }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+
+            {/* Status text */}
+            <span className="text-sm font-medium text-slate-600">
+              {phase === 'recording'
+                ? isPaused
+                  ? <><strong className="text-slate-800">Paused</strong> — {formatTime(elapsed)}</>
+                  : <><strong className="text-slate-800">Recording</strong> — speak clearly · {formatTime(elapsed)} · {wordsPerMinute} WPM</>
+                : <><strong className="text-slate-800">Ready</strong> to read</>
+              }
+            </span>
+
+            {/* Bar visualizer */}
+            <div aria-hidden="true">
+              <BarVisualizer active={isActive} />
             </div>
+          </div>
 
-            {/* Waveform */}
-            <div className="flex justify-center py-2">
-              <Waveform active={isRecording && !isPaused} />
-            </div>
-
-            {/* Live transcript */}
-            {liveTranscript && (
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Live Transcript</p>
-                <p className="text-sm text-gray-700 leading-relaxed">{liveTranscript}</p>
-              </div>
-            )}
-
-            {/* Control buttons */}
-            <div className="flex items-center justify-center gap-3">
-              {!isPaused ? (
-                <button
-                  onClick={pauseRecording}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 font-medium hover:bg-amber-100 transition-colors text-sm"
+          {/* Action buttons */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Pause / Resume (only during recording) */}
+            <AnimatePresence>
+              {phase === 'recording' && (
+                <Motion.button
+                  key="pause-resume"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  onClick={isPaused ? resumeRecording : pauseRecording}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 ${
+                    isPaused
+                      ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                  }`}
                 >
-                  <Pause className="w-4 h-4" /> Pause
-                </button>
-              ) : (
-                <button
-                  onClick={resumeRecording}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-green-200 bg-green-50 text-green-700 font-medium hover:bg-green-100 transition-colors text-sm"
-                >
-                  <Play className="w-4 h-4" /> Resume
-                </button>
+                  {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  {isPaused ? 'Resume' : 'Pause'}
+                </Motion.button>
               )}
-              <button
-                onClick={finishRecording}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors text-sm"
-              >
-                <Square className="w-4 h-4" /> Finish
-              </button>
-            </div>
-          </Motion.div>
-        )}
+            </AnimatePresence>
 
-        {phase === 'processing' && (
-          <Motion.div
-            key="processing"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center"
-          >
-            <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-            </div>
-            <h3 className="font-bold text-gray-900 mb-1">Analysing your reading...</h3>
-            <p className="text-sm text-gray-500">Transcribing audio and evaluating pronunciation, fluency, and grammar. This may take up to 60 seconds.</p>
-          </Motion.div>
-        )}
-      </AnimatePresence>
+            {/* Reset (disabled while recording) */}
+            <button
+              onClick={() => { setPhase('preview'); setElapsed(0); setLiveTranscript(''); setAssessment(null); }}
+              disabled={phase === 'recording' && !isPaused}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                <path d="M3 12a9 9 0 1 0 9-9m0 0v6m0-6h-6" />
+              </svg>
+              Reset
+            </button>
+
+            {/* Primary: Start / Finish */}
+            <Motion.button
+              whileHover={{ y: -2 }}
+              whileTap={{ y: 0 }}
+              onClick={phase === 'recording' ? finishRecording : startRecording}
+              className="flex items-center gap-2 px-7 py-2.5 rounded-full text-sm font-semibold text-white transition-all"
+              style={{
+                background: phase === 'recording'
+                  ? 'linear-gradient(135deg, #dc2626, #ef4444)'
+                  : 'linear-gradient(135deg, #4f46e5, #0ea5e9)',
+                boxShadow: phase === 'recording'
+                  ? '0 4px 20px rgba(239,68,68,0.4)'
+                  : '0 4px 20px rgba(79,70,229,0.35)',
+              }}
+            >
+              {phase === 'recording' ? (
+                <>
+                  <Square className="w-4 h-4" />
+                  Finish Reading
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  Start Reading
+                </>
+              )}
+            </Motion.button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-7 pt-5 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-400">
+          <span>Read clearly · Press <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Space</kbd> to start / stop</span>
+          <span className="flex items-center gap-1">
+            <Volume2 className="w-3.5 h-3.5" /> Audio is analysed by AI — not stored permanently
+          </span>
+        </div>
+      </Motion.div>
     </div>
   );
 };

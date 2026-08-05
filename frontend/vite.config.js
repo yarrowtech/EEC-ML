@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from 'path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,9 +12,16 @@ export default defineConfig(({ command }) => {
   const isDevelopmentServer = command === 'serve';
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Enables HTTPS on the dev server so mobile browsers allow getUserMedia.
+      // Phones will show a "not trusted" warning on first visit — tap Advanced → Proceed.
+      // In production this is replaced by your real SSL certificate.
+      ...(isDevelopmentServer ? [basicSsl()] : []),
+    ],
     // During local development, make every existing VITE_API_URL reference use
-    // the address that opened the page. A phone loading http://192.168.x.x:5173
+    // the address that opened the page. A phone loading https://192.168.x.x:5173
     // therefore calls that same origin, which Vite proxies to the local API.
     ...(isDevelopmentServer ? {
       define: {

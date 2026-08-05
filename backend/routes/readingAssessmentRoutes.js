@@ -200,7 +200,7 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
       const memoryResp = await axios.post(
         `${AI_SERVICE_URL}/memory/retrieve`,
         { student_id: String(req.userId), mode: 'reading', limit: 3 },
-        { timeout: 10_000 }
+        { timeout: 3_000 }
       );
       previousHistory = memoryResp.data?.results || [];
     } catch {
@@ -221,7 +221,7 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
 
     const evalResp = await axios.post(`${AI_SERVICE_URL}/reading/evaluate`, form, {
       headers: form.getHeaders(),
-      timeout: 180_000,
+      timeout: 600_000,
       maxBodyLength: Infinity,
     });
 
@@ -279,7 +279,14 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
     // Update student language profile (fire-and-forget)
     _updateLanguageProfile(req.userId, req.schoolId, req.campusId, 'reading', updated).catch(() => {});
 
-    res.json({ success: true, data: updated });
+    // Attach computed metrics + per-word scores for frontend display
+    const response = updated.toObject();
+    if (result._computed) {
+      response._computed = result._computed;
+      // Embed word_scores inside _computed so PassageHighlight can use them
+      response._computed.word_scores = result._computed.word_scores || [];
+    }
+    res.json({ success: true, data: response });
   } catch (err) {
     const detail = err.response?.data?.detail || err.response?.data || err.message;
     console.error('[ReadingAssessment] evaluate error:', JSON.stringify(detail));

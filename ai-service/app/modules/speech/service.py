@@ -71,24 +71,35 @@ def _word_accuracy(reference: str, hypothesis: str) -> tuple[float, list[str], l
     return round(accuracy, 1), missed[:20], extra[:20]
 
 
-def transcribe_audio(audio_bytes: bytes, language: str = "en") -> dict:
+def transcribe_audio(audio_bytes: bytes, language: str = "en", reference_text: str = "") -> dict:
     """
     Transcribe audio bytes using faster-whisper.
     Returns transcript, confidence, word timestamps, and duration.
     """
     model = _get_whisper_model()
 
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+    # suffix doesn't affect faster-whisper — it uses ffmpeg internally
+    with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp:
         tmp.write(audio_bytes)
         tmp_path = tmp.name
 
     try:
+        # Use first 224 tokens of the passage as context so Whisper favours
+        # the passage vocabulary (proper nouns, subject terms, children's names)
+        initial_prompt = reference_text[:800].strip() if reference_text else None
+
         segments, info = model.transcribe(
             tmp_path,
             language=language,
             word_timestamps=True,
-            beam_size=5,
-            vad_filter=False,
+            beam_size=1,                   # greedy decode — 3-5× faster, minimal WER impact on clear speech
+            vad_filter=False,              # VAD requires onnxruntime; skip
+            temperature=0.0,               # deterministic — no sampling randomness
+            condition_on_previous_text=False,  # prevents hallucinating repeated phrases
+            no_speech_threshold=0.6,       # skip segments that are clearly silence
+            log_prob_threshold=-1.0,       # drop very uncertain segments
+            compression_ratio_threshold=2.4,
+            initial_prompt=initial_prompt,
         )
 
         words = []
@@ -134,10 +145,8 @@ def score_pronunciation(
     transcription_result: Optional[dict] = None,
 ) -> dict:
     """
-    Compute pronunciation score.
-
-    Primary: SpeechBrain phoneme recognition (if available).
-    Fallback: Whisper word-level confidence scores.
+    Genuine per-word pronunciation scoring via wav2vec2 CTC forced analysis.
+    Falls back to Whisper confidence if wav2vec2 is unavailable.
     """
     if transcription_result is None:
         transcription_result = transcribe_audio(audio_bytes)
@@ -145,12 +154,14 @@ def score_pronunciation(
     words = transcription_result.get("words", [])
     transcript = transcription_result.get("transcript", "")
 
-    # Try SpeechBrain for enhanced scoring
-    try:
-        return _speechbrain_pronunciation(audio_bytes, reference_text, words, transcript)
-    except Exception as exc:
-        logger.warning("SpeechBrain pronunciation failed (%s), using Whisper confidence fallback", exc)
-        return _whisper_confidence_pronunciation(words, reference_text, transcript)
+    from app.modules.speech.pronunciation import score_pronunciation_genuine
+    result = score_pronunciation_genuine(audio_bytes, words)
+
+    return {
+        "score": result["overall_score"],
+        "mispronounced_words": result["mispronounced_words"],
+        "word_scores": result["word_scores"],
+    }
 
 
 def _speechbrain_pronunciation(audio_bytes: bytes, reference_text: str, words: list, transcript: str) -> dict:

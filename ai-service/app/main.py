@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
@@ -21,8 +24,35 @@ from app.modules.speech.router import router as speech_router
 from app.modules.summaries.router import router as summaries_router
 
 setup_logging()
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="EEC AI Service", version="2.0.0")
+
+def _warmup_models():
+    """Load Whisper and wav2vec2 into GPU memory at startup."""
+    try:
+        from app.modules.speech.service import _get_whisper_model
+        _get_whisper_model()
+        logger.info("Whisper model warmed up.")
+    except Exception as e:
+        logger.warning("Whisper warmup failed: %s", e)
+
+    try:
+        from app.modules.speech.pronunciation import _get_model
+        _get_model()
+        logger.info("wav2vec2 pronunciation model warmed up.")
+    except Exception as e:
+        logger.warning("wav2vec2 warmup failed: %s", e)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run model loading in a thread so it doesn't block the event loop
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _warmup_models)
+    yield
+
+
+app = FastAPI(title="EEC AI Service", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -65,9 +65,58 @@ const TagList = ({ items, color, emptyText }) => {
   );
 };
 
+// Render the reference passage with per-word colour coding from wav2vec2 scores
+const PassageHighlight = ({ passageText, wordScores = [] }) => {
+  if (!wordScores.length) return (
+    <p className="text-sm leading-8 text-slate-700 font-serif">{passageText}</p>
+  );
+
+  // Build lookup: clean word → best score seen (a word may appear multiple times)
+  const scoreMap = {};
+  wordScores.forEach(({ word, score, heard }) => {
+    const key = word.toLowerCase();
+    if (scoreMap[key] === undefined || score < scoreMap[key].score) {
+      scoreMap[key] = { score, heard };
+    }
+  });
+
+  const passageWords = passageText.split(/(\s+)/);
+
+  return (
+    <p className="text-sm leading-9 font-serif text-slate-700">
+      {passageWords.map((token, i) => {
+        if (/^\s+$/.test(token)) return token;
+        const clean = token.replace(/[.,!?;:'"()\-–]/g, '').toLowerCase();
+        const entry = scoreMap[clean];
+        if (!entry) return <span key={i}>{token}</span>;
+        const { score, heard } = entry;
+        const color = score >= 80
+          ? 'bg-emerald-100 text-emerald-800'
+          : score >= 62
+          ? 'bg-amber-100 text-amber-800'
+          : 'bg-red-100 text-red-800 underline decoration-wavy decoration-red-400';
+        const tip = score >= 80
+          ? `✓ "${clean}" — ${score}%`
+          : `✗ Said "${heard || '?'}" — ${score}%`;
+        return (
+          <span
+            key={i}
+            className={`rounded px-0.5 cursor-default transition-colors ${color}`}
+            title={tip}
+          >
+            {token}
+          </span>
+        );
+      })}
+    </p>
+  );
+};
+
 const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
   const [showTranscript, setShowTranscript] = useState(false);
+  const [showPassage, setShowPassage] = useState(false);
   const { scores = {}, mispronounced_words = [], missed_words = [], suggestions = [], strengths = [], weaknesses = [], transcript = '' } = assessment;
+  const wordScores = assessment._computed?.word_scores || assessment.rawEvaluation?._computed?.word_scores || [];
 
   const radarData = [
     { label: 'Pronunciation', value: scores.pronunciation || 0 },
@@ -221,6 +270,48 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
         </div>
       </div>
 
+      {/* Passage with per-word pronunciation colour coding */}
+      {material?.content && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setShowPassage((v) => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              Word-by-word pronunciation
+              <span className="flex items-center gap-1 text-[11px] font-normal text-gray-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" /> correct
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block ml-1" /> needs work
+                <span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block ml-1" /> mispronounced
+              </span>
+            </span>
+            {showPassage ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+          <AnimatePresence>
+            {showPassage && (
+              <Motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="overflow-hidden"
+              >
+                <div className="px-5 pb-5">
+                  {wordScores.length > 0 ? (
+                    <>
+                      <p className="text-[11px] text-gray-400 mb-3">Hover over any word to see what was heard and the score.</p>
+                      <PassageHighlight passageText={material.content} wordScores={wordScores} />
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">Word-level scores not available for this attempt.</p>
+                  )}
+                </div>
+              </Motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
       {/* Transcript toggle */}
       {transcript && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -247,6 +338,33 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
             )}
           </AnimatePresence>
         </div>
+      )}
+
+      {/* Model accuracy debug panel — shows computed ground-truth vs LLM scores */}
+      {assessment._computed && (
+        <details className="rounded-xl border border-slate-200 bg-slate-50 text-xs">
+          <summary className="cursor-pointer px-4 py-2 font-semibold text-slate-500 select-none hover:text-slate-700">
+            Model accuracy breakdown
+          </summary>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 px-4 pb-3 pt-1 font-mono text-slate-600">
+            {[
+              ['Word accuracy (computed)', `${assessment._computed.word_accuracy_pct}%`],
+              ['LLM pronunciation score', `${assessment.scores?.pronunciation ?? '—'}/100`],
+              ['Acoustic pronunciation', `${assessment._computed.acoustic_pronunciation}/100`],
+              ['Whisper avg confidence', assessment._computed.whisper_confidence_avg != null ? `${assessment._computed.whisper_confidence_avg}%` : '—'],
+              ['Reading speed', `${assessment._computed.reading_speed_wpm} WPM`],
+              ['Words in transcript', assessment._computed.words_in_transcript],
+              ['Words in reference', assessment._computed.words_in_reference],
+              ['Missed words', assessment._computed.missed_word_count],
+              ['Mispronounced', assessment._computed.mispronounced_count],
+            ].map(([label, val]) => (
+              <React.Fragment key={label}>
+                <span className="text-slate-400">{label}</span>
+                <span className="font-semibold">{val}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </details>
       )}
 
       {onBack && (

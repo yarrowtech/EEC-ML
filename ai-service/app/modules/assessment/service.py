@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 def _call_ollama(prompt: str, system: str, temperature: float = 0.3) -> str:
     payload = {
         "model": settings.ollama_assess_model,
+        # "think" is a TOP-LEVEL Ollama field, not nested in "options".
+        # Putting it inside options silently does nothing — Ollama ignores unknown option keys.
+        "think": False,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
@@ -32,13 +35,14 @@ def _call_ollama(prompt: str, system: str, temperature: float = 0.3) -> str:
         "stream": False,
         "options": {
             "temperature": temperature,
-            "num_predict": 2048,
+            "num_predict": 800,   # thinking disabled → JSON ≈ 400 tok; 400 slack
+            "num_ctx": 4096,
         },
     }
     resp = httpx.post(
         f"{settings.ollama_url}/api/chat",
         json=payload,
-        timeout=120,
+        timeout=180,
     )
     resp.raise_for_status()
     return resp.json()["message"]["content"]
@@ -83,13 +87,17 @@ def _call_llm(prompt: str, system: str, temperature: float = 0.3) -> str:
 
 def _extract_json(text: str) -> dict:
     """Extract the first JSON object from LLM output."""
+    # Strip Qwen3 thinking chain — must happen before any other processing
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     # Remove markdown code fences
     text = re.sub(r"```(?:json)?", "", text).strip()
     # Find the first { ... } block
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1:
-        raise ValueError(f"No JSON object in LLM response: {text[:200]}")
+        # Sanitize before logging/raising — thinking chain may contain file paths
+        safe_preview = re.sub(r"(/tmp|/var|/home|/run|C:\\)[^\s\"']+", "<path>", text[:300])
+        raise ValueError(f"No JSON object in LLM response: {safe_preview}")
     return json.loads(text[start : end + 1])
 
 
@@ -142,45 +150,56 @@ def evaluate_reading(
         "Do NOT include any text before or after the JSON object."
     )
 
-    prompt = f"""Evaluate this student's reading performance and return a JSON evaluation.
+    prompt = f"""Evaluate this student's oral reading. Use the computed metrics below as hard anchors — your scores MUST be consistent with them.
 
-REFERENCE TEXT (what they were supposed to read):
+REFERENCE TEXT (what the student was supposed to read):
 {reference_text[:2000]}
 
-STUDENT'S TRANSCRIPT (what they actually said):
+STUDENT'S TRANSCRIPT (what Whisper heard):
 {transcript}
 
-METRICS:
-- Word accuracy: {accuracy}%
-- Reading speed: {reading_speed} words per minute
-- Pronunciation score (from acoustic analysis): {pronunciation_score}/100
-- Mispronounced words: {mispronounced_words}
-- Missed words: {missed_words}
+COMPUTED METRICS (treat these as ground truth — do not contradict them):
+- Word accuracy: {accuracy}% → pronunciation score MUST be within ±10 of this
+- Reading speed: {reading_speed} WPM (native fluent = 130–180 WPM; beginners = 60–100 WPM)
+- Acoustic pronunciation score: {pronunciation_score}/100
+- Mispronounced words (low Whisper confidence): {mispronounced_words}
+- Words missed entirely: {missed_words}
 - Extra words added: {extra_words}
 {history_context}
 
-Return this exact JSON structure with numeric scores 0-100:
+SCORING RUBRIC:
+- pronunciation: base it on acoustic score ({pronunciation_score}) and mispronounced word count. 90-100 = near-native, 70-89 = clear with minor errors, 50-69 = noticeable errors, <50 = significant errors.
+- fluency: base on reading speed and how complete the transcript is vs reference. 90-100 = smooth and natural, 70-89 = mostly fluent with pauses, 50-69 = choppy, <50 = very halting.
+- grammar: did the student change words in ways that alter grammar? Check transcript vs reference. 90-100 = no changes, 70-89 = minor word substitutions, <70 = significant omissions or restructuring.
+- confidence: derived from speed consistency and completeness. High if they read most words, low if many skipped.
+- accent: how consistent is pronunciation style? Rate 70-100 unless there are clear systematic errors.
+- overall: weighted average — pronunciation×0.35 + fluency×0.25 + grammar×0.2 + confidence×0.1 + accent×0.1
+
+Return ONLY this JSON (all scores integers 0-100):
 {{
-  "overall": <number 0-100>,
-  "pronunciation": <number 0-100>,
-  "grammar": <number 0-100>,
-  "fluency": <number 0-100>,
-  "confidence": <number 0-100>,
-  "accent": <number 0-100>,
+  "overall": <integer>,
+  "pronunciation": <integer>,
+  "grammar": <integer>,
+  "fluency": <integer>,
+  "confidence": <integer>,
+  "accent": <integer>,
   "reading_speed": {reading_speed},
   "mispronounced_words": {json.dumps(mispronounced_words)},
   "missed_words": {json.dumps(missed_words)},
   "extra_words": {json.dumps(extra_words)},
-  "strengths": ["<strength 1>", "<strength 2>"],
-  "weaknesses": ["<weakness 1>", "<weakness 2>"],
-  "suggestions": ["<specific exercise or tip 1>", "<specific exercise or tip 2>", "<specific exercise or tip 3>"]
-}}
+  "strengths": ["<specific observed strength>", "<specific observed strength>"],
+  "weaknesses": ["<specific observed weakness>", "<specific observed weakness>"],
+  "suggestions": ["<concrete practice exercise>", "<concrete practice exercise>", "<concrete practice exercise>"]
+}}"""
 
-Base grammar on transcript grammatical patterns. Fluency on flow and hesitation patterns in transcript.
-Confidence on variety and speed. Accent on consistency. Return ONLY the JSON."""
-
-    raw = _call_llm(prompt, system, temperature=0.3)
+    raw = _call_llm(prompt, system, temperature=0.1)
     result = _extract_json(raw)
+
+    # Hard-clamp pronunciation to within 15 points of computed acoustic score
+    # so LLM cannot wildly disagree with measurable signal
+    computed_pron = round(pronunciation_score)
+    llm_pron = result.get("pronunciation", computed_pron)
+    result["pronunciation"] = max(computed_pron - 15, min(computed_pron + 15, llm_pron))
 
     # Guarantee required keys with safe defaults
     result.setdefault("overall", max(0, min(100, accuracy)))
@@ -197,6 +216,27 @@ Confidence on variety and speed. Accent on consistency. Return ONLY the JSON."""
     result.setdefault("weaknesses", [])
     result.setdefault("suggestions", [])
     result["transcript"] = transcript
+
+    # Attach computed ground-truth metrics so the frontend can compare
+    # LLM scores against independently measurable values
+    result["_computed"] = {
+        "word_accuracy_pct": accuracy,
+        "reading_speed_wpm": reading_speed,
+        "acoustic_pronunciation": round(pronunciation_score, 1),
+        "whisper_confidence_avg": round(
+            sum(w.get("probability", 0) for w in word_scores) / len(word_scores) * 100, 1
+        ) if word_scores else None,
+        "words_in_transcript": len(transcript.split()),
+        "words_in_reference": len(reference_text.split()),
+        "missed_word_count": len(missed_words),
+        "mispronounced_count": len(mispronounced_words),
+        # Per-word CTC scores from wav2vec2 — used for passage highlighting in UI
+        "word_scores": [
+            {k: v for k, v in w.items()}
+            for w in word_scores
+            if isinstance(w, dict) and "word" in w and "score" in w
+        ],
+    }
 
     return result
 
