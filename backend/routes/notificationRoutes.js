@@ -18,9 +18,19 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 
 const router = express.Router();
 
-// Matches the typeLabel attendanceRoutes.js stamps on attendance-marked
-// notifications — kept as a plain string here to avoid a cross-route import.
-const ATTENDANCE_UPDATE_TYPE_LABEL = 'attendance_marked';
+// Matches the typeLabels attendanceRoutes.js/meetingRoute.js stamp on
+// system-generated, per-recipient notifications (attendance marked,
+// substitute-class alerts, individual low-attendance alerts, PTM invites).
+// These still reach students/parents/teachers via GET /user — they're just
+// noise on the admin Notice Board, which shows the one-per-event summary
+// notices instead (typeLabel: attendance/substitute/low-attendance/etc.
+// "_summary"). Kept as plain strings here to avoid cross-route imports.
+const HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS = [
+  'attendance_marked',
+  'substitute_attendance',
+  'parent_teacher_meeting',
+  'Weekly Attendance Alert',
+];
 
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
@@ -368,10 +378,11 @@ router.get('/', adminAuth, async (req, res) => {
     const campusId = req.campusId || null;
     const items = await Notification.find({
       schoolId,
-      // Attendance-marked entries are system notifications for students/
-      // parents, not admin-authored notices — keep them out of the Notice
-      // Board console (they still reach students/parents via /user).
-      typeLabel: { $ne: ATTENDANCE_UPDATE_TYPE_LABEL },
+      // Per-recipient system notifications (attendance, substitute alerts,
+      // PTM invites, individual low-attendance alerts) aren't admin-authored
+      // notices — keep them out of the Notice Board console (they still
+      // reach students/parents/teachers via /user).
+      typeLabel: { $nin: HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS },
       ...(campusId
         ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
         : {}),

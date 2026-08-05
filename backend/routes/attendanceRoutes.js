@@ -503,6 +503,7 @@ const notifyOriginalTeacherForSubstituteAttendance = async ({
   sectionName,
   subjectName,
   targetDate,
+  studentRoster = [],
 }) => {
   const recipients = await getSubstituteRecipientTeachers({
     schoolId,
@@ -513,7 +514,6 @@ const notifyOriginalTeacherForSubstituteAttendance = async ({
     substituteTeacherId,
     targetDate,
   });
-  if (!recipients.length) return 0;
 
   const dateLabel = new Date(targetDate).toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -562,6 +562,66 @@ const notifyOriginalTeacherForSubstituteAttendance = async ({
       subjectName: normalizeText(subjectName),
     });
     createdCount += 1;
+  }
+
+  // Notify the affected class's students + their parents, and leave admin
+  // one consolidated summary notice — instead of one notice per student.
+  const uniqueStudents = [...new Map(studentRoster.map((s) => [s.studentId, s])).values()];
+  if (uniqueStudents.length) {
+    const studentIds = uniqueStudents.map((s) => s.studentId);
+    const classMessage = `Your ${subjectLabel ? normalizeText(subjectName) : 'class'} ${classSectionLabel} today (${dateLabel}) was taken by substitute teacher ${substituteTeacherName}.`;
+    const baseFields = {
+      schoolId,
+      campusId: campusId || null,
+      title,
+      message: classMessage,
+      createdByType: 'teacher',
+      createdByTeacherId: substituteTeacherId,
+      createdByName: substituteTeacherName,
+      type: 'announcement',
+      typeLabel: 'substitute_attendance',
+      category: 'academic',
+      priority: 'medium',
+      className: normalizeText(className),
+      sectionName: normalizeText(sectionName),
+      subjectName: normalizeText(subjectName),
+    };
+
+    const parentFilter = { schoolId };
+    if (campusId) parentFilter.campusId = campusId;
+    const parents = await ParentUser.find(parentFilter).select('_id childrenIds children').lean();
+    const parentIds = new Set();
+    const studentNameById = new Map(uniqueStudents.map((s) => [s.studentId, normalizeText(s.name).toLowerCase()]));
+    parents.forEach((parent) => {
+      const parentId = String(parent?._id || '');
+      if (!parentId) return;
+      const linkedIds = Array.isArray(parent?.childrenIds) ? parent.childrenIds.map((id) => String(id)) : [];
+      if (linkedIds.some((sid) => studentIds.includes(sid))) {
+        parentIds.add(parentId);
+        return;
+      }
+      const childNames = Array.isArray(parent?.children)
+        ? parent.children.map((n) => normalizeText(n).toLowerCase()).filter(Boolean)
+        : [];
+      if (childNames.some((name) => [...studentNameById.values()].includes(name))) parentIds.add(parentId);
+    });
+
+    const toInsert = [
+      { ...baseFields, audience: 'Student', targetUserIds: studentIds },
+    ];
+    if (parentIds.size) {
+      toInsert.push({ ...baseFields, audience: 'Parent', targetUserIds: [...parentIds] });
+    }
+    await Notification.insertMany(toInsert, { ordered: false });
+
+    const rosterLines = uniqueStudents.map((s) => `${s.name} (ID: ${s.studentId})`);
+    await Notification.create({
+      ...baseFields,
+      title: 'Substitute Class Update — Summary',
+      message: `${classSectionLabel}${subjectLabel} was covered by ${substituteTeacherName} on ${dateLabel}. Students affected (${uniqueStudents.length}):\n${rosterLines.join('\n')}`,
+      audience: 'Admin',
+      typeLabel: 'substitute_class_summary',
+    });
   }
 
   return createdCount;
@@ -738,14 +798,13 @@ const notifyParentsForLowAttendance = async ({ schoolId, campusId, studentIds = 
   });
 
   const windowStart = new Date(Date.now() - (LOW_ATTENDANCE_NOTIFICATION_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+  const flaggedStudents = [];
 
   for (const student of students) {
     const summary = buildSummary(Array.isArray(student?.attendance) ? student.attendance : []);
     if (summary.attendancePercentage >= LOW_ATTENDANCE_THRESHOLD) continue;
 
     const targetParentIds = [...(parentIdsByStudentId.get(String(student._id)) || new Set())];
-    if (!targetParentIds.length) continue;
-
     const existing = await Notification.findOne({
       schoolId,
       ...(campusId ? { campusId } : {}),
@@ -757,23 +816,70 @@ const notifyParentsForLowAttendance = async ({ schoolId, campusId, studentIds = 
     }).lean();
     if (existing) continue;
 
+    const attendanceMessage = `${student.name || 'Student'} attendance is ${summary.attendancePercentage}% (${summary.presentDays}/${summary.totalClasses} classes). This is below 75%.`;
+    const toInsert = [
+      {
+        schoolId,
+        campusId: campusId || null,
+        title: LOW_ATTENDANCE_NOTIFICATION_TITLE,
+        message: attendanceMessage,
+        audience: 'Student',
+        targetUserIds: [student._id],
+        className: normalizeText(student?.grade),
+        sectionName: normalizeText(student?.section),
+        type: 'general',
+        typeLabel: 'Weekly Attendance Alert',
+        priority: 'high',
+        category: 'academic',
+        relatedEntity: { entityType: 'result', entityId: student._id },
+      },
+    ];
+    if (targetParentIds.length) {
+      toInsert.push({
+        schoolId,
+        campusId: campusId || null,
+        title: LOW_ATTENDANCE_NOTIFICATION_TITLE,
+        message: attendanceMessage,
+        audience: 'Parent',
+        className: normalizeText(student?.grade),
+        sectionName: normalizeText(student?.section),
+        type: 'general',
+        typeLabel: 'Weekly Attendance Alert',
+        priority: 'high',
+        category: 'academic',
+        relatedEntity: { entityType: 'result', entityId: student._id },
+        targetUserIds: targetParentIds,
+      });
+    }
+    await Notification.insertMany(toInsert, { ordered: false });
+
+    flaggedStudents.push({
+      studentId: String(student._id),
+      name: student.name || 'Student',
+      className: normalizeText(student?.grade),
+      sectionName: normalizeText(student?.section),
+      attendancePercentage: summary.attendancePercentage,
+    });
+  }
+
+  // One admin-facing summary notice per triggering attendance run, listing
+  // every newly-flagged student and their user ID — instead of admins having
+  // to piece it together from N separate per-parent alerts on the Notice
+  // Board (those stay hidden there; see notificationRoutes.js).
+  if (flaggedStudents.length) {
+    const summaryLines = flaggedStudents.map(
+      (s) => `${s.name} (ID: ${s.studentId}) — Class ${s.className}${s.sectionName ? `-${s.sectionName}` : ''} — ${s.attendancePercentage}%`
+    );
     await Notification.create({
       schoolId,
       campusId: campusId || null,
-      title: LOW_ATTENDANCE_NOTIFICATION_TITLE,
-      message: `${student.name || 'Student'} attendance is ${summary.attendancePercentage}% (${summary.presentDays}/${summary.totalClasses} classes). This is below 75%.`,
-      audience: 'Parent',
-      className: normalizeText(student?.grade),
-      sectionName: normalizeText(student?.section),
+      title: 'Low Attendance Alert Summary',
+      message: `${flaggedStudents.length} student(s) fell below 75% attendance:\n${summaryLines.join('\n')}`,
+      audience: 'Admin',
       type: 'general',
-      typeLabel: 'Weekly Attendance Alert',
+      typeLabel: 'low_attendance_summary',
       priority: 'high',
       category: 'academic',
-      relatedEntity: {
-        entityType: 'result',
-        entityId: student._id,
-      },
-      targetUserIds: targetParentIds,
     });
   }
 };
@@ -1159,6 +1265,7 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
     const stats = { updated: 0, created: 0, skipped: 0 };
     const attendanceNotificationEntries = [];
     const changedStudentIds = new Set();
+    const substituteStudentRoster = [];
     const lessonPlanMeta = {
       lessonPlansMatched: 0,
       lessonPlansCompleted: 0,
@@ -1238,6 +1345,9 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
         });
       }
       changedStudentIds.add(String(student._id));
+      if (isSubstituteMode) {
+        substituteStudentRoster.push({ studentId: String(student._id), name: student.name || 'Student' });
+      }
       const normalizedSubjectText = normalizeSubject(subject);
       if (normalizedSubjectText && normalizedSubjectText !== 'general') {
         const studentClass = normalizeText(resolveStudentClass(student));
@@ -1276,6 +1386,7 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
         sectionName: substituteSection,
         subjectName: requestSubject,
         targetDate,
+        studentRoster: substituteStudentRoster,
       });
     }
 
