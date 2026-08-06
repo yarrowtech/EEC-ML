@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import { useParams } from 'react-router-dom';
 import {
@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Sparkles,
   Target,
+  TrendingUp,
   Users,
   Zap,
 } from 'lucide-react';
@@ -184,6 +185,7 @@ const createDraft = (student, subject, focus, pace, notes, aiNodes = null) => {
 
 const GenerateAIPathPortal = () => {
   const { classId } = useParams();
+  const [activeTab, setActiveTab] = useState('generate'); // 'generate' | 'published'
   const [role] = useState('teacher');
   const [students, setStudents] = useState(FALLBACK_STUDENTS);
   const [selectedId, setSelectedId] = useState(FALLBACK_STUDENTS[0].id);
@@ -360,12 +362,38 @@ const GenerateAIPathPortal = () => {
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         className="mx-auto max-w-[1100px] rounded-[44px] border border-white/50 bg-white/75 px-4 py-5 shadow-[0_24px_52px_-14px_rgba(0,20,40,.10)] backdrop-blur-xl sm:px-8 sm:py-7"
       >
-        <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h1 className="font-semibold tracking-[-0.02em] text-[#0b1c2f] text-[1.8rem]">AI Learning Path</h1>
           <span className="rounded-full border border-[#e9edf4] bg-white px-[18px] py-1.5 text-[0.85rem] font-medium text-[#1f3a5f] shadow-sm">
             {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
           </span>
         </div>
+
+        {/* Tab bar */}
+        <div className="mb-6 flex gap-1 rounded-[1.2rem] border border-[#eef2f9] bg-[#f8fbfe] p-1">
+          {[
+            { id: 'generate', label: 'Generate Path', icon: Zap },
+            { id: 'published', label: 'Published Paths', icon: TrendingUp },
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-[1rem] py-2.5 text-sm font-semibold transition-all ${
+                activeTab === id
+                  ? 'bg-white text-[#0b1c2f] shadow-sm'
+                  : 'text-[#65758b] hover:text-[#0b1c2f]'
+              }`}
+            >
+              <Icon className="size-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'published' ? (
+          <PublishedPathsTracker />
+        ) : (
 
         <div className="space-y-5">
 
@@ -754,6 +782,8 @@ const GenerateAIPathPortal = () => {
             </Motion.section>
           )}
         </div>
+        )}
+
       </Motion.div>
 
       <AnimatePresence>
@@ -936,6 +966,260 @@ const nodeDescription = (node) => {
   if (node.idx === 0) return 'Warm-up anchored on what the student already knows before new material.';
   return `Explainer + IRT-banded practice, drafted at Bloom "${node.bloom}" level for this student.`;
 };
+
+// ─── Published Paths Tracker ────────────────────────────────────────────────
+
+const TIER_COLORS = {
+  blue: { bar: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700' },
+  orange: { bar: 'bg-orange-500', bg: 'bg-orange-50', text: 'text-orange-700' },
+  purple: { bar: 'bg-purple-500', bg: 'bg-purple-50', text: 'text-purple-700' },
+  green: { bar: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+};
+
+const timeAgo = (dateStr) => {
+  if (!dateStr) return null;
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+
+const PathCard = ({ path }) => {
+  const done = path.nodes.filter((n) => n.status === 'done').length;
+  const total = path.nodes.length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const lastDone = path.nodes
+    .filter((n) => n.completedAt)
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+
+  return (
+    <Motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-[1.4rem] border border-[#eef2f9] bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,.04)]"
+    >
+      {/* Header */}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-semibold text-[#0b1c2f]">{path.studentName}</p>
+          <p className="text-xs text-[#65758b]">
+            {path.cls && `Class ${path.cls} · `}{path.subject}
+            {path.focus && path.focus !== path.subject ? ` · ${path.focus}` : ''}
+          </p>
+          {lastDone && (
+            <p className="mt-0.5 text-[11px] text-[#2d7aff]">
+              Last activity {timeAgo(lastDone.completedAt)}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Ring value={pct} compact />
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="mb-4">
+        <div className="mb-1 flex justify-between text-[11px] text-[#65758b]">
+          <span>{done} of {total} steps complete</span>
+          <span>{pct}%</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-[#eef2f7]">
+          <Motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : 'bg-[#2d7aff]'}`}
+          />
+        </div>
+      </div>
+
+      {/* Node steps */}
+      <div className="space-y-2">
+        {path.nodes.map((node, idx) => {
+          const tc = TIER_COLORS[node.tier] || TIER_COLORS.blue;
+          return (
+            <div
+              key={idx}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${
+                node.status === 'done'
+                  ? 'bg-emerald-50 border border-emerald-100'
+                  : node.status === 'active'
+                    ? 'bg-[#f0f6ff] border border-[#cddaf0]'
+                    : 'bg-[#f8fbfe] border border-[#eef2f9] opacity-60'
+              }`}
+            >
+              <div
+                className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  node.status === 'done'
+                    ? 'bg-emerald-500 text-white'
+                    : node.status === 'active'
+                      ? 'bg-[#2d7aff] text-white'
+                      : 'bg-[#e3ebf6] text-[#a0acbd]'
+                }`}
+              >
+                {node.status === 'done' ? '✓' : idx + 1}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-xs font-medium ${node.status === 'locked' ? 'text-[#8a9bb0]' : 'text-[#0b1c2f]'}`}>
+                  {node.title}
+                </p>
+                {node.status === 'done' && node.completedAt && (
+                  <p className="text-[10px] text-emerald-600">Completed {timeAgo(node.completedAt)}</p>
+                )}
+                {node.status === 'active' && (
+                  <p className="text-[10px] text-[#2d7aff]">In progress</p>
+                )}
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${tc.bg} ${tc.text}`}>
+                {tierBadge[node.tier] || node.tier}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {pct === 100 && (
+        <div className="mt-3 flex items-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+          <CheckCircle className="size-3.5" /> Student completed the entire path!
+        </div>
+      )}
+    </Motion.div>
+  );
+};
+
+const PublishedPathsTracker = () => {
+  const [paths, setPaths] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [filterSubject, setFilterSubject] = useState('All');
+  const intervalRef = useRef(null);
+
+  const fetchPaths = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/learning-paths/teacher`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setPaths(data.paths || []);
+      setLastRefreshed(new Date());
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPaths();
+    intervalRef.current = setInterval(fetchPaths, 30000);
+    return () => clearInterval(intervalRef.current);
+  }, [fetchPaths]);
+
+  const subjects = useMemo(() => {
+    const s = new Set(paths.map((p) => p.subject).filter(Boolean));
+    return ['All', ...s];
+  }, [paths]);
+
+  const visible = useMemo(() => {
+    if (filterSubject === 'All') return paths;
+    return paths.filter((p) => p.subject === filterSubject);
+  }, [paths, filterSubject]);
+
+  const stats = useMemo(() => {
+    const total = paths.length;
+    const completed = paths.filter((p) => p.progress === 100).length;
+    const inProgress = paths.filter((p) => p.progress > 0 && p.progress < 100).length;
+    const notStarted = paths.filter((p) => p.progress === 0).length;
+    const avgProgress = total ? Math.round(paths.reduce((s, p) => s + (p.progress || 0), 0) / total) : 0;
+    return { total, completed, inProgress, notStarted, avgProgress };
+  }, [paths]);
+
+  return (
+    <div>
+      {/* Summary stats */}
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: 'Published', value: stats.total, color: 'text-[#1f4b8a]' },
+          { label: 'Completed', value: stats.completed, color: 'text-emerald-700' },
+          { label: 'In progress', value: stats.inProgress, color: 'text-[#2d7aff]' },
+          { label: 'Avg progress', value: `${stats.avgProgress}%`, color: 'text-[#a0743e]' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="rounded-[1.2rem] border border-[#eef2f9] bg-white p-4 text-center shadow-sm">
+            <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            <p className="mt-0.5 text-[11px] uppercase tracking-[0.08em] text-[#65758b]">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {subjects.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setFilterSubject(s)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                filterSubject === s
+                  ? 'bg-[#2d7aff] text-white shadow-sm'
+                  : 'border border-[#e3ebf6] bg-white text-[#1f3a5f] hover:bg-[#f0f6fe]'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {lastRefreshed && (
+            <span className="text-[11px] text-[#8a9bb0]">
+              Updated {timeAgo(lastRefreshed)}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={fetchPaths}
+            className="flex items-center gap-1.5 rounded-full border border-[#e3ebf6] bg-white px-3 py-1.5 text-xs font-medium text-[#1f3a5f] transition hover:bg-[#f0f6fe]"
+          >
+            <RefreshCw className="size-3.5" /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Path cards */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-sm text-[#65758b]">
+          <RefreshCw className="mr-2 size-4 animate-spin" /> Loading published paths…
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-[1.4rem] border border-dashed border-[#dbe7fe] bg-[#f8fbfe] px-6 py-12 text-center">
+          <TrendingUp className="mx-auto mb-3 size-8 text-[#cddaf0]" />
+          <p className="font-semibold text-[#0b1c2f]">No published paths yet</p>
+          <p className="mt-1 text-sm text-[#65758b]">
+            {filterSubject !== 'All'
+              ? `No paths for ${filterSubject}. Try "All".`
+              : 'Generate and publish a path from the Generate tab.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AnimatePresence>
+            {visible.map((path) => (
+              <PathCard key={path._id} path={path} />
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── end PublishedPathsTracker ───────────────────────────────────────────────
 
 const toastMessage = (message) => {
   const existing = document.getElementById('ai-path-toast');
