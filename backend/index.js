@@ -1042,7 +1042,6 @@ let socketAdapterConfigured = false;
 const startServer = async (host) => {
   if (!socketAdapterConfigured && process.env.NODE_ENV !== 'test') {
     socketAdapterConfigured = true;
-    await configureSocketIoRedisAdapter(io);
   }
   httpServer.listen(PORT, host, () => {
     console.log(`Server running on ${host}:${PORT}`);
