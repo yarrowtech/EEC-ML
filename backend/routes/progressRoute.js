@@ -216,10 +216,14 @@ router.get('/analytics', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const { grade, section, subject } = req.query;
+    const { grade, section, subject, academicYearId } = req.query;
 
     let studentFilter = { schoolId, status: 'Active' };
     applyGradeAndSectionFilter(studentFilter, { grade, section });
+
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      studentFilter.academicYear = academicYearId;
+    }
 
     const students = await StudentUser.find(studentFilter);
     const studentIds = students.map(student => student._id);

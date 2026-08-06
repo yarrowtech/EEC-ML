@@ -14,7 +14,8 @@ const { getStudentSubjectsCacheKey } = require('../utils/studentSubjectsCache');
 
 // Setup multer for file uploads (in memory)
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 3 * 1024 * 1024 } });
+const ALLOWED_PROFILE_PIC_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 // POST request to update student profile
 router.post('/profile/update', auth, upload.single('profilePic'), async (req, res) => {
@@ -33,6 +34,9 @@ router.post('/profile/update', auth, upload.single('profilePic'), async (req, re
 
     // Handle profilePic if included
     if (req.file) {
+      if (!ALLOWED_PROFILE_PIC_MIME_TYPES.has(req.file.mimetype)) {
+        return res.status(400).json({ error: 'Only JPEG, PNG, WEBP, or GIF images are allowed' });
+      }
       updates.profilePic = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     }
 

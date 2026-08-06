@@ -22,8 +22,16 @@ const NotificationService = require('../utils/notificationService');
 const authStudent = require('../middleware/authStudent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
-// Configure multer for CSV upload
-const upload = multer({ dest: 'uploads/' });
+// Configure multer for bulk results upload (Excel/CSV only)
+const ALLOWED_BULK_RESULT_MIME_TYPES = new Set([
+    'text/csv',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 10 * 1024 * 1024 },
+});
 const EXAM_GROUP_STATUS_OPTIONS = new Set(['Scheduled', 'Completed', 'Published']);
 
 const resolveSchoolId = (req, res) => {
@@ -1594,6 +1602,10 @@ router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), a
         if (!filePath) {
             return res.status(400).json({ error: 'Excel file is required' });
         }
+        if (!ALLOWED_BULK_RESULT_MIME_TYPES.has(req.file.mimetype)) {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({ error: 'Only CSV or Excel files are allowed' });
+        }
 
         const workbook = xlsx.readFile(filePath);
         const errors = [];
@@ -2165,6 +2177,8 @@ router.put("/results/:id/publish", adminAuth, async (req, res) => {
               subject: fullResult.examId.subject,
               marksScored: fullResult.marks,
               totalMarks: fullResult.examId.marks,
+            }, {
+              headers: { 'x-internal-secret': process.env.INTERNAL_API_SECRET },
             }).catch(() => {});
           }
         }

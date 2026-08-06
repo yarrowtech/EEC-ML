@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authStudent = require('../middleware/authStudent');
+const internalAuth = require('../middleware/internalAuth');
 const MasteryScore = require('../models/MasteryScore');
 const { getNextAction, getSuggestedDifficulty } = require('../services/masteryRouter');
 const NotificationService = require('../utils/notificationService');
@@ -179,8 +180,9 @@ const awardMasteryBadge = async (studentId, subject, topicTitle, schoolId) => {
 };
 
 // ── POST /api/mastery/post-exam — triggered after exam result is published ────
-router.post('/post-exam', async (req, res) => {
-  // Called internally from examRoute; no student auth needed, uses adminAuth via the caller.
+router.post('/post-exam', internalAuth, async (req, res) => {
+  // Server-to-server only: called by examRoute/mockExamRoutes with the
+  // x-internal-secret header, never reachable directly by a client.
   try {
     const { studentId, schoolId, subject, marksScored, totalMarks } = req.body || {};
     if (!studentId || !schoolId || !subject || totalMarks == null) {

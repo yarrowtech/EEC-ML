@@ -1231,9 +1231,23 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
 
+    const { academicYearId, classId, section } = req.query || {};
+
     const studentFilter = { schoolId };
     if (req.campusId) {
       studentFilter.campusId = req.campusId;
+    }
+    if (classId && mongoose.isValidObjectId(classId)) {
+      const classDoc = await ClassModel.findById(classId).select('name').lean();
+      if (classDoc) {
+        studentFilter.grade = classDoc.name;
+      }
+    }
+    if (section) {
+      studentFilter.section = String(section).trim();
+    }
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      studentFilter.academicYear = academicYearId;
     }
     const students = await StudentUser.find(studentFilter)
       .select('name grade section roll admissionNumber username academicYear studentCode')
@@ -1258,6 +1272,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     }
     if (studentIds.length > 0) {
       invoiceFilter.studentId = { $in: studentIds };
+    }
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      invoiceFilter.academicYearId = academicYearId;
     }
     await applyLateFeesForFilter({ schoolId, filter: invoiceFilter });
     const invoices = await FeeInvoice.find(invoiceFilter).lean();

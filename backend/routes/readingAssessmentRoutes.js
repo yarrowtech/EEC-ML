@@ -13,6 +13,7 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 // Audio stored in memory and forwarded directly to AI service
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const ALLOWED_AUDIO_MIME_TYPES = new Set(['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/mp4', 'audio/ogg', 'audio/x-m4a']);
 
 // ─── Teacher: reading material CRUD ──────────────────────────────────────────
 
@@ -180,6 +181,9 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
     const { materialId, audioDurationSeconds } = req.body;
     if (!materialId) return res.status(400).json({ success: false, message: 'materialId is required' });
     if (!req.file) return res.status(400).json({ success: false, message: 'audio file is required' });
+    if (!ALLOWED_AUDIO_MIME_TYPES.has(req.file.mimetype)) {
+      return res.status(400).json({ success: false, message: 'Unsupported audio format' });
+    }
 
     const material = await ReadingMaterial.findById(materialId).lean();
     if (!material) return res.status(404).json({ success: false, message: 'Material not found' });

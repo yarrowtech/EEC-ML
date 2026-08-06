@@ -17,6 +17,7 @@ const normalize = (value = '') => String(value).trim().toLowerCase();
 
 // In-memory storage for avatar uploads (embedded as base64 data URI, no external storage needed)
 const avatarUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024 } });
+const ALLOWED_AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 router.post('/register', adminAuth, async (req, res) => {
   // #swagger.tags = ['Principals']
@@ -270,6 +271,9 @@ router.post('/profile/update', principalAuth, avatarUpload.single('avatar'), asy
       updates.name = req.body.name.trim();
     }
     if (req.file) {
+      if (!ALLOWED_AVATAR_MIME_TYPES.has(req.file.mimetype)) {
+        return res.status(400).json({ error: 'Only JPEG, PNG, WEBP, or GIF images are allowed' });
+      }
       updates.avatar = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     }
 

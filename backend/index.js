@@ -302,6 +302,10 @@ const allowedOrigins = process.env.CORS_ORIGINS
 const allowLanOrigins = process.env.NODE_ENV !== 'production'
   && process.env.CORS_ALLOW_LAN === 'true';
 
+if (!allowedOrigins || allowedOrigins.length === 0) {
+  logger.warn('CORS_ORIGINS is not configured — all cross-origin browser requests will be rejected. Set CORS_ORIGINS to allow specific frontends.');
+}
+
 const isPrivateLanOrigin = (origin) => {
   try {
     const hostname = new URL(origin).hostname.toLowerCase();
@@ -320,10 +324,10 @@ const isPrivateLanOrigin = (origin) => {
 
 const isOriginAllowed = (origin) => (
   !origin
-  || !allowedOrigins
-  || allowedOrigins.length === 0
-  || allowedOrigins.includes(origin)
-  || (allowLanOrigins && isPrivateLanOrigin(origin))
+  || Boolean(allowedOrigins && (
+    allowedOrigins.includes(origin)
+    || (allowLanOrigins && isPrivateLanOrigin(origin))
+  ))
 );
 
 const corsOrigin = (origin, callback) => {

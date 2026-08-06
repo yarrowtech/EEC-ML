@@ -180,6 +180,8 @@ router.post('/attempt/submit', authStudent, async (req, res) => {
           subject,
           marksScored: correct,
           totalMarks: total,
+        }, {
+          headers: { 'x-internal-secret': process.env.INTERNAL_API_SECRET },
         }).catch(() => {});
       });
     }
