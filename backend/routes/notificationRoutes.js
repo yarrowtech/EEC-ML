@@ -30,6 +30,7 @@ const HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS = [
   'substitute_attendance',
   'parent_teacher_meeting',
   'Weekly Attendance Alert',
+  'exam_schedule_teacher',
 ];
 
 const resolveSchoolId = (req, res) => {

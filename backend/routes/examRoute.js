@@ -237,6 +237,146 @@ const buildTeacherIdentitySet = (teacherDoc = {}) => {
   return identities;
 };
 
+const resolveCampusScopedFilter = (campusId) => (
+  campusId
+    ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+    : {}
+);
+
+const getExamVenueLabel = (exam = {}) => String(exam?.venue || '').trim();
+
+const formatExamScheduleDate = (value) => {
+  if (!value) return 'TBA';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const buildExamTeacherNotificationMessage = ({ exam = {}, className = '', sectionName = '' }) => {
+  const dateLabel = formatExamScheduleDate(exam?.date);
+  const timeLabel = String(exam?.time || '').trim();
+  const venueLabel = getExamVenueLabel(exam);
+  const scopeLabel = [className, sectionName].filter(Boolean).join(' / ');
+  const titleLabel = String(exam?.title || exam?.subject || 'Exam').trim();
+  const parts = [`${titleLabel} has been scheduled`];
+  if (scopeLabel) parts.push(`for ${scopeLabel}`);
+  if (dateLabel) parts.push(`on ${dateLabel}`);
+  if (timeLabel) parts.push(`at ${timeLabel}`);
+  if (venueLabel) parts.push(`Venue: ${venueLabel}`);
+  return `${parts.join(', ')}.`;
+};
+
+const resolveExamTeacherRecipients = async ({ schoolId, campusId, exam = {} }) => {
+  const classId = toIdString(exam?.classId);
+  const sectionId = toIdString(exam?.sectionId);
+  const subjectId = toIdString(exam?.subjectId);
+  if (!schoolId || !classId || !sectionId) return [];
+
+  const teacherIds = new Set();
+  const campusFilter = resolveCampusScopedFilter(campusId);
+
+  const allocationFilter = {
+    schoolId,
+    classId,
+    sectionId,
+    ...campusFilter,
+    $or: subjectId ? [{ subjectId }, { isClassTeacher: true }] : [{ isClassTeacher: true }],
+  };
+  const allocations = await TeacherAllocation.find(allocationFilter).select('teacherId').lean();
+  allocations.forEach((allocation) => {
+    const teacherId = toIdString(allocation?.teacherId);
+    if (teacherId) teacherIds.add(teacherId);
+  });
+
+  const timetableFilter = {
+    schoolId,
+    classId,
+    sectionId,
+    ...campusFilter,
+    'entries.teacherId': { $exists: true },
+  };
+  const timetables = await Timetable.find(timetableFilter)
+    .select('entries.teacherId entries.subjectId')
+    .lean();
+  timetables.forEach((timetable) => {
+    (timetable?.entries || []).forEach((entry) => {
+      const teacherId = toIdString(entry?.teacherId);
+      if (!teacherId) return;
+      if (subjectId && toIdString(entry?.subjectId) !== subjectId) return;
+      teacherIds.add(teacherId);
+    });
+  });
+
+  const instructorNames = parseInstructorNames(exam?.instructor);
+  if (instructorNames.length) {
+    const teachers = await TeacherUser.find({
+      schoolId,
+      ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+    })
+      .select('_id name username employeeCode email')
+      .lean();
+    teachers.forEach((teacher) => {
+      const teacherId = toIdString(teacher?._id);
+      if (!teacherId) return;
+      const identities = buildTeacherIdentitySet(teacher);
+      const matched = instructorNames.some((instructorName) => identities.has(instructorName));
+      if (matched) teacherIds.add(teacherId);
+    });
+  }
+
+  return [...teacherIds];
+};
+
+const createExamTeacherNotifications = async ({
+  schoolId,
+  campusId,
+  exam = {},
+  createdBy = null,
+  createdByName = '',
+  createdByType = 'admin',
+  notificationTitle = '',
+}) => {
+  const targetUserIds = await resolveExamTeacherRecipients({ schoolId, campusId, exam });
+  if (!targetUserIds.length) return [];
+
+  const className = getExamClassName(exam);
+  const sectionName = getExamSectionName(exam);
+  const title = notificationTitle || `Exam Scheduled: ${String(exam?.title || exam?.subject || 'Exam').trim()}`;
+  const message = buildExamTeacherNotificationMessage({ exam, className, sectionName });
+  const baseFields = {
+    schoolId,
+    campusId: campusId || null,
+    title,
+    message,
+    audience: 'Teacher',
+    createdBy,
+    createdByType,
+    createdByName,
+    type: 'exam',
+    typeLabel: 'exam_schedule_teacher',
+    priority: 'high',
+    category: 'academic',
+    classId: exam?.classId || undefined,
+    sectionId: exam?.sectionId || undefined,
+    className: normalizeText(className),
+    sectionName: normalizeText(sectionName),
+    subjectId: exam?.subjectId || undefined,
+    subjectName: String(exam?.subject || exam?.subjectId?.name || '').trim(),
+    relatedEntity: exam?._id ? { entityType: 'exam', entityId: exam._id } : undefined,
+  };
+
+  const notifications = targetUserIds.map((teacherId) => ({
+    ...baseFields,
+    targetUserIds: [teacherId],
+  }));
+
+  return Notification.insertMany(notifications, { ordered: false });
+};
+
 const isTeacherAssignedInvigilator = (examDoc = {}, teacherIdentitySet = new Set()) => {
   const instructors = parseInstructorNames(examDoc?.instructor);
   if (!instructors.length || teacherIdentitySet.size === 0) return false;
@@ -512,7 +652,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate, startTime, attachment } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
 
     const updates = {};
     if (title !== undefined) updates.title = title.trim();
@@ -573,41 +713,20 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       );
     }
 
-    // Publishing posts ONE consolidated, table-wise notice for the whole
-    // group (with the routine PDF attached) instead of a notice per subject.
-    // Republishing (e.g. after editing a subject's date) updates that same
-    // notice in place via routineNoticeId rather than spamming a new one.
     if (isPublishing) {
-      const examRoutine = examsForRoutine.map((exam) => ({
-        subject: exam.subjectId?.name || exam.subject || 'Subject',
-        date: exam.date || '',
-        time: exam.time || '',
-        duration: exam.duration ?? null,
-        venue: exam.venue || '',
-      }));
-      const normalizedAttachment = attachment && attachment.url
-        ? {
-            name: attachment.name || `${group.title || 'Exam'} Routine.pdf`,
-            url: attachment.url,
-            size: attachment.size || 0,
-            type: attachment.type || 'pdf',
-          }
-        : null;
-
-      const notice = await NotificationService.notifyExamRoutinePublished({
+      const publishedAt = group.publishedAt || new Date();
+      const notificationJobs = examsForRoutine.map((exam) => createExamTeacherNotifications({
         schoolId,
         campusId: campusId || null,
-        group: { ...group, firstExamId: examsForRoutine[0]?._id },
-        examRoutine,
-        attachment: normalizedAttachment,
+        exam,
         createdBy: req.admin?.id || null,
-        existingNoticeId: group.routineNoticeId || null,
-      });
-
-      const publishedAt = group.publishedAt || new Date();
-      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: notice._id });
+        createdByName: req.admin?.name || req.admin?.username || '',
+        createdByType: 'admin',
+      }));
+      await Promise.all(notificationJobs);
+      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: null });
       group.publishedAt = publishedAt;
-      group.routineNoticeId = notice._id;
+      group.routineNoticeId = null;
     }
 
     res.json({ message: 'Exam group updated', group });
@@ -730,16 +849,15 @@ router.post("/add", adminAuth, async (req, res) => {
             publishedAt: published ? new Date() : null,
         });
 
-        // Subject exams that belong to a group are notified once, table-wise,
-        // when the group is published (see PUT /groups/:groupId). Only
-        // standalone/ungrouped exams still notify immediately on creation.
         if (!exam.groupId) {
           try {
-              await NotificationService.notifyExamScheduled({
-                  schoolId,
-                  campusId: campusId || null,
-                  exam,
-                  createdBy: req.admin?.id || null
+              await createExamTeacherNotifications({
+                schoolId,
+                campusId: campusId || null,
+                exam,
+                createdBy: req.admin?.id || null,
+                createdByName: req.admin?.name || req.admin?.username || '',
+                createdByType: 'admin',
               });
           } catch (notifErr) {
               console.error('Failed to create exam notification:', notifErr);

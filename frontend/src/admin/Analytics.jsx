@@ -225,10 +225,10 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [selectedSession, setSelectedSession] = useState(ALL_SESSIONS);
   const [selectedClass, setSelectedClass] = useState(ALL_CLASSES);
   const [selectedSection, setSelectedSection] = useState(ALL_SECTIONS);
-  const [sessionOptions, setSessionOptions] = useState([{ _id: '', name: ALL_SESSIONS }]);
+  const [sessionOptions, setSessionOptions] = useState([]);
+  const [activeAcademicYearName, setActiveAcademicYearName] = useState('');
   const [classCatalog, setClassCatalog] = useState([]);
   const [sectionCatalog, setSectionCatalog] = useState([]);
-  const [classScopedSections, setClassScopedSections] = useState([]);
   const [progressAnalytics, setProgressAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState('');
@@ -277,8 +277,8 @@ const Analytics = ({ setShowAdminHeader }) => {
     const controller = new AbortController();
     const loadFilterOptions = async () => {
       try {
-        const [yearsRes, classesRes, sectionsRes] = await Promise.all([
-          fetch(buildApiUrl('/api/academic/years'), {
+        const [activeYearRes, classesRes, sectionsRes] = await Promise.all([
+          fetch(buildApiUrl('/api/academic/active-year'), {
             headers: getAuthHeaders(),
             signal: controller.signal,
           }),
@@ -292,23 +292,25 @@ const Analytics = ({ setShowAdminHeader }) => {
           }),
         ]);
 
-        const [years, classes, sections] = await Promise.all([
-          yearsRes.json().catch(() => []),
+        const [activeYear, classes, sections] = await Promise.all([
+          activeYearRes.json().catch(() => null),
           classesRes.json().catch(() => []),
           sectionsRes.json().catch(() => []),
         ]);
 
         if (!controller.signal.aborted) {
-          const normalizedYears = Array.isArray(years) ? years : [];
+          const normalizedActiveYear = activeYear && activeYear._id ? activeYear : null;
           const normalizedClasses = Array.isArray(classes) ? classes : [];
           const normalizedSections = Array.isArray(sections) ? sections : [];
-          setSessionOptions([{ _id: '', name: ALL_SESSIONS }, ...normalizedYears]);
+          setSessionOptions(normalizedActiveYear ? [normalizedActiveYear] : []);
+          setActiveAcademicYearName(normalizedActiveYear?.name || '');
           setClassCatalog(normalizedClasses);
           setSectionCatalog(normalizedSections);
         }
       } catch {
         if (!controller.signal.aborted) {
-          setSessionOptions([{ _id: '', name: ALL_SESSIONS }]);
+          setSessionOptions([]);
+          setActiveAcademicYearName('');
           setClassCatalog([]);
           setSectionCatalog([]);
         }
@@ -319,57 +321,47 @@ const Analytics = ({ setShowAdminHeader }) => {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const selectedClassDoc = classCatalog.find((item) => item?.name === selectedClass);
-    const classId = selectedClassDoc?._id ? String(selectedClassDoc._id) : '';
+    if (!sessionOptions.length) return;
+    const activeSession = sessionOptions[0];
+    if (activeSession?.name && selectedSession !== activeSession.name) {
+      setSelectedSession(activeSession.name);
+    }
+  }, [sessionOptions, selectedSession]);
 
-    const loadClassScopedSections = async () => {
-      if (!classId) {
-        setClassScopedSections([]);
-        return;
-      }
-      try {
-        const params = new URLSearchParams({ classId });
-        const res = await fetch(buildApiUrl(`/api/academic/sections?${params.toString()}`), {
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        });
-        const data = await res.json().catch(() => []);
-        if (!res.ok) throw new Error(data?.error || 'Unable to load sections');
-        if (!controller.signal.aborted) {
-          setClassScopedSections(Array.isArray(data) ? data : []);
-        }
-      } catch {
-        if (!controller.signal.aborted) {
-          setClassScopedSections([]);
-        }
-      }
-    };
-
-    loadClassScopedSections();
-    return () => controller.abort();
-  }, [selectedClass, classCatalog]);
+  const activeAcademicYearId = sessionOptions[0]?._id ? String(sessionOptions[0]._id) : '';
+  const activeClassCatalog = useMemo(
+    () => classCatalog.filter((item) => !activeAcademicYearId || String(item?.academicYearId || '') === activeAcademicYearId),
+    [classCatalog, activeAcademicYearId]
+  );
+  const activeClassIds = useMemo(
+    () => new Set(activeClassCatalog.map((item) => String(item?._id || '')).filter(Boolean)),
+    [activeClassCatalog]
+  );
+  const activeSectionCatalog = useMemo(
+    () => sectionCatalog.filter((item) => activeClassIds.has(String(item?.classId || ''))),
+    [sectionCatalog, activeClassIds]
+  );
 
   const availableClassOptions = useMemo(
-    () => [ALL_CLASSES, ...classCatalog.map((item) => item?.name).filter(Boolean)],
-    [classCatalog]
+    () => [ALL_CLASSES, ...activeClassCatalog.map((item) => item?.name).filter(Boolean)],
+    [activeClassCatalog]
   );
 
   const availableSectionOptions = useMemo(() => {
     if (selectedClass === ALL_CLASSES) return [ALL_SECTIONS];
-    const scopedNames = classScopedSections
+    const scopedNames = activeSectionCatalog
       .map((item) => item?.name)
       .filter(Boolean);
     if (scopedNames.length) return [ALL_SECTIONS, ...scopedNames];
 
     // Fallback: local catalog by classId (if scoped API returns empty unexpectedly).
-    const selectedClassDoc = classCatalog.find((item) => item?.name === selectedClass);
+    const selectedClassDoc = activeClassCatalog.find((item) => item?.name === selectedClass);
     const fallbackNames = sectionCatalog
       .filter((item) => String(item?.classId) === String(selectedClassDoc?._id || ''))
       .map((item) => item?.name)
       .filter(Boolean);
     return [ALL_SECTIONS, ...fallbackNames];
-  }, [selectedClass, classScopedSections, classCatalog, sectionCatalog]);
+  }, [selectedClass, activeSectionCatalog, activeClassCatalog, sectionCatalog]);
 
   useEffect(() => {
     if (selectedSection !== ALL_SECTIONS && !availableSectionOptions.includes(selectedSection)) {
@@ -386,8 +378,7 @@ const Analytics = ({ setShowAdminHeader }) => {
         const params = new URLSearchParams();
         const grade = selectedClass === ALL_CLASSES ? '' : selectedClass;
         const section = normalizeSectionValue(selectedSection);
-        const sessionObj = sessionOptions.find((item) => item?.name === selectedSession);
-        const academicYearId = sessionObj?._id ? String(sessionObj._id) : '';
+        const academicYearId = activeAcademicYearId;
         if (grade) params.append('grade', grade);
         if (section) params.append('section', section);
         if (academicYearId) params.append('academicYearId', academicYearId);
@@ -413,7 +404,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     };
     loadAnalytics();
     return () => controller.abort();
-  }, [selectedClass, selectedSection, selectedSession, sessionOptions]);
+  }, [selectedClass, selectedSection, activeAcademicYearId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -665,8 +656,7 @@ const Analytics = ({ setShowAdminHeader }) => {
   }, [progressAnalytics]);
 
   const filteredInvoices = useMemo(() => {
-    const sessionObj = sessionOptions.find((item) => item?.name === selectedSession);
-    const academicYearId = sessionObj?._id ? String(sessionObj._id) : '';
+    const academicYearId = activeAcademicYearId;
     const selectedClassToken = normalizeClassToken(selectedClass === ALL_CLASSES ? '' : selectedClass);
     const section = normalizeSectionValue(selectedSection);
     return feeInvoices.filter((invoice) => {
@@ -678,7 +668,7 @@ const Analytics = ({ setShowAdminHeader }) => {
       const sectionMatches = !section || sectionValue === section.toUpperCase();
       return sessionMatches && gradeMatches && sectionMatches;
     });
-  }, [feeInvoices, selectedClass, selectedSection, selectedSession, sessionOptions]);
+  }, [feeInvoices, selectedClass, selectedSection, activeAcademicYearId]);
 
   const feesChartData = useMemo(() => buildFeeChartData(filteredInvoices), [filteredInvoices]);
 
@@ -699,7 +689,6 @@ const Analytics = ({ setShowAdminHeader }) => {
   );
 
   const isFilterApplied =
-    selectedSession !== ALL_SESSIONS ||
     selectedClass !== ALL_CLASSES ||
     selectedSection !== ALL_SECTIONS;
 
@@ -1062,7 +1051,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     pdf.setFont(undefined, 'normal');
     pdf.text(`Generated: ${generatedAt}`, margin, 21);
     pdf.text(
-      `Session: ${selectedSession} | Class: ${selectedClass} | Section: ${selectedSection}`,
+      `Session: ${activeAcademicYearName || selectedSession} | Class: ${selectedClass} | Section: ${selectedSection}`,
       margin,
       27
     );
@@ -1243,13 +1232,18 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <select
                     value={selectedSession}
                     onChange={(e) => setSelectedSession(e.target.value)}
+                    disabled
                     className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors"
                   >
-                    {sessionOptions.map((session) => (
-                      <option key={session?._id || ALL_SESSIONS} value={session?.name || ALL_SESSIONS}>
-                        {session?.name || ALL_SESSIONS}
-                      </option>
-                    ))}
+                    {sessionOptions.length ? (
+                      sessionOptions.map((session) => (
+                        <option key={session?._id || session?.name || ALL_SESSIONS} value={session?.name || ALL_SESSIONS}>
+                          {session?.name || ALL_SESSIONS}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No active session found</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -1282,7 +1276,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedSession(ALL_SESSIONS);
+                      if (activeAcademicYearName) setSelectedSession(activeAcademicYearName);
                       setSelectedClass(ALL_CLASSES);
                       setSelectedSection(ALL_SECTIONS);
                     }}
@@ -1406,7 +1400,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                     </div>
                   </div>
                   <span className="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-100 flex-shrink-0">
-                    {selectedSession === ALL_SESSIONS ? 'All Sessions' : selectedSession}
+                    {activeAcademicYearName || selectedSession || 'No active session'}
                   </span>
                 </div>
                 {feesLoading && !feesChartData.length ? (
