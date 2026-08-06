@@ -710,7 +710,7 @@ const Support = ({ setShowAdminHeader }) => {
 
             <div className="px-6 pb-6">
               <a href={supportPhoneHref}
-                className="flex items-center justify-center gap-2 w-full rounded-xl bg-amber-500 hover:bg-amber-400 transition text-gray-900 font-extrabold text-sm py-3 shadow-lg shadow-amber-500/30">
+                className="flex items-center justify-center gap-2 w-full rounded-xl bg-amber-500 hover:bg-amber-400 transition text-none text-white font-extrabold text-sm py-3 shadow-lg shadow-amber-500/30">
                 <Phone className="h-4 w-4" />
                 Call Now
                 <ArrowRight className="h-4 w-4" />

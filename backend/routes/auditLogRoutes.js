@@ -32,9 +32,11 @@ router.post('/', adminAuth, async (req, res) => {
       schoolId,
       actorId: req.admin?.id || null,
       actorType: 'Admin',
+      actorName: req.admin?.name || req.admin?.username || undefined,
       action: String(action).trim(),
       entity: entity ? String(entity).trim() : undefined,
       entityId: entityId || undefined,
+      ip: req.ip || req.socket?.remoteAddress || undefined,
       meta: meta || undefined,
     });
     res.status(201).json(created);

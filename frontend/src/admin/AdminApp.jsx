@@ -3,6 +3,7 @@ import { Component } from 'react';
 import AdminLayout from './AdminLayout';
 import Dashboard from './Dashboard';
 import Analytics from './Analytics';
+import ActivityLog from './pages/ActivityLog';
 import Teachers from './Teachers';
 import Students from './Students';
 import Wellbeing from './pages/Wellbeing';
@@ -248,6 +249,7 @@ const AdminApp = () => {
     () => [
       'Dashboard',
       'Analytics',
+      'Activity Log',
       'Academic Setup',
       // 'Subjects',
       'Teachers',
@@ -334,6 +336,7 @@ const AdminApp = () => {
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="analytics" element={<Analytics setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="activity-log" element={<ActivityLog setShowAdminHeader={setShowAdminHeader} adminUser={adminUser} />} />
 
           {/* Super-admin-only routes — redirect school admins to dashboard */}
           <Route path="schools" element={<SuperAdminOnly><SchoolsManagement setShowAdminHeader={setShowAdminHeader} isSuperAdmin={isSuperAdmin} /></SuperAdminOnly>} />

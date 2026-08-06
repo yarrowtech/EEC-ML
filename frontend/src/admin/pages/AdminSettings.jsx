@@ -295,6 +295,11 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
   /* ─── filter tabs for super admin ─── */
   const visibleTabs = isSuperAdmin ? TABS.filter((t) => t.key !== 'school') : TABS;
 
+  // School admins' hero avatar doubles as the school logo — fall back to
+  // schoolForm.logo when admin.avatar was never set directly (e.g. the logo
+  // was uploaded before the two fields were kept in sync on upload).
+  const heroAvatarUrl = adminForm.avatar || (!isSuperAdmin ? schoolForm.logo : '');
+
   /* ─── loading skeleton ─── */
   if (loading) {
     return (
@@ -332,9 +337,9 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
             {/* avatar overlapping the banner */}
             <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-8">
               <div className="relative group shrink-0">
-                {adminForm.avatar ? (
+                {heroAvatarUrl ? (
                   <img
-                    src={adminForm.avatar}
+                    src={heroAvatarUrl}
                     alt="Avatar"
                     className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg"
                   />
@@ -379,7 +384,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                 </button>
 
                 {/* remove button */}
-                {adminForm.avatar && (
+                {heroAvatarUrl && (
                   <button
                     type="button"
                     onClick={() => {

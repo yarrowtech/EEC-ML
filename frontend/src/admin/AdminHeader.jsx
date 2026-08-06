@@ -226,6 +226,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
     const baseTargets = [
       { label: 'Dashboard',       hint: 'Overview',                      path: '/admin/dashboard',      keys: ['dashboard', 'home', 'overview'] },
       { label: 'Analytics',       hint: 'Reports & charts',              path: '/admin/analytics',      keys: ['analytics', 'report', 'chart'] },
+      { label: 'Activity Log',    hint: 'School activity history',       path: '/admin/activity-log',   keys: ['activity log', 'audit', 'log'] },
       { label: 'Academic Setup',  hint: 'Classes, sections, subjects',   path: '/admin/academics',      keys: ['academic', 'class', 'section', 'subject'] },
       { label: 'Teachers',        hint: 'Manage teachers',               path: '/admin/teachers',       keys: ['teacher', 'faculty'] },
       { label: 'Students',        hint: 'Manage students',               path: '/admin/students',       keys: ['student', 'pupil'] },
