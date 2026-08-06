@@ -71,6 +71,7 @@ const AdminLayout = ({
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
         onLogoutRequest={handleLogoutRequest}
+        showAdminHeader={showAdminHeader}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50">

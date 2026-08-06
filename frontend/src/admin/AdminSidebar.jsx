@@ -13,6 +13,7 @@ const AdminSidebar = ({
   mobileOpen = false,
   onMobileClose,
   onLogoutRequest,
+  showAdminHeader = true,
 }) => {
   const [expandedMenus, setExpandedMenus] = useState({});
   const [skeletonTimedOut, setSkeletonTimedOut] = useState(false);
@@ -68,7 +69,9 @@ const AdminSidebar = ({
       {/* Sidebar panel */}
       <div
         className={`
-          fixed lg:sticky inset-y-0 lg:inset-y-auto left-0 lg:top-0 z-50 lg:z-auto
+          fixed lg:sticky inset-y-0 lg:inset-y-auto left-0
+          lg:top-0 lg:h-dvh
+          z-50 lg:z-40
           flex flex-col h-dvh bg-white border-r border-gray-100 shadow-lg
           transition-all duration-300 ease-in-out
           ${collapsed ? 'w-[72px]' : 'w-64'}
@@ -120,7 +123,7 @@ const AdminSidebar = ({
               hidden lg:flex shrink-0 items-center justify-center rounded-lg
               transition-all duration-200 z-50
               ${collapsed
-                ? 'w-9 h-9 bg-yellow-500 hover:bg-yellow-600 text-white shadow-md hover:shadow-lg'
+                ? 'w-5 h-5 right-3 bg-yellow-500 hover:bg-yellow-600 text-white shadow-md hover:shadow-lg rounded-full'
                 : 'w-7 h-7 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50'}
             `}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
