@@ -59,7 +59,7 @@ router.get('/students', adminAuth, async (req, res) => {
     if (!schoolId) return;
     const { grade, section, subject } = req.query;
     
-    let studentFilter = { schoolId };
+    let studentFilter = { schoolId, status: 'Active' };
     applyGradeAndSectionFilter(studentFilter, { grade, section });
 
     const students = await StudentUser.find(studentFilter).select('name grade section roll');
@@ -218,7 +218,7 @@ router.get('/analytics', adminAuth, async (req, res) => {
     if (!schoolId) return;
     const { grade, section, subject } = req.query;
 
-    let studentFilter = { schoolId };
+    let studentFilter = { schoolId, status: 'Active' };
     applyGradeAndSectionFilter(studentFilter, { grade, section });
 
     const students = await StudentUser.find(studentFilter);

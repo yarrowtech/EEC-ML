@@ -324,7 +324,7 @@ router.get('/summary', adminAuth, async (req, res) => {
     if (!schoolId) return;
 
     const [studentCount, teacherCount, parentCount] = await Promise.all([
-      StudentUser.countDocuments({ schoolId }),
+      StudentUser.countDocuments({ schoolId, status: 'Active' }),
       TeacherUser.countDocuments({ schoolId }),
       ParentUser.countDocuments({ schoolId }),
     ]);
@@ -344,7 +344,12 @@ router.get('/summary', adminAuth, async (req, res) => {
     const fee = feeTotals[0] || { totalAmount: 0, paidAmount: 0, balanceAmount: 0 };
 
     const attendanceTotals = await StudentUser.aggregate([
-      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId) } },
+      {
+        $match: {
+          schoolId: new mongoose.Types.ObjectId(schoolId),
+          status: 'Active',
+        },
+      },
       { $unwind: { path: '$attendance', preserveNullAndEmptyArrays: false } },
       {
         $group: {
