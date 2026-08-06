@@ -147,6 +147,7 @@ const { startTeacherFeedbackReminderScheduler } = require('./utils/teacherFeedba
 const { sendSpacedRepetitionNudges } = require('./services/engagementScorer');
 const readingAssessmentRoutes = require('./routes/readingAssessmentRoutes');
 const writingAssessmentRoutes = require('./routes/writingAssessmentRoutes');
+const externalResourceRoutes = require('./routes/externalResourceRoutes');
 
 const fixChatThreadIndexes = async () => {
   try {
@@ -596,6 +597,7 @@ app.use('/api/practice-papers', writeHeavyApiLimiter, practicePaperRoutes);
 app.use('/api/practice-sections', writeHeavyApiLimiter, practiceSectionRoutes);
 app.use('/api/reading-assessment', readingAssessmentRoutes);
 app.use('/api/writing-assessment', writingAssessmentRoutes);
+app.use('/api/external-resources', externalResourceRoutes);
 
 app.use("/api/uploads", uploadApiLimiter, uploadRoutes);
 app.use('/api', organizationRoutes);

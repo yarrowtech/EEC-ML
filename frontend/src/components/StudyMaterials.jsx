@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import AddOnsPortal from './AddOnsPortal';
 import {
   BookOpen,
   Download,
@@ -13,7 +14,6 @@ import {
   User,
   ChevronDown,
   AlertCircle,
-  Sparkles,
   GraduationCap,
   NotebookPen,
   ArrowUpRight,
@@ -169,27 +169,6 @@ const StudyMaterials = () => {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(249,115,22,0.10),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#eef4ff_100%)] p-4 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
-        <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_24px_80px_-48px_rgba(15,23,42,0.45)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.18),_transparent_26%),radial-gradient(circle_at_bottom_left,_rgba(249,115,22,0.14),_transparent_24%)]" />
-          <div className="relative px-5 py-6 sm:px-7 sm:py-7">
-            <div className="flex flex-col gap-5">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Student Resource Desk
-                </div>
-                <h2 className="mt-4 flex items-center gap-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                  <BookOpen className="h-8 w-8 text-sky-600" />
-                  Study Materials
-                </h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
-                  Notes, handouts, and classroom resources shared by your teachers. Use the filters below to quickly find the exact material you need.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section className="rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_50px_-38px_rgba(15,23,42,0.35)]">
           <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4 sm:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -249,20 +228,8 @@ const StudyMaterials = () => {
             </div>
           )}
 
-          <div className="p-4 sm:p-6">
-            {filteredMaterials.length === 0 ? (
-              <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50/80 px-4 text-center">
-                <div className="mb-4 rounded-full bg-white p-4 shadow-sm">
-                  <BookOpen className="h-10 w-10 text-slate-300" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-900">No Materials Found</h3>
-                <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                  {searchQuery || selectedSubject !== 'all'
-                    ? 'No materials match your current filters. Try adjusting your search or subject selection.'
-                    : 'Your teachers have not uploaded any study materials yet. Check back later.'}
-                </p>
-              </div>
-            ) : (
+          {filteredMaterials.length > 0 && (
+            <div className="p-4 sm:p-6">
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                 {filteredMaterials.map((material) => {
                   const attachments = Array.isArray(material.attachments)
@@ -408,8 +375,8 @@ const StudyMaterials = () => {
                   );
                 })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {filteredMaterials.length > 0 && (
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-600 sm:px-6">
@@ -427,6 +394,7 @@ const StudyMaterials = () => {
             </div>
           )}
         </section>
+        <AddOnsPortal />
       </div>
     </div>
   );
