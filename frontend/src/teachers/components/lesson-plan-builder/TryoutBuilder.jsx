@@ -18,10 +18,15 @@ import {
   Save,
   Eye,
   Play,
+  Brain,
+  Zap,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+
+const API_BASE = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
 
 const TRYOUT_TYPES = [
   { id: 'mcq', label: 'Multiple Choice (MCQ)', icon: CheckCircle2, description: 'Single correct answer from options' },
@@ -1074,11 +1079,195 @@ const TryoutBuilder = ({
 };
 
 // Inline (non-modal) version for embedding directly inside lesson plan drawer
-export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts }) => {
+export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = '' }) => {
   const [localTryouts, setLocalTryouts] = useState(tryouts);
   const [selectedType, setSelectedType] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState({});
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiCount, setAiCount] = useState(5);
+  const [aiDifficulty, setAiDifficulty] = useState('medium');
+  const [aiAppend, setAiAppend] = useState(true);
+
+  const extractJsonArray = (text) => {
+    const cleaned = text.replace(/```(?:json)?/gi, '').trim();
+    const start = cleaned.indexOf('[');
+    if (start === -1) return null;
+
+    let depth = 0;
+    for (let i = start; i < cleaned.length; i += 1) {
+      const ch = cleaned[i];
+      if (ch === '[') depth += 1;
+      if (ch === ']') {
+        depth -= 1;
+        if (depth === 0) {
+          return cleaned.slice(start, i + 1);
+        }
+      }
+    }
+    return null;
+  };
+
+  const parseAiQuestions = (raw) => {
+    if (!raw || typeof raw !== 'string') return [];
+    const cleaned = raw.replace(/```(?:json)?/gi, '').trim();
+
+    const tryParse = (value) => {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    };
+
+    const normalizeParsed = (parsed) => {
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.questions)) return parsed.questions;
+      if (parsed && Array.isArray(parsed.items)) return parsed.items;
+      return null;
+    };
+
+    let parsed = tryParse(cleaned);
+    const normalized = normalizeParsed(parsed);
+    if (normalized) return normalized;
+
+    const arrayJson = extractJsonArray(cleaned);
+    if (arrayJson) {
+      parsed = tryParse(arrayJson);
+      const normalizedArray = normalizeParsed(parsed);
+      if (normalizedArray) return normalizedArray;
+    }
+
+    const objectStart = cleaned.indexOf('{');
+    const objectEnd = cleaned.lastIndexOf('}');
+    if (objectStart !== -1 && objectEnd > objectStart) {
+      parsed = tryParse(cleaned.slice(objectStart, objectEnd + 1));
+      const normalizedObject = normalizeParsed(parsed);
+      if (normalizedObject) return normalizedObject;
+    }
+
+    const parsePlainMcq = (text) => {
+      const questionBlocks = text.split(/\n(?=\d+[.)]\s+)/g).map((block) => block.trim()).filter(Boolean);
+      const results = [];
+
+      questionBlocks.forEach((block) => {
+        const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) return;
+
+        const questionLine = lines[0].replace(/^\d+[.)]\s*/, '').trim();
+        const options = [];
+        let correctOption = null;
+        let explanation = '';
+
+        lines.slice(1).forEach((line) => {
+          const optionMatch = line.match(/^([A-D])[:.)]\s*(.+)$/i);
+          if (optionMatch) {
+            options.push({ text: optionMatch[2].trim(), isCorrect: false });
+            return;
+          }
+          const answerMatch = line.match(/^(?:Answer|Correct Answer|Key)[:\-]\s*([A-D])/i);
+          if (answerMatch) {
+            correctOption = answerMatch[1].toUpperCase();
+            return;
+          }
+          const explainMatch = line.match(/^(?:Explanation|Why)[:\-]\s*(.+)$/i);
+          if (explainMatch) {
+            explanation = explainMatch[1].trim();
+            return;
+          }
+        });
+
+        if (questionLine && options.length >= 2) {
+          if (correctOption) {
+            const correctIndex = Math.max(0, Math.min(3, correctOption.charCodeAt(0) - 65));
+            if (options[correctIndex]) {
+              options[correctIndex].isCorrect = true;
+            }
+          }
+          results.push({ questionText: questionLine, options: options.slice(0, 4), explanation });
+        }
+      });
+      return results;
+    };
+
+    const plainQuestions = parsePlainMcq(cleaned);
+    if (plainQuestions.length) {
+      return plainQuestions.map((q) => ({
+        questionText: q.questionText,
+        options: q.options,
+        explanation: q.explanation,
+      }));
+    }
+
+    return [];
+  };
+
+  const normalizeAiQuestion = (item, idx) => {
+    const questionText = String(item.questionText || item.question || '').trim();
+    const rawOptions = Array.isArray(item.options) ? item.options : [];
+    const options = rawOptions.map((option) => {
+      if (typeof option === 'string') return option.trim();
+      if (option && typeof option === 'object') return String(option.text || option.choice || option.label || '').trim();
+      return '';
+    }).filter(Boolean);
+    const correctIndex = rawOptions.findIndex((option) => {
+      if (typeof option === 'object') return option.isCorrect === true || option.correct === true || option.is_answer === true;
+      return false;
+    });
+
+    return {
+      id: item.id || `tryout-${Date.now()}-${idx}`,
+      type: 'mcq',
+      question: questionText,
+      options: options.length > 0 ? options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+      correctAnswer: correctIndex >= 0 ? correctIndex : 0,
+      explanation: String(item.explanation || item.explanationText || '').trim(),
+      difficulty: String(item.difficulty || item.level || 'medium').trim().toLowerCase(),
+    };
+  };
+
+  const generateAiTryouts = async () => {
+    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const topic = topicTitle || 'General Topic';
+    const gradeLevel = localStorage.getItem('selectedClassName') || '';
+    const token = localStorage.getItem('token') || '';
+
+    setGenerating(true);
+    setAiError('');
+    try {
+      const response = await fetch(`${API_BASE}/api/ai-teacher/quiz-generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ subject, topic, gradeLevel, difficulty: aiDifficulty, count: aiCount }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'AI generation failed');
+
+      let questions = Array.isArray(data?.data?.questions) ? data.data.questions : [];
+      if (!questions.length && typeof data?.data?.raw === 'string') {
+        questions = parseAiQuestions(data.data.raw);
+      }
+      if (!questions.length) throw new Error('AI did not return valid quiz questions');
+
+      const generated = questions.map(normalizeAiQuestion).filter((q) => q.question && Array.isArray(q.options) && q.options.length > 1);
+      if (!generated.length) throw new Error('Generated questions could not be parsed');
+
+      const updated = aiAppend ? [...localTryouts, ...generated] : generated;
+      setLocalTryouts(updated);
+      onSaveTryouts(updated);
+      toast.success(`${generated.length} AI-generated tryout question(s) ${aiAppend ? 'appended' : 'replaced'}`);
+    } catch (err) {
+      const message = err?.message || 'Failed to generate tryout questions';
+      setAiError(message);
+      toast.error(message);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleSelectType = (typeId) => {
     setSelectedType(typeId);
@@ -1129,15 +1318,70 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts }) => {
   return (
     <div className="rounded-xl border border-rose-200 bg-rose-50/30 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-rose-500 to-pink-600 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Play className="size-4 text-white" />
-          <span className="text-sm font-semibold text-white">Tryout Questions</span>
+      <div className="border-b border-rose-200 bg-rose-100 px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="grid gap-3 sm:grid-cols-3 sm:gap-4 w-full">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Count</label>
+              <select
+                value={aiCount}
+                onChange={(e) => setAiCount(Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                {[1, 3, 5, 10].map((count) => (
+                  <option key={count} value={count}>{count} question{count !== 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Difficulty</label>
+              <select
+                value={aiDifficulty}
+                onChange={(e) => setAiDifficulty(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                {['easy', 'medium', 'hard'].map((level) => (
+                  <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Mode</label>
+              <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="aiAppendMode" checked={aiAppend} onChange={() => setAiAppend(true)} className="accent-rose-500" />
+                  Append
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="aiAppendMode" checked={!aiAppend} onChange={() => setAiAppend(false)} className="accent-rose-500" />
+                  Replace
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 sm:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateAiTryouts}
+              disabled={generating}
+              className="text-xs"
+            >
+              <Zap className="size-4 mr-2" />
+              {generating ? 'Generating…' : aiAppend ? 'Append AI Questions' : 'Replace with AI Questions'}
+            </Button>
+          </div>
         </div>
-        <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">
-          {localTryouts.length} question{localTryouts.length !== 1 ? 's' : ''}
-        </span>
+        <p className="mt-3 text-sm text-slate-600">
+          AI will generate {aiCount} MCQ question{aiCount !== 1 ? 's' : ''} for “{topicTitle || 'this chapter'}” at {aiDifficulty} difficulty.
+        </p>
       </div>
+      {aiError && (
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50">
+          {aiError}
+        </div>
+      )}
 
       <div className="flex min-h-[320px]">
         {/* Left: question list */}

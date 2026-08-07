@@ -1078,6 +1078,7 @@ const DrawerModal = ({
             <InlineTryoutBuilder
               tryouts={chapter.tryouts || []}
               onSaveTryouts={handleSaveTryouts}
+              topicTitle={chapter.title || ''}
             />
           </div>
         );

@@ -228,6 +228,7 @@ _TEACHER_LONG_OUTPUT_MODES = {
     "lesson_content", "idoweedo", "differentiated_plan",
     "class_performance_summary", "misconception_report",
     "curriculum_alignment", "rubric_generate", "intervention_plan",
+    "quiz_generate",
 }
 
 
