@@ -892,6 +892,14 @@ const TryoutBuilder = ({
     setEditingIndex(null);
   };
 
+  const addAllQuestionTypes = () => {
+    const newQuestions = TRYOUT_TYPES.map((type, idx) => ({
+      id: `tryout-${Date.now()}-${idx}`,
+      type: type.id,
+    }));
+    setLocalTryouts((prev) => [...prev, ...newQuestions]);
+  };
+
   const handleEditQuestion = (index) => {
     setEditingIndex(index);
     setCurrentQuestion({ ...localTryouts[index] });
@@ -1001,7 +1009,12 @@ const TryoutBuilder = ({
             <div className="flex-1 p-4 overflow-y-auto">
               {!selectedType && editingIndex === null ? (
                 <div>
-                  <h3 className="mb-4 text-sm font-semibold text-slate-700 dark:text-slate-200">Select Question Type</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Select Question Type</h3>
+                    <Button variant="outline" size="sm" onClick={addAllQuestionTypes}>
+                      Add all question types
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     {TRYOUT_TYPES.map(type => (
                       <button
@@ -1242,7 +1255,15 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ subject, topic, gradeLevel, difficulty: aiDifficulty, count: aiCount }),
+        body: JSON.stringify({
+          subject,
+          topic,
+          gradeLevel,
+          difficulty: aiDifficulty,
+          count: aiCount,
+          chapterTitle: topicTitle || null,
+          topicTitle: topicTitle || null,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || 'AI generation failed');

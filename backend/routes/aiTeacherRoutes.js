@@ -16,6 +16,13 @@ const callTeacherAI = (mode, subject, topic, gradeLevel, context, question) =>
     { timeout: TIMEOUT }
   );
 
+const callTeacherRagAI = (payload) =>
+  axios.post(
+    `${AI_SERVICE_URL}/generate/tutor`,
+    payload,
+    { timeout: TIMEOUT }
+  );
+
 // ── POST /api/ai-teacher/lesson-content ──────────────────────────────────────
 router.post('/lesson-content', authTeacher, async (req, res) => {
   try {
@@ -214,17 +221,35 @@ router.post('/idoweedo', authTeacher, async (req, res) => {
 // ── POST /api/ai-teacher/quiz-generate ────────────────────────────────────────
 router.post('/quiz-generate', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, difficulty, count } = req.body || {};
+    const { subject, topic, gradeLevel, difficulty, count, chapterTitle, topicTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    const chapter = chapterTitle || topicTitle || null;
     const question = [
       difficulty ? `Difficulty level: ${difficulty}` : null,
-      count ? `Generate exactly ${count} questions` : 'Generate exactly 5 questions',
-    ].filter(Boolean).join('. ');
+      count ? `Generate exactly ${count} multiple-choice questions` : 'Generate exactly 5 multiple-choice questions',
+      'Base all questions only on the uploaded course material for this topic.',
+    ].filter(Boolean).join(' ');
 
-    const aiRes = await callTeacherAI('quiz_generate', subject, topic, gradeLevel, null, question);
+    const payload = {
+      mode: 'quiz',
+      subject,
+      topic,
+      gradeLevel: gradeLevel || null,
+      question,
+      candidates: [],
+      schoolId: String(req.schoolId),
+      classId: req.user?.classId ? String(req.user.classId) : null,
+      sectionId: req.user?.sectionId ? String(req.user.sectionId) : null,
+      chapterTitle: chapter,
+      subTopic: null,
+      difficulty: difficulty || null,
+      studentContext: null,
+      conversationHistory: null,
+    };
+
+    const aiRes = await callTeacherRagAI(payload);
     const raw = (aiRes.data?.content || '').trim();
 
-    // Try to parse JSON out of LLM response
     let questions = [];
     try {
       const start = raw.indexOf('[');
@@ -236,7 +261,15 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       // Return raw content if JSON parse fails — frontend can show it
     }
 
-    return res.json({ success: true, data: { questions, raw } });
+    return res.json({
+      success: true,
+      data: {
+        questions,
+        raw,
+        groundedInMaterial: aiRes.data?.groundedInMaterial || false,
+        noMaterialFound: aiRes.data?.noMaterialFound || false,
+      },
+    });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
     return res.status(500).json({ error: err.message });
