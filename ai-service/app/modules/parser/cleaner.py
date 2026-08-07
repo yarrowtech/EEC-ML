@@ -20,6 +20,21 @@ _NEXT_SECTION_RE = re.compile(
 )
 
 
+_INJECTION_LINE_RE = re.compile(
+    r"(?:ignore\s+(?:previous|all|above)|disregard\s+(?:previous|all)|"
+    r"you\s+are\s+now|forget\s+(?:previous|all)|new\s+instructions?:|"
+    r"system\s*:\s*you|override\s+(?:previous|all)|act\s+as\s+(?:a\s+)?(?:jailbreak|dan|evil))",
+    re.IGNORECASE,
+)
+
+
+def _strip_injection_attempts(text: str) -> str:
+    """Remove lines from uploaded document content that look like prompt injection attempts."""
+    lines = text.splitlines(keepends=True)
+    cleaned = [line for line in lines if not _INJECTION_LINE_RE.search(line)]
+    return "".join(cleaned)
+
+
 def _strip_teacher_notes(text: str) -> str:
     """Remove 'Note to the Teacher' blocks from plain-text or Markdown input.
 

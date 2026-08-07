@@ -34,6 +34,9 @@ const WeakStudentIdentification = () => {
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  // Learning path preview state — teacher must review before publishing
+  const [pathPreview, setPathPreview] = useState(null); // { studentId, subject, nodes, studentName }
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     fetchWeakStudents();
@@ -84,30 +87,61 @@ const WeakStudentIdentification = () => {
     }
   };
 
-  const generateLearningPath = async (studentId, subject, weakAreas, currentLevel) => {
+  // Step 1 — generate preview for teacher to review
+  const previewLearningPath = async (student, subject, weakAreas, currentLevel) => {
     try {
-      const response = await fetch(`/api/ai-learning/generate-learning-path/${studentId}`, {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/learning-paths/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ subject, weakAreas, currentLevel })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          studentName: student.studentId?.name || 'Student',
+          subject,
+          focus: weakAreas?.join(', ') || subject,
+          pace: '1 week',
+          gradeLevel: student.studentId?.grade || '',
+          mastery: [],
+        }),
       });
-
-      if (response.ok) {
-        await response.json();
-        alert('AI Learning Path generated successfully!');
-        // You could navigate to the learning path or show it in a modal
-        setSelectedStudent(prev => ({
-          ...prev,
-          hasAIPath: true
-        }));
-      } else {
-        throw new Error('Failed to generate learning path');
-      }
+      if (!response.ok) throw new Error('Failed to generate preview');
+      const data = await response.json();
+      setPathPreview({
+        studentId: student.studentId?._id || student._id,
+        studentName: student.studentId?.name || 'Student',
+        subject,
+        nodes: data.nodes || [],
+      });
     } catch (error) {
-      console.error('Error generating learning path:', error);
+      console.error('Error generating learning path preview:', error);
       alert('Failed to generate learning path. Please try again.');
+    }
+  };
+
+  // Step 2 — teacher reviews preview and clicks Publish
+  const publishLearningPath = async () => {
+    if (!pathPreview) return;
+    setPublishing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/learning-paths/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          studentId: pathPreview.studentId,
+          subject: pathPreview.subject,
+          focus: pathPreview.subject,
+          nodes: pathPreview.nodes,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to publish learning path');
+      alert(`Learning path published to ${pathPreview.studentName}!`);
+      setPathPreview(null);
+      fetchWeakStudents();
+    } catch (error) {
+      console.error('Error publishing learning path:', error);
+      alert('Failed to publish. Please try again.');
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -357,10 +391,10 @@ const WeakStudentIdentification = () => {
                       <span>{analyzing ? 'Analyzing...' : 'Re-analyze'}</span>
                     </button>
                     <button
-                      onClick={() => generateLearningPath(
-                        student.studentId._id, 
-                        student.focusSubject || 'Mathematics', 
-                        student.weakAreas || [], 
+                      onClick={() => previewLearningPath(
+                        student,
+                        student.focusSubject || 'Mathematics',
+                        student.weakAreas || [],
                         'basic'
                       )}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 text-sm"
@@ -505,6 +539,58 @@ const WeakStudentIdentification = () => {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Learning Path Preview Modal — teacher reviews before publishing */}
+      {pathPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Review Learning Path</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                For <strong>{pathPreview.studentName}</strong> · {pathPreview.subject}
+              </p>
+              <p className="text-xs text-amber-600 mt-2 bg-amber-50 rounded p-2">
+                Review the AI-generated path below. Click <strong>Publish</strong> to send it to the student, or <strong>Cancel</strong> to discard.
+              </p>
+            </div>
+            <div className="p-6">
+              <ol className="space-y-3">
+                {pathPreview.nodes.map((node, i) => (
+                  <li key={i} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                      node.tier === 'green' ? 'bg-green-500' :
+                      node.tier === 'purple' ? 'bg-purple-500' :
+                      node.tier === 'orange' ? 'bg-orange-500' : 'bg-blue-500'
+                    }`}>{i + 1}</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800 text-sm">{node.title}</p>
+                      <div className="flex gap-2 mt-1">
+                        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded">{node.bloom}</span>
+                        <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded">{node.tier}</span>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setPathPreview(null)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={publishLearningPath}
+                disabled={publishing}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 text-sm font-medium"
+              >
+                {publishing ? 'Publishing...' : 'Publish to Student'}
+              </button>
             </div>
           </div>
         </div>

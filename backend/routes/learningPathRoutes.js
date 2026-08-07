@@ -146,6 +146,19 @@ router.post('/publish', authTeacher, async (req, res) => {
 
     logger.info({ pathId: path._id, teacherId, studentId, subject }, 'Learning path published');
 
+    // Notify student that a new learning path is available
+    try {
+      const NotificationService = require('../utils/notificationService');
+      await NotificationService.notifyLearningPathPublished({
+        schoolId,
+        campusId: req.campusId || null,
+        studentId,
+        subject,
+        teacherName,
+        createdBy: teacherId,
+      });
+    } catch (_) { /* non-critical */ }
+
     return res.status(201).json({
       success: true,
       message: `Learning path published to ${studentName}`,

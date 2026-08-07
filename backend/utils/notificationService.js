@@ -189,6 +189,46 @@ class NotificationService {
   }
 
   /**
+   * Notify students that their assignment marks have been published by the teacher
+   */
+  static async notifyMarksPublished({ schoolId, campusId, assignment, studentIds, createdBy }) {
+    return await this.createNotification({
+      schoolId,
+      campusId,
+      title: `Marks Published: ${assignment.title}`,
+      message: `Your marks for the ${assignment.subject} assignment "${assignment.title}" have been published. Check your submissions to see your score and feedback.`,
+      audience: 'Specific',
+      type: 'result',
+      priority: 'high',
+      category: 'academic',
+      targetUserIds: Array.isArray(studentIds) ? studentIds : [],
+      createdBy,
+      relatedEntity: {
+        entityType: 'assignment',
+        entityId: assignment._id,
+      },
+    });
+  }
+
+  /**
+   * Notify a student that a new personalised learning path has been published
+   */
+  static async notifyLearningPathPublished({ schoolId, campusId, studentId, subject, teacherName, createdBy }) {
+    return await this.createNotification({
+      schoolId,
+      campusId,
+      title: `New Learning Path: ${subject}`,
+      message: `${teacherName || 'Your teacher'} has published a personalised learning path for you in ${subject}. Open your Learning Hub to get started.`,
+      audience: 'Specific',
+      type: 'general',
+      priority: 'high',
+      category: 'academic',
+      targetUserIds: [studentId],
+      createdBy,
+    });
+  }
+
+  /**
    * Create parent-teacher meeting notification
    */
   static async notifyParentMeetingScheduled({ schoolId, campusId, meeting, createdBy }) {

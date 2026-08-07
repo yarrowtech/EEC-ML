@@ -137,6 +137,8 @@ def get_chapter_chunks(
             "topic_title": point.payload.get("topic_title", ""),
             "chunk_index": point.payload.get("chunk_index", 0),
             "start_char": point.payload.get("start_char"),
+            "source_name": point.payload.get("source_name", ""),
+            "material_id": point.payload.get("material_id", ""),
         }
         for point in results
         if point.payload.get("chunk_text")
@@ -198,6 +200,8 @@ def search_chunks(
             "chapter_title": hit.payload.get("chapter_title", ""),
             "topic_title": hit.payload.get("topic_title", ""),
             "chunk_index": hit.payload.get("chunk_index", 0),
+            "source_name": hit.payload.get("source_name", ""),
+            "material_id": hit.payload.get("material_id", ""),
         }
         for hit in response.points
     ]

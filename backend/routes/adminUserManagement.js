@@ -1735,4 +1735,85 @@ router.get('/teacher-attendance', adminAuth, async (req, res) => {
   }
 });
 
+// DPDP Act 2023 — Right to erasure: delete ALL data for a specific student
+// Cascades across StudentProgress, MasteryScore, and AI-generated records.
+// Admin-only. Logs to AuditLog for compliance trail.
+router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
+    try {
+        const schoolId = req.admin?.schoolId || req.schoolId;
+        if (!schoolId) return res.status(400).json({ error: 'schoolId required' });
+
+        const { id: studentId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(studentId)) {
+            return res.status(400).json({ error: 'Invalid studentId' });
+        }
+
+        const student = await StudentUser.findOne({ _id: studentId, schoolId }).lean();
+        if (!student) return res.status(404).json({ error: 'Student not found in this school' });
+
+        const StudentProgress = require('../models/StudentProgress');
+        const MasteryScore = require('../models/MasteryScore');
+        const TutorConversation = require('../models/TutorConversation');
+        const ReadingAssessment = require('../models/ReadingAssessment');
+        const WritingAssessment = require('../models/WritingAssessment');
+
+        const [progress, mastery, convos, reading, writing] = await Promise.all([
+            StudentProgress.deleteMany({ studentId }),
+            MasteryScore.deleteMany({ studentId }),
+            TutorConversation.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
+            ReadingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
+            WritingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
+        ]);
+
+        // Anonymize PII on StudentUser rather than hard-delete to preserve referential integrity
+        await StudentUser.findByIdAndUpdate(studentId, {
+            $set: {
+                name: '[Deleted]',
+                email: null,
+                mobile: null,
+                address: null,
+                aadharNumber: null,
+                guardianPhone: null,
+                guardianEmail: null,
+                fatherPhone: null,
+                motherPhone: null,
+                profilePic: '',
+                isArchived: true,
+                archivedAt: new Date(),
+                dataRetentionExpiresAt: new Date(),
+            },
+        });
+
+        const AuditLog = require('../models/AuditLog');
+        await AuditLog.create({
+            schoolId,
+            action: 'student.data_erasure',
+            performedBy: req.admin?._id || req.adminId,
+            targetId: studentId,
+            details: {
+                progressDeleted: progress.deletedCount,
+                masteryDeleted: mastery.deletedCount,
+                conversationsDeleted: convos.deletedCount,
+                readingDeleted: reading.deletedCount,
+                writingDeleted: writing.deletedCount,
+                reason: req.body?.reason || 'Right to erasure request (DPDP Act 2023)',
+            },
+        }).catch(() => {});
+
+        res.json({
+            success: true,
+            message: 'Student data erased and PII anonymized',
+            deleted: {
+                progress: progress.deletedCount,
+                mastery: mastery.deletedCount,
+                conversations: convos.deletedCount,
+                reading: reading.deletedCount,
+                writing: writing.deletedCount,
+            },
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

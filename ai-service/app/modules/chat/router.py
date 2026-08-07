@@ -1,98 +1,53 @@
 import json
 import logging
-import random
 import re
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import Runnable
-from langchain_ollama import ChatOllama
 
-from app.core.config import settings
+from app.core.llm import LONG_OUTPUT_MODES, active_model_name, create_chain
 from app.modules.chat.schemas import LearningPathRequest, SummariseSessionRequest, TeacherAIRequest, TutorGenerateRequest
-from app.modules.chat.service import NOT_FOUND_MESSAGE, build_prompt, retrieve_relevant_chunks
-from app.modules.parser.cleaner import _strip_teacher_notes
+from app.modules.chat.service import NOT_FOUND_MESSAGE, build_prompt, retrieve_relevant_chunks_with_citations
+from app.modules.parser.cleaner import _strip_teacher_notes, _strip_injection_attempts
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/generate", tags=["Chat"])
 
+_LONG_OUTPUT_MODES = LONG_OUTPUT_MODES
 
-# Modes that produce long structured output for an entire chapter need a higher token budget.
-_LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize", "quiz"}
-
-# Higher temperature for generative/creative modes so each run produces different questions/cards.
-# Lower temperature for structured/factual modes so output is consistent and well-formatted.
-_MODE_TEMPERATURE: dict[str, float] = {
-    "quiz":                0.9,
-    "flashcards":          0.85,
-    "practice_basic":      0.5,
-    "practice_intermediate": 0.6,
-    "practice_advanced":   0.65,
-    "engagement_swap":     0.8,
-    "explain":             0.6,
-    "homework_help":       0.6,
-    "real_world":          0.7,
-    "misconception":       0.5,
-    "exam_explanation":    0.45,
-    "exam_feedback":       0.55,
-    "assignment_feedback": 0.5,
-    "at_risk_summary":     0.4,
-    "summarize":           0.4,
-    "notes":               0.3,
-    "mind_map":            0.3,
-}
-_DEFAULT_TEMPERATURE = 0.7
-
-
-def _create_chain(mode: str = "") -> Runnable:
-    temperature = _MODE_TEMPERATURE.get(mode, _DEFAULT_TEMPERATURE)
-
-    if settings.openrouter_api_key:
-        # Production: use OpenRouter API (any model, e.g. google/gemini-flash-1.5)
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(
-            base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
-            model=settings.openrouter_model,
-            temperature=temperature,
-            max_tokens=settings.ollama_num_predict_extended if mode in _LONG_OUTPUT_MODES else settings.ollama_num_predict,
-        )
-    else:
-        # Development: use local Ollama
-        num_predict = (
-            settings.ollama_num_predict_extended
-            if mode in _LONG_OUTPUT_MODES
-            else settings.ollama_num_predict
-        )
-        llm = ChatOllama(
-            base_url=settings.ollama_url,
-            model=settings.ollama_model,
-            num_ctx=settings.ollama_num_ctx,
-            num_predict=num_predict,
-            temperature=temperature,
-            seed=random.randint(1, 2**31 - 1),  # prevent Ollama KV-cache reuse across requests
-        )
-
-    return llm | StrOutputParser()
+# Safety guardrail prepended to every student-facing tutor system prompt
+_SAFETY_PREFIX = (
+    "You are a school tutor for students aged 6–18. "
+    "You must ONLY answer questions directly related to the study material provided below. "
+    "If asked anything unrelated to the material — personal questions, political topics, "
+    "adult content, violence, or any topic outside the provided text — respond with: "
+    "'I can only help with your study material. Please ask your teacher about anything else.' "
+    "Never generate harmful, adult, or inappropriate content under any circumstances.\n\n"
+)
 
 
 @router.post("/tutor")
 async def generate_tutor_content(req: TutorGenerateRequest) -> dict:
-    relevant_chunks = retrieve_relevant_chunks(req)
-    if not relevant_chunks:
+    chunks, citations = retrieve_relevant_chunks_with_citations(req)
+    if not chunks:
         return {
             "mode": req.mode,
             "model": None,
             "content": NOT_FOUND_MESSAGE,
             "groundedInMaterial": False,
             "noMaterialFound": True,
+            "citations": [],
         }
 
-    context = _strip_teacher_notes("\n\n".join(relevant_chunks))
+    # Strip teacher notes then sanitize against prompt injection from uploaded content
+    raw_context = _strip_teacher_notes("\n\n".join(chunks))
+    context = _strip_injection_attempts(raw_context)
+
     system, user_prompt = build_prompt(req, context)
-    chain = _create_chain(mode=req.mode)
+    # Prepend safety guardrail to system prompt
+    system = _SAFETY_PREFIX + system
+    chain = create_chain(mode=req.mode)
 
     # Build message list: system + optional prior conversation turns + current user prompt.
     # Conversation history gives the LLM memory of what was discussed in this session.
@@ -110,13 +65,13 @@ async def generate_tutor_content(req: TutorGenerateRequest) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
-    active_model = settings.openrouter_model if settings.openrouter_api_key else settings.ollama_model
     return {
         "mode": req.mode,
-        "model": active_model,
+        "model": active_model_name(),
         "content": content,
         "groundedInMaterial": True,
         "noMaterialFound": False,
+        "citations": citations,  # [{material_id, source_name, chapter_title}]
     }
 
 
@@ -144,7 +99,7 @@ async def summarize_session(req: SummariseSessionRequest) -> dict:
     )
     user_prompt = f"Tutoring session transcript:\n\n{req.conversation[:4000]}"
 
-    chain = _create_chain(mode="summarize")
+    chain = create_chain(mode="summarize")
     try:
         raw = chain.invoke([SystemMessage(content=system), HumanMessage(content=user_prompt)])
         # Strip markdown fences if the model wrapped it anyway
@@ -238,7 +193,7 @@ def _validate_nodes(raw: list) -> list:
 
 @router.post("/learning-path")
 async def generate_learning_path(req: LearningPathRequest) -> dict:
-    chain = _create_chain(mode="notes")  # structured, low-temperature
+    chain = create_chain(mode="notes")  # structured, low-temperature
     try:
         raw_text = chain.invoke([
             SystemMessage(content=_LEARNING_PATH_SYSTEM),
@@ -257,7 +212,7 @@ async def generate_learning_path(req: LearningPathRequest) -> dict:
     if not nodes:
         raise HTTPException(status_code=422, detail="LLM returned empty node list")
 
-    return {"nodes": nodes, "model": settings.ollama_model}
+    return {"nodes": nodes, "model": active_model_name()}
 
 
 _TEACHER_MODES = {
@@ -265,7 +220,7 @@ _TEACHER_MODES = {
     "parent_report", "exit_ticket_grade", "idoweedo", "quiz_generate",
     "differentiated_plan", "misconception_report",
     "intervention_recommendation", "curriculum_alignment",
-    "intervention_plan", "rubric_generate",
+    "intervention_plan", "rubric_generate", "rubric_grade",
     "progress_summary", "worksheet",
 }
 
@@ -300,7 +255,7 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
         f"{context_block}{question_block}"
     )
 
-    chain = _create_chain(mode=req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain")
+    chain = create_chain(mode=req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain")
     try:
         content = chain.invoke([
             SystemMessage(content=system),
@@ -309,4 +264,4 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
-    return {"mode": req.mode, "model": settings.ollama_model, "content": content}
+    return {"mode": req.mode, "model": active_model_name(), "content": content}

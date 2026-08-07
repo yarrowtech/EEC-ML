@@ -1,28 +1,15 @@
 import logging
-import random
 
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_ollama import ChatOllama
 
-from app.core.config import settings
+from app.core.llm import active_model_name, create_chain
 from app.modules.admin.schemas import AdminInsightsRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/generate", tags=["Admin Analytics"])
-
-
-def _llm(temperature: float = 0.5) -> ChatOllama:
-    return ChatOllama(
-        base_url=settings.ollama_url,
-        model=settings.ollama_model,
-        num_ctx=settings.ollama_num_ctx,
-        num_predict=settings.ollama_num_predict_extended,
-        temperature=temperature,
-        seed=random.randint(1, 2**31 - 1),
-    )
 
 
 def _build_overview_prompt(req: AdminInsightsRequest) -> tuple[str, str]:
@@ -214,12 +201,12 @@ async def generate_admin_insights(req: AdminInsightsRequest) -> dict:
         return {"content": "Insufficient data to generate insights.", "report_type": req.report_type}
 
     try:
-        chain = _llm(temperature) | StrOutputParser()
+        chain = create_chain(mode="at_risk_summary", temperature=temperature)
         content = await chain.ainvoke([
             SystemMessage(content=system_text),
             HumanMessage(content=user_text),
         ])
-        return {"content": content.strip(), "report_type": req.report_type}
+        return {"content": content.strip(), "report_type": req.report_type, "model": active_model_name()}
     except Exception as exc:
         logger.exception("admin-insights generation failed: %s", exc)
-        raise HTTPException(status_code=503, detail="Ollama generation failed. Is the AI service running?")
+        raise HTTPException(status_code=503, detail="LLM generation failed. Is the AI service running?")

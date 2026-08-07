@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const Assignment = require('../models/Assignment');
 const adminAuth = require('../middleware/adminAuth');
 const authStudent = require('../middleware/authStudent');
@@ -506,7 +507,7 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
             return res.status(404).json({ error: 'Assignment not found or unauthorized' });
         }
 
-        // Update student progress
+        // schoolId guard: student must belong to the same school
         const progress = await StudentProgress.findOne({ studentId, schoolId });
         if (!progress) {
             return res.status(404).json({ error: 'Student progress not found' });
@@ -523,11 +524,70 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
         progress.submissions[submissionIndex].score = score;
         progress.submissions[submissionIndex].feedback = feedback || '';
         progress.submissions[submissionIndex].status = 'graded';
+        // publishedByTeacher stays false until teacher explicitly publishes
         progress.lastUpdated = new Date();
 
         await progress.save();
 
         res.json({ message: "Assignment graded successfully" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Teachers publish grades so students can see their marks and feedback
+router.post("/teacher/publish-grades", authTeacher, async (req, res) => {
+  // #swagger.tags = ['Assignments']
+    try {
+        const { studentIds, assignmentId } = req.body;
+        const schoolId = req.schoolId || req.teacher?.schoolId || null;
+        if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+        const teacherId = req.teacher?.id || req.user?.id;
+        if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+        if (!assignmentId) return res.status(400).json({ error: 'assignmentId is required' });
+        if (!Array.isArray(studentIds) || studentIds.length === 0) {
+            return res.status(400).json({ error: 'studentIds array is required' });
+        }
+
+        // Verify assignment belongs to this teacher and school
+        const assignment = await Assignment.findOne({ _id: assignmentId, schoolId, teacherId });
+        if (!assignment) {
+            return res.status(404).json({ error: 'Assignment not found or unauthorized' });
+        }
+
+        const progressDocs = await StudentProgress.find({
+            schoolId,
+            studentId: { $in: studentIds },
+        });
+
+        let publishedCount = 0;
+        await Promise.all(progressDocs.map(async (progress) => {
+            const idx = progress.submissions.findIndex(
+                (s) => String(s.assignmentId) === String(assignmentId) && s.status === 'graded'
+            );
+            if (idx === -1) return;
+            progress.submissions[idx].publishedByTeacher = true;
+            progress.submissions[idx].publishedAt = new Date();
+            progress.lastUpdated = new Date();
+            publishedCount += 1;
+            await progress.save();
+        }));
+
+        // Notify students their marks are available
+        try {
+            const NotificationService = require('../utils/notificationService');
+            await NotificationService.notifyMarksPublished({
+                schoolId,
+                campusId: req.campusId || null,
+                assignment,
+                studentIds,
+                createdBy: teacherId,
+            });
+        } catch (_) { /* non-critical */ }
+
+        res.json({ message: `Marks published for ${publishedCount} student(s)`, publishedCount });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -623,6 +683,7 @@ router.post("/teacher/grade-bulk", authTeacher, async (req, res) => {
             progress.submissions[submissionIndex].score = score;
             progress.submissions[submissionIndex].feedback = feedback;
             progress.submissions[submissionIndex].status = 'graded';
+            // publishedByTeacher stays false until teacher explicitly publishes
             progress.lastUpdated = new Date();
 
             touchedProgress.set(studentId, progress);
@@ -840,11 +901,30 @@ router.post("/submit", authStudent, async (req, res) => {
             return res.status(400).json({ error: 'This assignment has already been submitted and cannot be edited, deleted, or resubmitted.' });
         }
 
+        // Compute submission hash for plagiarism detection
+        const submissionHash = submissionText?.trim()
+            ? crypto.createHash('sha256').update(submissionText.trim()).digest('hex')
+            : '';
+
+        // Check for identical submissions from other students in same assignment
+        let similarStudentIds = [];
+        if (submissionHash) {
+            const duplicates = await StudentProgress.find({
+                schoolId,
+                studentId: { $ne: req.user.id },
+                'submissions.assignmentId': assignmentId,
+                'submissions.submissionHash': submissionHash,
+            }).select('studentId').lean();
+            similarStudentIds = duplicates.map((d) => d.studentId);
+        }
+
         const submissionData = {
             submittedAt: new Date(),
             status,
             submissionText: submissionText || '',
-            attachmentUrl: attachmentUrl || ''
+            attachmentUrl: attachmentUrl || '',
+            submissionHash,
+            similarSubmissions: similarStudentIds,
         };
 
         progress.submissions.push({
@@ -868,23 +948,28 @@ router.post("/submit", authStudent, async (req, res) => {
                         criterion: line.replace(/^\d+[.)]\s*/, '').trim() || `Criterion ${i + 1}`,
                         maxScore: Math.floor(assignment.marks / rubricLines.length),
                     }));
-                    const aiRes = await fetch(`${AI_URL}/generate/tutor`, {
+                    // Use dedicated rubric_grade teacher mode for per-criterion breakdown
+                    const aiRes = await fetch(`${AI_URL}/generate/teacher`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            mode: 'exit_ticket_grade',
+                            mode: 'rubric_grade',
+                            subject: assignment.subject || '',
+                            topic: assignment.topic || assignment.title,
                             question: assignment.description || assignment.title,
-                            student_answer: submissionText,
-                            rubric: rubricArr,
+                            context: `Student submission:\n${submissionText}\n\nRubric criteria:\n${
+                                rubricArr.map((r) => `- ${r.criterion} (max ${r.maxScore} marks)`).join('\n')
+                            }`,
                         }),
                     });
                     if (aiRes.ok) {
                         const aiData = await aiRes.json();
-                        const content = aiData?.response || aiData?.content || '';
+                        const content = aiData?.content || '';
                         const jsonMatch = content.match(/\{[\s\S]*\}/);
                         const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
                         const totalScore = parsed?.totalScore ?? parsed?.total_score ?? null;
                         const gradingFeedback = parsed?.overallFeedback || parsed?.feedback || content;
+                        const criteriaBreakdown = parsed?.criteria || [];
                         if (submissionIdx >= 0 && totalScore !== null) {
                             const freshProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
                             const idx = freshProgress?.submissions?.findIndex(
@@ -894,11 +979,27 @@ router.post("/submit", authStudent, async (req, res) => {
                                 freshProgress.submissions[idx].aiScore = Math.min(Number(totalScore), assignment.marks);
                                 freshProgress.submissions[idx].aiGradingFeedback = String(gradingFeedback).slice(0, 1000);
                                 freshProgress.submissions[idx].aiGradingStatus = 'done';
+                                // Store per-criterion breakdown for teacher review UI
+                                if (criteriaBreakdown.length) {
+                                    freshProgress.submissions[idx].aiCriteriaBreakdown = criteriaBreakdown;
+                                }
                                 await freshProgress.save();
                             }
                         }
                     }
-                } catch (_) { /* non-critical */ }
+                } catch (aiErr) {
+                    // Mark AI grading as failed so teacher knows to grade manually
+                    try {
+                        const failProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
+                        const failIdx = failProgress?.submissions?.findIndex(
+                            (s) => String(s.assignmentId) === String(assignmentId)
+                        );
+                        if (failProgress && failIdx >= 0) {
+                            failProgress.submissions[failIdx].aiGradingStatus = 'failed';
+                            await failProgress.save();
+                        }
+                    } catch (_) { /* best-effort */ }
+                }
             })();
         }
 
@@ -1056,7 +1157,8 @@ router.get("/submissions", authTeacher, async (req, res) => {
     }
 });
 
-// Student fetch own submissions
+// Student fetch own submissions — only returns graded+published entries so
+// students cannot see AI-generated marks before teacher review
 router.get("/my-submissions", authStudent, async (req, res) => {
   // #swagger.tags = ['Assignments']
     try {
@@ -1065,7 +1167,24 @@ router.get("/my-submissions", authStudent, async (req, res) => {
         const progress = await StudentProgress.findOne({ studentId: req.user.id, schoolId })
             .populate('submissions.assignmentId', 'title subject dueDate marks')
             .lean();
-        const submissions = progress?.submissions || [];
+        const all = progress?.submissions || [];
+        // Only expose score/feedback after teacher has explicitly published
+        const submissions = all.map((sub) => {
+            const published = sub.publishedByTeacher === true;
+            return {
+                _id: sub._id,
+                assignmentId: sub.assignmentId,
+                submittedAt: sub.submittedAt,
+                status: sub.status,
+                submissionText: sub.submissionText,
+                attachmentUrl: sub.attachmentUrl,
+                // score and feedback only visible after teacher publishes
+                score: published ? sub.score : undefined,
+                feedback: published ? sub.feedback : undefined,
+                publishedByTeacher: published,
+                publishedAt: published ? sub.publishedAt : undefined,
+            };
+        });
         res.json(submissions);
         logStudentPortalEvent(req, {
             feature: 'assignments',

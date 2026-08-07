@@ -1,7 +1,27 @@
 const { getClientIp } = require('../utils/request');
+const { logSecurityEvent } = require('../utils/securityEventLogger');
+
+// Use Redis when available so limits survive restarts and work across processes.
+// Falls back to in-memory Map in test/dev environments without Redis.
+let redisClient = null;
+try {
+  const { client } = require('../utils/redisClient');
+  redisClient = client;
+} catch (_) { /* Redis not configured — use in-memory fallback */ }
 
 const buckets = new Map();
-const { logSecurityEvent } = require('../utils/securityEventLogger');
+
+const _incrRedis = async (key, windowMs) => {
+  try {
+    const r = redisClient;
+    if (!r || !r.isOpen) return null;
+    const count = await r.incr(key);
+    if (count === 1) await r.pExpire(key, windowMs);
+    return count;
+  } catch (_) {
+    return null; // fall through to in-memory on Redis error
+  }
+};
 
 const getIpForLimit = (req, useForwardedFor = true) => {
   if (useForwardedFor) {
@@ -30,43 +50,47 @@ const rateLimit = ({
   skipFailedRequests = false,
   requestWasSuccessful = (_req, res) => res.statusCode < 400,
 } = {}) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (typeof skip === 'function' && skip(req, res)) {
       return next();
     }
 
-    const key = getKey(req, { useForwardedFor, keyGenerator });
-    const now = Date.now();
-    const entry = buckets.get(key) || { count: 0, start: now };
+    const key = `rl:${getKey(req, { useForwardedFor, keyGenerator })}`;
+    let currentCount;
 
-    if (now - entry.start > windowMs) {
-      entry.count = 0;
-      entry.start = now;
+    // Try Redis first; fall back to in-memory Map
+    const redisCount = await _incrRedis(key, windowMs);
+    if (redisCount !== null) {
+      currentCount = redisCount;
+    } else {
+      const now = Date.now();
+      const entry = buckets.get(key) || { count: 0, start: now };
+      if (now - entry.start > windowMs) { entry.count = 0; entry.start = now; }
+      entry.count += 1;
+      buckets.set(key, entry);
+      currentCount = entry.count;
     }
 
-    entry.count += 1;
-    buckets.set(key, entry);
-
-    const resetAt = Math.ceil((entry.start + windowMs) / 1000);
+    const resetAt = Math.ceil((Date.now() + windowMs) / 1000);
     res.setHeader('X-RateLimit-Limit', max);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - entry.count));
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - currentCount));
     res.setHeader('X-RateLimit-Reset', resetAt);
 
-    if (entry.count > max) {
+    if (currentCount > max) {
       logSecurityEvent(req, {
         action: 'security.rate_limit_triggered',
         outcome: 'blocked',
         severity: 'medium',
         statusCode: 429,
         limiterKey: key,
-        currentCount: entry.count,
+        currentCount,
         maxRequests: max,
         windowMs,
       });
 
       if (typeof onLimit === 'function') {
         try {
-          onLimit({ req, res, key, windowMs, max, currentCount: entry.count });
+          onLimit({ req, res, key, windowMs, max, currentCount });
         } catch (_err) {
           // Keep rate-limiter fail-safe.
         }

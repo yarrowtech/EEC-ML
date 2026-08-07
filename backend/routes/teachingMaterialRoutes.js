@@ -39,10 +39,14 @@ const buildSourceId = (material, attachment, index) => {
 
 const triggerMaterialIngest = async (material, attachments = []) => {
   const ingestible = attachments.filter(isVectorIngestible);
-  if (!ingestible.length) {
-    await deleteMaterialVectors(material._id);
-    return;
-  }
+
+  // Always delete all existing vectors for this material first to prevent
+  // stale/duplicate chunks when re-uploading (fixes multi-attachment case
+  // where only index===0 used to be replaced)
+  await deleteMaterialVectors(material._id).catch(() => {});
+
+  if (!ingestible.length) return;
+
   for (let index = 0; index < ingestible.length; index += 1) {
     const attachment = ingestible[index];
     await axios.post(
@@ -53,7 +57,7 @@ const triggerMaterialIngest = async (material, attachments = []) => {
         source_id: buildSourceId(material, attachment, index),
         file_name: attachment.name || '',
         content_type: attachment.type || '',
-        replace_existing: index === 0,
+        replace_existing: false, // vectors already wiped above
         school_id: String(material.schoolId),
         class_id: String(material.classId || ''),
         section_id: String(material.sectionId || ''),

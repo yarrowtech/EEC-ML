@@ -32,6 +32,11 @@ const submissionSchema = new mongoose.Schema({
   aiScore: { type: Number, default: null },
   aiGradingFeedback: { type: String, default: '' },
   aiGradingStatus: { type: String, enum: ['pending', 'done', 'failed', 'skipped'], default: 'skipped' },
+  aiCriteriaBreakdown: { type: mongoose.Schema.Types.Mixed, default: null },
+  publishedByTeacher: { type: Boolean, default: false },
+  publishedAt: { type: Date, default: null },
+  submissionHash: { type: String, default: '' }, // SHA-256 of submissionText for plagiarism detection
+  similarSubmissions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser' }],
 });
 
 const progressMetricSchema = new mongoose.Schema({

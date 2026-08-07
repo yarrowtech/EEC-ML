@@ -131,3 +131,74 @@ def retrieve_from_qdrant(
         chapter_title,
     )
     return []
+
+
+def retrieve_from_qdrant_with_meta(
+    *,
+    school_id: str,
+    class_id: str | None,
+    section_id: str | None,
+    subject: str | None,
+    chapter_title: str | None,
+    topic: str | None,
+    sub_topic: str | None,
+    question: str | None,
+) -> tuple[list[str], list[dict]]:
+    """Like retrieve_from_qdrant but also returns citation metadata per unique source."""
+    subject_norm = _normalize_subject(subject)
+
+    if chapter_title:
+        chunks = get_chapter_chunks(
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            chapter_title=chapter_title,
+        )
+        if chunks:
+            ordered = sorted(
+                chunks,
+                key=lambda h: h["start_char"] if h.get("start_char") is not None else h.get("chunk_index", 0),
+            )
+            capped = ordered[: settings.max_chapter_context_chunks]
+            merged = _reconstruct_from_offsets(capped)
+            citations = _dedupe_citations(capped)
+            return [merged], citations
+
+    query_text = " ".join(filter(None, [topic, sub_topic, (question or "").strip()])) or subject or ""
+    vectors = embed_texts([query_text], kind="query")
+    query_vector = vectors[0]
+
+    hits = search_chunks(
+        query_vector=query_vector,
+        school_id=school_id,
+        class_id=class_id,
+        section_id=section_id,
+        chapter_title=None,
+        subject_name=subject_norm,
+        limit=settings.max_context_chunks,
+    )
+    relevant = [
+        hit for hit in hits
+        if hit.get("text") and hit.get("score", 0) >= settings.rag_relevance_threshold
+    ][: settings.max_context_chunks]
+
+    if relevant:
+        return [h["text"] for h in relevant], _dedupe_citations(relevant)
+
+    return [], []
+
+
+def _dedupe_citations(chunks: list[dict]) -> list[dict]:
+    """Return one citation per unique source file."""
+    seen: set[str] = set()
+    citations: list[dict] = []
+    for chunk in chunks:
+        mid = chunk.get("material_id", "")
+        if mid and mid not in seen:
+            seen.add(mid)
+            citations.append({
+                "material_id": mid,
+                "source_name": chunk.get("source_name", ""),
+                "chapter_title": chunk.get("chapter_title", ""),
+            })
+    return citations

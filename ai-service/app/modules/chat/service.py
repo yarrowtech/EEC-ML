@@ -396,6 +396,23 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "}\n"
         "Include 4-5 criteria relevant to the subject and task. Make descriptors specific and measurable."
     ),
+    "rubric_grade": (
+        "You are an expert teacher grading a student assignment using the supplied rubric.\n"
+        "Score EACH criterion separately based on the student's submission.\n"
+        "Return ONLY valid JSON in this exact shape (no markdown fences, no extra text):\n"
+        "{\n"
+        '  "criteria": [\n'
+        '    {"name": "<criterion name>", "score": <integer>, "maxScore": <integer>, "comment": "<1-2 sentence specific comment>"}\n'
+        "  ],\n"
+        '  "totalScore": <integer>,\n'
+        '  "maxTotalScore": <integer>,\n'
+        '  "overallFeedback": "<2-3 sentence overall feedback to the student — what they did well and what to improve>",\n'
+        '  "strengths": ["<specific strength>"],\n'
+        '  "improvements": ["<specific improvement area>"]\n'
+        "}\n"
+        "Be specific and reference the student's actual submission text in comments. "
+        "Do not award full marks unless the criterion is fully met."
+    ),
 }
 
 
@@ -465,6 +482,23 @@ def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
             question=req.question,
         )
     return _retrieve_in_memory(req)
+
+
+def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[list[str], list[dict]]:
+    """Return (text_chunks, citations) where each citation has source_name and material_id."""
+    if req.schoolId:
+        from app.modules.retrieval.service import retrieve_from_qdrant_with_meta
+        return retrieve_from_qdrant_with_meta(
+            school_id=req.schoolId,
+            class_id=req.classId,
+            section_id=req.sectionId,
+            subject=req.subject,
+            chapter_title=req.chapterTitle,
+            topic=req.topic,
+            sub_topic=req.subTopic,
+            question=req.question,
+        )
+    return _retrieve_in_memory(req), []
 
 
 def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
