@@ -9,6 +9,7 @@ import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 import AILearningTryoutSection from './AILearningTryoutSection';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
+import { fetchCachedJson } from '../utils/studentApiCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
@@ -584,26 +585,21 @@ const AILearningCoursesLanding = () => {
         }
 
         const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const CACHE_TTL = 5 * 60 * 1000;
 
-        const [contextRes, mapRes] = await Promise.all([
-          fetch(`${API_BASE}/api/student/auth/teacher-feedback/context`, { headers }),
-          fetch(SMART_LEARNING_MAP_ENDPOINT, { headers }),
+        const [contextResult, mapResult] = await Promise.all([
+          fetchCachedJson(`${API_BASE}/api/student/auth/teacher-feedback/context`, {
+            ttlMs: CACHE_TTL,
+            fetchOptions: { headers },
+          }),
+          fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, {
+            ttlMs: CACHE_TTL,
+            fetchOptions: { headers },
+          }),
         ]);
 
-        if (!contextRes.ok) {
-          const payload = await contextRes.json().catch(() => ({}));
-          throw new Error(payload?.error || 'Failed to load assigned subjects');
-        }
-
-        if (!mapRes.ok) {
-          const payload = await mapRes.json().catch(() => ({}));
-          throw new Error(payload?.error || 'Failed to load smart learning map');
-        }
-
-        const contextData = await contextRes.json();
-        const mapData = await mapRes.json();
-        setContexts(Array.isArray(contextData?.teachers) ? contextData.teachers : []);
-        setSmartLearningMap(Array.isArray(mapData?.subjects) ? mapData.subjects : []);
+        setContexts(Array.isArray(contextResult?.data?.teachers) ? contextResult.data.teachers : []);
+        setSmartLearningMap(Array.isArray(mapResult?.data?.subjects) ? mapResult.data.subjects : []);
       } catch (err) {
         setError(err?.message || 'Unable to load assigned subjects');
       } finally {

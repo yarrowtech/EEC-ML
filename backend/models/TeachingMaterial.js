@@ -278,6 +278,8 @@ teachingMaterialSchema.index({ folderId: 1, createdAt: -1 });
 teachingMaterialSchema.index({ tags: 1 });
 teachingMaterialSchema.index({ scheduledFor: 1, status: 1 });
 teachingMaterialSchema.index({ title: 'text', plainTextContent: 'text' });
+// Student portal query: { schoolId, status, publishedForStudentPortal, sourceLessonPlanId }
+teachingMaterialSchema.index({ schoolId: 1, status: 1, publishedForStudentPortal: 1, sourceLessonPlanId: 1 });
 
 // Virtuals
 teachingMaterialSchema.virtual('isFolder').get(function() {

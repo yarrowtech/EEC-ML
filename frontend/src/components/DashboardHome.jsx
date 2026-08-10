@@ -8,6 +8,7 @@ import QuickStats from './QuickStats';
 import TestPetButton from './TestPetButton';
 import DashboardPet from './DashboardPet';
 import RecommendationWidget from './RecommendationWidget';
+import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
@@ -18,14 +19,9 @@ const ProgressTrendChart = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) { setLoading(false); return; }
-    fetch(`${API_BASE}/api/exam/results/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((payload) => {
-        const results = payload?.data || [];
+    fetchCachedJson(`${API_BASE}/api/exam/results/me`, { ttlMs: 5 * 60 * 1000 })
+      .then((r) => {
+        const results = r?.data?.data || [];
         const sorted = [...results]
           .filter((r) => r.marks != null && r.examId?.date)
           .sort((a, b) => new Date(a.examId.date) - new Date(b.examId.date))
@@ -159,9 +155,8 @@ const MasteryTopicsCard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch(`${API_BASE}/api/student-dashboard/mastery-topics`, { headers: authHdrs() })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setData(d?.data || []))
+    fetchCachedJson(`${API_BASE}/api/student-dashboard/mastery-topics`, { ttlMs: 5 * 60 * 1000 })
+      .then((r) => setData(r?.data?.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -192,9 +187,8 @@ const MasteryTopicsCard = () => {
 const LearningStreakCard = () => {
   const [data, setData] = useState(null);
   useEffect(() => {
-    fetch(`${API_BASE}/api/student-dashboard/learning-streak`, { headers: authHdrs() })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setData(d?.data || null))
+    fetchCachedJson(`${API_BASE}/api/student-dashboard/learning-streak`, { ttlMs: 5 * 60 * 1000 })
+      .then((r) => setData(r?.data?.data || null))
       .catch(() => {});
   }, []);
   if (!data) return null;
@@ -215,9 +209,8 @@ const TimeBySubjectCard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch(`${API_BASE}/api/student-dashboard/time-by-subject`, { headers: authHdrs() })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setData(d?.data || []))
+    fetchCachedJson(`${API_BASE}/api/student-dashboard/time-by-subject`, { ttlMs: 5 * 60 * 1000 })
+      .then((r) => setData(r?.data?.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -247,9 +240,8 @@ const FlashcardStatsCard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch(`${API_BASE}/api/student-dashboard/flashcard-stats`, { headers: authHdrs() })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setData(d?.data || null))
+    fetchCachedJson(`${API_BASE}/api/student-dashboard/flashcard-stats`, { ttlMs: 5 * 60 * 1000 })
+      .then((r) => setData(r?.data?.data || null))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

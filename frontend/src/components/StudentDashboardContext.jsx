@@ -57,8 +57,6 @@ export const StudentDashboardProvider = ({ children }) => {
       const [dashboardResult, teacherResult] = await Promise.all([
         fetchCachedJson(`${import.meta.env.VITE_API_URL}/api/student/auth/dashboard`, {
           ttlMs: STUDENT_API_CACHE_TTL_MS,
-          // Always refresh dashboard stats to avoid showing stale achievement counts.
-          forceRefresh: true,
           fetchOptions: {
             signal: controller.signal,
             headers,

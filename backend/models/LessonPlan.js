@@ -59,6 +59,11 @@ const lessonPlanSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Compound indexes for the student portal query pattern:
+// GET /student/smart-learning-map filters on { schoolId, status, isDraft, classId, sectionId }
+lessonPlanSchema.index({ schoolId: 1, status: 1, isDraft: 1, classId: 1, sectionId: 1 });
+lessonPlanSchema.index({ schoolId: 1, status: 1, isDraft: 1, className: 1, sectionName: 1 });
+
 // Pre-save validation: published plans must have required fields
 lessonPlanSchema.pre('save', function(next) {
   if (this.status === 'published' || this.isDraft === false) {

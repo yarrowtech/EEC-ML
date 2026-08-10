@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const MasteryScore = require('../models/MasteryScore');
 const StudentProgress = require('../models/StudentProgress');
@@ -38,9 +39,9 @@ router.get('/learning-streak', authStudent, async (req, res) => {
     const schoolId = req.schoolId;
 
     const [masteryDates, examDates, practiceDates] = await Promise.all([
-      MasteryScore.find({ studentId, schoolId }).select('lastUpdated').lean(),
-      ExamResult.find({ studentId, schoolId }).select('createdAt').lean(),
-      PracticeAttempt.find({ studentId, schoolId }).select('createdAt').lean(),
+      MasteryScore.find({ studentId, schoolId }).select('lastUpdated').limit(500).lean(),
+      ExamResult.find({ studentId, schoolId }).select('createdAt').limit(500).lean(),
+      PracticeAttempt.find({ studentId, schoolId }).select('createdAt').limit(500).lean(),
     ]);
 
     const allDates = [
@@ -81,25 +82,17 @@ router.get('/learning-streak', authStudent, async (req, res) => {
 // GET /api/student-dashboard/time-by-subject
 router.get('/time-by-subject', authStudent, async (req, res) => {
   try {
-    const studentId = req.user.id;
+    const studentId = new mongoose.Types.ObjectId(req.user.id);
     const schoolId = req.schoolId;
-    const sidStr = String(studentId);
 
-    const materials = await TeachingMaterial.find({ schoolId })
-      .select('subjectName viewedBy')
-      .lean();
-
-    const subjectMap = {};
-    for (const m of materials) {
-      const entry = (m.viewedBy || []).find((v) => String(v.studentId) === sidStr);
-      if (!entry) continue;
-      const sub = m.subjectName || 'General';
-      subjectMap[sub] = (subjectMap[sub] || 0) + (entry.timeSpent || 0);
-    }
-
-    const data = Object.entries(subjectMap)
-      .map(([subject, totalSeconds]) => ({ subject, totalSeconds, totalMinutes: Math.round(totalSeconds / 60) }))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds);
+    const data = await TeachingMaterial.aggregate([
+      { $match: { schoolId, 'viewedBy.studentId': studentId } },
+      { $unwind: '$viewedBy' },
+      { $match: { 'viewedBy.studentId': studentId } },
+      { $group: { _id: { $ifNull: ['$subjectName', 'General'] }, totalSeconds: { $sum: '$viewedBy.timeSpent' } } },
+      { $sort: { totalSeconds: -1 } },
+      { $project: { _id: 0, subject: '$_id', totalSeconds: 1, totalMinutes: { $round: [{ $divide: ['$totalSeconds', 60] }, 0] } } },
+    ]);
 
     return res.json({ success: true, data });
   } catch (err) {

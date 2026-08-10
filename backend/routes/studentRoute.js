@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const Class = require('../models/Class');
@@ -1059,9 +1060,34 @@ router.get('/dashboard', authStudent, async (req, res) => {
       targetType: 'student',
       targetId: req.user?.id,
     });
-    const student = await StudentUser.findById(req.user.id)
-      .populate('schoolId', 'name code address logo')
-      .lean();
+    // Use aggregation to compute attendance stats and slice recent records without
+    // loading the full embedded attendance/achievements arrays into Node memory.
+    const [studentAgg] = await StudentUser.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(req.user.id) } },
+      {
+        $project: {
+          name: 1, username: 1, email: 1, mobile: 1, grade: 1, section: 1, roll: 1,
+          academicYear: 1, profilePic: 1, campusName: 1, campusType: 1, schoolId: 1,
+          onboardingCompleted: 1, learningPreferences: 1,
+          totalAttendance: { $size: { $ifNull: ['$attendance', []] } },
+          presentDays: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$attendance', []] },
+                as: 'a',
+                cond: { $eq: ['$$a.status', 'present'] },
+              },
+            },
+          },
+          totalAchievements: { $size: { $ifNull: ['$achievements', []] } },
+          recentAttendance: { $slice: ['$attendance', -10] },
+        },
+      },
+    ]);
+
+    const student = studentAgg
+      ? await StudentUser.populate(studentAgg, { path: 'schoolId', select: 'name code address logo' })
+      : null;
 
     if (!student) {
       logStudentPortalEvent(req, {
@@ -1075,11 +1101,10 @@ router.get('/dashboard', authStudent, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    // Calculate stats
-    const totalAttendance = student.attendance?.length || 0;
-    const presentDays = student.attendance?.filter(a => a.status === 'present').length || 0;
+    const totalAttendance = student.totalAttendance || 0;
+    const presentDays = student.presentDays || 0;
     const attendancePercentage = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
-    const totalAchievements = Array.isArray(student.achievements) ? student.achievements.length : 0;
+    const totalAchievements = student.totalAchievements || 0;
 
     const resolvedGrade = student.grade || '';
     const resolvedSection = student.section || '';
@@ -1124,7 +1149,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         overallProgress: attendancePercentage, // Use attendance as proxy for now
       },
       course: courseInfo,
-      recentAttendance: student.attendance?.slice(-10) || [],
+      recentAttendance: student.recentAttendance || [],
       school: schoolInfo,
     };
 
