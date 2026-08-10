@@ -241,7 +241,7 @@ const WelcomeCard = () => {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4, duration: 0.4 }}
-        className="w-full mt-3 rounded-[32px] bg-gray-100 px-7 py-5 flex items-center gap-6 flex-wrap"
+        className="w-full mt-3 rounded-[32px] bg-gray-100 px-7 py-5 flex flex-col items-center gap-6 flex-wrap"
       >
         {/* Left: label + counter */}
         <div className="flex items-center gap-3.5 shrink-0">
@@ -278,7 +278,7 @@ const WelcomeCard = () => {
         </div>
 
         {/* Right: controls */}
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="flex flex-col items-center gap-4 shrink-0">
           {/* Nav buttons */}
           <div className="flex items-center gap-2.5">
             <Motion.button
