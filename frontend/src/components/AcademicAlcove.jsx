@@ -3,6 +3,7 @@ import {
   BookOpen, Search, Star, MessageSquare, Calendar, Layers, Users,
   Award, TrendingUp, Send, User, Check, X, ChevronLeft, ChevronRight, Heart,
   Filter, RefreshCw, Sparkles, FileText, Eye, EyeOff, Loader2, AlertCircle,
+  PenLine, ListChecks, CircleHelp, PlusCircle,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -45,6 +46,7 @@ export default function AcademicAlcove() {
   const [chapter, setChapter]       = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [q, setQ]                   = useState('');
+  const [onlyUnanswered, setOnlyUnanswered] = useState(false);
   const [showCreateProblem, setShowCreateProblem] = useState(false);
   const [creatingProblem, setCreatingProblem] = useState(false);
   const [newProblem, setNewProblem] = useState({
@@ -54,6 +56,10 @@ export default function AcademicAlcove() {
     difficulty: 'medium',
     problemText: '',
   });
+  const [curriculumSubjects, setCurriculumSubjects] = useState([]);
+  const [curriculumStatus, setCurriculumStatus]     = useState('idle'); // idle|loading|ready|empty|error
+  const [subjectIsOther, setSubjectIsOther]         = useState(false);
+  const [chapterIsOther, setChapterIsOther]         = useState(false);
 
   const [selected, setSelected]         = useState(null);
   const [comments, setComments]         = useState([]);
@@ -96,9 +102,48 @@ export default function AcademicAlcove() {
 
   useEffect(() => { fetchItems(); }, [subject, chapter, difficulty, q, page]);
 
+  /* ── curriculum for the "Ask a Question" form (this student's class, current session) ── */
+  useEffect(() => {
+    if (!showCreateProblem || curriculumStatus !== 'idle') return;
+    setCurriculumStatus('loading');
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/lesson-plans/student/smart-learning-map`, { headers: auth() });
+        if (!res.ok) throw new Error('Failed to load curriculum');
+        const data = await res.json();
+        const list = Array.isArray(data?.subjects) ? data.subjects : [];
+        setCurriculumSubjects(list);
+        setCurriculumStatus(list.length ? 'ready' : 'empty');
+      } catch {
+        setCurriculumStatus('error');
+      }
+    })();
+  }, [showCreateProblem, curriculumStatus]);
+
+  const selectedCurriculumSubject = useMemo(
+    () => curriculumSubjects.find((s) => s.title === newProblem.subject) || null,
+    [curriculumSubjects, newProblem.subject]
+  );
+  const curriculumChapterOptions = useMemo(() => {
+    if (!selectedCurriculumSubject) return [];
+    const options = [];
+    (selectedCurriculumSubject.chapters || []).forEach((chapter) => {
+      if (chapter?.title) options.push(chapter.title);
+      (chapter?.topics || []).forEach((topic) => {
+        if (topic?.title) options.push(topic.title);
+      });
+    });
+    return [...new Set(options)];
+  }, [selectedCurriculumSubject]);
+
   const uniqueSubjects = useMemo(() => [...new Set(items.map(i => i.subject))].filter(Boolean), [items]);
   const uniqueChapters = useMemo(() => [...new Set(items.map(i => i.chapter))].filter(Boolean), [items]);
   const totalPages     = Math.max(1, Math.ceil(total / limit));
+  const unansweredCount = useMemo(() => items.filter((i) => i.hasAnswered === false).length, [items]);
+  const visibleItems   = useMemo(
+    () => (onlyUnanswered ? items.filter((i) => i.hasAnswered === false) : items),
+    [items, onlyUnanswered]
+  );
 
   /* ── open post modal ────────────────────────────────────────── */
   const openPost = async (post) => {
@@ -205,6 +250,8 @@ export default function AcademicAlcove() {
       }
       await Swal.fire({ icon: 'success', title: 'Problem posted', text: 'Your problem is now visible to teachers and students.' });
       setNewProblem({ title: '', subject: '', chapter: '', difficulty: 'medium', problemText: '' });
+      setSubjectIsOther(false);
+      setChapterIsOther(false);
       setShowCreateProblem(false);
       setPage(1);
       fetchItems();
@@ -274,8 +321,8 @@ export default function AcademicAlcove() {
               </div>
               <p className="text-sm text-white/75 max-w-md">
                 {viewMode === 'problems'
-                  ? 'Explore curated problems and expert solutions from your teachers.'
-                  : 'Browse teacher posts, submit answers, and join discussions.'}
+                  ? 'Extra practice problems from your teachers and classmates — pick one, answer it, and see how others solved it.'
+                  : "Everything your teachers have shared recently. Like, comment, or jump in and answer."}
               </p>
             </div>
 
@@ -316,6 +363,28 @@ export default function AcademicAlcove() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+
+        {/* ── How this works ── */}
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {(viewMode === 'problems'
+            ? [
+                { icon: BookOpen,  text: 'Pick a problem below to open it' },
+                { icon: PenLine,   text: 'Write and submit your own answer' },
+                { icon: Users,     text: 'Compare with peers, ask questions' },
+              ]
+            : [
+                { icon: MessageSquare, text: 'Browse what teachers have shared' },
+                { icon: Heart,         text: 'Like or comment on a post' },
+                { icon: PenLine,       text: "Open one to answer it yourself" },
+              ]
+          ).map((step, i) => (
+            <div key={i} className="flex items-center gap-2.5 rounded-xl bg-white border border-slate-200 px-3.5 py-2.5">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-black text-amber-700">{i + 1}</span>
+              {React.createElement(step.icon, { size: 14, className: 'text-slate-400 shrink-0' })}
+              <p className="text-xs font-semibold text-slate-600 leading-snug">{step.text}</p>
+            </div>
+          ))}
+        </div>
 
         {/* ── Filter bar (problems) ── */}
         {viewMode === 'problems' && (
@@ -376,15 +445,39 @@ export default function AcademicAlcove() {
 
               <button
                 onClick={() => setShowCreateProblem((prev) => !prev)}
-                className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition shrink-0"
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-xs font-bold transition shrink-0 shadow-sm ${
+                  showCreateProblem
+                    ? 'border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                }`}
               >
-                <FileText size={12} /> {showCreateProblem ? 'Close' : 'Post Problem'}
+                {showCreateProblem ? <><X size={13} /> Close</> : <><PlusCircle size={13} /> Ask a Question</>}
               </button>
             </div>
 
+            {/* Unanswered-only toggle */}
+            {items.length > 0 && (
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={() => setOnlyUnanswered((prev) => !prev)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-bold border transition ${
+                    onlyUnanswered
+                      ? 'bg-amber-500 border-amber-500 text-white'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-amber-300'
+                  }`}
+                >
+                  <ListChecks size={12} />
+                  {onlyUnanswered ? 'Showing: Not answered yet' : `Show only what I haven't answered (${unansweredCount})`}
+                </button>
+              </div>
+            )}
+
             {showCreateProblem && (
               <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
-                <p className="text-xs font-bold uppercase tracking-wide text-indigo-600">Post Your Problem</p>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-indigo-600">Ask a Question</p>
+                  <p className="text-[11px] text-indigo-400 mt-0.5">Stuck on something? Post it here so teachers and classmates can help.</p>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     value={newProblem.title}
@@ -392,18 +485,68 @@ export default function AcademicAlcove() {
                     placeholder="Problem title"
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                   />
-                  <input
-                    value={newProblem.subject}
-                    onChange={(e) => setNewProblem((prev) => ({ ...prev, subject: e.target.value }))}
-                    placeholder="Subject"
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                  />
-                  <input
-                    value={newProblem.chapter}
-                    onChange={(e) => setNewProblem((prev) => ({ ...prev, chapter: e.target.value }))}
-                    placeholder="Chapter / topic"
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                  />
+                  {/* Subject — populated from this student's own class curriculum */}
+                  {curriculumStatus === 'ready' && !subjectIsOther ? (
+                    <select
+                      value={newProblem.subject}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '__other__') {
+                          setSubjectIsOther(true);
+                          setNewProblem((prev) => ({ ...prev, subject: '', chapter: '' }));
+                          return;
+                        }
+                        setNewProblem((prev) => ({ ...prev, subject: value, chapter: '' }));
+                        setChapterIsOther(false);
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value="">Select subject…</option>
+                      {curriculumSubjects.map((s) => (
+                        <option key={s.key || s.title} value={s.title}>{s.title}</option>
+                      ))}
+                      <option value="__other__">Other (type manually)</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={newProblem.subject}
+                      onChange={(e) => setNewProblem((prev) => ({ ...prev, subject: e.target.value }))}
+                      placeholder={curriculumStatus === 'loading' ? 'Loading your subjects…' : 'Subject'}
+                      disabled={curriculumStatus === 'loading'}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400"
+                    />
+                  )}
+
+                  {/* Chapter / topic — filtered to the selected subject */}
+                  {curriculumStatus === 'ready' && !subjectIsOther && !chapterIsOther ? (
+                    <select
+                      value={newProblem.chapter}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '__other__') {
+                          setChapterIsOther(true);
+                          setNewProblem((prev) => ({ ...prev, chapter: '' }));
+                          return;
+                        }
+                        setNewProblem((prev) => ({ ...prev, chapter: value }));
+                      }}
+                      disabled={!newProblem.subject}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400"
+                    >
+                      <option value="">{newProblem.subject ? 'Select chapter / topic…' : 'Pick a subject first'}</option>
+                      {curriculumChapterOptions.map((title) => (
+                        <option key={title} value={title}>{title}</option>
+                      ))}
+                      {newProblem.subject && <option value="__other__">Other (type manually)</option>}
+                    </select>
+                  ) : (
+                    <input
+                      value={newProblem.chapter}
+                      onChange={(e) => setNewProblem((prev) => ({ ...prev, chapter: e.target.value }))}
+                      placeholder="Chapter / topic"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  )}
                   <select
                     value={newProblem.difficulty}
                     onChange={(e) => setNewProblem((prev) => ({ ...prev, difficulty: e.target.value }))}
@@ -414,6 +557,11 @@ export default function AcademicAlcove() {
                     <option value="hard">Hard</option>
                   </select>
                 </div>
+                {(curriculumStatus === 'empty' || curriculumStatus === 'error') && (
+                  <p className="text-[11px] text-indigo-400">
+                    We couldn&apos;t find published subjects for your class yet, so type them in manually.
+                  </p>
+                )}
                 <textarea
                   value={newProblem.problemText}
                   onChange={(e) => setNewProblem((prev) => ({ ...prev, problemText: e.target.value }))}
@@ -446,7 +594,7 @@ export default function AcademicAlcove() {
                 <MessageSquare size={14} className="text-indigo-600" />
               </div>
               <div>
-                <p className="text-sm font-black text-slate-800">Teacher's Discussion Wall</p>
+                <p className="text-sm font-black text-slate-800">Teacher&apos;s Discussion Wall</p>
                 <p className="text-[11px] text-slate-400">{wallPosts.length} posts loaded</p>
               </div>
             </div>
@@ -478,15 +626,28 @@ export default function AcademicAlcove() {
                 <div key={i} className="h-60 rounded-2xl bg-white border border-slate-200 animate-pulse" />
               ))}
 
-              {!loading && items.map((p) => (
+              {!loading && visibleItems.map((p) => (
                 <div
                   key={p._id}
                   className="group flex flex-col rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden"
                 >
                   {/* Card accent top */}
-                  <div className="h-1.5 w-full bg-linear-to-r from-amber-400 to-orange-500" />
+                  <div className={`h-1.5 w-full ${p.hasAnswered ? 'bg-linear-to-r from-emerald-400 to-teal-500' : 'bg-linear-to-r from-amber-400 to-orange-500'}`} />
 
                   <div className="flex flex-col flex-1 p-5">
+                    {/* Status */}
+                    {typeof p.hasAnswered === 'boolean' && (
+                      <div className="mb-2.5">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                          p.hasAnswered
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {p.hasAnswered ? <><Check size={9} /> You answered this</> : <><CircleHelp size={9} /> Not answered yet</>}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Badges */}
                     <div className="flex flex-wrap items-center gap-1.5 mb-3">
                       {p.subject && (
@@ -533,7 +694,7 @@ export default function AcademicAlcove() {
                         onClick={() => openPost(p)}
                         className="flex items-center gap-1.5 rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 transition group-hover:bg-amber-500 group-hover:text-white group-hover:border-amber-500"
                       >
-                        Explore <ChevronRight size={11} />
+                        {p.hasAnswered ? 'View my answer' : 'Answer now'} <ChevronRight size={11} />
                       </button>
                     </div>
                   </div>
@@ -547,6 +708,22 @@ export default function AcademicAlcove() {
                   </div>
                   <p className="text-sm font-bold text-slate-600">No problems found</p>
                   <p className="text-xs text-slate-400">Try adjusting your filters</p>
+                </div>
+              )}
+
+              {!loading && items.length > 0 && visibleItems.length === 0 && (
+                <div className="col-span-full flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50">
+                    <Check size={28} className="text-emerald-400" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-600">You&apos;re all caught up!</p>
+                  <p className="text-xs text-slate-400">You&apos;ve answered every problem on this page.</p>
+                  <button
+                    onClick={() => setOnlyUnanswered(false)}
+                    className="mt-1 text-xs font-bold text-amber-600 hover:text-amber-800 transition"
+                  >
+                    Show all problems again
+                  </button>
                 </div>
               )}
             </div>
@@ -613,6 +790,12 @@ export default function AcademicAlcove() {
                     </div>
                   </div>
 
+                  {post.hasAnswered && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700 mb-2">
+                      <Check size={9} /> You answered this
+                    </span>
+                  )}
+
                   <p className="text-sm text-slate-700 leading-relaxed line-clamp-4 mb-4">{post.problemText}</p>
 
                   <div className="flex items-center justify-between">
@@ -647,7 +830,7 @@ export default function AcademicAlcove() {
                         onClick={() => openPost(post)}
                         className="flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-800 transition"
                       >
-                        Open <ChevronRight size={12} />
+                        {post.hasAnswered ? 'View my answer' : 'Answer'} <ChevronRight size={12} />
                       </button>
                     </div>
                   </div>
@@ -720,11 +903,11 @@ export default function AcademicAlcove() {
               {/* Tab bar */}
               <div className="mt-3 flex gap-1 bg-white/15 rounded-xl p-1">
                 {[
-                  { id: 'problem', label: 'Problem',    count: null },
-                  { id: 'answer',  label: 'My Answer',  count: null },
-                  { id: 'discuss', label: 'Discussion', count: comments.length },
-                  { id: 'peers',   label: 'Peers',      count: submissions.length },
-                ].map(({ id, label, count }) => (
+                  { id: 'problem', label: 'Problem',    count: null, done: false },
+                  { id: 'answer',  label: mySubmission ? 'My Answer' : 'Write Answer', count: null, done: Boolean(mySubmission) },
+                  { id: 'discuss', label: 'Discussion', count: comments.length, done: false },
+                  { id: 'peers',   label: 'Peers',      count: submissions.length, done: false },
+                ].map(({ id, label, count, done }) => (
                   <button
                     key={id}
                     onClick={() => setModalTab(id)}
@@ -732,6 +915,9 @@ export default function AcademicAlcove() {
                       ${modalTab === id ? 'bg-white text-amber-700 shadow-sm' : 'text-white/75 hover:text-white hover:bg-white/10'}`}
                   >
                     {label}
+                    {done && (
+                      <Check size={10} className={modalTab === id ? 'text-emerald-600' : 'text-emerald-200'} />
+                    )}
                     {count !== null && count > 0 && (
                       <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black leading-none ${modalTab === id ? 'bg-amber-100 text-amber-700' : 'bg-white/25 text-white'}`}>
                         {count}
@@ -758,6 +944,16 @@ export default function AcademicAlcove() {
                       <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{selected.solutionText}</p>
                     </div>
                   )}
+                  <button
+                    onClick={() => setModalTab('answer')}
+                    className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all ${
+                      mySubmission
+                        ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        : 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-200'
+                    }`}
+                  >
+                    {mySubmission ? <><Check size={14} /> You&apos;ve answered — view or edit it</> : <><PenLine size={14} /> Ready? Write your answer</>}
+                  </button>
                 </div>
               )}
 

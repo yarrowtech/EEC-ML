@@ -2168,7 +2168,7 @@ const TeacherChat = () => {
                         <React.Fragment key={msg._id}>
                           {showDateSeparator && (
                             <div className="flex justify-center my-3 relative z-[1]">
-                              <span className="text-[11px] px-4 py-1 rounded-full bg-[#f4f6fa] border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
+                              <span className="text-[11px] px-4 py-1 rounded-full bg-white border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
                                 {formatDaySeparator(currentTs)}
                               </span>
                             </div>

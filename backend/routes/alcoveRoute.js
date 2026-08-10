@@ -216,6 +216,15 @@ router.get('/posts', authAnyUser, async (req, res) => {
       AlcovePost.countDocuments(filter),
     ]);
     const actorKey = buildActorKey(req);
+    const currentUserType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+    const answeredPostIds = currentUserType === 'student' && posts.length
+      ? new Set(
+          (await AlcoveSubmission.find({
+            studentId: req.user?.id,
+            postId: { $in: posts.map((post) => post._id) },
+          }).select('postId').lean()).map((sub) => String(sub.postId))
+        )
+      : new Set();
     const stats = await Promise.all(
       posts.map(async (post) => {
         const [commentCount, submissionCount] = await Promise.all([
@@ -248,6 +257,7 @@ router.get('/posts', authAnyUser, async (req, res) => {
         likeCount: likedBy.length,
         isLiked: likedBy.includes(actorKey),
         viewCount: Number(post.viewCount) || 0,
+        hasAnswered: currentUserType === 'student' ? answeredPostIds.has(String(post._id)) : undefined,
       };
     });
     res.json({ items, total, page: Number(page), limit: Number(limit) });

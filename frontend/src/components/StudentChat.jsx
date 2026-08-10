@@ -1944,7 +1944,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                           <React.Fragment key={msg._id}>
                             {showDateSeparator && (
                               <div className="flex justify-center my-3 relative z-[1]">
-                                <span className="text-[11px] px-4 py-1 rounded-full bg-[#f4f6fa] border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
+                                <span className="text-[11px] px-4 py-1 rounded-full bg-gray-300 border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
                                   {formatDaySeparator(currentTs)}
                                 </span>
                               </div>
@@ -1998,7 +1998,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                 {/* Input */}
                 <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
                   <div className="flex items-end gap-2">
-                    <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5">
+                    <div className="flex-1 bg-gray-100 rounded-full px-4 py-2.5">
                       <textarea
                         rows={1}
                         value={draft}
