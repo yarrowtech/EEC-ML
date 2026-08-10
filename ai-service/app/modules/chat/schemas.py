@@ -17,6 +17,7 @@ class TutorGenerateRequest(BaseModel):
     topic: str
     subTopic: str | None = None
     gradeLevel: str | None = None
+    questionType: str | None = None
     question: str | None = None
     candidates: list[Candidate] = []
     schoolId: str | None = None

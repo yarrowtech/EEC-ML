@@ -48,9 +48,9 @@ export const DEFAULT_INSTRUCTIONAL_FLOW = [
 
 const STEPS = [
   { key: 'info',       label: 'Lesson Info',       icon: Calendar,       color: 'blue'    },
+  { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber'   },
   { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
-  { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
   { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
@@ -120,6 +120,7 @@ const DrawerModal = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
+  const [contentGenerating, setContentGenerating] = useState(false);
 
   // Language Practice step state
   const [langTab, setLangTab] = useState('reading'); // 'reading' | 'writing'
@@ -165,7 +166,15 @@ const DrawerModal = ({
       const res = await fetch(`${API_BASE}/api/ai-teacher/idoweedo`, {
         method: 'POST',
         headers: authHdrs(),
-        body: JSON.stringify({ subject, topic, gradeLevel: null, totalMinutes: 60 }),
+        body: JSON.stringify({
+          subject,
+          topic,
+          gradeLevel: null,
+          totalMinutes: 60,
+          classId,
+          sectionId,
+          chapterTitle: chapter?.title || topic,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Generation failed');
@@ -177,28 +186,88 @@ const DrawerModal = ({
         'WE DO': { id: 'practice', phase: 'WE DO', duration: '20' },
         'YOU DO': { id: 'synthesis', phase: 'YOU DO', duration: '15' },
       };
-      const lines = text.split('\n');
-      let currentPhase = null;
+      // Extract only the 4 phase lines — ignore any surrounding summary text
       const descriptions = {};
-      lines.forEach((line) => {
-        const stripped = line.replace(/^#+\s*\*?\*?/, '').replace(/\*?\*?\s*\(.*?\)/, '').trim().toUpperCase();
-        for (const [key] of Object.entries(phaseMap)) {
-          if (stripped.startsWith(key)) { currentPhase = key; descriptions[key] = descriptions[key] || ''; return; }
-        }
-        if (currentPhase && line.trim() && !line.startsWith('#')) {
-          descriptions[currentPhase] = (descriptions[currentPhase] || '') + line.trim() + ' ';
+      text.split('\n').forEach((line) => {
+        // Strip markdown bold markers and leading hashes, then normalise
+        const clean = line.replace(/\*\*/g, '').replace(/^#+\s*/, '').trim();
+        for (const key of Object.keys(phaseMap)) {
+          // Match "HOOK:", "I DO:", "WE DO:", "YOU DO:" at the start of the line
+          const prefix = key + ':';
+          if (clean.toUpperCase().startsWith(prefix)) {
+            descriptions[key] = clean.slice(prefix.length).trim();
+            return;
+          }
         }
       });
       const updatedFlow = Object.entries(phaseMap).map(([key, base]) => ({
         ...base,
-        description: (descriptions[key] || base.phase + ' phase').slice(0, 120).trim(),
+        description: (descriptions[key] || '').slice(0, 120).trim() || base.phase + ' phase',
       }));
-      onUpdate({ ...chapter, instructionalFlow: updatedFlow, explanation: text });
+      // Only update instructionalFlow — do not overwrite explanation with raw AI dump
+      onUpdate({ ...chapter, instructionalFlow: updatedFlow });
       toast.success('I Do / We Do / You Do generated!');
     } catch (err) {
       toast.error(err?.message || 'AI generation failed');
     } finally {
       setIdoweEdoLoading(false);
+    }
+  };
+
+  const generateAllContent = async () => {
+    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const topic = chapter?.title || 'Lesson Topic';
+    setContentGenerating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/ai-teacher/generate-content`, {
+        method: 'POST',
+        headers: authHdrs(),
+        body: JSON.stringify({
+          subject,
+          topic,
+          gradeLevel: null,
+          classId,
+          sectionId,
+          chapterTitle: chapter?.title || topic,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Generation failed');
+
+      const { objectives: aiObj, flow: aiFlow, explanation: aiExp, recap: aiRecap } = data.data || {};
+
+      const phaseMap = {
+        HOOK:    { id: 'hook',     phase: 'THE HOOK',       duration: '10' },
+        'I DO':  { id: 'instruct', phase: 'I DO',           duration: '15' },
+        'WE DO': { id: 'practice', phase: 'WE DO',          duration: '20' },
+        'YOU DO':{ id: 'synthesis',phase: 'YOU DO',         duration: '15' },
+      };
+
+      onUpdate({
+        ...chapter,
+        // Only fill objectives if currently empty
+        learningObjectives: (chapter.learningObjectives || []).length === 0 && Array.isArray(aiObj) && aiObj.length
+          ? aiObj
+          : chapter.learningObjectives,
+        // Only fill flow if teacher hasn't customised it yet
+        instructionalFlow: (() => {
+          const hasCustomFlow = Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0;
+          if (hasCustomFlow || !aiFlow) return chapter.instructionalFlow || DEFAULT_INSTRUCTIONAL_FLOW;
+          return Object.entries(phaseMap).map(([key, base]) => ({
+            ...base,
+            description: (aiFlow[key] || '').slice(0, 120).trim() || base.phase + ' phase',
+          }));
+        })(),
+        // Only fill explanation if empty
+        explanation: !chapter.explanation?.trim() && aiExp ? aiExp : chapter.explanation,
+        // Only fill recap if empty
+        recap: !chapter.recap?.trim() && aiRecap ? aiRecap : chapter.recap,
+      });
+      toast.success('Content generated from your material');
+    } catch (err) {
+      toast.error(err?.message || 'AI generation failed');
+    } finally {
+      setContentGenerating(false);
     }
   };
 
@@ -405,9 +474,20 @@ const DrawerModal = ({
       case 'content':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Define what students will learn, how the lesson flows, and the core explanation.
-            </p>
+            <div className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 ${accent.banner}`}>
+              <p className="text-sm font-medium">
+                Define what students will learn, how the lesson flows, and the core explanation.
+              </p>
+              <button
+                type="button"
+                onClick={generateAllContent}
+                disabled={contentGenerating}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                <Sparkles className="size-3.5" />
+                {contentGenerating ? 'Generating…' : 'Generate with AI'}
+              </button>
+            </div>
 
             {/* Learning Objectives */}
             <Card>
@@ -455,17 +535,8 @@ const DrawerModal = ({
 
             {/* Instructional Flow */}
             <Card>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3">
                 <SectionTitle icon={ListChecks} iconColor="text-green-500">Instructional Flow</SectionTitle>
-                <button
-                  type="button"
-                  onClick={generateIdoWeeDo}
-                  disabled={idoweEdoLoading}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:bg-emerald-950/30 dark:text-emerald-300"
-                >
-                  <Sparkles className="size-3.5" />
-                  {idoweEdoLoading ? 'Generating…' : 'I Do / We Do / You Do'}
-                </button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {flow.map((phase) => (
@@ -547,7 +618,7 @@ const DrawerModal = ({
         return (
           <div className="space-y-4">
             <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Upload study materials and reference files that students can access anytime.
+              Upload study materials first — PDFs, slides, and documents are instantly indexed so AI features in the next steps can generate content based on your material.
             </p>
 
             {/* Study Materials upload */}

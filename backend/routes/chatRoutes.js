@@ -1196,13 +1196,59 @@ router.get('/threads', async (req, res) => {
     }
 
     if (userType === 'student') {
-      const accessResults = await Promise.all(
-        threads.map(async (thread) => ({
-          thread,
-          allowed: await ensureChatAccessToThread(req, thread),
-        }))
-      );
-      threads = accessResults.filter(({ allowed }) => allowed).map(({ thread }) => thread);
+      // Batch access check: fetch student + teacher set once, avoid N+1 per thread
+      const myIdStr = String(req.user.id);
+      const studentDoc = await getChatStudent({
+        userId: req.user.id,
+        schoolId,
+        campusId,
+      });
+
+      if (!studentDoc) {
+        threads = [];
+      } else {
+        const teacherIdsNeeded = new Set();
+        const studentIdsNeeded = new Set();
+        threads.forEach((t) => {
+          if (String(t.threadType || '') === 'group') return;
+          const other = t.participants?.find((p) => String(p.userId || '') !== myIdStr);
+          if (!other) return;
+          const ot = String(other.userType || '').toLowerCase();
+          if (ot === 'teacher') teacherIdsNeeded.add(String(other.userId));
+          if (ot === 'student') studentIdsNeeded.add(String(other.userId));
+        });
+
+        const [teacherSet, otherStudentMap] = await Promise.all([
+          teacherIdsNeeded.size > 0
+            ? getStudentTeachers({ student: studentDoc, schoolId }).then(
+                (ts) => new Set(ts.map(({ teacher }) => String(teacher?._id)))
+              )
+            : Promise.resolve(new Set()),
+          studentIdsNeeded.size > 0
+            ? StudentUser.find({ _id: { $in: [...studentIdsNeeded] } })
+                .select('_id grade section campusId academicYear')
+                .lean()
+                .then((docs) => new Map(docs.map((s) => [String(s._id), s])))
+            : Promise.resolve(new Map()),
+        ]);
+
+        threads = threads.filter((t) => {
+          if (String(t.threadType || '') === 'group') return true;
+          const other = t.participants?.find((p) => String(p.userId || '') !== myIdStr);
+          if (!other) return false;
+          const ot = String(other.userType || '').toLowerCase();
+          if (ot === 'teacher') return teacherSet.has(String(other.userId));
+          if (ot === 'student') {
+            const target = otherStudentMap.get(String(other.userId));
+            if (!target) return false;
+            if (!studentsShareChatCohort(studentDoc, target)) return false;
+            const reqCampus = campusId ? String(campusId) : '';
+            const tgtCampus = target.campusId ? String(target.campusId) : '';
+            return !reqCampus || !tgtCampus || reqCampus === tgtCampus;
+          }
+          return false;
+        });
+      }
     }
 
     const result = threads.map(t => {

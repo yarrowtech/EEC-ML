@@ -23,13 +23,70 @@ const callTeacherRagAI = (payload) =>
     { timeout: TIMEOUT }
   );
 
+// ── POST /api/ai-teacher/ingest-file ─────────────────────────────────────────
+// Immediately ingest an uploaded Cloudinary file into the AI vector store so
+// AI features (quiz, content, tryout) in subsequent lesson-plan steps can use it.
+router.post('/ingest-file', authTeacher, async (req, res) => {
+  try {
+    const { url, fileName, classId, sectionId, subjectName, chapterTitle, cloudinaryPublicId } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'url is required' });
+
+    const schoolId = String(req.schoolId || '');
+    // Use the Cloudinary public ID as a stable vector namespace; fall back to the URL
+    const materialId = cloudinaryPublicId || url;
+
+    const response = await axios.post(
+      `${AI_SERVICE_URL}/ingest/material`,
+      {
+        url,
+        material_id: materialId,
+        source_id: materialId,
+        file_name: fileName || '',
+        content_type: '',
+        replace_existing: true,
+        school_id: schoolId,
+        class_id: String(classId || ''),
+        section_id: String(sectionId || ''),
+        subject_name: subjectName || '',
+        chapter_title: chapterTitle || '',
+        topic_title: chapterTitle || '',
+      },
+      { timeout: 300_000 }
+    );
+
+    return res.json({ success: true, data: response.data });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/ai-teacher/lesson-content ──────────────────────────────────────
+// Uses the RAG pipeline so the introduction is grounded in the teacher's
+// uploaded materials (ingested into Qdrant on the Materials step).
 router.post('/lesson-content', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, chapterTitle } = req.body || {};
+    const { subject, topic, gradeLevel, chapterTitle, classId, sectionId } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
-    const fullTopic = [chapterTitle, topic].filter(Boolean).join(' — ');
-    const aiRes = await callTeacherAI('lesson_content', subject, fullTopic, gradeLevel);
+
+    const payload = {
+      mode: 'summarize',
+      subject,
+      topic,
+      gradeLevel: gradeLevel || null,
+      question: 'Write a short 2–3 sentence lesson introduction for this topic. It should be a punchy hook that grabs student attention and states what they will learn. No headings, no bullet points, no long explanations — just one tight introductory paragraph.',
+      candidates: [],
+      schoolId: String(req.schoolId),
+      classId: classId ? String(classId) : null,
+      sectionId: sectionId ? String(sectionId) : null,
+      chapterTitle: chapterTitle || topic,
+      subTopic: null,
+      difficulty: null,
+      studentContext: null,
+      conversationHistory: null,
+    };
+
+    const aiRes = await callTeacherRagAI(payload);
     return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
@@ -204,13 +261,133 @@ router.post('/differentiated-content', authTeacher, async (req, res) => {
   }
 });
 
+// ── POST /api/ai-teacher/generate-content ─────────────────────────────────────
+// Single RAG call that returns all Content-step fields in one shot:
+// objectives, instructional flow (HOOK/I DO/WE DO/YOU DO), explanation, recap.
+router.post('/generate-content', authTeacher, async (req, res) => {
+  try {
+    const { subject, topic, gradeLevel, classId, sectionId, chapterTitle } = req.body || {};
+    if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const payload = {
+      mode: 'explain',
+      subject,
+      topic,
+      gradeLevel: gradeLevel || null,
+      question: [
+        'Using ONLY the uploaded material, output the following sections with these exact headers. No extra text outside these sections.',
+        '',
+        'OBJECTIVES:',
+        '- [learning objective 1]',
+        '- [learning objective 2]',
+        '- [learning objective 3]',
+        '',
+        'HOOK: [one sentence engaging opener from the material]',
+        'I DO: [one sentence — teacher demonstrates a concept from the material]',
+        'WE DO: [one sentence — guided practice with students using the material]',
+        'YOU DO: [one sentence — independent student practice from the material]',
+        '',
+        'EXPLANATION:',
+        '1. [step one — one sentence]',
+        '2. [step two — one sentence]',
+        '3. [step three — one sentence]',
+        '',
+        'RECAP:',
+        '- [key takeaway 1]',
+        '- [key takeaway 2]',
+        '- [key takeaway 3]',
+      ].join('\n'),
+      candidates: [],
+      schoolId: String(req.schoolId),
+      classId: classId ? String(classId) : null,
+      sectionId: sectionId ? String(sectionId) : null,
+      chapterTitle: chapterTitle || topic,
+      subTopic: null,
+      difficulty: null,
+      studentContext: null,
+      conversationHistory: null,
+    };
+
+    const aiRes = await callTeacherRagAI(payload);
+    const raw = (aiRes.data?.content || '').trim();
+
+    // ── Parse OBJECTIVES ──────────────────────────────────────────────────────
+    const sectionBetween = (text, startHeader, endHeaders) => {
+      const si = text.search(new RegExp(startHeader, 'i'));
+      if (si === -1) return '';
+      let chunk = text.slice(si).replace(new RegExp(startHeader, 'i'), '').trim();
+      for (const eh of endHeaders) {
+        const ei = chunk.search(new RegExp(eh, 'i'));
+        if (ei !== -1) chunk = chunk.slice(0, ei);
+      }
+      return chunk.trim();
+    };
+
+    const objectives = sectionBetween(raw, 'OBJECTIVES:', ['HOOK:', 'I DO:', 'EXPLANATION:', 'RECAP:'])
+      .split('\n')
+      .map((l) => l.replace(/^[-•*\d.]+\s*/, '').replace(/\*\*/g, '').trim())
+      .filter((l) => l.length > 3);
+
+    // ── Parse FLOW lines ──────────────────────────────────────────────────────
+    const inlineLine = (text, key) => {
+      const m = text.match(new RegExp(`\\b${key}:\\s*(.+)`, 'i'));
+      return m ? m[1].replace(/\*\*/g, '').trim().slice(0, 120) : '';
+    };
+    const flow = {
+      HOOK:    inlineLine(raw, 'HOOK'),
+      'I DO':  inlineLine(raw, 'I DO'),
+      'WE DO': inlineLine(raw, 'WE DO'),
+      'YOU DO':inlineLine(raw, 'YOU DO'),
+    };
+
+    // ── Parse EXPLANATION ─────────────────────────────────────────────────────
+    const explanation = sectionBetween(raw, 'EXPLANATION:', ['RECAP:'])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 3)
+      .join('\n');
+
+    // ── Parse RECAP ───────────────────────────────────────────────────────────
+    const recapLines = sectionBetween(raw, 'RECAP:', [])
+      .split('\n')
+      .map((l) => l.replace(/^[-•*\d.]+\s*/, '').replace(/\*\*/g, '').trim())
+      .filter((l) => l.length > 3);
+    const recap = recapLines.map((l) => `• ${l}`).join('\n');
+
+    return res.json({ success: true, data: { objectives, flow, explanation, recap, raw } });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/ai-teacher/idoweedo ─────────────────────────────────────────────
+// Uses RAG so the I Do / We Do / You Do phases are grounded in the teacher's
+// uploaded materials rather than generic knowledge.
 router.post('/idoweedo', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, totalMinutes } = req.body || {};
+    const { subject, topic, gradeLevel, totalMinutes, classId, sectionId, chapterTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
-    const question = totalMinutes ? `Total lesson duration: ${totalMinutes} minutes` : null;
-    const aiRes = await callTeacherAI('idoweedo', subject, topic, gradeLevel, null, question);
+
+    const minutes = totalMinutes || 60;
+    const payload = {
+      mode: 'notes',
+      subject,
+      topic,
+      gradeLevel: gradeLevel || null,
+      question: `Reply with ONLY these 4 lines and nothing else — no intro, no summary, no extra text:\nHOOK: <one sentence engaging opener drawn from the material>\nI DO: <one sentence where teacher demonstrates a concept from the material>\nWE DO: <one sentence of guided practice using the material>\nYOU DO: <one sentence of independent student practice from the material>\nEach line must be under 100 characters. Total lesson duration: ${minutes} minutes.`,
+      candidates: [],
+      schoolId: String(req.schoolId),
+      classId: classId ? String(classId) : null,
+      sectionId: sectionId ? String(sectionId) : null,
+      chapterTitle: chapterTitle || topic,
+      subTopic: null,
+      difficulty: null,
+      studentContext: null,
+      conversationHistory: null,
+    };
+
+    const aiRes = await callTeacherRagAI(payload);
     return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
@@ -221,12 +398,14 @@ router.post('/idoweedo', authTeacher, async (req, res) => {
 // ── POST /api/ai-teacher/quiz-generate ────────────────────────────────────────
 router.post('/quiz-generate', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, difficulty, count, chapterTitle, topicTitle } = req.body || {};
+    const { subject, topic, gradeLevel, difficulty, count, questionType, chapterTitle, topicTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
     const chapter = chapterTitle || topicTitle || null;
+    const questionTypeText = questionType ? `questions in the ${questionType} format` : 'multiple-choice questions';
     const question = [
       difficulty ? `Difficulty level: ${difficulty}` : null,
-      count ? `Generate exactly ${count} multiple-choice questions` : 'Generate exactly 5 multiple-choice questions',
+      count ? `Generate exactly ${count} ${questionTypeText}` : 'Generate exactly 5 multiple-choice questions',
+      questionType ? `Create questions in the ${questionType} format.` : 'Create questions in multiple-choice format.',
       'Base all questions only on the uploaded course material for this topic.',
     ].filter(Boolean).join(' ');
 
@@ -235,6 +414,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       subject,
       topic,
       gradeLevel: gradeLevel || null,
+      questionType: questionType || null,
       question,
       candidates: [],
       schoolId: String(req.schoolId),

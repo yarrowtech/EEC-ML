@@ -1101,6 +1101,7 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
   const [aiError, setAiError] = useState('');
   const [aiCount, setAiCount] = useState(5);
   const [aiDifficulty, setAiDifficulty] = useState('medium');
+  const [aiQuestionType, setAiQuestionType] = useState('mcq');
   const [aiAppend, setAiAppend] = useState(true);
 
   const extractJsonArray = (text) => {
@@ -1217,7 +1218,8 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
   };
 
   const normalizeAiQuestion = (item, idx) => {
-    const questionText = String(item.questionText || item.question || '').trim();
+    const questionType = String(item.type || aiQuestionType || 'mcq').trim();
+    const rawText = String(item.questionText || item.question || item.text || item.raw || '').trim();
     const rawOptions = Array.isArray(item.options) ? item.options : [];
     const options = rawOptions.map((option) => {
       if (typeof option === 'string') return option.trim();
@@ -1229,15 +1231,27 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
       return false;
     });
 
-    return {
+    const normalized = {
       id: item.id || `tryout-${Date.now()}-${idx}`,
-      type: 'mcq',
-      question: questionText,
-      options: options.length > 0 ? options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
+      type: questionType,
+      question: questionType === 'cloze_dropdown' ? String(item.question || item.text || rawText).trim() : String(item.question || item.questionText || '').trim() || rawText,
+      text: String(item.text || item.question || item.questionText || rawText).trim(),
+      options: options.length > 0 ? options : [],
       correctAnswer: correctIndex >= 0 ? correctIndex : 0,
       explanation: String(item.explanation || item.explanationText || '').trim(),
       difficulty: String(item.difficulty || item.level || 'medium').trim().toLowerCase(),
+      statements: Array.isArray(item.statements) ? item.statements : (questionType === 'choice_matrix' ? [rawText] : []),
+      dropdownOptions: Array.isArray(item.dropdownOptions) ? item.dropdownOptions : (questionType === 'cloze_dropdown' ? [options] : []),
+      items: Array.isArray(item.items) ? item.items : [],
+      pairs: Array.isArray(item.pairs) ? item.pairs : [],
+      raw: item.raw || false,
     };
+
+    if (questionType === 'mcq' && normalized.options.length === 0) {
+      normalized.options = ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
+    }
+
+    return normalized;
   };
 
   const generateAiTryouts = async () => {
@@ -1261,6 +1275,7 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
           gradeLevel,
           difficulty: aiDifficulty,
           count: aiCount,
+          questionType: aiQuestionType,
           chapterTitle: topicTitle || null,
           topicTitle: topicTitle || null,
         }),
@@ -1268,13 +1283,27 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || 'AI generation failed');
 
+      const rawOutput = typeof data?.data?.raw === 'string' ? data.data.raw : '';
       let questions = Array.isArray(data?.data?.questions) ? data.data.questions : [];
-      if (!questions.length && typeof data?.data?.raw === 'string') {
-        questions = parseAiQuestions(data.data.raw);
+      if (!questions.length && rawOutput) {
+        questions = parseAiQuestions(rawOutput);
+      }
+      if (!questions.length && rawOutput) {
+        questions = [{ type: aiQuestionType, question: rawOutput, raw: true }];
       }
       if (!questions.length) throw new Error('AI did not return valid quiz questions');
 
-      const generated = questions.map(normalizeAiQuestion).filter((q) => q.question && Array.isArray(q.options) && q.options.length > 1);
+      const generated = questions
+        .map(normalizeAiQuestion)
+        .filter((q) => {
+          if (!q.question && !q.text) return false;
+          if (q.type === 'mcq') return Array.isArray(q.options) && q.options.length > 1;
+          if (q.type === 'choice_matrix') return Array.isArray(q.statements) ? q.statements.length > 0 : Boolean(q.question);
+          if (q.type === 'cloze_dropdown') return Boolean(q.text);
+          if (q.type === 'cloze_text' || q.type === 'cloze_drag_drop') return Boolean(q.text);
+          if (q.type === 'match_list' || q.type === 'sort_list') return Boolean(q.question || (Array.isArray(q.items) && q.items.length > 0));
+          return Boolean(q.question);
+        });
       if (!generated.length) throw new Error('Generated questions could not be parsed');
 
       const updated = aiAppend ? [...localTryouts, ...generated] : generated;
@@ -1341,7 +1370,7 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
       {/* Header */}
       <div className="border-b border-rose-200 bg-rose-100 px-4 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid gap-3 sm:grid-cols-3 sm:gap-4 w-full">
+          <div className="grid gap-3 sm:grid-cols-4 sm:gap-4 w-full">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Count</label>
               <select
@@ -1363,6 +1392,18 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
               >
                 {['easy', 'medium', 'hard'].map((level) => (
                   <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Question Type</label>
+              <select
+                value={aiQuestionType}
+                onChange={(e) => setAiQuestionType(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                {TRYOUT_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>{type.label}</option>
                 ))}
               </select>
             </div>
@@ -1395,7 +1436,7 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
           </div>
         </div>
         <p className="mt-3 text-sm text-slate-600">
-          AI will generate {aiCount} MCQ question{aiCount !== 1 ? 's' : ''} for “{topicTitle || 'this chapter'}” at {aiDifficulty} difficulty.
+          AI will generate {aiCount} {TRYOUT_TYPES.find((t) => t.id === aiQuestionType)?.label || 'MCQ'} question{aiCount !== 1 ? 's' : ''} for “{topicTitle || 'this chapter'}” at {aiDifficulty} difficulty.
         </p>
       </div>
       {aiError && (

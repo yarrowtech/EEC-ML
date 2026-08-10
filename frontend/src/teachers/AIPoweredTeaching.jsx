@@ -487,6 +487,35 @@ const AIPoweredTeaching = () => {
     updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: (chapter.assessments || []).map((assessment) => (assessment.id === assessmentId ? nextAssessment : assessment)) }));
   };
 
+  // AI-ingestible file types (must match backend SUPPORTED_VECTOR_EXTENSIONS)
+  const AI_INGESTIBLE_TYPES = new Set(['pdf', 'docx', 'ppt']);
+
+  const ingestFileForAI = async (uploadedFile, chapterId) => {
+    if (!AI_INGESTIBLE_TYPES.has(uploadedFile.type)) return;
+    const chapter = chapters.find((ch) => ch.id === chapterId);
+    try {
+      await fetch(`${API_BASE}/api/ai-teacher/ingest-file`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+        },
+        body: JSON.stringify({
+          url: uploadedFile.url,
+          fileName: uploadedFile.name,
+          classId: selectedClass,
+          sectionId: selectedSection,
+          subjectName: localStorage.getItem('selectedSubjectName') || '',
+          chapterTitle: chapter?.title || '',
+          cloudinaryPublicId: uploadedFile.cloudinaryPublicId,
+        }),
+      });
+      toast.success('Material indexed for AI — ready for the next steps');
+    } catch (_) {
+      // Non-blocking: AI indexing failure shouldn't disrupt the upload flow
+    }
+  };
+
   const addContentFile = async (chapterId, file, bucket) => {
     if (!chapterId || !file || !bucket) return;
     const tempId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -530,6 +559,8 @@ const AIPoweredTeaching = () => {
         return { ...chapter, contentUploads: newContentUploads };
       });
       toast.success('File uploaded');
+      // Fire-and-forget: ingest into AI vector store so subsequent steps can use it
+      ingestFileForAI(nextFile, chapterId);
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
         ...chapter,
@@ -582,6 +613,7 @@ const AIPoweredTeaching = () => {
         worksheetFiles: (chapter.worksheetFiles || []).map((item) => (item.id === tempId ? nextFile : item)),
       }));
       toast.success('Worksheet uploaded');
+      ingestFileForAI(nextFile, chapterId);
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
         ...chapter,
@@ -609,20 +641,28 @@ const AIPoweredTeaching = () => {
       const res = await fetch(`${API_BASE}/api/ai-teacher/lesson-content`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ subject, topic, gradeLevel: null }),
+        body: JSON.stringify({
+          subject,
+          topic,
+          gradeLevel: null,
+          chapterTitle: chapter.title || topic,
+          classId: selectedClass,
+          sectionId: selectedSection,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'AI generation failed');
 
-      const htmlContent = (data?.data?.content || '')
-        .replace(/^#{1,3}\s*/gm, '<strong>')
-        .replace(/\n(?=<strong>)/g, '</strong>\n')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n\n/g, '<br/><br/>')
-        .replace(/\n- /g, '<br/>• ')
-        .replace(/\n/g, '<br/>');
+      // Strip markdown, take only the first paragraph (intro should be concise)
+      const raw = (data?.data?.content || '')
+        .replace(/^#{1,3}\s+/gm, '')
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .trim();
+      const firstPara = raw.split(/\n{2,}/)[0].trim();
+      const introText = firstPara || raw;
 
-      updateChapter(chapterId, (ch) => ({ ...ch, introductionText: htmlContent || data?.data?.content || '' }));
+      updateChapter(chapterId, (ch) => ({ ...ch, introductionText: introText }));
       toast.success('AI lesson content applied!', { id: toastId });
     } catch (err) {
       toast.error(err?.message || 'AI generation failed', { id: toastId });

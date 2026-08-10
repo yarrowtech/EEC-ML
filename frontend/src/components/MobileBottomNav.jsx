@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
@@ -61,13 +61,16 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const navigate = useNavigate();
   const [openMenu, setOpenMenu] = useState(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const chatFetchInFlight = useRef(false);
 
   const loadChatUnreadCount = useCallback(async () => {
+    if (chatFetchInFlight.current) return;
     const token = localStorage.getItem('token');
     if (!token) {
       setChatUnreadCount(0);
       return;
     }
+    chatFetchInFlight.current = true;
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/chat/threads`, {
         headers: {
@@ -84,6 +87,8 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
       setChatUnreadCount(totalUnread);
     } catch {
       // Keep existing count on transient network errors.
+    } finally {
+      chatFetchInFlight.current = false;
     }
   }, []);
 

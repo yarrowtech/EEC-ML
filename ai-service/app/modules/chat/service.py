@@ -501,6 +501,60 @@ def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[
     return _retrieve_in_memory(req), []
 
 
+def _quiz_instruction_for_type(question_type: str, default: str, count: int | None = None) -> str:
+    type_labels = {
+        "mcq": "Write multiple-choice questions with 4 options labeled A-D and the correct answer marked as 'Answer: <letter>'.",
+        "cloze_dropdown": (
+            "Write fill-in-the-blank questions with one blank per item. "
+            "Provide a dropdown list of answer choices for each blank and mark the correct dropdown option."
+        ),
+        "cloze_text": (
+            "Write fill-in-the-blank questions with one blank per item. "
+            "Expect the student to type the missing word or phrase as their answer."
+        ),
+        "cloze_drag_drop": (
+            "Write drag-and-drop style fill-in-the-blank questions where the student matches terms to blanks. "
+            "List the blanks and draggable options clearly."
+        ),
+        "choice_matrix": (
+            "Write matrix questions with multiple statements and answer columns such as True/False or Yes/No. "
+            "Label each row and column clearly."
+        ),
+        "match_list": (
+            "Write matching questions where students pair items from one list to another. "
+            "Provide both lists and indicate correct pairings."
+        ),
+        "sort_list": (
+            "Write ordering questions where students sort items into the correct sequence. "
+            "Provide the list of items and make clear the correct order."
+        ),
+        "plain_text": (
+            "Write short-answer questions that require a text response. "
+            "Do not provide multiple-choice options."
+        ),
+        "rich_text": (
+            "Write a student-facing response question that asks for a detailed written explanation. "
+            "The student should answer in full sentences."
+        ),
+        "file_upload": (
+            "Write a task that asks the student to upload a file as the answer, such as a drawing or document."
+        ),
+        "image_highlighter": (
+            "Write an image-based task that asks the student to identify or highlight a part of an image."
+        ),
+    }
+    detail = type_labels.get(question_type)
+    if not detail:
+        return default
+
+    count_prefix = f"Write exactly {count} " if count else "Write a set of "
+    return (
+        f"{count_prefix}{question_type.replace('_', ' ')} questions. {detail} "
+        "Base every question and answer option solely on student-facing course material. "
+        "Do not solve or answer any exercise from the source material."
+    )
+
+
 def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     instruction = MODE_INSTRUCTIONS.get(req.mode)
     if not instruction:
@@ -552,6 +606,10 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     else:
         system = base_system
 
+    # For quiz mode, override the default MCQ instruction when a specific question type is requested.
+    if req.mode == "quiz" and req.questionType:
+        instruction = _quiz_instruction_for_type(req.questionType, instruction, None)
+
     # For quiz mode, prepend difficulty level to instruction when provided.
     if req.mode == "quiz" and req.difficulty:
         diff = req.difficulty.strip().lower()
@@ -575,4 +633,6 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
             f"Quiz question the student got wrong:\n{req.question.strip()}\n"
             f"Student's wrong answer: {req.wrongAnswer.strip()}"
         )
+    if req.question and req.mode not in {"homework_help", "misconception"}:
+        parts.append(f"Extra instructions:\n{req.question.strip()}")
     return system, "\n\n".join(parts)
