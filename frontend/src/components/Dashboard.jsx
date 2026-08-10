@@ -81,6 +81,10 @@ const Dashboard = () => {
     || effectiveView === 'assignments-journal'
     || (effectiveView === 'chat' && isChatBoxOpen);
 
+  // Chat has its own compact "Messages" header, so the app header is just
+  // redundant vertical space on small screens — keep it on desktop/tablet.
+  const isChatView = effectiveView === 'chat' || effectiveView === 'communication';
+
   // Fade/remount key for the content area: LearningHub tabs share one key so
   // its own tab bar stays mounted while only its content swaps underneath.
   const pageKey = LEARNING_HUB_VIEWS.includes(effectiveView) ? 'learning-hub' : location.pathname;
@@ -205,11 +209,13 @@ const Dashboard = () => {
             } ${isFullscreenView ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
           {!isChatBoxOpen && (
-            <Header
-              sidebarOpen={sidebarOpen}
-              setSidebarOpen={setSidebarOpen}
-              onOpenProfile={() => navigate('/student/profile')}
-            />
+            <div className={isChatView ? 'hidden lg:block' : ''}>
+              <Header
+                sidebarOpen={sidebarOpen}
+                setSidebarOpen={setSidebarOpen}
+                onOpenProfile={() => navigate('/student/profile')}
+              />
+            </div>
           )}
           <main className={`flex-1 min-h-0 ${isFullscreenView ? 'p-0' : ''} w-full flex flex-col`}>
             <Motion.div

@@ -1828,7 +1828,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             </div>
 
             {/* Footer — student info */}
-            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+            {/* <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
               <div className="flex items-center gap-2.5">
                 <Avatar src={pickImg(me)} name={me?.name || 'S'} size="xs" />
                 <div className="flex-1 min-w-0">
@@ -1845,7 +1845,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                 )}
                 <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Online</span>
               </div>
-            </div>
+            </div> */}
           </div>
         )}
 
@@ -1996,7 +1996,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                 </div>
 
                 {/* Input */}
-                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
+                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-5 lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
                   <div className="flex items-end gap-2">
                     <div className="flex-1 bg-gray-100 rounded-full px-4 py-2.5">
                       <textarea
