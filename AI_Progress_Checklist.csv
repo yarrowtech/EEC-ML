@@ -1,0 +1,66 @@
+#,Category,Feature / Module,Status,Progress %,What's Built,What's Missing / Next Steps,Priority
+,,EEC AI TUTOR — MASTER PROGRESS CHECKLIST,,,,,
+,,SOURCE PLAN: AI_Tutor_SaaS_Knowledge_Base.txt (MVP Build Order),,,,,
+,,Last updated: 2026-08-11,,,,,
+,,,,,,,
+,PHASE 1,CONTENT PIPELINE & CURRICULUM,,,,,
+1,1,Curriculum Graph,Partial,60%,CurriculumMap.js model + curriculumMapRoutes.js backend; LearningPathMapView.jsx frontend,No AI-side curriculum graph engine (topic→prerequisite traversal); no automatic topic detection from uploaded content; no knowledge graph queries in ai-service,HIGH
+2,1,Question Bank,Partial,55%,ExamQuestion.js + PracticeQuestion.js models; examRoute.js + mockExamRoutes.js; PracticeTestInterface.jsx; AILearningPracticePaperPage.jsx,No Bloom-level tagging on questions; no difficulty calibration; question generation from materials not wired to bank automatically,MEDIUM
+3,1,Teacher Content Upload & Ingestion,Done,90%,PDF/PPT/DOCX ingestion pipeline in ai-service (PyMuPDF + Tesseract OCR); Qdrant vector store; Cloudinary upload; chunk + embed pipeline; /ingest/material endpoint,Topic auto-detection from content not yet implemented; chapter mapping still manual,LOW
+,,,,,,,
+,PHASE 2,ASSESSMENT & MASTERY INTELLIGENCE,,,,,
+4,2,Assessment Engine (Academic),Partial,40%,assessment module in ai-service (router.py / service.py / schemas.py); used for Language Assessment scoring (Qwen3 8B),General academic MCQ/written answer evaluation not wired; no Bloom-level scoring; no partial-credit logic for academic exams,HIGH
+5,2,Mastery Engine,Partial,50%,MasteryScore.js model + masteryRoutes.js backend; MasteryView.jsx frontend component,Mastery formula (accuracy + attempts + recency + time) only partially implemented; not auto-updated after every quiz/test attempt; no decay over time,HIGH
+6,2,Error Classification Engine,Not Started,5%,ExamQuestion model has metadata fields,No error-type labels (Concept / Calculation / Reading / Logic); no classification logic in ai-service or backend; answers not routed to classifier,HIGH
+7,2,Gap Detection Engine,Not Started,5%,CurriculumMap model with prerequisite links exists,No gap detection service; no prerequisite traversal to find root-cause weak topics; no student insight records generated,HIGH
+,,,,,,,
+,PHASE 3,LEARNING PATH & PERSONALISATION,,,,,
+8,3,Learning Path Engine,Partial,45%,TeacherLearningPath.js model + learningPathRoutes.js; TeacherLearningPaths.jsx (teacher creates paths); LearningPathMapView.jsx (student view),No AI-generated learning paths; paths are teacher-manual only; no bridge path generation from gap detection output; no weekly study plan auto-build,HIGH
+9,3,AI Content Generation,Done,80%,RAG tutor: explain / quiz / flashcards / notes / mind_map / summarize modes; ChatOllama with per-mode temperature; homework Socratic mode; PracticePapersPortal; BaselineQuiz,Worksheet & homework generation not yet personalised to mastery gaps; no adaptive difficulty based on student mastery score,MEDIUM
+10,3,Personalized Study Plan,Not Started,0%,LearningPathMapView shows static map,No week-by-week plan generation; no calendar/schedule output; no integration with gap detection → path engine → content generator pipeline,MEDIUM
+,,,,,,,
+,PHASE 4,STUDENT AI TUTOR (RAG),,,,,
+11,4,Core RAG Tutor (Chat),Done,95%,Full RAG pipeline: Qdrant retrieval with school/class/section filters; chapter-scoped search with subject-wide fallback; LangChain ChatOllama; /generate/tutor endpoint; streaming; teacher-note stripping,Minor: no session memory across separate chat sessions (in-memory only per request),LOW
+12,4,Quiz Mode,Done,90%,QuizUI in AITutorHomeScreen.jsx (parse + animate + score); ai-service quiz module; /generate/tutor with mode=quiz,No quiz results saved to Question Bank or Mastery Engine automatically,MEDIUM
+13,4,Flashcard Mode,Done,90%,"FlashcardUI with 3D flip, keyboard nav, Got-it rating; ai-service flashcards module",Flashcard ratings not persisted to mastery scores,LOW
+14,4,Mind Map Mode,Done,90%,"MindMapUI with SVG bezier paths, animated branches, ResizeObserver",No export (PDF/image) of mind maps,LOW
+15,4,Homework Help (Socratic),Done,95%,HomeworkHelpUI with Socratic 7-rule prompt; amber card UI; guiding question parser,Works well; no teacher visibility into student homework help sessions,LOW
+16,4,Notes & Summarize Mode,Done,90%,NotesUI with staggered colour cards; summarize mode; OCR + summarize endpoint,No save/export of generated notes to student profile,LOW
+17,4,Baseline Quiz,Done,85%,BaselineQuiz.jsx component; establishes initial mastery estimate,Results not yet feeding into MasteryEngine update pipeline,MEDIUM
+,,,,,,,
+,PHASE 5,LANGUAGE ASSESSMENT (NEW MODULE),,,,,
+18,5,Reading Assessment — Backend,Done,90%,ReadingMaterial.js + ReadingAssessment.js models; readingAssessmentRoutes.js; /reading/evaluate endpoint in ai-service,Teacher review dashboard for reading results needs polish,LOW
+19,5,Writing Assessment — Backend,Done,90%,WritingPrompt.js + WritingAssessment.js models; writingAssessmentRoutes.js; /writing/evaluate endpoint; Qwen3 8B scoring,Teacher review dashboard for writing results needs polish,LOW
+20,5,Speech / Pronunciation Engine,Done,85%,speech module: faster-whisper transcription + SpeechBrain pronunciation; /speech/transcribe + /speech/pronunciation endpoints,Needs real-device mic testing; latency on slower hardware untested,MEDIUM
+21,5,Student Language Profile,Done,80%,StudentLanguageProfile.js model; language_memory module with Qdrant adaptive memory; /memory/store + /memory/retrieve endpoints,Profile not yet surfaced on student dashboard as a progress card,LOW
+22,5,Reading Practice UI,Done,90%,ReadingPracticePage.jsx; ReadingScoreCard.jsx with animated circular score + radar chart,UI tested in browser; edge case: very long passages cause scroll issues,LOW
+23,5,Writing Practice UI,Done,90%,WritingPracticePage.jsx with rich editor + autosave; WritingScoreCard.jsx with score bars + improved version,Autosave interval fine-tuning needed,LOW
+24,5,Language Practice — Teacher Portal,Done,85%,LanguagePracticeManager.jsx; route: teaching/language-practice; create/edit/publish reading & writing content; view student results,Bulk upload of multiple passages not supported,LOW
+,,,,,,,
+,PHASE 6,ANALYTICS & OBSERVABILITY,,,,,
+25,6,Teacher Analytics Dashboard,Partial,40%,teacherAnalyticsRoutes.js backend; basic class performance data,No per-topic mastery heatmap; no gap detection insights for teacher; no at-risk student flag,MEDIUM
+26,6,Admin Analytics Dashboard,Partial,35%,adminAnalyticsRoutes.js backend,No AI-generated school-level insights; no subject weak-area report; no dashboard UI for admin AI metrics,MEDIUM
+27,6,Student Progress Dashboard,Partial,45%,MasteryView.jsx; LearningPathMapView.jsx; language profile,All views are independent; no unified student learning health card combining mastery + gaps + path + language,MEDIUM
+,,,,,,,
+,PHASE 7,FUTURE ML (NOT STARTED),,,,,
+28,7,Risk Prediction (at-risk students),Not Started,0%,None,Need mastery + attendance + assessment data pipeline; ML model or LLM classifier,LOW
+29,7,Performance Forecasting,Not Started,0%,None,Requires longitudinal mastery data; regression or time-series model,LOW
+30,7,Learning Style Detection,Not Started,0%,None,Needs interaction logs (quiz vs reading vs video preference); clustering,LOW
+31,7,Knowledge Decay Prediction,Not Started,0%,None,Requires spaced-repetition model over mastery history,LOW
+,,,,,,,
+,SUMMARY,OVERALL PROGRESS SNAPSHOT,,,,,
+,,Phase 1 — Content Pipeline,Partial,68%,,,
+,,Phase 2 — Assessment & Mastery,Partial,25%,,,
+,,Phase 3 — Learning Path & Personalisation,Partial,42%,,,
+,,Phase 4 — Student AI Tutor (RAG),Done,91%,,,
+,,Phase 5 — Language Assessment,Done,88%,,,
+,,Phase 6 — Analytics,Partial,40%,,,
+,,Phase 7 — Future ML,Not Started,0%,,,
+,,TOTAL OVERALL,In Progress,55%,,,
+,,,,,,,
+,NEXT PRIORITIES (TOP 5),,,,,,
+,P1,Error Classification Engine — wire answer eval → error-type labels,Not Started,0%,Critical for gap detection to work,,HIGH
+,P2,Gap Detection Engine — traverse curriculum graph to find root-cause weak topics,Not Started,0%,Unlocks personalized learning paths,,HIGH
+,P3,Mastery Engine — auto-update after every quiz/test + recency decay,Partial,50%,Core intelligence layer,,HIGH
+,P4,AI Learning Path Generation — replace teacher-manual paths with AI-generated bridge paths,Not Started,0%,End-to-end personalisation,,HIGH
+,P5,Baseline Quiz → Mastery Engine pipeline — wire results to update mastery scores,Partial,30%,Onboarding flow completeness,,MEDIUM

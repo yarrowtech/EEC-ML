@@ -836,28 +836,40 @@ const AILearningCoursesReference = () => {
           .rdr-scroll::-webkit-scrollbar { width: 3px; }
           .rdr-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 10px; }
           .rdr-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
+          .rdr-outer-wrap, .rdr-outer-wrap * { box-sizing: border-box; }
+          .rdr-reader-grid, .rdr-reader-grid > *, .rdr-book-page { min-width: 0; max-width: 100%; }
+          .rdr-book-page p, .rdr-book-page span, .rdr-practice-panel p, .rdr-practice-panel span { overflow-wrap: anywhere; }
           @keyframes rdr-pulse-dot { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
           .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#4ade80; }
           @media (max-width: 860px) {
             .rdr-reader-grid { grid-template-columns: 1fr !important; }
           }
+          @media (max-width: 640px) {
+            .rdr-practice-panel { padding: 20px 18px 22px !important; }
+            .rdr-outer-wrap { padding: 12px 10px 24px !important; }
+            .rdr-nav-row { gap: 8px !important; }
+            .rdr-chapter-meta, .rdr-practice-header { align-items: flex-start !important; flex-wrap: wrap; gap: 10px; }
+          }
           @media (max-width: 520px) {
             .rdr-book-title { font-size: 26px !important; }
             .rdr-book-page { padding: 20px 18px 24px !important; }
+            .rdr-outer-wrap { padding: 8px 8px 20px !important; }
           }
         `}</style>
 
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          style={{ minHeight: '100vh', overflowY: 'auto', background: '#f5f4f1', padding: 20 }}
+          className="rdr-outer-wrap"
+          style={{ width: '100%', minHeight: '100vh', overflowX: 'hidden', overflowY: 'auto', background: '#f5f4f1', padding: 20 }}
         >
           {/* Nav row */}
           <motion.div
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
-            style={{ maxWidth: 1100, margin: '0 auto 20px', display: 'flex', alignItems: 'center', gap: 10 }}
+            className="rdr-nav-row"
+          style={{ maxWidth: 1100, margin: '0 auto 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
           >
             <button
               type="button"
@@ -897,9 +909,9 @@ const AILearningCoursesReference = () => {
                     background:'rgba(255,255,255,0.72)',
                     backdropFilter:'blur(22px) saturate(180%)',
                     WebkitBackdropFilter:'blur(22px) saturate(180%)',
-                    borderRadius:32,
+                    borderRadius:'clamp(20px, 3vw, 32px)',
                     border:'1px solid rgba(0,0,0,0.06)',
-                    padding:'40px 44px 36px',
+                    padding:'clamp(20px, 4vw, 40px) clamp(18px, 4vw, 44px) clamp(24px, 3vw, 36px)',
                     boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07), 0 4px 20px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)',
                     position:'relative',
                     overflow:'hidden',
@@ -909,7 +921,7 @@ const AILearningCoursesReference = () => {
                   <div style={{ position:'absolute', top:'-50%', left:'-50%', width:'200%', height:'200%', background:'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.42) 0%, transparent 60%)', pointerEvents:'none' }} />
 
                   {/* Chapter meta */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28, paddingBottom:20, borderBottom:'1px solid rgba(0,0,0,0.04)', position:'relative', zIndex:1 }}>
+                  <div className="rdr-chapter-meta" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28, paddingBottom:20, borderBottom:'1px solid rgba(0,0,0,0.04)', position:'relative', zIndex:1, minWidth:0 }}>
                     <span className="rdr-playfair" style={{ fontSize:12, fontWeight:600, letterSpacing:'4px', textTransform:'uppercase', color:'rgba(0,0,0,0.25)', background:'rgba(0,0,0,0.025)', padding:'6px 18px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
                       {mapScope.chapterTitle || subjectSlug}
                     </span>
@@ -920,7 +932,7 @@ const AILearningCoursesReference = () => {
                   </div>
 
                   {/* Title */}
-                  <h1 className="rdr-playfair rdr-book-title" style={{ fontSize:38, fontWeight:700, lineHeight:1.2, marginBottom:8, color:'#1a1a1a', letterSpacing:'-0.5px', position:'relative', zIndex:1 }}>
+                  <h1 className="rdr-playfair rdr-book-title" style={{ fontSize:'clamp(24px, 5vw, 38px)', fontWeight:700, lineHeight:1.2, marginBottom:8, color:'#1a1a1a', letterSpacing:'-0.5px', position:'relative', zIndex:1 }}>
                     {topicSlug}
                   </h1>
                   <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.3)', fontWeight:300, marginBottom:28, letterSpacing:'0.3px', fontStyle:'italic', position:'relative', zIndex:1 }}>
@@ -928,7 +940,7 @@ const AILearningCoursesReference = () => {
                   </p>
 
                   {/* Theory sections */}
-                  <div className="rdr-scroll" style={{ display:'flex', flexDirection:'column', gap:24, maxHeight:420, overflowY:'auto', paddingRight:8, position:'relative', zIndex:1 }}>
+                  <div className="rdr-scroll" style={{ display:'flex', flexDirection:'column', gap:24, maxHeight:'min(420px, 55vh)', overflowY:'auto', paddingRight:8, position:'relative', zIndex:1 }}>
                     {detailSections.length > 0 ? (
                       detailSections.map((section, idx) => (
                         <motion.div
@@ -1063,10 +1075,11 @@ const AILearningCoursesReference = () => {
                   animate={{ opacity:1, y:0, scale:1 }}
                   exit={{ opacity:0, y:24, scale:0.98 }}
                   transition={{ duration:0.5, ease:[0.16,1,0.3,1] }}
+                  className="rdr-practice-panel"
                   style={{ gridColumn:'1 / -1', background:'rgba(255,255,255,0.82)', backdropFilter:'blur(22px) saturate(180%)', WebkitBackdropFilter:'blur(22px) saturate(180%)', borderRadius:32, border:'1px solid rgba(0,0,0,0.05)', padding:'32px 34px 34px', boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07)' }}
                 >
                   {/* Panel header */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, paddingBottom:16, borderBottom:'1px solid rgba(0,0,0,0.04)' }}>
+                  <div className="rdr-practice-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, paddingBottom:16, borderBottom:'1px solid rgba(0,0,0,0.04)' }}>
                     <h3 className="rdr-playfair" style={{ fontSize:28, fontWeight:600, color:'#1a1a1a', letterSpacing:'-0.3px' }}>✦ Practice Paper</h3>
                     <span className="rdr-inter" style={{ fontSize:12, fontWeight:500, color:'rgba(0,0,0,0.22)', background:'rgba(0,0,0,0.025)', padding:'4px 16px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
                       {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
@@ -1331,8 +1344,11 @@ const AILearningCoursesReference = () => {
         alignItems: 'flex-start',
         justifyContent: 'center',
         fontFamily: "'Inter', -apple-system, sans-serif",
-        padding: '28px 20px 48px',
+        padding: 'clamp(14px, 3vw, 28px) clamp(10px, 3vw, 20px) 48px',
         color: '#1a142b',
+        width: '100%',
+        maxWidth: '100%',
+        overflowX: 'hidden',
       }}
     >
       <style>{`
@@ -1341,6 +1357,13 @@ const AILearningCoursesReference = () => {
         .tr-inter { font-family: 'Inter', -apple-system, sans-serif; }
         .tr-scroll::-webkit-scrollbar { width: 3px; }
         .tr-scroll::-webkit-scrollbar-thumb { background: rgba(120,100,200,0.15); border-radius: 10px; }
+        .tr-card, .tr-card * { box-sizing: border-box; }
+        .tr-card, .tr-grid-two, .tr-grid-two > *, .tr-top-bar, .tr-top-bar > *, .tr-top-bar-right { min-width: 0; max-width: 100%; }
+        .tr-card p, .tr-card li, .tr-card h1, .tr-card h2, .tr-card h3, .tr-card span { overflow-wrap: anywhere; }
+        .tr-glow-panel {
+          border-color: rgba(107,92,173,0.20) !important;
+          box-shadow: 0 0 22px rgba(107,92,173,0.14), inset 0 0 0 1px rgba(255,255,255,0.45) !important;
+        }
         @keyframes tr-badge-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
         @keyframes tr-glow-dot { 0%,100%{box-shadow:0 0 12px rgba(107,92,173,0.12)} 50%{box-shadow:0 0 22px rgba(107,92,173,0.28)} }
         @keyframes tr-float-icon { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
@@ -1349,25 +1372,35 @@ const AILearningCoursesReference = () => {
         .tr-glow-dot { animation: tr-glow-dot 2s ease-in-out infinite; }
         .tr-float-icon { animation: tr-float-icon 4s ease-in-out infinite; }
         .tr-hint-pulse { animation: tr-hint-pulse 3s ease-in-out infinite; }
-        @media (max-width: 820px) { .tr-grid-two { grid-template-columns: 1fr !important; gap: 24px !important; } }
-        @media (max-width: 480px) { .tr-meta-grid { grid-template-columns: 1fr !important; } .tr-top-bar { flex-direction: column; align-items: flex-start !important; } .tr-card { padding: 20px 16px 24px !important; border-radius: 28px !important; } }
+        @media (max-width: 820px) { .tr-grid-two { grid-template-columns: minmax(0, 1fr) !important; gap: 24px !important; } .tr-exp-grid { grid-template-columns: minmax(0, 1fr) !important; } }
+        @media (max-width: 640px) {
+          .tr-card { padding: 28px 20px 32px !important; }
+          .tr-top-bar-right { width: 100%; flex-direction: column; align-items: stretch !important; gap: 6px !important; }
+          .tr-chapter-title { font-size: 17px !important; }
+          .tr-flow-row, .tr-resource-row, .tr-assessment-row { align-items: flex-start !important; flex-wrap: wrap; }
+          .tr-flow-title { flex-basis: calc(100% - 46px) !important; margin-left: 46px; }
+          .tr-resource-name, .tr-assessment-name { flex-basis: calc(100% - 34px) !important; white-space: normal !important; }
+        }
+        @media (max-width: 480px) { .tr-meta-grid { grid-template-columns: 1fr !important; } .tr-top-bar { flex-direction: column; align-items: flex-start !important; } .tr-card { padding: 18px 14px 22px !important; border-radius: 28px !important; } }
       `}</style>
 
       <motion.div
         initial={{ opacity: 0, y: 22, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-        className="tr-card"
+        className="tr-card tr-glow-panel"
         style={{
           maxWidth: 1020,
           width: '100%',
           background: 'rgba(255,255,255,0.72)',
           backdropFilter: 'blur(22px) saturate(180%)',
           WebkitBackdropFilter: 'blur(22px) saturate(180%)',
-          borderRadius: 36,
+          borderRadius: 'clamp(24px, 4vw, 36px)',
           boxShadow: '0 8px 48px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.6)',
-          padding: '40px 44px 44px',
-          border: '1px solid rgba(255,255,255,0.5)',
+          padding: 'clamp(20px, 4vw, 40px) clamp(16px, 4vw, 44px) clamp(24px, 4vw, 44px)',
+          border: '1px solid rgba(107,92,173,0.18)',
+          minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         {/* ── Top bar ── */}
@@ -1410,17 +1443,17 @@ const AILearningCoursesReference = () => {
             </motion.button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <div className="tr-top-bar-right" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 280px' }}>
             <span
               className="tr-badge-pulse tr-inter"
-              style={{ fontSize: 11, fontWeight: 600, letterSpacing: '2.5px', textTransform: 'uppercase', color: '#7a6a8f', background: 'rgba(160,140,200,0.10)', padding: '7px 20px', borderRadius: 40, border: '1px solid rgba(160,140,200,0.08)' }}
+              style={{ fontSize: 11, fontWeight: 600, letterSpacing: '2.5px', textTransform: 'uppercase', color: '#7a6a8f', background: 'rgba(160,140,200,0.10)', padding: '7px 20px', borderRadius: 40, border: '1px solid rgba(160,140,200,0.08)', flexShrink: 0 }}
             >
               ✦ Topic Reader
             </span>
-            <span className="tr-playfair" style={{ fontSize: 22, fontWeight: 600, color: '#1a142b', letterSpacing: '-0.3px', marginLeft: 8 }}>
+            <span className="tr-playfair tr-chapter-title" style={{ fontSize: 22, fontWeight: 600, color: '#1a142b', letterSpacing: '-0.3px', marginLeft: 8, minWidth: 0, flex: '1 1 160px', overflowWrap: 'anywhere' }}>
               {mapScope.chapterTitle || subjectSlug}
             </span>
-            <span className="tr-inter" style={{ fontSize: 14, fontWeight: 400, color: '#9a8aaa', fontStyle: 'normal', background: 'rgba(160,140,200,0.06)', padding: '2px 14px', borderRadius: 30, border: '1px solid rgba(160,140,200,0.06)', marginLeft: 4 }}>
+            <span className="tr-inter" style={{ fontSize: 14, fontWeight: 400, color: '#9a8aaa', fontStyle: 'normal', background: 'rgba(160,140,200,0.06)', padding: '2px 14px', borderRadius: 30, border: '1px solid rgba(160,140,200,0.06)', marginLeft: 4, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
               {topicSlug}
             </span>
           </div>
@@ -1429,11 +1462,11 @@ const AILearningCoursesReference = () => {
         {/* ── Two-column grid ── */}
         <div
           className="tr-grid-two"
-          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '36px 44px', marginTop: 4 }}
+          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '36px 44px', marginTop: 4 }}
         >
 
           {/* ═══ LEFT COLUMN ═══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28, minWidth: 0 }}>
 
             {/* Meta pills 2×2 */}
             <motion.div
@@ -1453,6 +1486,7 @@ const AILearningCoursesReference = () => {
                   key={pill.label}
                   variants={pillVariants}
                   whileHover={{ y: -2, background: 'rgba(255,255,255,0.82)', boxShadow: '0 4px 16px rgba(120,100,200,0.07)' }}
+                  className="tr-glow-panel"
                   style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 18, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.4)', cursor: 'default' }}
                 >
                   <div className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9a8aaa', marginBottom: 4 }}>{pill.label}</div>
@@ -1466,7 +1500,8 @@ const AILearningCoursesReference = () => {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.25, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
-              style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 26px 24px', border: '1px solid rgba(255,255,255,0.4)' }}
+              className="tr-glow-panel"
+              style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 26px 24px', border: '1px solid rgba(107,92,173,0.2)', boxShadow: '0 0 22px rgba(107,92,173,0.14), inset 0 0 0 1px rgba(255,255,255,0.45)' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span className="tr-inter" style={{ fontSize: 13, fontWeight: 500, color: '#4a3a5c' }}>Reading Progress</span>
@@ -1487,10 +1522,10 @@ const AILearningCoursesReference = () => {
               </div>
               <motion.button
                 type="button"
-                whileHover={{ gap: 12, borderBottomColor: '#6b5cad', color: '#4a3a7a' }}
+                whileHover={{ gap: 12, borderBottomColor: '#6b5cad', color: '#4a3a7a', boxShadow: '0 0 22px rgba(107,92,173,0.24)' }}
                 onClick={openDetailsPage}
                 className="tr-inter"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 14, fontWeight: 500, color: '#6b5cad', background: 'none', border: 'none', borderBottom: '1.5px solid rgba(107,92,173,0.14)', paddingBottom: 3, cursor: 'pointer', transition: 'all 0.3s ease' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 14, fontWeight: 500, color: '#6b5cad', background: 'rgba(255,255,255,0.34)', border: '1px solid rgba(107,92,173,0.12)', borderRadius: 30, padding: '8px 14px', boxShadow: '0 0 14px rgba(107,92,173,0.14)', cursor: 'pointer', transition: 'all 0.3s ease' }}
               >
                 Read Full Article <motion.span whileHover={{ x: 6 }} style={{ display: 'inline-block', transition: '0.3s' }}>→</motion.span>
               </motion.button>
@@ -1531,7 +1566,7 @@ const AILearningCoursesReference = () => {
           </div>
 
           {/* ═══ RIGHT COLUMN ═══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28, minWidth: 0 }}>
 
             {/* Instructional Flow */}
             <div>
@@ -1554,7 +1589,7 @@ const AILearningCoursesReference = () => {
                         animate="visible"
                         whileHover={{ x: 4, background: isActive ? 'rgba(107,92,173,0.07)' : 'rgba(255,255,255,0.58)' }}
                         onClick={() => handleFlowStepClick(step.id)}
-                        className="tr-inter"
+                        className="tr-inter tr-flow-row tr-glow-panel"
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -1581,8 +1616,8 @@ const AILearningCoursesReference = () => {
                         <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#6b5cad' : '#9a8aaa', width: 28, flexShrink: 0, fontFeatureSettings: '"tnum"', transition: 'color 0.3s' }}>
                           {String(idx + 1).padStart(2, '0')}
                         </span>
-                        <span style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flexShrink: 0, flex: 1 }}>{step.type || step.phase}</span>
-                        <span style={{ fontSize: 12, fontWeight: 400, color: '#9a8aaa', letterSpacing: '0.2px', flex: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{step.title}</span>
+                        <span className="tr-flow-type" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', minWidth: 0, flex: '1 1 90px', overflowWrap: 'anywhere' }}>{step.type || step.phase}</span>
+                        <span className="tr-flow-title" style={{ fontSize: 12, fontWeight: 400, color: '#9a8aaa', letterSpacing: '0.2px', flex: '2 1 120px', minWidth: 0, overflowWrap: 'anywhere' }}>{step.title}</span>
                         {step.duration > 0 && (
                           <motion.span
                             whileHover={{ scale: 1.06 }}
@@ -1611,7 +1646,7 @@ const AILearningCoursesReference = () => {
                 Materials
               </p>
               {learningMaterials.length === 0 ? (
-                <div style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.3)' }}>
+                <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.3)' }}>
                   <p className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontStyle: 'italic' }}>No chapter material uploaded yet.</p>
                 </div>
               ) : (
@@ -1623,10 +1658,11 @@ const AILearningCoursesReference = () => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.3 + idx * 0.06 }}
                       whileHover={{ y: -2, background: 'rgba(255,255,255,0.58)', boxShadow: '0 4px 16px rgba(120,100,200,0.05)' }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.3)', transition: 'background 0.3s, box-shadow 0.3s' }}
+                      className="tr-resource-row tr-glow-panel"
+                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.3)', transition: 'background 0.3s, box-shadow 0.3s', minWidth: 0 }}
                     >
                       <span style={{ fontSize: 18, opacity: 0.5, flexShrink: 0 }}>📄</span>
-                      <span className="tr-inter" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{material.title}</span>
+                      <span className="tr-inter tr-resource-name" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flex: '1 1 120px', minWidth: 0, overflowWrap: 'anywhere' }}>{material.title}</span>
                       <span className="tr-inter" style={{ fontSize: 11, color: '#9a8aaa', fontWeight: 400, letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>
                         {normalizeLabel(material.formatLabel || material.description || 'File')}
                       </span>
@@ -1646,7 +1682,7 @@ const AILearningCoursesReference = () => {
               <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
                 Assessment
               </p>
-              <div style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 22, padding: '20px 24px', border: '1px solid rgba(255,255,255,0.3)' }}>
+              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 22, padding: '20px 24px', border: '1px solid rgba(255,255,255,0.3)' }}>
                 {assessmentItems.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0' }}>
                     <div className="tr-float-icon" style={{ fontSize: 32, opacity: 0.15, marginBottom: 10 }}>📋</div>
@@ -1659,11 +1695,11 @@ const AILearningCoursesReference = () => {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {assessmentItems.map((item, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div key={idx} className="tr-assessment-row tr-glow-panel" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, padding: '10px 12px', borderRadius: 14, border: '1px solid transparent' }}>
                         <span className="tr-inter" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#7a6a8f', background: 'rgba(120,100,200,0.07)', padding: '3px 10px', borderRadius: 20 }}>
                           {normalizeLabel(item.formatLabel || 'Assessment')}
                         </span>
-                        <span className="tr-inter" style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+                        <span className="tr-inter tr-assessment-name" style={{ flex: '1 1 120px', minWidth: 0, fontSize: 14, fontWeight: 500, color: '#1a142b', overflowWrap: 'anywhere' }}>{item.title}</span>
                         <MaterialQuickActions material={item} onRead={setActiveMaterial} />
                       </div>
                     ))}
@@ -1681,12 +1717,13 @@ const AILearningCoursesReference = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.42, duration: 0.45 }}
+            className="tr-glow-panel"
             style={{ marginTop: 32, background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 24, padding: '22px 26px', border: '1px solid rgba(255,255,255,0.4)' }}
           >
             <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 14 }}>Worksheets</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12, minWidth: 0 }}>
               {chapterWorksheets.downloadLinks.map((link) => (
-                <div key={link.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '12px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                <div key={link.id} className="tr-glow-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '12px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
                     <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.title}</p>
@@ -1700,7 +1737,7 @@ const AILearningCoursesReference = () => {
                 const isSubmitted = submittedWorksheets.has(assignment._id);
                 const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                 return (
-                  <div key={assignment._id} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '14px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
+                  <div key={assignment._id} className="tr-glow-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '14px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                       <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
                       <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignment.title}</p>
@@ -1737,16 +1774,17 @@ const AILearningCoursesReference = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.48, duration: 0.45 }}
+            className="tr-exp-grid"
             style={{ marginTop: 28, display: 'grid', gridTemplateColumns: chapterExplanation && chapterRecap ? '1fr 1fr' : '1fr', gap: 20 }}
           >
             {chapterExplanation && (
-              <div style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
+              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
                 <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Step-by-Step Explanation</p>
                 <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterExplanation}</p>
               </div>
             )}
             {chapterRecap && (
-              <div style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
+              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
                 <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Quick Recap</p>
                 <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterRecap}</p>
               </div>

@@ -1,4 +1,4 @@
-# EEC Adaptive Learning System — Full Codebase Audit Prompt
+sa# EEC Adaptive Learning System — Full Codebase Audit Prompt
 # Give this entire file to Claude Code. It will scan your existing system,
 # check every item listed, and produce a structured gap report with change suggestions.
 

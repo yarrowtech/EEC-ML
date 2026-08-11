@@ -4,6 +4,204 @@ Version: 1.0
 Status: Architecture Locked
 Last Updated: July 2026
 
+------------------------------------------------------------
+
+# IMPLEMENTATION PROGRESS TRACKER
+
+Last Synced: 2026-08-11
+Overall Progress: ~55%
+
+Legend: ✅ Done | 🔶 Partial | ❌ Not Started
+
+------------------------------------------------------------
+
+## TECH STACK STATUS
+
+| Component         | Planned              | Status | Notes                                      |
+|-------------------|----------------------|--------|--------------------------------------------|
+| Frontend          | React + Tailwind     | ✅ Done | Vite + TailwindCSS, all role portals live  |
+| Backend           | Node.js + Express    | ✅ Done | Express 5, JWT auth, RBAC middleware       |
+| AI Services       | Python + FastAPI     | ✅ Done | ai-service running, multiple modules       |
+| Primary Database  | MongoDB              | ✅ Done | 57 Mongoose models, multi-school isolation |
+| Vector Database   | Qdrant               | ✅ Done | RAG chunks + language memory collections   |
+| LLM               | Ollama / Qwen 3 14B  | 🔶 Partial | Qwen3 8B pulled; chat uses llama3.2:3b; assessment uses Qwen3 8B |
+| Embedding Model   | nomic-embed-text     | ✅ Done | Active for all RAG ingestion               |
+| OCR               | Tesseract OCR        | ✅ Done | PyMuPDF text-first + Tesseract fallback    |
+| Deployment        | Ubuntu + Docker      | ❌ Not Started | No Docker Compose setup yet          |
+
+------------------------------------------------------------
+
+## AI ENGINES STATUS
+
+| Engine                  | Status     | Progress | Built                                                         | Missing                                              |
+|-------------------------|------------|----------|---------------------------------------------------------------|------------------------------------------------------|
+| AI Orchestrator         | ❌ Not Started | 0%   | Node calls individual endpoints directly                      | Central orchestrator layer that routes all AI work   |
+| RAG Engine              | ✅ Done    | 95%      | Full pipeline: OCR → chunk → embed → Qdrant → retrieve → LLM | Cross-session conversation memory not persisted      |
+| OCR Engine              | ✅ Done    | 90%      | PyMuPDF text-extract + Tesseract; pdf2image; pptx/docx        | PaddleOCR not integrated (Tesseract only)            |
+| Embedding Engine        | ✅ Done    | 95%      | nomic-embed-text via Ollama; chunk + upsert to Qdrant         | —                                                    |
+| Retrieval Engine        | ✅ Done    | 90%      | Qdrant metadata filter (school/class/section/subject/chapter) | Hybrid search (semantic + keyword BM25) not yet done |
+| Knowledge Graph Engine  | 🔶 Partial | 30%      | CurriculumMap.js model + curriculumMapRoutes.js               | No graph traversal logic; no auto-update on ingest   |
+| Gap Detection Engine    | ❌ Not Started | 5%   | CurriculumMap prerequisite links exist in model               | No traversal to find root-cause weak topics          |
+| Bloom Engine            | ❌ Not Started | 0%   | —                                                             | No Bloom-level tagging on questions or documents     |
+| Mastery Engine          | 🔶 Partial | 50%      | MasteryScore.js model + masteryRoutes.js + MasteryView.jsx    | Not auto-updated after quiz/test; no recency decay   |
+| Student Memory Engine   | 🔶 Partial | 60%      | language_memory module (Qdrant); StudentLanguageProfile.js    | Academic memory (past mistakes, weak topics) not built |
+| Tutor Engine            | ✅ Done    | 90%      | RAG chat with Socratic homework mode; per-mode temperature    | No cross-session long-term conversation memory       |
+| Question Generator      | 🔶 Partial | 50%      | Quiz mode from RAG; ExamQuestion.js + PracticeQuestion.js     | No Bloom-level generation; not saved permanently to bank |
+| Answer Evaluator        | 🔶 Partial | 40%      | Language assessment eval (Qwen3 8B); rubric + score JSON      | Academic MCQ/written answer eval not wired           |
+| Flashcard Generator     | ✅ Done    | 90%      | FlashcardUI (3D flip, keyboard nav, ratings); ai-service module | Ratings not persisted to mastery               |
+| Summary Generator       | ✅ Done    | 90%      | Summarize mode + OCR summarize endpoint; per-mode prompt      | —                                                    |
+| Mindmap Generator       | ✅ Done    | 90%      | MindMapUI (SVG bezier, animated branches, ResizeObserver)     | No export (PDF/image)                                |
+| Recommendation Engine   | ❌ Not Started | 0%   | —                                                             | Needs mastery + gap data pipeline first              |
+| Analytics Engine        | 🔶 Partial | 35%      | teacherAnalyticsRoutes.js + adminAnalyticsRoutes.js backend   | No AI-generated insights; no per-topic heatmap UI    |
+
+------------------------------------------------------------
+
+## DOCUMENT WORKFLOW STATUS
+
+| Step                        | Status     | Notes                                                        |
+|-----------------------------|------------|--------------------------------------------------------------|
+| Teacher uploads PDF         | ✅ Done    | Cloudinary upload via Multer                                 |
+| OCR                         | ✅ Done    | Tesseract + PyMuPDF                                          |
+| Extract Text                | ✅ Done    | All formats: PDF / DOCX / PPTX                               |
+| Chunking                    | ✅ Done    | LangChain RecursiveCharacterTextSplitter with start_index    |
+| Embedding                   | ✅ Done    | nomic-embed-text → Qdrant upsert                             |
+| Store in Qdrant             | ✅ Done    | With full tenant metadata payload                            |
+| Generate Metadata           | ✅ Done    | school_id / class_id / section_id / subject / chapter / topic |
+| Generate Learning Outcomes  | ❌ Not Started | Not implemented; planned as part of Knowledge Graph Engine |
+| Knowledge Graph Update      | ❌ Not Started | CurriculumMap model exists; auto-update on ingest not wired  |
+| Bloom Classification        | ❌ Not Started | No Bloom tagging in ingestion pipeline                       |
+| Document Versioning         | ❌ Not Started | No version field on documents; old versions not retained     |
+| Ready for Retrieval         | ✅ Done    | Qdrant filtered retrieval active                             |
+
+------------------------------------------------------------
+
+## KNOWLEDGE GRAPH STATUS
+
+| Node Level        | Status     | Notes                                                        |
+|-------------------|------------|--------------------------------------------------------------|
+| Organization      | 🔶 Partial | School model exists; no org-level tenant model               |
+| School            | ✅ Done    | School isolation enforced in every Qdrant query              |
+| Class             | ✅ Done    | Class filter on retrieval                                    |
+| Subject           | ✅ Done    | Subject filter on retrieval                                  |
+| Chapter           | ✅ Done    | Chapter filter on retrieval                                  |
+| Learning Outcome  | ❌ Not Started | Not generated from documents yet                           |
+| Concept           | ❌ Not Started | No concept node extraction                                 |
+| Question → Mastery | 🔶 Partial | Questions exist; mastery link not auto-updated               |
+| Student → Mastery | 🔶 Partial | MasteryScore.js exists; not fully wired                      |
+
+------------------------------------------------------------
+
+## STUDENT MEMORY STATUS
+
+| Memory Type              | Status     | Notes                                                        |
+|--------------------------|------------|--------------------------------------------------------------|
+| Conversation Memory      | 🔶 Partial | In-memory per request only; not persisted across sessions    |
+| Weak Topics              | ❌ Not Started | No gap detection feeding weak topic memory yet             |
+| Mastery Levels           | 🔶 Partial | MasteryScore.js; not auto-updated after every assessment     |
+| Previously Studied       | ❌ Not Started | No study session log                                       |
+| Learning Outcomes        | ❌ Not Started | Outcomes not extracted from content yet                    |
+| Past Mistakes            | ❌ Not Started | Errors not classified or stored per student                |
+| Language Profile Memory  | ✅ Done    | StudentLanguageProfile.js + Qdrant student_language_memory   |
+
+------------------------------------------------------------
+
+## QUESTION GENERATION STATUS
+
+| Capability           | Status     | Notes                                                        |
+|----------------------|------------|--------------------------------------------------------------|
+| MCQ                  | ✅ Done    | RAG quiz mode generates 5 MCQs per request                  |
+| Short Answer         | 🔶 Partial | Homework help mode covers this                               |
+| Long Answer          | ❌ Not Started | —                                                          |
+| Difficulty Levels    | ❌ Not Started | No difficulty param in question generation                 |
+| Bloom Levels         | ❌ Not Started | No Bloom tagging on generated questions                    |
+| Saved to Question Bank | ❌ Not Started | Generated questions not persisted; ephemeral per session  |
+| Teacher Editable     | ❌ Not Started | No teacher question review / edit UI for AI-generated Qs  |
+
+------------------------------------------------------------
+
+## ANSWER EVALUATION STATUS
+
+| Field in Response    | Status     | Notes                                                        |
+|----------------------|------------|--------------------------------------------------------------|
+| Marks                | ✅ Done    | Language assessment returns numeric scores                   |
+| Rubric               | 🔶 Partial | Writing assessment returns criteria breakdown                |
+| Strengths            | ✅ Done    | Reading + Writing ScoreCards show strength areas             |
+| Weaknesses           | ✅ Done    | Radar chart shows weak dimensions                            |
+| Missing Concepts     | ❌ Not Started | Not returned by academic answer evaluator                  |
+| Suggestions          | ✅ Done    | WritingScoreCard shows improved version + suggestions        |
+| Bloom Level          | ❌ Not Started | Not classified                                             |
+| Learning Outcomes    | ❌ Not Started | Not mapped to outcomes                                     |
+| Confidence Score     | ❌ Not Started | Not implemented                                            |
+| Mastery Update       | ❌ Not Started | Evaluation result does not feed mastery engine             |
+
+------------------------------------------------------------
+
+## PERMISSIONS STATUS
+
+| Permission                     | Status     | Notes                                                    |
+|--------------------------------|------------|----------------------------------------------------------|
+| Teacher: Upload documents      | ✅ Done    | Multer + Cloudinary + ingest pipeline                    |
+| Teacher: Delete documents      | ✅ Done    | Deletes from Cloudinary + Qdrant                         |
+| Teacher: Disable documents     | ❌ Not Started | No enable/disable toggle on materials                  |
+| Teacher: Re-index documents    | 🔶 Partial | reingest_materials.py script exists (manual only)        |
+| Teacher: View AI analytics     | 🔶 Partial | Basic routes exist; no full analytics UI                 |
+| Teacher: View student chats    | ❌ Not Started | No chat visibility for teachers                        |
+| Teacher: Override AI answers   | ❌ Not Started | No override/correction mechanism                       |
+| Student: Chat                  | ✅ Done    | Full AI tutor chat with RAG                              |
+| Student: Generate Questions    | ✅ Done    | Quiz mode                                                |
+| Student: Generate Notes        | ✅ Done    | Notes mode                                               |
+| Student: Flashcards            | ✅ Done    | Flashcard mode with 3D flip UI                           |
+| Student: Mindmaps              | ✅ Done    | MindMap mode with SVG layout                             |
+| Student: Summaries             | ✅ Done    | Summarize mode                                           |
+| Student: Practice Tests        | ✅ Done    | PracticeTestInterface + PracticePapersPortal             |
+
+------------------------------------------------------------
+
+## PROMPT LIBRARY STATUS
+
+| Prompt Directory     | Status     | Notes                                                        |
+|----------------------|------------|--------------------------------------------------------------|
+| /prompts/chat/       | ❌ Not Started | Prompts hardcoded in chat/router.py MODE_INSTRUCTIONS      |
+| /prompts/evaluation/ | ❌ Not Started | Prompts hardcoded in assessment/service.py                 |
+| /prompts/question_generation/ | ❌ Not Started | Prompts inline in quiz mode                       |
+| /prompts/summary/    | ❌ Not Started | Prompts inline in summaries module                         |
+| /prompts/mindmap/    | ❌ Not Started | Prompts inline in chat/router.py                           |
+| /prompts/flashcards/ | ❌ Not Started | Prompts inline in flashcards module                        |
+| /prompts/recommendation/ | ❌ Not Started | Recommendation engine not built yet                    |
+
+Note: Prompt externalisation is an architectural requirement — all prompts should be moved to a library.
+
+------------------------------------------------------------
+
+## ADDITIONAL MODULES BUILT (Beyond Original Plan)
+
+| Module                     | Status     | Notes                                                        |
+|----------------------------|------------|--------------------------------------------------------------|
+| Language Assessment (Reading) | ✅ Done | ReadingMaterial + ReadingAssessment models; /reading/evaluate; ReadingPracticePage.jsx + ReadingScoreCard.jsx |
+| Language Assessment (Writing) | ✅ Done | WritingPrompt + WritingAssessment models; /writing/evaluate; WritingPracticePage.jsx + WritingScoreCard.jsx |
+| Speech / Pronunciation     | 🔶 Partial | faster-whisper transcription + SpeechBrain pronunciation; needs real-device mic testing |
+| Baseline Quiz              | 🔶 Partial | BaselineQuiz.jsx; results not yet feeding Mastery Engine     |
+| Teacher Language Manager   | ✅ Done    | LanguagePracticeManager.jsx; create/publish passages + prompts |
+
+------------------------------------------------------------
+
+## TOP REMAINING PRIORITIES
+
+| # | What | Why It's Blocking                              |
+|---|------|------------------------------------------------|
+| 1 | AI Orchestrator | Node calls AI endpoints directly — violates architecture |
+| 2 | Error Classification Engine | Required before Gap Detection can work |
+| 3 | Gap Detection Engine | Core intelligence; unlocks personalised paths  |
+| 4 | Mastery Engine auto-update | Must fire after every quiz / evaluation        |
+| 5 | Knowledge Graph — learning outcomes + concept nodes | Powers recommendations and adaptive learning |
+| 6 | Prompt Library | Architecture mandates no hardcoded prompts     |
+| 7 | Document Versioning | Architecture mandates version retention        |
+| 8 | Bloom Engine | Required for Bloom-level question generation and evaluation |
+| 9 | Recommendation Engine | Needs mastery + gap data pipeline first        |
+| 10 | Docker Compose deployment setup | Required for production                       |
+
+------------------------------------------------------------
+
 ---
 
 # IMPORTANT
