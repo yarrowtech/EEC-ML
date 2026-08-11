@@ -98,6 +98,7 @@ describe('AIPoweredTeaching persistence', () => {
                 id: 'local-chapter-1',
                 title: 'English Chapter 008',
                 introductionText: 'The teacher’s latest saved update',
+                createdAt: '2026-08-10T08:00:00.000Z',
               },
               {
                 id: 'published-plan-old',
@@ -109,6 +110,7 @@ describe('AIPoweredTeaching persistence', () => {
                 id: 'local-chapter-6',
                 title: 'English Chapter 006',
                 introductionText: 'Chapter six content',
+                createdAt: '2026-08-12T08:00:00.000Z',
               },
             ],
             updatedAt: '2026-08-11T10:00:00.000Z',
@@ -148,5 +150,15 @@ describe('AIPoweredTeaching persistence', () => {
 
     expect(screen.getByText('Chapter six content')).toBeInTheDocument();
     expect(screen.queryByText('The teacher’s latest saved update')).not.toBeInTheDocument();
+  });
+
+  test('sorts chapters by creation date with the newest first', async () => {
+    render(<AIPoweredTeaching />);
+
+    await screen.findByRole('button', { name: 'English Chapter 008' });
+    const chapterButtons = screen.getAllByRole('button');
+
+    expect(chapterButtons[0]).toHaveTextContent('English Chapter 006');
+    expect(chapterButtons[1]).toHaveTextContent('English Chapter 008');
   });
 });

@@ -1,25 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion as Motion } from 'framer-motion';
-import { Copy, GripVertical, MoreHorizontal, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { GripVertical, MoreHorizontal, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
-const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelete, onRename, onDragStart, onDrop }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(chapter.title);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    setDraft(chapter.title);
-  }, [chapter.title]);
-
-  const submitEdit = () => {
-    const value = draft.trim() || 'Untitled Chapter';
-    onRename(chapter.id, value);
-    setIsEditing(false);
-  };
-
+const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragStart, onDrop }) => {
   const stopActionEvent = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -29,17 +14,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
   const stopActionPointer = (event) => {
     event.stopPropagation();
     event.nativeEvent?.stopImmediatePropagation?.();
-  };
-
-  const handleDelete = async (event) => {
-    stopActionEvent(event);
-    if (isDeleting) return;
-    setIsDeleting(true);
-    try {
-      await onDelete(chapter.id);
-    } finally {
-      setIsDeleting(false);
-    }
   };
 
   const progress = total ? Math.round(((index + 1) / total) * 100) : 0;
@@ -67,20 +41,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-linear-to-b from-blue-500 to-violet-500"
         />
       )}
-
-      <div className="absolute right-2 top-2 z-10">
-        {/* <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleDelete}
-          disabled={isDeleting}
-          className="rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
-          title={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
-          aria-label={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
-        >
-          <Trash2 className="size-3.5" />
-        </Button> */}
-      </div>
 
       <div className="flex items-start gap-2">
         <button
@@ -112,29 +72,8 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
             {isActive && <Sparkles className="ml-auto size-3.5 text-blue-500" />}
           </div>
 
-          {isEditing ? (
-            <Input
-              autoFocus
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onBlur={submitEdit}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') submitEdit();
-                if (event.key === 'Escape') {
-                  setDraft(chapter.title);
-                  setIsEditing(false);
-                }
-              }}
-              className="h-9 rounded-xl border-blue-200 bg-white text-sm dark:bg-slate-950"
-              style={{ color: '#0f172a', caretColor: '#0f172a' }}
-              aria-label="Rename chapter"
-            />
-          ) : (
-            <>
-              <p className="truncate text-sm font-semibold text-slate-800">{chapter.title}</p>
-              <p className="mt-1 text-[10px]  text-slate-500 dark:text-slate-400 line-clamp-2">AI-ready chapter block · Click to open</p>
-            </>
-          )}
+          <p className="truncate text-sm font-semibold text-slate-800">{chapter.title}</p>
+          <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2">AI-ready chapter block · Click to open</p>
         </button>
       </div>
 
@@ -147,40 +86,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDelet
           <Sparkles className="size-3" /> Smart outline
         </div>
         <div className={`flex items-center gap-1 transition ${isActive ? 'opacity-100' : 'opacity-100 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onPointerDown={stopActionPointer}
-            onMouseDown={stopActionPointer}
-            onClick={(event) => {
-              stopActionEvent(event);
-              setIsEditing((prev) => !prev);
-            }}
-            className="rounded-lg text-blue-700 hover:bg-blue-50 hover:text-blue-800"
-            title="Rename chapter"
-            aria-label="Rename chapter"
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Duplicate chapter" aria-label="Duplicate chapter">
-            <Copy className="size-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="Add section" aria-label="Add section">
-            <Plus className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onPointerDown={stopActionPointer}
-            onMouseDown={stopActionPointer}
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30"
-            title={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
-            aria-label={isDeleting ? 'Deleting chapter' : 'Delete chapter'}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
           <Button variant="ghost" size="icon-xs" onPointerDown={stopActionPointer} onMouseDown={stopActionPointer} onClick={stopActionEvent} className="rounded-lg text-slate-800 hover:bg-slate-50 hover:text-slate-800" title="More actions" aria-label="More chapter actions">
             <MoreHorizontal className="size-3.5" />
           </Button>

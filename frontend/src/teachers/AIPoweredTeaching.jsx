@@ -61,6 +61,12 @@ const enrichChapter = (chapter) => ({
 const toIdString = (value) => String(value || '').trim();
 const normalizeChapterTitle = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const getPlanTimestamp = (plan) => new Date(plan?.updatedAt || plan?.publishedAt || plan?.createdAt || 0).getTime() || 0;
+const getChapterTimestamp = (chapter) => {
+  const explicitTimestamp = new Date(chapter?.createdAt || 0).getTime();
+  if (explicitTimestamp) return explicitTimestamp;
+  const localIdTimestamp = toIdString(chapter?.id).match(/^ch-(\d+)$/)?.[1];
+  return Number(localIdTimestamp) || 0;
+};
 
 const normalizeLoadedChapter = (chapter, plan, index) => {
   const source = chapter && typeof chapter === 'object' ? chapter : {};
@@ -71,6 +77,7 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
   const publishedPlanId = sourcePublishedPlanId || (planIsPublished ? toIdString(plan?._id) : '');
   const status = publishedPlanId ? 'published' : 'draft';
   const planId = toIdString(plan?._id);
+  const createdAt = source.createdAt || (planIsPublished ? plan?.createdAt : '') || '';
 
   return enrichChapter({
     ...source,
@@ -82,6 +89,7 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     introductionText: source.introductionText || plan?.introductionText || '',
     learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
     publishedPlanId: publishedPlanId || null,
+    createdAt,
     title: chapterTitle,
     lessonDate,
     status,
@@ -299,17 +307,19 @@ const AIPoweredTeaching = () => {
           id: matchingPublished.id,
           publishedPlanId: matchingPublished.publishedPlanId,
           publishedChapterTitle: matchingPublished.title,
+          createdAt: draftChapter.createdAt || matchingPublished.createdAt,
           status: 'published',
           isDraft: false,
         };
       });
 
-      const nextChapters = latestDraft
+      const nextChapters = (latestDraft
         ? [
             ...restoredDraftChapters,
             ...publishedChapters.filter((chapter) => !matchedPublishedIds.has(chapter.publishedPlanId)),
           ]
-        : publishedChapters;
+        : publishedChapters
+      ).sort((a, b) => getChapterTimestamp(b) - getChapterTimestamp(a));
 
       if (requestSeq !== chapterLoadSeqRef.current) return;
 
@@ -496,8 +506,8 @@ const AIPoweredTeaching = () => {
     }
 
     const nextId = `ch-${Date.now()}`;
-    const chapter = enrichChapter({ id: nextId, title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
-    setChapters((prev) => [...prev, chapter]);
+    const chapter = enrichChapter({ id: nextId, createdAt: new Date().toISOString(), title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
+    setChapters((prev) => [chapter, ...prev]);
     setOpenChapterIds((prev) => [...prev, nextId]);
     touchAutosave();
   };
