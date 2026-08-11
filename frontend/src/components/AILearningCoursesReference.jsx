@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';

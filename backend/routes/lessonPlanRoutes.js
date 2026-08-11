@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');

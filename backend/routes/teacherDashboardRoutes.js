@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const express = require('express');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
@@ -28,6 +34,15 @@ const DAY_LOOKUP = WEEK_DAYS.reduce((acc, day) => {
 const normalizeDayLabel = (value) => {
   if (!value) return null;
   return DAY_LOOKUP[String(value).trim().toLowerCase()] || null;
+};
+
+const timeToMinutes = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return (hours * 60) + minutes;
 };
 
 const extractId = (value) => {
@@ -449,27 +464,29 @@ router.get('/', authTeacher, async (req, res) => {
 
     const upcomingClasses = [];
     timetables.forEach((timetable) => {
-      const className = classMap.get(String(timetable.classId)) || 'Class';
+      const className = classMap.get(String(timetable.classId)) || null;
       const sectionName = timetable.sectionId
-        ? sectionMap.get(String(timetable.sectionId)) || ''
-        : '';
-      const classLabel = sectionName ? `${className}-${sectionName}` : className;
+        ? sectionMap.get(String(timetable.sectionId)) || null
+        : null;
+      const classLabel = className && sectionName ? `${className}-${sectionName}` : className;
 
       (timetable.entries || []).forEach((entry) => {
         if (String(entry.teacherId) !== String(teacherId)) return;
         const normalizedDay = normalizeDayLabel(entry.dayOfWeek);
         if (!normalizedDay) return;
-        const subjectName = subjectMap.get(String(entry.subjectId)) || 'Subject';
+        const subjectName = subjectMap.get(String(entry.subjectId)) || null;
         upcomingClasses.push({
           id: `${timetable._id}-${normalizedDay}-${entry.period}`,
           dayOfWeek: normalizedDay,
           subject: subjectName,
           class: classLabel,
+          startTime: entry.startTime || null,
+          endTime: entry.endTime || null,
+          period: entry.period,
           time: entry.startTime && entry.endTime
             ? `${entry.startTime} - ${entry.endTime}`
             : `Period ${entry.period}`,
-          room: entry.room || 'TBA',
-          status: 'upcoming',
+          room: entry.room || null,
         });
       });
     });
@@ -478,6 +495,39 @@ router.get('/', authTeacher, async (req, res) => {
       if (dayDiff !== 0) return dayDiff;
       return a.time.localeCompare(b.time);
     });
+
+    const todayName = WEEK_DAYS[(today.getDay() + 6) % 7];
+    const currentMinutes = (today.getHours() * 60) + today.getMinutes();
+    const todaysClasses = upcomingClasses
+      .filter((classItem) => classItem.dayOfWeek === todayName)
+      .sort((a, b) => {
+        const aStart = timeToMinutes(a.startTime);
+        const bStart = timeToMinutes(b.startTime);
+        if (aStart !== null && bStart !== null) return aStart - bStart;
+        if (aStart !== null) return -1;
+        if (bStart !== null) return 1;
+        return Number(a.period || 0) - Number(b.period || 0);
+      })
+      .map((classItem) => {
+        const startMinutes = timeToMinutes(classItem.startTime);
+        const endMinutes = timeToMinutes(classItem.endTime);
+        const isInProgress = startMinutes !== null
+          && endMinutes !== null
+          && startMinutes <= currentMinutes
+          && endMinutes > currentMinutes;
+        const isCompleted = endMinutes !== null && endMinutes <= currentMinutes;
+        return {
+          ...classItem,
+          status: isInProgress ? 'In progress' : isCompleted ? 'Completed' : 'Upcoming',
+        };
+      });
+
+    const nextClass = todaysClasses.find((classItem) => {
+      const startMinutes = timeToMinutes(classItem.startTime);
+      const endMinutes = timeToMinutes(classItem.endTime);
+      if (endMinutes !== null) return endMinutes > currentMinutes;
+      return startMinutes !== null && startMinutes >= currentMinutes;
+    }) || null;
 
     const assignmentFilter = { schoolId, dueDate: { $gte: today } };
     if (campusId) {
@@ -502,6 +552,8 @@ router.get('/', authTeacher, async (req, res) => {
         upcomingEvents: upcomingClasses.length,
       },
       upcomingClasses,
+      todaysClasses,
+      nextClass,
       recentActivities,
       performanceMetrics,
       topStudents,

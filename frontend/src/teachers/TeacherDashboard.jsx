@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion as framerMotion, useReducedMotion } from 'framer-motion';
@@ -236,7 +242,7 @@ const TeacherDashboard = () => {
         .join(', ')
     : 'No class teacher allocation';
 
-  const upcomingClasses = dashboardData?.upcomingClasses || [];
+  const todaysClasses = Array.isArray(dashboardData?.todaysClasses) ? dashboardData.todaysClasses : [];
   const performanceMetrics = dashboardData?.performanceMetrics || [];
   const upcomingDeadlines = dashboardData?.upcomingDeadlines || [];
   const recentActivities = (dashboardData?.recentActivities || []).map((activity) => ({
@@ -244,7 +250,7 @@ const TeacherDashboard = () => {
     time: timeAgo(activity.time),
   }));
 
-  const nextClass = upcomingClasses[0];
+  const nextClass = dashboardData?.nextClass || null;
   const pendingTasks = Number(stats.pendingEvaluations ?? upcomingDeadlines.length ?? 0);
 
   const insightCards = [
@@ -339,7 +345,9 @@ const TeacherDashboard = () => {
                   </div>
                   <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">{getGreeting()}, {teacherName.split(' ')[0]}.</h1>
                   <p className="mt-3 max-w-2xl text-base leading-7 text-slate-200">
-                    You have {upcomingClasses.length} classes today and {pendingTasks} pending evaluations. AI can prepare your next lesson, flag student risks, and clear routine work faster.
+                    {dashboardLoading
+                      ? 'Loading today\'s timetable and workload…'
+                      : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} pending evaluations. AI can prepare your next lesson, flag student risks, and clear routine work faster.`}
                   </p>
                   <div className="mt-5 flex flex-wrap gap-3">
                     <Link to="/teacher/classes" className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5">Open classes <ArrowUpRight size={16} /></Link>
@@ -348,7 +356,14 @@ const TeacherDashboard = () => {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                   <HeroChip label="Class teacher" value={classTeacherLabel} />
-                  <HeroChip label="Next class" value={nextClass ? `${nextClass.subject} at ${nextClass.time}` : 'No class queued'} />
+                  <HeroChip
+                    label="Next class"
+                    value={dashboardLoading
+                      ? 'Loading from timetable…'
+                      : nextClass
+                        ? `${nextClass.subject || nextClass.class || 'Details unavailable'} at ${nextClass.time}`
+                        : 'No more classes today'}
+                  />
                   <HeroChip label="Workload" value={pendingTasks > 0 ? `${pendingTasks} actions need review` : 'Clear for focused teaching'} />
                 </div>
               </div>
@@ -397,10 +412,10 @@ const TeacherDashboard = () => {
 
                 <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
                   <CardShell>
-                    <SectionHeader icon={Clock} title="Today's Schedule" subtitle={nextClass ? `Next: ${nextClass.subject} ${nextClass.time}` : 'Your class timeline is clear.'} action={<Badge tone="emerald">Live</Badge>} />
+                    <SectionHeader icon={Clock} title="Today's Schedule" subtitle={nextClass ? `Next: ${nextClass.subject || nextClass.class || 'Details unavailable'} ${nextClass.time}` : 'Your class timeline is clear.'} action={<Badge tone="emerald">Live</Badge>} />
                     <div className="max-h-[430px] space-y-3 overflow-y-auto p-5">
-                      {upcomingClasses.length === 0 ? <EmptyState icon={Calendar} title="No classes scheduled" description="Your schedule will appear here when timetable data is available." /> : upcomingClasses.map((classItem, index) => (
-                        <ScheduleItem key={classItem.id || `${classItem.subject}-${index}`} classItem={classItem} index={index} reduceMotion={reduceMotion} />
+                      {todaysClasses.length === 0 ? <EmptyState icon={Calendar} title="No classes scheduled today" description="Today’s schedule will appear here when timetable data is available." /> : todaysClasses.map((classItem, index) => (
+                        <ScheduleItem key={classItem.id || `${classItem.subject}-${index}`} classItem={classItem} index={index} isNext={classItem.id === nextClass?.id} reduceMotion={reduceMotion} />
                       ))}
                     </div>
                   </CardShell>
@@ -480,19 +495,19 @@ const WorkflowAction = ({ item }) => {
   );
 };
 
-const ScheduleItem = ({ classItem, index, reduceMotion }) => (
+const ScheduleItem = ({ classItem, index, isNext, reduceMotion }) => (
   <MotionDiv
     initial={reduceMotion ? false : { opacity: 0, x: -12 }}
     animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
     transition={{ duration: 0.24, delay: index * 0.03 }}
-    className={cx('relative rounded-2xl border p-4 transition hover:border-slate-300 hover:bg-slate-50', index === 0 ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white')}
+    className={cx('relative rounded-2xl border p-4 transition hover:border-slate-300 hover:bg-slate-50', isNext ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white')}
   >
     <div className="flex items-start gap-3">
-      <span className={cx('mt-1 h-12 w-1.5 rounded-full', index === 0 ? 'bg-emerald-500' : 'bg-slate-300')} />
+      <span className={cx('mt-1 h-12 w-1.5 rounded-full', isNext ? 'bg-emerald-500' : 'bg-slate-300')} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-slate-950">{classItem.subject}</h3>
-          <Badge tone={index === 0 ? 'emerald' : 'neutral'}>{classItem.status || (index === 0 ? 'Next class' : 'Scheduled')}</Badge>
+          <Badge tone={isNext ? 'emerald' : 'neutral'}>{classItem.status}</Badge>
         </div>
         <p className="mt-1 text-sm text-slate-500">{classItem.class} {classItem.section && `• ${classItem.section}`} {classItem.room && `• Room ${classItem.room}`}</p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -502,7 +517,7 @@ const ScheduleItem = ({ classItem, index, reduceMotion }) => (
       </div>
       <div className="text-right">
         <p className="font-semibold text-slate-950">{classItem.time}</p>
-        <p className="mt-1 text-xs text-slate-500">{index === 0 ? 'Starts soon' : 'Upcoming'}</p>
+        <p className="mt-1 text-xs text-slate-500">{classItem.status === 'In progress' ? 'Happening now' : isNext ? 'Next class' : classItem.status}</p>
       </div>
     </div>
   </MotionDiv>

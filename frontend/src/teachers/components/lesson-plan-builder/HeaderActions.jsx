@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 import React from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Clock, Layers, PencilLine, Users } from 'lucide-react';
 import { motion as Motion } from 'framer-motion';
