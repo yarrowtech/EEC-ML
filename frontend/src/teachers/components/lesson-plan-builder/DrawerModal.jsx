@@ -118,6 +118,9 @@ const DrawerModal = ({
   onStepChange,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
+  const [customDurationSelected, setCustomDurationSelected] = useState(() => (
+    Boolean(chapter.duration) && !(durations || []).includes(chapter.duration)
+  ));
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
   const [contentGenerating, setContentGenerating] = useState(false);
@@ -426,14 +429,36 @@ const DrawerModal = ({
               <Card>
                 <Field label="Duration">
                   <select
-                    value={chapter.duration}
-                    onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
+                    value={customDurationSelected ? '__custom__' : chapter.duration}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setCustomDurationSelected(true);
+                        if ((durations || []).includes(chapter.duration)) {
+                          onUpdate({ ...chapter, duration: '' });
+                        }
+                        return;
+                      }
+                      setCustomDurationSelected(false);
+                      onUpdate({ ...chapter, duration: e.target.value });
+                    }}
                     style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
                     className="h-10 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                   >
                     <option value="" disabled>Select duration</option>
                     {(durations || []).map((d) => <option key={d} value={d}>{d}</option>)}
+                    <option value="__custom__">Custom…</option>
                   </select>
+                  {customDurationSelected && (
+                    <input
+                      type="text"
+                      value={chapter.duration}
+                      onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
+                      placeholder="e.g. 75 Minutes"
+                      aria-label="Custom lesson duration"
+                      style={{ color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
+                      className="mt-2 h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    />
+                  )}
                 </Field>
               </Card>
             </div>

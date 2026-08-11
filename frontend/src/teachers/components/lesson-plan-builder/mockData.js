@@ -15,7 +15,7 @@ export const initialChapters = [
   {
     id: 'ch-2',
     title: 'Graphing in Two Variables',
-    duration: '2 Classes',
+    duration: '50 Minutes',
     description: '<p>Practice plotting points and drawing best-fit lines.</p>',
     files: [{ id: 'f-3', name: 'Graphing-Guide.docx', type: 'docx' }],
     assessments: [
@@ -26,13 +26,13 @@ export const initialChapters = [
   {
     id: 'ch-3',
     title: 'Word Problems and Applications',
-    duration: '1 Week',
+    duration: '60 Minutes',
     description: '<p>Focus on translating narrative problems into equations.</p>',
     files: [],
     assessments: [],
   },
 ];
 
-export const durationOptions = ['45 Minutes', '2 Classes', '1 Week'];
+export const durationOptions = ['40 Minutes', '45 Minutes', '50 Minutes', '55 Minutes', '60 Minutes'];
 
 export const assessmentTypes = ['Quiz', 'Homework', 'Assignment', 'MCQ Test', 'Practical Task'];
