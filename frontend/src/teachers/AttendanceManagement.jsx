@@ -50,6 +50,13 @@ const toAbsoluteAssetUrl = (value) => {
   return `${API_BASE}/${raw.replace(/^\/+/, '')}`;
 };
 
+const escapePrintHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;');
+
 const parseRollForSort = (roll) => {
   if (roll === null || roll === undefined) return Number.POSITIVE_INFINITY;
   const text = String(roll).trim();
@@ -440,12 +447,103 @@ const AttendanceManagement = () => {
   const sessionLabel = selectedSession || '2025–2026';
   const updatedTime = new Date(nowTick).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+  const printAttendance = () => {
+    const printWindow = window.open('', '_blank', 'width=1000,height=760');
+    if (!printWindow) {
+      toast.error('Please allow pop-ups to print the attendance report');
+      return;
+    }
+
+    printWindow.opener = null;
+    const rows = students.map((student) => {
+      const status = attendanceData[student._id] || STATUS.ABSENT;
+      return `
+        <tr>
+          <td>${escapePrintHtml(student.roll || '—')}</td>
+          <td>${escapePrintHtml(student.name || '—')}</td>
+          <td>${escapePrintHtml(student.username || '—')}</td>
+          <td class="status ${status === STATUS.PRESENT ? 'present' : 'absent'}">${escapePrintHtml(status.toUpperCase())}</td>
+        </tr>`;
+    }).join('');
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Attendance Report - ${escapePrintHtml(selectedDate)}</title>
+          <style>
+            @page { size: A4 portrait; margin: 12mm; }
+            * { box-sizing: border-box; }
+            body { margin: 0; color: #172033; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
+            .report { width: 100%; }
+            .header { border-bottom: 2px solid #172033; padding-bottom: 12px; text-align: center; }
+            h1 { margin: 0; font-size: 22px; }
+            .school { margin-top: 5px; color: #475569; font-size: 13px; font-weight: 600; }
+            .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 12px; }
+            .meta-item { border: 1px solid #d8dee8; border-radius: 8px; padding: 8px 10px; }
+            .meta-label { display: block; margin-bottom: 3px; color: #64748b; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+            .summary { display: flex; gap: 18px; margin-bottom: 12px; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; }
+            thead { display: table-header-group; }
+            tr { break-inside: avoid; page-break-inside: avoid; }
+            th, td { border: 1px solid #cbd5e1; padding: 7px 9px; text-align: left; }
+            th { background: #eef2f6; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+            th:first-child, td:first-child { width: 14%; }
+            th:nth-child(3), td:nth-child(3) { width: 24%; }
+            th:last-child, td:last-child { width: 16%; text-align: center; }
+            .status { font-size: 10px; font-weight: 700; }
+            .present { color: #047857; }
+            .absent { color: #b91c1c; }
+            .empty { padding: 30px; color: #64748b; text-align: center; }
+            .signatures { display: flex; justify-content: space-between; gap: 60px; margin-top: 42px; }
+            .signature { width: 200px; border-top: 1px solid #64748b; padding-top: 6px; text-align: center; }
+            @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body>
+          <main class="report">
+            <div class="header">
+              <h1>Attendance Report</h1>
+              <div class="school">${escapePrintHtml(schoolMeta.schoolName || 'School')}</div>
+            </div>
+            <section class="meta">
+              <div class="meta-item"><span class="meta-label">Date</span>${escapePrintHtml(selectedDate)}</div>
+              <div class="meta-item"><span class="meta-label">Class</span>${escapePrintHtml(classLabel)}</div>
+              <div class="meta-item"><span class="meta-label">Section</span>${escapePrintHtml(sectionLabel)}</div>
+              <div class="meta-item"><span class="meta-label">Subject</span>${escapePrintHtml(subject.trim() || 'All Subjects')}</div>
+            </section>
+            <div class="summary">
+              <span>Total: ${students.length}</span>
+              <span>Present: ${presentCount}</span>
+              <span>Absent: ${absentCount}</span>
+              <span>Session: ${escapePrintHtml(sessionLabel)}</span>
+            </div>
+            <table>
+              <thead><tr><th>Roll No</th><th>Student Name</th><th>User ID</th><th>Status</th></tr></thead>
+              <tbody>${rows || '<tr><td class="empty" colspan="4">No students found.</td></tr>'}</tbody>
+            </table>
+            <div class="signatures">
+              <div class="signature">Teacher Signature</div>
+              <div class="signature">Authorized Signature</div>
+            </div>
+          </main>
+        </body>
+      </html>`);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 250);
+  };
+
   return (
     <Motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-auto w-full max-w-[1400px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
+      className="mx-auto min-w-0 w-full max-w-[1400px] overflow-hidden rounded-[1.5rem] border border-[#e2e8ee] bg-white p-4 text-black shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:rounded-[2rem] sm:p-8"
     >
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -466,7 +564,7 @@ const AttendanceManagement = () => {
           <button type="button" onClick={() => setSelectedDate(todayDateString)} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-transparent px-4 py-2 text-xs font-medium transition hover:bg-[#f4f7fa]">
             <Calendar className="size-3.5 opacity-50" /> Today
           </button>
-          <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-4 py-2 text-xs font-semibold transition hover:bg-[#e8eef4]">
+          <button type="button" onClick={printAttendance} disabled={loading || !hasRequiredHierarchyFilters} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] px-4 py-2 text-xs font-semibold transition hover:bg-[#e8eef4] disabled:cursor-not-allowed disabled:opacity-50">
             <Printer className="size-3.5 opacity-50" /> Print
           </button>
         </div>
@@ -498,7 +596,7 @@ const AttendanceManagement = () => {
         </span>
       </Motion.section>
 
-      <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-[4fr_6fr]">
+      <div className="mb-5 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)]">
         {/* ── Left: filters ── */}
         <div className="space-y-5">
           <div className="grid grid-cols-1 gap-2 rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:grid-cols-2">
@@ -578,7 +676,7 @@ const AttendanceManagement = () => {
         </div>
 
         {/* ── Right: student list ── */}
-        <div className="flex flex-col">
+        <div className="min-w-0 flex flex-col">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5">
               <span className="text-xs font-medium text-black/70"><CheckCheck className="mr-1 inline size-3.5 opacity-45" />Mark Attendance</span>
@@ -593,8 +691,8 @@ const AttendanceManagement = () => {
             <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student..." className="w-full rounded-full border border-[#e2e8ee] bg-white py-2 pl-9 pr-3 text-xs outline-none transition focus:border-[#b8c4d0]" />
           </div>
 
-          <Motion.div layout className="flex-1 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
-            <div className="self-start max-h-[300px] overflow-y-auto overflow-x-auto">
+          <Motion.div layout className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-[#e2e8ee] bg-[#fafbfc]">
+            <div className="w-full max-h-[300px] overflow-y-auto overflow-x-auto overscroll-contain">
               {!hasRequiredHierarchyFilters ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center">
                   <Loader2 className="mb-3 size-8 animate-spin opacity-30" />

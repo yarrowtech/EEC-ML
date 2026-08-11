@@ -911,6 +911,8 @@ const TeacherPortalShell = () => {
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
+  const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
+  const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute;
 
   useEffect(() => {
     if (!location.pathname.startsWith('/teachers')) return;
@@ -1152,7 +1154,7 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-    <div className="h-screen overflow-hidden bg-slate-100 flex">
+    <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-slate-100">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -1191,7 +1193,7 @@ const TeacherPortalShell = () => {
       )}
 
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 h-screen flex flex-col bg-white shadow-2xl border-r border-gray-200 overflow-x-hidden ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'
+        className={`fixed lg:sticky top-0 left-0 z-40 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-x-hidden bg-white shadow-2xl border-r border-gray-200 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'
           } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         style={{
@@ -1342,7 +1344,7 @@ const TeacherPortalShell = () => {
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0 flex flex-col h-screen">
+      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="sticky top-0 z-20 w-full bg-slate-100 px-0 py-0">
           <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
             <div className="min-w-0 px-16 text-center leading-none">
@@ -1521,8 +1523,14 @@ const TeacherPortalShell = () => {
           </div>
         </header>
 
-        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute || isSmartPlannerRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={isChatRoute ? 'h-full flex flex-col' : isSmartPlannerRoute ? 'h-full min-h-0' : 'p-6 min-h-full'}>
+        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <div className={isChatRoute
+            ? 'flex h-full min-h-0 flex-col'
+            : isSmartPlannerRoute
+              ? 'h-full min-h-0'
+              : isAttendanceRoute
+                ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
+                : 'min-h-full p-6'}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
