@@ -78,7 +78,7 @@ const Field = ({ label, children }) => (
 );
 
 const Card = ({ children, className = '' }) => (
-  <div className={`rounded-[28px] border border-[#ebf0f6] bg-[#fafcff] p-5 shadow-[0_4px_8px_-4px_rgba(0,0,0,0.04)] dark:border-slate-700 dark:bg-slate-900 ${className}`}>
+  <div className={`min-w-0 rounded-[22px] border border-[#ebf0f6] bg-[#fafcff] p-3 shadow-[0_4px_8px_-4px_rgba(0,0,0,0.04)] sm:rounded-[28px] sm:p-5 dark:border-slate-700 dark:bg-slate-900 ${className}`}>
     {children}
   </div>
 );
@@ -1226,10 +1226,10 @@ const DrawerModal = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
-          className="flex w-full flex-col self-start rounded-[28px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-900"
+          className="flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] dark:border-slate-700 dark:bg-slate-900"
         >
           {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[28px] border-b border-[#ebf0f6] bg-[#fafcff] px-5 py-4 dark:border-slate-800 dark:bg-slate-800/60">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[22px] border-b border-[#ebf0f6] bg-[#fafcff] px-3 py-3 sm:rounded-t-[28px] sm:px-5 sm:py-4 dark:border-slate-800 dark:bg-slate-800/60">
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#2563eb]">
                 <BookOpen className="size-4" />
@@ -1241,7 +1241,7 @@ const DrawerModal = ({
                 {isPublished ? 'Published' : 'Draft'}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex max-w-full flex-wrap items-center gap-1.5">
               <Button variant="outline" size="sm" onClick={onSaveVersion} className="hidden gap-1 rounded-full border-[#dce2ea] text-xs sm:inline-flex">
                 <RefreshCcw className="size-3.5" /> Save Version
               </Button>
@@ -1255,8 +1255,8 @@ const DrawerModal = ({
           </div>
 
           {/* Step navigation */}
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-[#e9edf2] px-5 py-3 dark:border-slate-800">
-            <div className="flex flex-wrap items-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
+          <div className="overflow-x-auto border-b border-[#e9edf2] px-3 py-2 sm:px-5 sm:py-3 dark:border-slate-800">
+            <div className="flex w-max min-w-full items-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
               {STEPS.map((step, index) => {
                 const isActive = index === currentStep;
                 const isDone = index < currentStep;
@@ -1278,7 +1278,7 @@ const DrawerModal = ({
           </div>
 
           {/* Step content */}
-          <div className="max-h-[52vh] overflow-y-auto bg-white p-5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:bg-slate-900 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
+          <div className="max-h-none min-w-0 overflow-y-auto bg-white p-3 sm:p-5 lg:max-h-[52vh] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:bg-slate-900 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
             <motion.div
               key={currentStep}
               initial={{ opacity: 0, x: 10 }}
@@ -1290,7 +1290,7 @@ const DrawerModal = ({
           </div>
 
           {/* Footer navigation */}
-          <div className="flex items-center justify-between border-t border-[#ebf0f6] px-5 py-4 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#ebf0f6] px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-800">
             <Button
               variant="outline"
               size="sm"
@@ -1307,7 +1307,7 @@ const DrawerModal = ({
               <Button
                 size="sm"
                 onClick={() => goToStep((s) => s + 1)}
-                className="gap-1 rounded-full bg-[#2563eb] px-6 text-white shadow-[0_4px_8px_-4px_rgba(37,99,235,0.3)] hover:bg-blue-700"
+                className="gap-1 rounded-full bg-[#2563eb] px-4 text-white shadow-[0_4px_8px_-4px_rgba(37,99,235,0.3)] hover:bg-blue-700 sm:px-6"
               >
                 Next <ChevronRight className="size-4" />
               </Button>
@@ -1316,7 +1316,7 @@ const DrawerModal = ({
                 size="sm"
                 onClick={onPublishChapter}
                 disabled={isPublishing}
-                className="gap-1 rounded-full bg-[#059669] px-6 text-white shadow-[0_4px_12px_-4px_rgba(5,150,105,0.4)] hover:bg-emerald-700 disabled:opacity-50"
+                className="gap-1 rounded-full bg-[#059669] px-4 text-white shadow-[0_4px_12px_-4px_rgba(5,150,105,0.4)] hover:bg-emerald-700 disabled:opacity-50 sm:px-6"
               >
                 {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Update' : 'Publish'}</>}
               </Button>

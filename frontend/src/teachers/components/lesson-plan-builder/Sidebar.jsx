@@ -16,8 +16,8 @@ import { Separator } from '@/components/ui/separator';
 import ChapterItem from './ChapterItem';
 
 const sidebarVariants = {
-  expanded: { width: 256 },
-  collapsed: { width: 58 },
+  expanded: { opacity: 1 },
+  collapsed: { opacity: 1 },
 };
 
 const contentVariants = {
@@ -53,7 +53,7 @@ const Sidebar = ({
       animate={collapsed ? 'collapsed' : 'expanded'}
       variants={sidebarVariants}
       transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-      className="relative h-[300px] min-h-0 shrink-0 overflow-hidden rounded-[28px] border border-[#e9edf2] bg-[#f8fafc] shadow-none backdrop-blur-xl lg:h-full dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20"
+      className={`relative h-80 min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[#e9edf2] bg-[#f8fafc] shadow-none backdrop-blur-xl transition-[width] sm:h-96 sm:rounded-[28px] lg:h-full ${collapsed ? 'w-[58px]' : 'w-full lg:w-64'} dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20`}
       aria-label="Lesson chapters sidebar"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-linear-to-b from-[#eef2ff] to-transparent dark:from-blue-950/20" />
@@ -144,7 +144,7 @@ const Sidebar = ({
               </Motion.div>
 
               {/* Chapter list */}
-              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pb-14 pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-200 hover:[&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
+              <div className="min-h-0 flex-1 touch-pan-y space-y-1.5 overflow-y-scroll overscroll-contain pb-14 pr-1 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-300 hover:[&::-webkit-scrollbar-thumb]:bg-blue-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-blue-50/70 dark:[&::-webkit-scrollbar-track]:bg-slate-900/40">
                 <AnimatePresence initial={false}>
                   {chapters.map((chapter, index) => (
                     <Motion.div
@@ -173,27 +173,7 @@ const Sidebar = ({
                 {chapters.length === 0 && <EmptyState onAdd={onAdd} />}
               </div>
 
-              <Motion.div variants={itemVariants} className="mt-3 rounded-[24px] bg-[#eef2ff] p-4">
-                <h4 className="mb-2.5 text-xs font-semibold text-[#1e293b]">
-                  <span className="mr-1.5">🚀</span>How to get started
-                </h4>
-                <ul className="space-y-2 text-[11px] text-[#334155]">
-                  {[
-                    'Select class, section & subject above',
-                    'Click + to add a chapter',
-                    'Fill details step by step',
-                    'Publish to share with students',
-                  ].map((tip) => (
-                    <li key={tip} className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[#2563eb]" />
-                      <span>{tip}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-3 rounded-full border border-[#d9e6ff] bg-white px-3 py-1.5 text-center text-[11px] font-medium text-[#2563eb]">
-                  Start by selecting your class above ↑
-                </div>
-              </Motion.div>
+              
             </Motion.div>
           ) : (
             <CollapsedRail
@@ -256,8 +236,8 @@ const CollapsedRail = ({ chapters, activeChapterId, onSelect, onToggleCollapse }
     >
       <ChevronRight className="size-3.5" />
     </button>
-    <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pb-12 px-1">
-      {chapters.slice(0, 12).map((chapter, index) => {
+    <div className="min-h-0 flex-1 touch-pan-y space-y-1.5 overflow-y-scroll overscroll-contain pb-12 px-1 [scrollbar-gutter:stable]">
+      {chapters.map((chapter, index) => {
         const active = chapter.id === activeChapterId;
         return (
           <button

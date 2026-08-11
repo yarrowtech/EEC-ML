@@ -910,7 +910,7 @@ const TeacherPortalShell = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
-  const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner');
+  const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
 
   useEffect(() => {
     if (!location.pathname.startsWith('/teachers')) return;
@@ -1521,8 +1521,8 @@ const TeacherPortalShell = () => {
           </div>
         </header>
 
-        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={isChatRoute ? 'h-full flex flex-col' : 'p-6 min-h-full'}>
+        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isChatRoute || isSmartPlannerRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <div className={isChatRoute ? 'h-full flex flex-col' : isSmartPlannerRoute ? 'h-full min-h-0' : 'p-6 min-h-full'}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />

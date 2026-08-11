@@ -1590,6 +1590,7 @@ router.post('/teacher', authTeacher, async (req, res) => {
     const draftId = req.body?.draftId;
 
     let plan;
+    let updatedExistingPlan = false;
     if (draftId) {
       const filter = { _id: draftId, schoolId, teacherId, isDraft: true };
       if (campusId) filter.campusId = campusId;
@@ -1614,20 +1615,45 @@ router.post('/teacher', authTeacher, async (req, res) => {
         });
       }
     } else {
-      plan = await LessonPlan.create({
+      const existingPublishedFilter = {
         schoolId,
-        campusId: campusId || null,
-        ...resolved.data,
-        isDraft: false,
+        teacherId,
+        classId: resolved.data.classId,
+        sectionId: resolved.data.sectionId,
+        subjectId: resolved.data.subjectId,
+        title: { $regex: `^${escapeRegex(resolved.data.title)}$`, $options: 'i' },
         status: 'published',
-        publishedAt: new Date()
-      });
+        isDraft: false,
+      };
+      if (campusId) existingPublishedFilter.campusId = campusId;
+
+      const existingPublishedPlan = await LessonPlan.findOne(existingPublishedFilter).sort({ updatedAt: -1 });
+      if (existingPublishedPlan) {
+        Object.assign(existingPublishedPlan, resolved.data, {
+          status: 'published',
+          isDraft: false,
+          publishedAt: existingPublishedPlan.publishedAt || new Date(),
+          publishedBy: existingPublishedPlan.publishedBy || teacherId,
+        });
+        await existingPublishedPlan.save();
+        plan = existingPublishedPlan;
+        updatedExistingPlan = true;
+      } else {
+        plan = await LessonPlan.create({
+          schoolId,
+          campusId: campusId || null,
+          ...resolved.data,
+          isDraft: false,
+          status: 'published',
+          publishedAt: new Date()
+        });
+      }
     }
 
     const publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
 
-    res.status(201).json({
-      message: 'Lesson plan created',
+    res.status(updatedExistingPlan ? 200 : 201).json({
+      message: updatedExistingPlan ? 'Lesson plan updated' : 'Lesson plan created',
       plan,
       publishedCount: publishResult.publishedCount,
       vectorIndexedAttachmentCount: publishResult.vectorIndexedAttachmentCount,

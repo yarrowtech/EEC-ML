@@ -27,7 +27,7 @@ const HeaderActions = ({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
-      className="rounded-[28px] border border-[#e9edf2] bg-[#f8fafc] px-4 py-3 shadow-sm"
+      className="min-w-0 rounded-[22px] border border-[#e9edf2] bg-[#f8fafc] px-3 py-3 shadow-sm sm:rounded-[28px] sm:px-4"
     >
       <div className="flex flex-wrap items-center gap-2.5 lg:gap-4">
         <div className="flex items-center gap-2">
@@ -38,7 +38,7 @@ const HeaderActions = ({
           value={classValue}
           onChange={(event) => onClassChange(event.target.value)}
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 min-w-[112px] rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100"
+          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[112px]"
         >
           {hasDynamicOptions ? (
             <>
@@ -60,7 +60,7 @@ const HeaderActions = ({
           value={sectionValue}
           onChange={(event) => onSectionChange(event.target.value)}
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 min-w-[108px] rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100"
+          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[108px]"
         >
           {hasDynamicOptions ? (
             <>
@@ -82,7 +82,7 @@ const HeaderActions = ({
           value={subjectValue}
           onChange={(event) => onSubjectChange(event.target.value)}
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 min-w-[128px] rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100"
+          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[128px]"
         >
           {hasDynamicOptions ? (
             <>
@@ -93,11 +93,11 @@ const HeaderActions = ({
             <><option>Mathematics</option><option>Science</option><option>English</option></>
           )}
         </select>
-        <Motion.div layout className="flex min-w-0 flex-1 items-center justify-between gap-3 lg:ml-auto">
-          <div className="flex min-w-0 items-center gap-3">
+        <Motion.div layout className="flex w-full min-w-0 flex-1 flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center lg:ml-auto lg:w-auto">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
             <Layers className="hidden size-4 text-[#2563eb] xl:block" />
             <div className="min-w-0">
-              <p className="truncate text-base font-semibold tracking-[-0.01em] text-[#0f2b45]">{selectedChapterTitle}</p>
+              <p className="break-words text-sm font-semibold tracking-[-0.01em] text-[#0f2b45] sm:text-base">{selectedChapterTitle}</p>
               <p className="flex items-center gap-1 text-[11px] text-[#64748b]">
                 <Clock className="size-3" /> {autosaveStatus}
               </p>

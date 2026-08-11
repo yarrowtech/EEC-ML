@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { Toaster, toast } from 'react-hot-toast';
-import { BookOpenCheck, ClipboardList } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { BookOpenCheck } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
@@ -59,12 +59,17 @@ const enrichChapter = (chapter) => ({
 });
 
 const toIdString = (value) => String(value || '').trim();
+const normalizeChapterTitle = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const getPlanTimestamp = (plan) => new Date(plan?.updatedAt || plan?.publishedAt || plan?.createdAt || 0).getTime() || 0;
 
 const normalizeLoadedChapter = (chapter, plan, index) => {
   const source = chapter && typeof chapter === 'object' ? chapter : {};
   const chapterTitle = String(source.title || plan?.title || 'Untitled Chapter').trim() || 'Untitled Chapter';
   const lessonDate = source.lessonDate || (plan?.date ? new Date(plan.date).toISOString().slice(0, 10) : '');
-  const status = plan?.status === 'published' && plan?.isDraft === false ? 'published' : 'draft';
+  const sourcePublishedPlanId = toIdString(source.publishedPlanId);
+  const planIsPublished = plan?.status === 'published' && plan?.isDraft === false;
+  const publishedPlanId = sourcePublishedPlanId || (planIsPublished ? toIdString(plan?._id) : '');
+  const status = publishedPlanId ? 'published' : 'draft';
   const planId = toIdString(plan?._id);
 
   return enrichChapter({
@@ -73,10 +78,10 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     // chapter id as the literal 'chapter-1' — so the plan's own _id is the only value
     // that's actually unique per chapter. Falling back to source.id would collide across
     // every published chapter and make the sidebar unable to tell them apart.
-    id: planId || toIdString(source.id) || `chapter-${index}`,
+    id: (planIsPublished ? planId : toIdString(source.id)) || publishedPlanId || `chapter-${index}`,
     introductionText: source.introductionText || plan?.introductionText || '',
     learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
-    publishedPlanId: status === 'published' ? planId : null,
+    publishedPlanId: publishedPlanId || null,
     title: chapterTitle,
     lessonDate,
     status,
@@ -234,32 +239,87 @@ const AIPoweredTeaching = () => {
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed to load saved chapters');
 
-      // Only load chapters the teacher explicitly published — ignore auto-save drafts
       const matchingPlans = Array.isArray(data)
         ? data.filter((plan) =>
             toIdString(plan?.classId) === toIdString(classId) &&
             toIdString(plan?.sectionId) === toIdString(sectionId) &&
-            toIdString(plan?.subjectId) === toIdString(subjectId) &&
-            plan?.status === 'published' &&
-            !plan?.isDraft
+            toIdString(plan?.subjectId) === toIdString(subjectId)
           )
         : [];
 
-      const nextChapters = matchingPlans.flatMap((plan, pi) => {
+      const publishedPlans = matchingPlans
+        .filter((plan) => plan?.status === 'published' && !plan?.isDraft)
+        .sort((a, b) => getPlanTimestamp(b) - getPlanTimestamp(a));
+      const publishedChapterTitles = new Set();
+      const publishedChapters = publishedPlans.flatMap((plan, pi) => {
         const plannerChapters = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
         const rawChapters = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
         const source = plannerChapters.length > 0 ? plannerChapters : rawChapters;
         return source.map((ch, ci) => normalizeLoadedChapter(ch, plan, pi * 100 + ci));
+      }).filter((chapter) => {
+        const titleKey = normalizeChapterTitle(chapter.title);
+        if (!titleKey || publishedChapterTitles.has(titleKey)) return false;
+        publishedChapterTitles.add(titleKey);
+        return true;
       });
+
+      // Drafts contain the full editable builder state (uploads, notes, assessments,
+      // instructional flow, etc.). Restore the most recently updated one and attach
+      // published IDs where possible so a later Publish performs an update, not a duplicate.
+      const latestDraft = matchingPlans
+        .filter((plan) => plan?.isDraft || plan?.status === 'draft')
+        .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0] || null;
+      const loadedDraftChapters = Array.isArray(latestDraft?.rawChapters)
+        ? latestDraft.rawChapters.map((chapter, index) => normalizeLoadedChapter(chapter, latestDraft, index))
+        : [];
+      const preferredPublishedIdByTitle = new Map(
+        publishedChapters.map((chapter) => [normalizeChapterTitle(chapter.title), chapter.publishedPlanId])
+      );
+      const draftChapterByTitle = new Map();
+      loadedDraftChapters.forEach((chapter) => {
+        const titleKey = normalizeChapterTitle(chapter.title) || toIdString(chapter.id);
+        const existing = draftChapterByTitle.get(titleKey);
+        const preferredPublishedId = preferredPublishedIdByTitle.get(titleKey);
+        if (!existing || (chapter.publishedPlanId && chapter.publishedPlanId === preferredPublishedId)) {
+          draftChapterByTitle.set(titleKey, chapter);
+        }
+      });
+      const draftChapters = Array.from(draftChapterByTitle.values());
+
+      const matchedPublishedIds = new Set();
+      const restoredDraftChapters = draftChapters.map((draftChapter) => {
+        const matchingPublished = publishedChapters.find((publishedChapter) => {
+          if (draftChapter.publishedPlanId && draftChapter.publishedPlanId === publishedChapter.publishedPlanId) return true;
+          return normalizeChapterTitle(draftChapter.title) === normalizeChapterTitle(publishedChapter.title);
+        });
+        if (!matchingPublished) return draftChapter;
+        matchedPublishedIds.add(matchingPublished.publishedPlanId);
+        return {
+          ...draftChapter,
+          id: matchingPublished.id,
+          publishedPlanId: matchingPublished.publishedPlanId,
+          publishedChapterTitle: matchingPublished.title,
+          status: 'published',
+          isDraft: false,
+        };
+      });
+
+      const nextChapters = latestDraft
+        ? [
+            ...restoredDraftChapters,
+            ...publishedChapters.filter((chapter) => !matchedPublishedIds.has(chapter.publishedPlanId)),
+          ]
+        : publishedChapters;
 
       if (requestSeq !== chapterLoadSeqRef.current) return;
 
       setChapters(nextChapters);
       setOpenChapterIds((prev) => prev.filter((cid) => nextChapters.some((ch) => ch.id === cid)));
-      setAutosaveStatus(nextChapters.length > 0 ? 'Chapters loaded' : 'No chapters yet');
-      // Published plans only — reset draft tracking so autosave creates a fresh draft
-      setCurrentDraftId(null);
-      localStorage.removeItem('currentLessonPlanDraft');
+      setAutosaveStatus(latestDraft ? 'Draft restored' : nextChapters.length > 0 ? 'Chapters loaded' : 'No chapters yet');
+      const restoredDraftId = toIdString(latestDraft?._id);
+      setCurrentDraftId(restoredDraftId || null);
+      if (restoredDraftId) localStorage.setItem('currentLessonPlanDraft', restoredDraftId);
+      else localStorage.removeItem('currentLessonPlanDraft');
     } catch (err) {
       if (requestSeq !== chapterLoadSeqRef.current) return;
       setChapters([]);
@@ -275,6 +335,7 @@ const AIPoweredTeaching = () => {
 
   // Stable timer ref — one timer at a time, never lost across re-renders
   const autosaveTimerRef = useRef(null);
+  const autosaveDirtyRef = useRef(false);
 
   const saveDraft = async () => {
     const { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject } = autosaveStateRef.current;
@@ -305,6 +366,7 @@ const AIPoweredTeaching = () => {
           setCurrentDraftId(draftId);
           localStorage.setItem('currentLessonPlanDraft', draftId);
         }
+        autosaveDirtyRef.current = false;
         setAutosaveStatus('Draft saved');
         return;
       }
@@ -323,12 +385,39 @@ const AIPoweredTeaching = () => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to save draft');
 
+      autosaveDirtyRef.current = false;
       setAutosaveStatus('Saved just now');
     } catch (err) {
       setAutosaveStatus('Save failed');
       console.error('Autosave failed:', err?.message);
     }
   };
+
+  // Flush a pending edit when the teacher leaves this route before the debounce
+  // timer fires. `keepalive` lets the request finish during page navigation.
+  useEffect(() => () => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    if (!autosaveDirtyRef.current) return;
+
+    const snapshot = autosaveStateRef.current;
+    if (!snapshot.selectedClass || !snapshot.selectedSection || !snapshot.selectedSubject) return;
+
+    const draftId = toIdString(snapshot.currentDraftId);
+    fetch(draftId
+      ? `${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`
+      : `${API_BASE}/api/lesson-plans/teacher/draft`, {
+      method: draftId ? 'PUT' : 'POST',
+      headers: authHeaders(),
+      keepalive: true,
+      body: JSON.stringify({
+        title: 'Lesson Plan Draft',
+        rawChapters: snapshot.chapters,
+        classId: snapshot.selectedClass,
+        sectionId: snapshot.selectedSection,
+        subjectId: snapshot.selectedSubject,
+      }),
+    }).catch((err) => console.error('Final autosave failed:', err?.message));
+  }, []);
 
   useEffect(() => {
     const userType = localStorage.getItem('userType');
@@ -382,6 +471,7 @@ const AIPoweredTeaching = () => {
 
   const touchAutosave = () => {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveDirtyRef.current = true;
     setAutosaveStatus('Saving...');
     autosaveTimerRef.current = setTimeout(saveDraft, 2000);
   };
@@ -511,7 +601,7 @@ const AIPoweredTeaching = () => {
         }),
       });
       toast.success('Material indexed for AI — ready for the next steps');
-    } catch (_) {
+    } catch {
       // Non-blocking: AI indexing failure shouldn't disrupt the upload flow
     }
   };
@@ -816,7 +906,7 @@ const AIPoweredTeaching = () => {
       setPublishProgress(100);
 
       // If it was a new chapter, update its state with the new plan ID
-      const newPlanId = data?.data?._id;
+      const newPlanId = data?.plan?._id || data?.data?._id;
       updateChapter(chapterId, (ch) => ({
         ...ch,
         publishedPlanId: isUpdate ? ch.publishedPlanId : newPlanId,
@@ -894,12 +984,12 @@ const AIPoweredTeaching = () => {
   const activeChapter = openChapters[openChapters.length - 1] || null;
 
   return (
-    <div className="h-full min-h-0 overflow-hidden bg-[#f4f7fb] p-2.5 sm:p-4 dark:bg-slate-950">
+    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-2 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
       <Motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="mx-auto flex h-full max-w-[1440px] min-h-0 flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] sm:rounded-[40px]"
+        className="mx-auto flex min-h-full w-full max-w-[1440px] min-w-0 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] sm:rounded-[32px] lg:h-full lg:min-h-0 lg:rounded-[40px]"
       >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
@@ -948,22 +1038,14 @@ const AIPoweredTeaching = () => {
           }}
         />
 
-        {activeChapter && (
-          <div className="flex justify-end px-2 pt-1 sm:px-3">
-            
-          </div>
-        )}
-
-        <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-2.5 sm:p-3 lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:min-h-0 lg:flex-row">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
             query={searchQuery}
             onQueryChange={setSearchQuery}
             onSelect={(id) => {
-              if (!openChapterIds.includes(id)) {
-                setOpenChapterIds((prev) => [...prev, id]);
-              }
+              setOpenChapterIds([id]);
               setActiveStep(0);
             }}
             onAdd={handleAddChapter}
@@ -976,9 +1058,9 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-[28px] bg-white">
+          <div className="min-w-0 flex-1 overflow-y-auto rounded-[22px] bg-white sm:rounded-[28px] lg:min-h-0">
             {openChapters.length > 0 ? (
-              <div className="space-y-4 overflow-y-auto pb-4 pr-1">
+              <div className="min-w-0 space-y-4 pb-4 pr-1">
                 {openChapters.map((chapter) => (
                   <DrawerModal
                     key={chapter.id}
