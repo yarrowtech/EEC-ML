@@ -546,7 +546,7 @@ router.get('/', authTeacher, async (req, res) => {
         campusType: teacher?.campusType || null,
       },
       stats: {
-        totalStudents: students.length,
+        totalStudents: scopedStudents.length,
         attendanceRate,
         pendingEvaluations,
         upcomingEvents: upcomingClasses.length,
