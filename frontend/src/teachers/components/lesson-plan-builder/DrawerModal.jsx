@@ -1251,7 +1251,7 @@ const DrawerModal = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
-          className="flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] dark:border-slate-700 dark:bg-slate-900"
+          className="flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900"
         >
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[22px] border-b border-[#ebf0f6] bg-[#fafcff] px-3 py-3 sm:rounded-t-[28px] sm:px-5 sm:py-4 dark:border-slate-800 dark:bg-slate-800/60">
@@ -1303,7 +1303,7 @@ const DrawerModal = ({
           </div>
 
           {/* Step content */}
-          <div className="max-h-none min-w-0 overflow-y-auto bg-white p-3 sm:p-5 lg:max-h-[52vh] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:bg-slate-900 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
+          <div className="max-h-none min-w-0 overflow-y-auto bg-white p-3 sm:p-5 lg:min-h-0 lg:flex-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:bg-slate-900 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
             <motion.div
               key={currentStep}
               initial={{ opacity: 0, x: 10 }}

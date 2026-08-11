@@ -1058,9 +1058,9 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="min-w-0 flex-1 overflow-y-auto rounded-[22px] bg-white sm:rounded-[28px] lg:min-h-0">
+          <div className="min-w-0 flex-1 overflow-y-auto rounded-[22px] bg-white sm:rounded-[28px] lg:h-full lg:min-h-0">
             {openChapters.length > 0 ? (
-              <div className="min-w-0 space-y-4 pb-4 pr-1">
+              <div className="min-w-0 space-y-4 pb-4 pr-1 lg:h-full lg:min-h-0 lg:pb-0">
                 {openChapters.map((chapter) => (
                   <DrawerModal
                     key={chapter.id}
