@@ -2767,13 +2767,18 @@ const Students = ({ setShowAdminHeader }) => {
 
       const payload = [];
       const skippedRows = [];
+      const blankRows = [];
 
       // Process each row
       for (let r = startRow; r < rows.length; r++) {
         const raw = rows[r];
 
-        // Skip empty rows
-        if (!raw || raw.every((c) => !String(c || "").trim())) continue;
+        // Skip empty rows (tracked, not just silently dropped, so a row
+        // that gets mistaken for blank is still visible/debuggable)
+        if (!raw || raw.every((c) => !String(c || "").trim())) {
+          blankRows.push(r + 1);
+          continue;
+        }
 
         // Build student object from row data
         const student = {};
@@ -2864,6 +2869,12 @@ const Students = ({ setShowAdminHeader }) => {
           enrollmentNo: student.enrollmentNo || "",
         });
       }
+
+      console.log(
+        `[bulk import] file rows: ${rows.length}, startRow: ${startRow}, ` +
+        `valid: ${payload.length}, skipped: ${skippedRows.length}, blank: ${blankRows.length}` +
+        (blankRows.length ? ` (excel rows: ${blankRows.join(", ")})` : "")
+      );
 
       if (!payload.length) {
         Swal.fire({

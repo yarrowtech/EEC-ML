@@ -224,7 +224,25 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           motherPhone: row.motherPhone || '',
         };
 
-        const studentUser = await StudentUser.create(payload);
+        // The next sequence number is computed once per prefix and
+        // incremented in memory, so it can collide with a username created
+        // concurrently (e.g. another bulk-import job still finishing).
+        // Retry with the next number instead of failing the whole row.
+        let studentUser;
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            studentUser = await StudentUser.create(payload);
+            break;
+          } catch (createErr) {
+            const isDuplicateUsername = createErr?.code === 11000 && createErr?.keyPattern?.username;
+            if (!isDuplicateUsername || attempt >= 5) throw createErr;
+            const retrySequence = sequenceByPrefix.get(prefix);
+            const retryUsername = `${prefix}${padNumber(retrySequence)}`;
+            sequenceByPrefix.set(prefix, retrySequence + 1);
+            payload.username = retryUsername;
+            payload.studentCode = retryUsername;
+          }
+        }
 
         const parentName =
           row.guardianName ||
@@ -270,12 +288,8 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
               });
               parentSequenceByPrefix.set(parentPrefix, nextSeq);
             }
-            const nextParentSeq = parentSequenceByPrefix.get(parentPrefix);
-            const parentUsername = `${parentPrefix}${padNumber(nextParentSeq)}`;
-            parentSequenceByPrefix.set(parentPrefix, nextParentSeq + 1);
             const parentPassword = generatePassword();
-            parentUser = await ParentUser.create({
-              username: parentUsername,
+            const parentPayload = {
               password: parentPassword,
               initialPassword: parentPassword,
               schoolId,
@@ -286,7 +300,19 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
               childrenIds: [studentUser._id],
               children: [row.name || payload.name],
               grade: [payload.grade || ''],
-            });
+            };
+            for (let attempt = 0; ; attempt += 1) {
+              const nextParentSeq = parentSequenceByPrefix.get(parentPrefix);
+              parentPayload.username = `${parentPrefix}${padNumber(nextParentSeq)}`;
+              parentSequenceByPrefix.set(parentPrefix, nextParentSeq + 1);
+              try {
+                parentUser = await ParentUser.create(parentPayload);
+                break;
+              } catch (createErr) {
+                const isDuplicateUsername = createErr?.code === 11000 && createErr?.keyPattern?.username;
+                if (!isDuplicateUsername || attempt >= 5) throw createErr;
+              }
+            }
           } else {
             const existingIds = new Set((parentUser.childrenIds || []).map((id) => String(id)));
             if (!existingIds.has(String(studentUser._id))) {
