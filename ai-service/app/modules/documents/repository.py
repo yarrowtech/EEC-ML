@@ -1,3 +1,7 @@
+# Copyright (c) 2026 HouseofMusa and YarrowTech
+# All rights reserved. Unauthorized copying, modification, distribution,
+# or duplication is prohibited without prior written permission.
+
 import logging
 import uuid
 from typing import Any
@@ -16,9 +20,13 @@ from qdrant_client.models import (
 from app.core.config import settings
 from app.core.qdrant import make_qdrant_client
 logger = logging.getLogger(__name__)
+_collection_ready = False
 
 
 def _ensure_collection() -> None:
+    global _collection_ready
+    if _collection_ready:
+        return
     client = make_qdrant_client()
     existing = {c.name for c in client.get_collections().collections}
     if settings.qdrant_collection not in existing:
@@ -29,8 +37,10 @@ def _ensure_collection() -> None:
         logger.info("Created Qdrant collection %s", settings.qdrant_collection)
 
     for field in (
-        "school_id", "class_id", "section_id", "chapter_title",
-        "chapter_id", "subject_name", "material_id", "source_id",
+        "school_id", "class_id", "section_id", "academic_year_id", "chapter_title",
+        "chapter_id", "subject_id", "subject_name", "discipline", "curriculum_code",
+        "material_id", "source_id", "concepts", "formulas", "units",
+        "chunk_type",
     ):
         try:
             client.create_payload_index(
@@ -40,6 +50,7 @@ def _ensure_collection() -> None:
             )
         except Exception:
             pass
+    _collection_ready = True
 
 
 def _point_id(source_id: str, chunk_index: int) -> str:
@@ -50,17 +61,25 @@ def upsert_chunks(
     *,
     material_id: str,
     source_id: str,
+    source_url: str,
     source_name: str,
     school_id: str,
     class_id: str,
     section_id: str,
+    academic_year_id: str,
+    subject_id: str,
     subject_name: str,
+    discipline: str,
+    curriculum_code: str,
     chapter_id: str,
     chapter_title: str,
     topic_title: str,
     chunks: list[str],
     vectors: list[list[float]],
-    start_chars: list[int] | None = None,
+    start_chars: list[int | None] | None = None,
+    chunk_metadata: list[dict] | None = None,
+    page_numbers: list[int | None] | None = None,
+    chunk_types: list[str] | None = None,
 ) -> int:
     _ensure_collection()
     client = make_qdrant_client()
@@ -72,17 +91,27 @@ def upsert_chunks(
             payload={
                 "material_id": material_id,
                 "source_id": source_id,
+                "source_url": source_url,
                 "source_name": source_name,
                 "school_id": school_id,
                 "class_id": class_id,
                 "section_id": section_id,
+                "academic_year_id": academic_year_id,
+                "subject_id": subject_id,
                 "subject_name": subject_name_norm,
+                "discipline": discipline,
+                "curriculum_code": curriculum_code,
                 "chapter_id": chapter_id,
                 "chapter_title": chapter_title,
                 "topic_title": topic_title,
                 "chunk_text": chunk,
                 "chunk_index": i,
+                "chunk_type": chunk_types[i] if chunk_types else "text",
+                "page_number": page_numbers[i] if page_numbers else None,
                 "start_char": start_chars[i] if start_chars else None,
+                "concepts": (chunk_metadata[i].get("concepts", []) if chunk_metadata else []),
+                "formulas": (chunk_metadata[i].get("formulas", []) if chunk_metadata else []),
+                "units": (chunk_metadata[i].get("units", []) if chunk_metadata else []),
             },
         )
         for i, (chunk, vector) in enumerate(zip(chunks, vectors))
@@ -96,6 +125,9 @@ def get_chapter_chunks(
     school_id: str,
     class_id: str | None = None,
     section_id: str | None = None,
+    academic_year_id: str | None = None,
+    subject_id: str | None = None,
+    subject_name: str | None = None,
     chapter_title: str,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
@@ -115,6 +147,12 @@ def get_chapter_chunks(
         conditions.append(FieldCondition(key="class_id", match=MatchValue(value=class_id)))
     if section_id:
         conditions.append(FieldCondition(key="section_id", match=MatchValue(value=section_id)))
+    if academic_year_id:
+        conditions.append(FieldCondition(key="academic_year_id", match=MatchValue(value=academic_year_id)))
+    if subject_id:
+        conditions.append(FieldCondition(key="subject_id", match=MatchValue(value=subject_id)))
+    elif subject_name:
+        conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
 
     try:
         results, _ = client.scroll(
@@ -138,7 +176,16 @@ def get_chapter_chunks(
             "chunk_index": point.payload.get("chunk_index", 0),
             "start_char": point.payload.get("start_char"),
             "source_name": point.payload.get("source_name", ""),
+            "source_url": point.payload.get("source_url", ""),
             "material_id": point.payload.get("material_id", ""),
+            "chunk_type": point.payload.get("chunk_type", "text"),
+            "page_number": point.payload.get("page_number"),
+            "subject_id": point.payload.get("subject_id", ""),
+            "discipline": point.payload.get("discipline", ""),
+            "curriculum_code": point.payload.get("curriculum_code", ""),
+            "concepts": point.payload.get("concepts", []),
+            "formulas": point.payload.get("formulas", []),
+            "units": point.payload.get("units", []),
         }
         for point in results
         if point.payload.get("chunk_text")
@@ -157,12 +204,51 @@ def delete_material_chunks(material_id: str) -> None:
     )
 
 
+def get_material_source(
+    *,
+    material_id: str,
+    school_id: str,
+    class_id: str | None = None,
+    section_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Resolve one source only inside the requesting student's tenant/class scope."""
+
+    conditions = [
+        FieldCondition(key="material_id", match=MatchValue(value=material_id)),
+        FieldCondition(key="school_id", match=MatchValue(value=school_id)),
+    ]
+    if class_id:
+        conditions.append(FieldCondition(key="class_id", match=MatchValue(value=class_id)))
+    if section_id:
+        conditions.append(FieldCondition(key="section_id", match=MatchValue(value=section_id)))
+    try:
+        points, _ = make_qdrant_client().scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=Filter(must=conditions),
+            limit=1,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        logger.warning("Qdrant material source lookup failed: %s", exc)
+        return None
+    if not points:
+        return None
+    payload = points[0].payload or {}
+    return {
+        "source_url": payload.get("source_url", ""),
+        "source_name": payload.get("source_name", ""),
+    }
+
+
 def search_chunks(
     *,
     query_vector: list[float],
     school_id: str,
     class_id: str | None = None,
     section_id: str | None = None,
+    academic_year_id: str | None = None,
+    subject_id: str | None = None,
     chapter_title: str | None = None,
     subject_name: str | None = None,
     limit: int = 6,
@@ -175,9 +261,13 @@ def search_chunks(
         conditions.append(FieldCondition(key="class_id", match=MatchValue(value=class_id)))
     if section_id:
         conditions.append(FieldCondition(key="section_id", match=MatchValue(value=section_id)))
+    if academic_year_id:
+        conditions.append(FieldCondition(key="academic_year_id", match=MatchValue(value=academic_year_id)))
+    if subject_id:
+        conditions.append(FieldCondition(key="subject_id", match=MatchValue(value=subject_id)))
     if chapter_title:
         conditions.append(FieldCondition(key="chapter_title", match=MatchValue(value=chapter_title)))
-    if subject_name and not chapter_title:
+    if subject_name and not chapter_title and not subject_id:
         conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
 
     try:
@@ -201,7 +291,16 @@ def search_chunks(
             "topic_title": hit.payload.get("topic_title", ""),
             "chunk_index": hit.payload.get("chunk_index", 0),
             "source_name": hit.payload.get("source_name", ""),
+            "source_url": hit.payload.get("source_url", ""),
             "material_id": hit.payload.get("material_id", ""),
+            "chunk_type": hit.payload.get("chunk_type", "text"),
+            "page_number": hit.payload.get("page_number"),
+            "subject_id": hit.payload.get("subject_id", ""),
+            "discipline": hit.payload.get("discipline", ""),
+            "curriculum_code": hit.payload.get("curriculum_code", ""),
+            "concepts": hit.payload.get("concepts", []),
+            "formulas": hit.payload.get("formulas", []),
+            "units": hit.payload.get("units", []),
         }
         for hit in response.points
     ]

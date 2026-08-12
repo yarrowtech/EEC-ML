@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Candidate(BaseModel):
@@ -19,12 +19,18 @@ class TutorGenerateRequest(BaseModel):
     gradeLevel: str | None = None
     questionType: str | None = None
     question: str | None = None
-    candidates: list[Candidate] = []
+    candidates: list[Candidate] = Field(default_factory=list)
     schoolId: str | None = None
     classId: str | None = None
     sectionId: str | None = None
+    academicYearId: str | None = None
+    subjectId: str | None = None
+    discipline: str | None = None
+    curriculumCode: str | None = None
     chapterTitle: str | None = None
     difficulty: str | None = None
+    responseDepth: str | None = None
+    learningGoal: str | None = None
     wrongAnswer: str | None = None
     # Student personalisation fields
     studentContext: str | None = None          # built by studentContextBuilder.js

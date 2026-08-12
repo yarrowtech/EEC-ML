@@ -16,6 +16,7 @@ Student Management
 Teaching Tools
 - Smart Teaching: /teacher/smart-teaching (Alias: /teacher/ai-powered-teaching)
 - Smart Teaching Lesson Planner: /teacher/smart-teaching/lesson-planner
+- Lesson Plan Builder: /teacher/lesson-plan (active-year classes are deduplicated; subjects merge the teacher's allocation and timetable records; demo fallback options are suppressed; uploaded PDF/DOCX/PPT files report AI-ready only after Qdrant ingestion succeeds with class, section, academic-year, subject, and chapter metadata)
 - Smart Teaching Lesson Planner Wizard: /teacher/smart-teaching/lesson-planner-wizard
 - Teaching Resources (Academic Alcove): /teacher/academic-alcove
 - AI Learning Path: /teacher/ai-learning/:studentId/:subject

@@ -1,4 +1,5 @@
 const express = require('express');
+const { logger } = require('../utils/logger');
 const router = express.Router();
 const mongoose = require('mongoose');
 const PracticePaper = require('../models/PracticePaper');
@@ -157,7 +158,7 @@ router.post('/', authTeacher, async (req, res, next) => {
       paper
     });
   } catch (error) {
-    console.error('Error creating practice paper:', error);
+    logger.error('Error creating practice paper:', error);
     next(error);
   }
 });
@@ -196,7 +197,7 @@ router.get('/teacher', authTeacher, async (req, res, next) => {
       pages: Math.ceil(total / parseInt(limit))
     });
   } catch (error) {
-    console.error('Error fetching papers:', error);
+    logger.error('Error fetching papers:', error);
     next(error);
   }
 });
@@ -222,7 +223,7 @@ router.get('/:id', authTeacher, async (req, res, next) => {
       paper
     });
   } catch (error) {
-    console.error('Error fetching paper:', error);
+    logger.error('Error fetching paper:', error);
     next(error);
   }
 });
@@ -263,7 +264,7 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
       paper
     });
   } catch (error) {
-    console.error('Error updating paper:', error);
+    logger.error('Error updating paper:', error);
     next(error);
   }
 });
@@ -289,7 +290,7 @@ router.delete('/:id', authTeacher, async (req, res, next) => {
       message: 'Practice paper deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting paper:', error);
+    logger.error('Error deleting paper:', error);
     next(error);
   }
 });
@@ -320,7 +321,7 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
       paper
     });
   } catch (error) {
-    console.error('Error publishing paper:', error);
+    logger.error('Error publishing paper:', error);
     next(error);
   }
 });
@@ -399,7 +400,7 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       pages: Math.ceil(total / parseInt(limit))
     });
   } catch (error) {
-    console.error('Error fetching papers:', error);
+    logger.error('Error fetching papers:', error);
     next(error);
   }
 });
@@ -459,7 +460,7 @@ router.get('/student/papers/:id', authStudent, async (req, res, next) => {
       paper: paperResponse
     });
   } catch (error) {
-    console.error('Error fetching paper:', error);
+    logger.error('Error fetching paper:', error);
     next(error);
   }
 });
@@ -593,7 +594,7 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
 
     res.json(responseData);
   } catch (error) {
-    console.error('Error submitting paper:', error);
+    logger.error('Error submitting paper:', error);
     next(error);
   }
 });
@@ -643,7 +644,7 @@ router.get('/student/papers/:id/attempts', authStudent, async (req, res, next) =
       }))
     });
   } catch (error) {
-    console.error('Error fetching attempts:', error);
+    logger.error('Error fetching attempts:', error);
     next(error);
   }
 });

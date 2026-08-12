@@ -3,84 +3,34 @@ import logging
 import re
 
 from fastapi import APIRouter, HTTPException
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.llm import LONG_OUTPUT_MODES, active_model_name, create_chain
+from app.core.llm import active_model_name, create_chain
 from app.modules.chat.schemas import LearningPathRequest, SummariseSessionRequest, TeacherAIRequest, TutorGenerateRequest
-from app.modules.chat.service import NOT_FOUND_MESSAGE, build_prompt, retrieve_relevant_chunks_with_citations
-from app.modules.parser.cleaner import _strip_teacher_notes, _strip_injection_attempts
+from app.modules.chat.service import (
+    MODE_INSTRUCTIONS,
+    generate_tutor_response,
+    retrieve_relevant_chunks_with_citations,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/generate", tags=["Chat"])
 
-_LONG_OUTPUT_MODES = LONG_OUTPUT_MODES
 
-# Safety guardrail prepended to every student-facing tutor system prompt
-_SAFETY_PREFIX = (
-    "You are a school tutor for students aged 6–18. "
-    "You must ONLY answer questions directly related to the study material provided below. "
-    "If asked anything unrelated to the material — personal questions, political topics, "
-    "adult content, violence, or any topic outside the provided text — respond with: "
-    "'I can only help with your study material. Please ask your teacher about anything else.' "
-    "Never generate harmful, adult, or inappropriate content under any circumstances.\n\n"
-)
-
+# ── Student tutor ─────────────────────────────────────────────────────────────
 
 @router.post("/tutor")
 async def generate_tutor_content(req: TutorGenerateRequest) -> dict:
-    chunks, citations = retrieve_relevant_chunks_with_citations(req)
-    if not chunks:
-        return {
-            "mode": req.mode,
-            "model": None,
-            "content": NOT_FOUND_MESSAGE,
-            "groundedInMaterial": False,
-            "noMaterialFound": True,
-            "citations": [],
-        }
+    """RAG-grounded student tutor. All pipeline logic lives in service.py."""
+    return generate_tutor_response(req)
 
-    # Strip teacher notes then sanitize against prompt injection from uploaded content
-    raw_context = _strip_teacher_notes("\n\n".join(chunks))
-    context = _strip_injection_attempts(raw_context)
 
-    system, user_prompt = build_prompt(req, context)
-    # Prepend safety guardrail to system prompt
-    system = _SAFETY_PREFIX + system
-    chain = create_chain(mode=req.mode)
-
-    # Build message list: system + optional prior conversation turns + current user prompt.
-    # Conversation history gives the LLM memory of what was discussed in this session.
-    messages: list = [SystemMessage(content=system)]
-    if req.conversationHistory:
-        for turn in req.conversationHistory:
-            if turn.role == "assistant":
-                messages.append(AIMessage(content=turn.text))
-            else:
-                messages.append(HumanMessage(content=turn.text))
-    messages.append(HumanMessage(content=user_prompt))
-
-    try:
-        content = chain.invoke(messages)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
-
-    return {
-        "mode": req.mode,
-        "model": active_model_name(),
-        "content": content,
-        "groundedInMaterial": True,
-        "noMaterialFound": False,
-        "citations": citations,  # [{material_id, source_name, chapter_title}]
-    }
-
+# ── Session summarization ─────────────────────────────────────────────────────
 
 @router.post("/summarize-session")
 async def summarize_session(req: SummariseSessionRequest) -> dict:
-    """
-    Condenses a tutor conversation into a rolling memory summary and key insights.
-    Called fire-and-forget after a session crosses the turn threshold.
-    """
+    """Condenses a tutor conversation into a rolling memory summary and key insights."""
     if not req.conversation or len(req.conversation.strip()) < 50:
         return {"summary": "", "keyInsights": []}
 
@@ -102,7 +52,6 @@ async def summarize_session(req: SummariseSessionRequest) -> dict:
     chain = create_chain(mode="summarize")
     try:
         raw = chain.invoke([SystemMessage(content=system), HumanMessage(content=user_prompt)])
-        # Strip markdown fences if the model wrapped it anyway
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(cleaned)
         return {
@@ -110,9 +59,10 @@ async def summarize_session(req: SummariseSessionRequest) -> dict:
             "keyInsights": [str(i) for i in data.get("keyInsights", [])[:5]],
         }
     except Exception:
-        # JSON parse or LLM failure — return empty so the caller ignores it gracefully
         return {"summary": "", "keyInsights": []}
 
+
+# ── Learning path ─────────────────────────────────────────────────────────────
 
 _BLOOM_LEVELS = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
 _TIERS = ["blue", "orange", "purple", "green"]
@@ -139,7 +89,6 @@ def _build_learning_path_prompt(req: LearningPathRequest) -> str:
     mastery_lines = "\n".join(
         f"  - {d.name}: {d.value}%" for d in req.mastery
     ) if req.mastery else "  - Overall: 50%"
-
     return (
         f"Student: {req.studentName}\n"
         f"Subject: {req.subject}\n"
@@ -153,10 +102,7 @@ def _build_learning_path_prompt(req: LearningPathRequest) -> str:
 
 
 def _extract_json_array(text: str) -> list:
-    """Pull the first JSON array out of raw LLM text (handles stray prose / fences)."""
-    # Strip markdown fences
     text = re.sub(r"```(?:json)?", "", text).strip()
-    # Find the first '[' and matching ']'
     start = text.find("[")
     if start == -1:
         raise ValueError("No JSON array found in LLM output")
@@ -167,7 +113,7 @@ def _extract_json_array(text: str) -> list:
         elif ch == "]":
             depth -= 1
             if depth == 0:
-                return json.loads(text[start : i + 1])
+                return json.loads(text[start: i + 1])
     raise ValueError("Unclosed JSON array in LLM output")
 
 
@@ -193,7 +139,7 @@ def _validate_nodes(raw: list) -> list:
 
 @router.post("/learning-path")
 async def generate_learning_path(req: LearningPathRequest) -> dict:
-    chain = create_chain(mode="notes")  # structured, low-temperature
+    chain = create_chain(mode="notes")
     try:
         raw_text = chain.invoke([
             SystemMessage(content=_LEARNING_PATH_SYSTEM),
@@ -215,6 +161,8 @@ async def generate_learning_path(req: LearningPathRequest) -> dict:
     return {"nodes": nodes, "model": active_model_name()}
 
 
+# ── Teacher AI ────────────────────────────────────────────────────────────────
+
 _TEACHER_MODES = {
     "lesson_content", "hinge_question", "class_performance_summary",
     "parent_report", "exit_ticket_grade", "idoweedo", "quiz_generate",
@@ -235,8 +183,6 @@ _TEACHER_LONG_OUTPUT_MODES = {
 @router.post("/teacher")
 async def generate_teacher_content(req: TeacherAIRequest) -> dict:
     """Teacher-only AI generation — no RAG; caller supplies context directly."""
-    from app.modules.chat.service import MODE_INSTRUCTIONS
-
     if req.mode not in _TEACHER_MODES:
         raise HTTPException(status_code=400, detail=f"Unsupported teacher mode: {req.mode}")
 
@@ -247,7 +193,6 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
         f"You are an expert AI assistant helping a {grade} teacher with {req.subject}. "
         "Follow the task instructions precisely. Be specific, actionable, and professional."
     )
-
     context_block = f"\nContext / Data:\n{req.context}" if req.context else ""
     question_block = f"\nAdditional details:\n{req.question}" if req.question else ""
     user_prompt = (
@@ -258,10 +203,7 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
 
     chain = create_chain(mode=req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain")
     try:
-        content = chain.invoke([
-            SystemMessage(content=system),
-            HumanMessage(content=user_prompt),
-        ])
+        content = chain.invoke([SystemMessage(content=system), HumanMessage(content=user_prompt)])
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 

@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const mongoose = require('mongoose');
 
 // Quiz question subdocument
@@ -115,6 +121,13 @@ const teachingMaterialSchema = new mongoose.Schema({
     ref: 'Subject',
     index: true
   },
+  academicYearId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AcademicYear',
+    default: null,
+    index: true
+  },
+  curriculumCode: { type: String, default: '', trim: true, index: true },
   className: { type: String, default: '' },
   sectionName: { type: String, default: '' },
   subjectName: { type: String, default: '' },

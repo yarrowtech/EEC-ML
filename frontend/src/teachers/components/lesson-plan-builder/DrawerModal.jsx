@@ -43,6 +43,7 @@ import FileUploadCard from './FileUploadCard';
 import AssessmentCard from './AssessmentCard';
 import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
+import { API_BASE } from '@/config/api';
 
 const MotionButton = motion.button;
 export const DEFAULT_INSTRUCTIONAL_FLOW = [
@@ -95,7 +96,6 @@ const SectionTitle = ({ icon, iconColor, children }) => (
   </p>
 );
 
-const API_BASE = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
 const authHdrs = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
 
 const DrawerModal = ({
@@ -106,6 +106,7 @@ const DrawerModal = ({
   classId,
   sectionId,
   subjectId,
+  subjectName,
   onClose,
   onUpdate,
   onAddContentFile,
@@ -168,7 +169,7 @@ const DrawerModal = ({
   }, [open]);
 
   const generateIdoWeeDo = async () => {
-    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const subject = subjectName || 'General';
     const topic = chapter?.title || 'Lesson Topic';
     setIdoweEdoLoading(true);
     try {
@@ -182,6 +183,7 @@ const DrawerModal = ({
           totalMinutes: 60,
           classId,
           sectionId,
+          subjectId,
           chapterTitle: chapter?.title || topic,
         }),
       });
@@ -224,7 +226,7 @@ const DrawerModal = ({
   };
 
   const generateAllContent = async () => {
-    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const subject = subjectName || 'General';
     const topic = chapter?.title || 'Lesson Topic';
     setContentGenerating(true);
     try {
@@ -237,11 +239,12 @@ const DrawerModal = ({
           gradeLevel: null,
           classId,
           sectionId,
+          subjectId,
           chapterTitle: chapter?.title || topic,
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Generation failed');
+      if (!res.ok) throw new Error(data?.error || data?.detail || 'Generation failed');
 
       const { objectives: aiObj, flow: aiFlow, explanation: aiExp, recap: aiRecap } = data.data || {};
 
@@ -251,6 +254,12 @@ const DrawerModal = ({
         'WE DO': { id: 'practice', phase: 'WE DO',          duration: '20' },
         'YOU DO':{ id: 'synthesis',phase: 'YOU DO',         duration: '15' },
       };
+
+      const generatedFieldCount = [aiObj?.length, aiExp?.trim(), aiRecap?.trim()]
+        .filter(Boolean).length;
+      if (generatedFieldCount === 0) {
+        throw new Error('AI returned no usable lesson content for this chapter');
+      }
 
       onUpdate({
         ...chapter,
@@ -272,7 +281,7 @@ const DrawerModal = ({
         // Only fill recap if empty
         recap: !chapter.recap?.trim() && aiRecap ? aiRecap : chapter.recap,
       });
-      toast.success('Content generated from your material');
+      toast.success('Content generated from your uploaded material');
     } catch (err) {
       toast.error(err?.message || 'AI generation failed');
     } finally {
@@ -293,7 +302,7 @@ const DrawerModal = ({
     const isLangStep = STEPS[currentStep]?.key === 'language';
     if (!isLangStep || langLoaded || !classId) return;
     const hdrs = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` };
-    const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+    const base = API_BASE;
     Promise.all([
       fetch(`${base}/api/reading-assessment/teacher/materials`, { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
       fetch(`${base}/api/writing-assessment/teacher/prompts`,   { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
@@ -839,7 +848,7 @@ const DrawerModal = ({
           }
           setLangSaving(true);
           try {
-            const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+            const base = API_BASE;
             const resp = await fetch(`${base}/api/reading-assessment/teacher/materials`, {
               method: 'POST',
               headers: authHdrs(),
@@ -875,7 +884,7 @@ const DrawerModal = ({
           }
           setLangSaving(true);
           try {
-            const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+            const base = API_BASE;
             const resp = await fetch(`${base}/api/writing-assessment/teacher/prompts`, {
               method: 'POST',
               headers: authHdrs(),
@@ -903,7 +912,7 @@ const DrawerModal = ({
 
         const deleteItem = async (id, mode) => {
           if (!confirm('Remove this item?')) return;
-          const base = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+          const base = API_BASE;
           const url = mode === 'reading'
             ? `${base}/api/reading-assessment/teacher/materials/${id}`
             : `${base}/api/writing-assessment/teacher/prompts/${id}`;

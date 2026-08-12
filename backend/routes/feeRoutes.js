@@ -28,76 +28,14 @@ const {
 const { capturePayment } = require('../services/paymentLifecycleService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
+const {
+  recomputeInvoiceStatus,
+  resolveSchoolId,
+  resolveParentStudents,
+  buildPaymentsByInvoice,
+} = require('../services/feeService');
 
 const router = express.Router();
-
-const resolveSchoolId = (req, res) => {
-  const schoolId = req.schoolId || req.admin?.schoolId || null;
-  if (!schoolId) {
-    res.status(400).json({ error: 'schoolId is required' });
-    return null;
-  }
-  if (!mongoose.isValidObjectId(schoolId)) {
-    res.status(400).json({ error: 'Invalid schoolId' });
-    return null;
-  }
-  return schoolId;
-};
-
-const recomputeInvoiceStatus = (invoice) => {
-  const paid = Number(invoice.paidAmount || 0);
-  const total = Math.max(
-    0,
-    Number(invoice.totalAmount || 0) - Number(invoice.discountAmount || 0)
-  );
-  const balance = Math.max(0, total - paid);
-  invoice.balanceAmount = balance;
-  if (balance === 0) {
-    invoice.status = 'paid';
-  } else if (paid > 0) {
-    invoice.status = 'partial';
-  } else {
-    invoice.status = 'due';
-  }
-};
-
-const normalizeName = (value) => String(value || '').trim();
-
-const resolveParentStudents = async ({ parent, schoolId, campusId }) => {
-  const filter = { schoolId };
-  if (campusId) filter.campusId = campusId;
-
-  if (Array.isArray(parent?.childrenIds) && parent.childrenIds.length > 0) {
-    return StudentUser.find({
-      ...filter,
-      _id: { $in: parent.childrenIds },
-    })
-      .select('name grade section studentCode roll admissionNumber username')
-      .lean();
-  }
-
-  const names = Array.isArray(parent?.children)
-    ? parent.children.map(normalizeName).filter(Boolean)
-    : [];
-  if (names.length === 0) return [];
-
-  return StudentUser.find({
-    ...filter,
-    name: { $in: names },
-  })
-    .select('name grade section studentCode roll admissionNumber username')
-    .lean();
-};
-
-const buildPaymentsByInvoice = (payments = []) => {
-  return payments.reduce((acc, payment) => {
-    const key = String(payment.invoiceId || '');
-    if (!key) return acc;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(payment);
-    return acc;
-  }, {});
-};
 
 const formatReceiptDateTime = (value) => {
   const date = new Date(value || Date.now());

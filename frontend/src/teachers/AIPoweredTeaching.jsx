@@ -169,6 +169,10 @@ const AIPoweredTeaching = () => {
   const [publishProgress, setPublishProgress] = useState(0);
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
 
+  const selectedSubjectName = useMemo(() => (
+    subjectOptions.find((option) => toIdString(option?.subjectId) === toIdString(selectedSubject))?.subjectName || ''
+  ), [selectedSubject, subjectOptions]);
+
   const authHeaders = () => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
@@ -237,6 +241,7 @@ const AIPoweredTeaching = () => {
     setClassOptions(Array.isArray(data?.classes) ? data.classes : []);
     setSectionOptions(Array.isArray(data?.sections) ? data.sections : []);
     setSubjectOptions(Array.isArray(data?.subjects) ? data.subjects : []);
+    return data;
   };
 
   const chapterLoadSeqRef = useRef(0);
@@ -443,18 +448,39 @@ const AIPoweredTeaching = () => {
       try {
         const storedSelection = readStoredSelection();
 
-        await loadOptions().catch((err) => {
+        const initialOptions = await loadOptions().catch((err) => {
           toast.error(err?.message || 'Failed to load teaching options');
+          return null;
         });
+        if (!initialOptions) return;
+
+        const storedClassIsAvailable = (initialOptions.classes || [])
+          .some((item) => toIdString(item?.id) === storedSelection.classId);
+        if (storedSelection.classId && !storedClassIsAvailable) {
+          writeStoredSelection({});
+          return;
+        }
 
         if (storedSelection.classId) {
           setSelectedClass(storedSelection.classId);
-          await loadOptions({ classId: storedSelection.classId });
+          const classOptionsData = await loadOptions({ classId: storedSelection.classId });
+          const storedSectionIsAvailable = (classOptionsData.sections || [])
+            .some((item) => toIdString(item?.id) === storedSelection.sectionId);
+          if (storedSelection.sectionId && !storedSectionIsAvailable) {
+            writeStoredSelection({ classId: storedSelection.classId });
+            return;
+          }
         }
 
         if (storedSelection.classId && storedSelection.sectionId) {
           setSelectedSection(storedSelection.sectionId);
-          await loadOptions({ classId: storedSelection.classId, sectionId: storedSelection.sectionId });
+          const sectionOptionsData = await loadOptions({ classId: storedSelection.classId, sectionId: storedSelection.sectionId });
+          const storedSubjectIsAvailable = (sectionOptionsData.subjects || [])
+            .some((item) => toIdString(item?.subjectId) === storedSelection.subjectId);
+          if (storedSelection.subjectId && !storedSubjectIsAvailable) {
+            writeStoredSelection({ classId: storedSelection.classId, sectionId: storedSelection.sectionId });
+            return;
+          }
         }
 
         if (storedSelection.classId && storedSelection.sectionId && storedSelection.subjectId) {
@@ -597,29 +623,28 @@ const AIPoweredTeaching = () => {
   const AI_INGESTIBLE_TYPES = new Set(['pdf', 'docx', 'ppt']);
 
   const ingestFileForAI = async (uploadedFile, chapterId) => {
-    if (!AI_INGESTIBLE_TYPES.has(uploadedFile.type)) return;
+    if (!AI_INGESTIBLE_TYPES.has(uploadedFile.type)) return false;
     const chapter = chapters.find((ch) => ch.id === chapterId);
-    try {
-      await fetch(`${API_BASE}/api/ai-teacher/ingest-file`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
-        },
-        body: JSON.stringify({
-          url: uploadedFile.url,
-          fileName: uploadedFile.name,
-          classId: selectedClass,
-          sectionId: selectedSection,
-          subjectName: localStorage.getItem('selectedSubjectName') || '',
-          chapterTitle: chapter?.title || '',
-          cloudinaryPublicId: uploadedFile.cloudinaryPublicId,
-        }),
-      });
-      toast.success('Material indexed for AI — ready for the next steps');
-    } catch {
-      // Non-blocking: AI indexing failure shouldn't disrupt the upload flow
+    const response = await fetch(`${API_BASE}/api/ai-teacher/ingest-file`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        url: uploadedFile.url,
+        fileName: uploadedFile.name,
+        classId: selectedClass,
+        sectionId: selectedSection,
+        subjectId: selectedSubject,
+        subjectName: selectedSubjectName,
+        chapterTitle: chapter?.title || '',
+        cloudinaryPublicId: uploadedFile.cloudinaryPublicId,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.success !== true) {
+      throw new Error(data?.detail?.detail || data?.detail || data?.error || 'AI indexing failed');
     }
+    toast.success(`Material indexed for AI (${data?.data?.chunks_indexed || 0} chunks)`);
+    return true;
   };
 
   const addContentFile = async (chapterId, file, bucket) => {
@@ -665,8 +690,11 @@ const AIPoweredTeaching = () => {
         return { ...chapter, contentUploads: newContentUploads };
       });
       toast.success('File uploaded');
-      // Fire-and-forget: ingest into AI vector store so subsequent steps can use it
-      ingestFileForAI(nextFile, chapterId);
+      try {
+        await ingestFileForAI(nextFile, chapterId);
+      } catch (ingestError) {
+        toast.error(`File uploaded, but AI indexing failed: ${ingestError?.message || 'Unknown error'}`);
+      }
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
         ...chapter,
@@ -719,7 +747,11 @@ const AIPoweredTeaching = () => {
         worksheetFiles: (chapter.worksheetFiles || []).map((item) => (item.id === tempId ? nextFile : item)),
       }));
       toast.success('Worksheet uploaded');
-      ingestFileForAI(nextFile, chapterId);
+      try {
+        await ingestFileForAI(nextFile, chapterId);
+      } catch (ingestError) {
+        toast.error(`Worksheet uploaded, but AI indexing failed: ${ingestError?.message || 'Unknown error'}`);
+      }
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
         ...chapter,
@@ -739,7 +771,7 @@ const AIPoweredTeaching = () => {
     const chapter = chapters.find((ch) => ch.id === chapterId);
     if (!chapter) return;
 
-    const subject = localStorage.getItem('selectedSubjectName') || selectedSubject || 'General';
+    const subject = selectedSubjectName || 'General';
     const topic = chapter.title || 'Lesson Topic';
 
     const toastId = toast.loading('Generating AI lesson content…');
@@ -754,6 +786,7 @@ const AIPoweredTeaching = () => {
           chapterTitle: chapter.title || topic,
           classId: selectedClass,
           sectionId: selectedSection,
+          subjectId: selectedSubject,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1087,6 +1120,7 @@ const AIPoweredTeaching = () => {
                     classId={selectedClass}
                     sectionId={selectedSection}
                     subjectId={selectedSubject}
+                    subjectName={selectedSubjectName}
                     onClose={() => handleCloseChapter(chapter.id)}
                     onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
                     onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}

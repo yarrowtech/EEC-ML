@@ -22,7 +22,6 @@ const HeaderActions = ({
   currentChapter = null,
   currentStep = 0,
 }) => {
-  const hasDynamicOptions = classOptions.length > 0;
   const stepLabels = ['Lesson Info', 'Introduction', 'Content', 'Materials', 'Assessment', 'Review & Publish'];
   const selectedChapterTitle = currentChapter?.title || 'Lesson Planner';
   const selectedChapterStatus = currentChapter?.status === 'published' && !currentChapter?.isDraft ? 'Published' : 'Draft';
@@ -46,14 +45,8 @@ const HeaderActions = ({
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
           className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[112px]"
         >
-          {hasDynamicOptions ? (
-            <>
-              <option value="">Select Class</option>
-              {classOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </>
-          ) : (
-            <><option>Class 8</option><option>Class 9</option><option>Class 10</option></>
-          )}
+          <option value="">{classOptions.length > 0 ? 'Select Class' : 'No assigned classes'}</option>
+          {classOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
 
         <ArrowRight className="hidden size-4 text-[#94a3b8] sm:block" />
@@ -68,14 +61,8 @@ const HeaderActions = ({
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
           className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[108px]"
         >
-          {hasDynamicOptions ? (
-            <>
-              <option value="">Select Section</option>
-              {sectionOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </>
-          ) : (
-            <><option>Section A</option><option>Section B</option><option>Section C</option></>
-          )}
+          <option value="">{classValue ? (sectionOptions.length > 0 ? 'Select Section' : 'No assigned sections') : 'Select a class first'}</option>
+          {sectionOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
 
         <ArrowRight className="hidden size-4 text-[#94a3b8] sm:block" />
@@ -90,14 +77,8 @@ const HeaderActions = ({
           style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
           className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[128px]"
         >
-          {hasDynamicOptions ? (
-            <>
-              <option value="">Select Subject</option>
-              {subjectOptions.map((o) => <option key={o.subjectId} value={o.subjectId}>{o.subjectName}</option>)}
-            </>
-          ) : (
-            <><option>Mathematics</option><option>Science</option><option>English</option></>
-          )}
+          <option value="">{sectionValue ? (subjectOptions.length > 0 ? 'Select Subject' : 'No assigned subjects') : 'Select a section first'}</option>
+          {subjectOptions.map((o) => <option key={o.subjectId} value={o.subjectId}>{o.subjectName}</option>)}
         </select>
         <Motion.div layout className="flex w-full min-w-0 flex-1 flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center lg:ml-auto lg:w-auto">
           <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">

@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion as Motion, useInView, AnimatePresence } from 'framer-motion';
 import {
@@ -58,6 +64,7 @@ import {
   History,
   Trash2,
   MessageSquarePlus,
+  Images,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -84,6 +91,9 @@ import { cn } from '@/lib/utils';
 import { fetchCachedJson } from '@/utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { saveLearningActivity } from '../utils/learningContinuity';
+import { TutorMessageContent, renderInlineTutorText } from './tutor/TutorMessageContent';
+import TutorVisualSources from './tutor/TutorVisualSources';
+import TutorGeneratedVisuals from './tutor/TutorGeneratedVisuals';
 import {
   createConversationId,
   deleteTutorConversation,
@@ -95,6 +105,9 @@ import {
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
 const CHIP_MODES = {
+  'Custom Chat':            'custom',
+  'Visual Explain':         'visual_explain',
+  'Visual Quiz':            'visual_quiz',
   "Explain Like I'm 10":  'explain',
   'Give Example':         'explain',
   'Create Quiz':          'quiz',
@@ -112,7 +125,6 @@ const CHIP_MODES = {
   'Hinge Questions':      'hinge_question',
 };
 
-const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
 const STREAM_TOKEN_DELAY_MS = 18;
 const GENERATED_STUDY_MEMORY_KEY = 'aiTutorGeneratedStudyMemory:v1';
 const MAX_GENERATED_STUDY_ITEMS = 8;
@@ -120,6 +132,9 @@ const MAX_GENERATED_STUDY_ITEMS = 8;
 const splitStreamTokens = (text) => String(text || '').match(/\S+\s*/g) || [];
 
 const GENERATED_MODE_META = {
+  custom:                  { label: 'Custom chat',             icon: Bot                  },
+  visual_explain:          { label: 'Visual explanation',      icon: Images               },
+  visual_quiz:             { label: 'Visual quiz',             icon: Images               },
   quiz:                    { label: 'Quiz',                    icon: Target               },
   flashcards:              { label: 'Flashcards',              icon: Layers3              },
   mind_map:                { label: 'Mind map',                icon: Network              },
@@ -186,109 +201,6 @@ const formatGeneratedTime = (value) => {
     hour: 'numeric',
     minute: '2-digit',
   });
-};
-
-const renderInlineTutorText = (text, keyPrefix) => {
-  const parts = String(text || '').split(URL_PATTERN);
-
-  return parts.flatMap((part, index) => {
-    if (!part) return [];
-
-    if (part.startsWith('http://') || part.startsWith('https://')) {
-      const [, url, trailing = ''] = part.match(/^(.*?)([),.;:!?]*)$/) || [];
-      return [
-        <a
-          key={`${keyPrefix}-url-${index}`}
-          href={url || part}
-          target="_blank"
-          rel="noreferrer"
-          className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 break-all hover:text-sky-900"
-        >
-          {url || part}
-        </a>,
-        trailing ? <React.Fragment key={`${keyPrefix}-trail-${index}`}>{trailing}</React.Fragment> : null,
-      ].filter(Boolean);
-    }
-
-    return part.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((segment, segmentIndex) => {
-      if (segment.startsWith('**') && segment.endsWith('**')) {
-        return <strong key={`${keyPrefix}-b-${index}-${segmentIndex}`}>{segment.slice(2, -2)}</strong>;
-      }
-      return <React.Fragment key={`${keyPrefix}-t-${index}-${segmentIndex}`}>{segment}</React.Fragment>;
-    });
-  });
-};
-
-const TutorMessageContent = ({ text }) => {
-  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
-
-  return (
-    <div className="space-y-1.5 break-words text-sm leading-relaxed">
-      {lines.map((line, index) => {
-        const raw = line || '';
-        const trimmed = raw.trim();
-        const indent = Math.min(3, Math.floor((raw.match(/^\s*/)?.[0]?.length || 0) / 2));
-
-        if (!trimmed) {
-          return <div key={`blank-${index}`} className="h-1.5" />;
-        }
-
-        const headingMatch = trimmed.match(/^\*\*(.+)\*\*$/);
-        if (headingMatch) {
-          return (
-            <div key={`heading-${index}`} className="pt-1 text-[15px] font-semibold text-slate-900">
-              {headingMatch[1]}
-            </div>
-          );
-        }
-
-        const numberedMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
-        if (numberedMatch) {
-          return (
-            <div key={`numbered-${index}`} className="grid grid-cols-[auto_1fr] gap-2 pt-1">
-              <span className="font-semibold text-sky-700">{numberedMatch[1]}.</span>
-              <span>{renderInlineTutorText(numberedMatch[2], `numbered-${index}`)}</span>
-            </div>
-          );
-        }
-
-        const optionMatch = trimmed.match(/^([A-D])\)\s+(.*)$/);
-        if (optionMatch) {
-          return (
-            <div key={`option-${index}`} className="grid grid-cols-[auto_1fr] gap-2 pl-4">
-              <span className="font-semibold text-slate-600">{optionMatch[1]})</span>
-              <span>{renderInlineTutorText(optionMatch[2], `option-${index}`)}</span>
-            </div>
-          );
-        }
-
-        const answerMatch = trimmed.match(/^Answer:\s*(.*)$/i);
-        if (answerMatch) {
-          return (
-            <div key={`answer-${index}`} className="mt-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-800">
-              Answer: {renderInlineTutorText(answerMatch[1], `answer-${index}`)}
-            </div>
-          );
-        }
-
-        const bulletMatch = trimmed.match(/^[-*+]\s+(.*)$/);
-        if (bulletMatch) {
-          return (
-            <div key={`bullet-${index}`} className="grid grid-cols-[auto_1fr] gap-2" style={{ paddingLeft: `${indent * 14}px` }}>
-              <span className="mt-2 size-1.5 rounded-full bg-sky-400" />
-              <span>{renderInlineTutorText(bulletMatch[1], `bullet-${index}`)}</span>
-            </div>
-          );
-        }
-
-        return (
-          <div key={`line-${index}`} style={{ paddingLeft: `${indent * 14}px` }}>
-            {renderInlineTutorText(trimmed, `line-${index}`)}
-          </div>
-        );
-      })}
-    </div>
-  );
 };
 
 // ---------------------------------------------------------------------------
@@ -2065,11 +1977,11 @@ function HingeQuestionUI({ text }) {
 // ---------------------------------------------------------------------------
 
 function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic }) {
-  if (mode === 'quiz') return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
+  if (['quiz', 'visual_quiz'].includes(mode)) return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} subject={subject} topic={topic} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} />;
-  if (mode === 'explain') return <ExplainUI text={text} />;
+  if (['explain', 'visual_explain'].includes(mode)) return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
   if (mode === 'worksheet') return <WorksheetUI text={text} />;
   if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;
@@ -2266,6 +2178,9 @@ const LEARNING_MODES = [
 ];
 
 const COMPANION_CHIPS = [
+  { label: 'Custom Chat',             icon: Bot                  },
+  { label: 'Visual Explain',          icon: Images               },
+  { label: 'Visual Quiz',             icon: Images               },
   { label: "Explain Like I'm 10",   icon: Lightbulb            },
   { label: 'Give Example',          icon: Sparkles             },
   { label: 'Create Quiz',           icon: Target               },
@@ -2287,6 +2202,8 @@ const HISTORY_PREVIEW_COUNT = 5;
 // Rotating typewriter examples shown in the composer placeholder while it's
 // empty — gives students a sense of what they can ask without cluttering the UI.
 const COMPOSER_PLACEHOLDER_EXAMPLES = [
+  'Ask your own question about this topic…',
+  'Explain the diagram on the cited page…',
   "Explain photosynthesis like I'm 10…",
   'Quiz me on fractions…',
   "Help me with today's homework…",
@@ -2296,6 +2213,8 @@ const COMPOSER_PLACEHOLDER_EXAMPLES = [
 ];
 
 const STARTER_PROMPTS = [
+  { mode: 'Custom Chat', text: 'Ask your own question about this topic', icon: Bot },
+  { mode: 'Visual Explain', text: 'Walk me through the diagram or visual step by step', icon: Images },
   { mode: "Explain Like I'm 10", text: 'Explain this topic in simple words', icon: Lightbulb },
   { mode: 'Create Quiz', text: 'Make me a 5-question quiz', icon: Target },
   { mode: 'Flashcards', text: 'Turn this chapter into flashcards', icon: Layers3 },
@@ -2304,6 +2223,14 @@ const STARTER_PROMPTS = [
 
 // Contextual next-move suggestions shown under the tutor's latest reply.
 const FOLLOW_UP_SETS = {
+  visual_explain: [
+    { label: 'Visual quiz', text: 'Create an observation question from this visual', chip: 'Visual Quiz' },
+    { label: 'Explain another label', text: 'Explain another visible label or relationship', chip: 'Visual Explain' },
+  ],
+  visual_quiz: [
+    { label: 'Explain the visual', text: 'Explain the cited visual step by step', chip: 'Visual Explain' },
+    { label: 'Another visual question', text: 'Create another observation question from the cited visual', chip: 'Visual Quiz' },
+  ],
   quiz: [
     { label: 'Explain the answers', text: 'Explain the answers to that quiz', chip: "Explain Like I'm 10" },
     { label: 'Make it harder', text: 'Give me a harder quiz on this', chip: 'Create Quiz' },
@@ -3022,8 +2949,10 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const [subjectKey, setSubjectKey] = useState('');
   const [topicTitle, setTopicTitle] = useState('');
   const [question, setQuestion] = useState('');
-  const [activeChip, setActiveChip] = useState(COMPANION_CHIPS[0].label);
+  const [activeChip, setActiveChip] = useState('Custom Chat');
   const [quizDifficulty, setQuizDifficulty] = useState('medium');
+  const [visualDepth, setVisualDepth] = useState('detailed');
+  const [visualGoal, setVisualGoal] = useState('understand');
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [attachmentName, setAttachmentName] = useState('');
@@ -3045,7 +2974,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
 
   // Auto-set quiz difficulty from mastery when quiz chip + subject + topic are all ready.
   useEffect(() => {
-    if (activeChip !== 'Create Quiz' || !topicTitle) return;
+    if (!['Create Quiz', 'Visual Quiz'].includes(activeChip) || !topicTitle) return;
     const selectedSubjectForDiff = subjects.find((s) => s.key === subjectKey);
     if (!selectedSubjectForDiff) return;
     const token = localStorage.getItem('token');
@@ -3357,7 +3286,9 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
           topic: topicTitle,
           question: outgoing,
           chapterTitle: chapterTitle || '',
-          difficulty: mode === 'quiz' ? quizDifficulty : undefined,
+          difficulty: ['quiz', 'visual_quiz'].includes(mode) ? quizDifficulty : undefined,
+          responseDepth: mode === 'visual_explain' ? visualDepth : undefined,
+          learningGoal: mode === 'visual_explain' ? visualGoal : undefined,
           wrongAnswer: opts?.wrongAnswer || undefined,
         }),
       });
@@ -3367,6 +3298,8 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
       await streamTutorMessage(assistantId, generatedContent, {
         groundedInMaterial: payload.data?.groundedInMaterial,
         noMaterialFound: payload.data?.noMaterialFound,
+        citations: Array.isArray(payload.data?.citations) ? payload.data.citations : [],
+        visuals: Array.isArray(payload.data?.visuals) ? payload.data.visuals : [],
       });
       if (generatedContent.trim()) {
         onGeneratedStudyItem(buildGeneratedStudyItem({
@@ -3621,7 +3554,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'homework_help'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -3650,7 +3583,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && ['quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'homework_help'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
@@ -3676,6 +3609,8 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                     ? <TutorMessageContent text={msg.text} />
                                     : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} />
                                   }
+                                  {!msg.streaming && <TutorGeneratedVisuals visuals={msg.visuals} />}
+                                  {!msg.streaming && <TutorVisualSources citations={msg.citations} />}
                                   {msg.streaming && (
                                     <span className="ml-1 inline-block h-4 w-1 animate-pulse rounded-full bg-[#F59E0B] align-middle" />
                                   )}
@@ -3854,7 +3789,68 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
           </div>
 
           <AnimatePresence>
-            {activeChip === 'Create Quiz' && (
+            {activeChip === 'Visual Explain' && (
+              <Motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-2 space-y-2 overflow-hidden rounded-xl border border-violet-100 bg-violet-50/60 p-2.5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="w-16 text-[11px] font-bold text-[#78827B]">Depth</span>
+                  {[
+                    ['simple', 'Simple'],
+                    ['detailed', 'Detailed'],
+                    ['deep', 'Deep lesson'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setVisualDepth(value)}
+                      aria-pressed={visualDepth === value}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
+                        visualDepth === value
+                          ? 'border-violet-500 bg-violet-500 text-white'
+                          : 'border-violet-100 bg-white text-slate-600 hover:border-violet-300'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="w-16 text-[11px] font-bold text-[#78827B]">Goal</span>
+                  {[
+                    ['understand', 'Understand'],
+                    ['revision', 'Exam revision'],
+                    ['practice', 'Guided practice'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setVisualGoal(value)}
+                      aria-pressed={visualGoal === value}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
+                        visualGoal === value
+                          ? 'border-[#F59E0B] bg-[#F59E0B] text-white'
+                          : 'border-amber-100 bg-white text-slate-600 hover:border-amber-300'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Add your own instruction below, such as “compare quarter and three-quarter turns” or “use clock examples.”
+                </p>
+              </Motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {['Create Quiz', 'Visual Quiz'].includes(activeChip) && (
               <Motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}

@@ -5,6 +5,7 @@ const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const ExamResult = require('../models/ExamResult');
 const MasteryScore = require('../models/MasteryScore');
+const ClassModel = require('../models/Class');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -28,10 +29,15 @@ const callTeacherRagAI = (payload) =>
 // AI features (quiz, content, tryout) in subsequent lesson-plan steps can use it.
 router.post('/ingest-file', authTeacher, async (req, res) => {
   try {
-    const { url, fileName, classId, sectionId, subjectName, chapterTitle, cloudinaryPublicId } = req.body || {};
+    const { url, fileName, classId, sectionId, subjectId, subjectName, chapterTitle, cloudinaryPublicId } = req.body || {};
     if (!url) return res.status(400).json({ error: 'url is required' });
+    if (!classId || !sectionId || !subjectId || !subjectName) {
+      return res.status(400).json({ error: 'classId, sectionId, subjectId, and subjectName are required for AI indexing' });
+    }
 
     const schoolId = String(req.schoolId || '');
+    const classDoc = await ClassModel.findOne({ _id: classId, schoolId }).select('academicYearId').lean();
+    if (!classDoc) return res.status(400).json({ error: 'Selected class was not found for this school' });
     // Use the Cloudinary public ID as a stable vector namespace; fall back to the URL
     const materialId = cloudinaryPublicId || url;
 
@@ -47,6 +53,8 @@ router.post('/ingest-file', authTeacher, async (req, res) => {
         school_id: schoolId,
         class_id: String(classId || ''),
         section_id: String(sectionId || ''),
+        academic_year_id: String(classDoc.academicYearId || ''),
+        subject_id: String(subjectId),
         subject_name: subjectName || '',
         chapter_title: chapterTitle || '',
         topic_title: chapterTitle || '',
@@ -66,7 +74,7 @@ router.post('/ingest-file', authTeacher, async (req, res) => {
 // uploaded materials (ingested into Qdrant on the Materials step).
 router.post('/lesson-content', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, chapterTitle, classId, sectionId } = req.body || {};
+    const { subject, topic, gradeLevel, chapterTitle, classId, sectionId, subjectId } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
 
     const payload = {
@@ -79,6 +87,7 @@ router.post('/lesson-content', authTeacher, async (req, res) => {
       schoolId: String(req.schoolId),
       classId: classId ? String(classId) : null,
       sectionId: sectionId ? String(sectionId) : null,
+      subjectId: subjectId ? String(subjectId) : null,
       chapterTitle: chapterTitle || topic,
       subTopic: null,
       difficulty: null,
@@ -266,7 +275,7 @@ router.post('/differentiated-content', authTeacher, async (req, res) => {
 // objectives, instructional flow (HOOK/I DO/WE DO/YOU DO), explanation, recap.
 router.post('/generate-content', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, classId, sectionId, chapterTitle } = req.body || {};
+    const { subject, topic, gradeLevel, classId, sectionId, subjectId, chapterTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
 
     const payload = {
@@ -301,6 +310,7 @@ router.post('/generate-content', authTeacher, async (req, res) => {
       schoolId: String(req.schoolId),
       classId: classId ? String(classId) : null,
       sectionId: sectionId ? String(sectionId) : null,
+      subjectId: subjectId ? String(subjectId) : null,
       chapterTitle: chapterTitle || topic,
       subTopic: null,
       difficulty: null,
@@ -309,6 +319,11 @@ router.post('/generate-content', authTeacher, async (req, res) => {
     };
 
     const aiRes = await callTeacherRagAI(payload);
+    if (aiRes.data?.noMaterialFound || !aiRes.data?.groundedInMaterial) {
+      return res.status(404).json({
+        error: 'No indexed material matched this class, section, subject, and chapter. Re-index the chapter material and try again.',
+      });
+    }
     const raw = (aiRes.data?.content || '').trim();
 
     // ── Parse OBJECTIVES ──────────────────────────────────────────────────────
@@ -353,6 +368,10 @@ router.post('/generate-content', authTeacher, async (req, res) => {
       .map((l) => l.replace(/^[-•*\d.]+\s*/, '').replace(/\*\*/g, '').trim())
       .filter((l) => l.length > 3);
     const recap = recapLines.map((l) => `• ${l}`).join('\n');
+
+    if (objectives.length === 0 && !explanation && !recap) {
+      return res.status(502).json({ error: 'AI returned content in an unsupported format. Please try again.' });
+    }
 
     return res.json({ success: true, data: { objectives, flow, explanation, recap, raw } });
   } catch (err) {

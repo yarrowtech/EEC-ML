@@ -1,4 +1,5 @@
 const express = require('express');
+const { logger } = require('../utils/logger');
 const router = express.Router();
 const crypto = require('crypto');
 const Assignment = require('../models/Assignment');
@@ -95,7 +96,7 @@ router.post("/add", adminAuth, async (req, res) => {
                     createdBy: req.admin?.id || null
                 });
             } catch (notifErr) {
-                console.error('Failed to create assignment notification:', notifErr);
+                logger.error('Failed to create assignment notification:', notifErr);
                 // Don't fail the entire request if notification fails
             }
         }
@@ -122,7 +123,7 @@ router.get("/teacher/my-classes", authTeacher, async (req, res) => {
         const teacherId = req.user?.id || req.teacher?.id;
         if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
 
-        console.log('Teacher my-classes request:', { teacherId, schoolId, campusId });
+        logger.info('Teacher my-classes request:', { teacherId, schoolId, campusId });
 
         // Find all timetables where this teacher is assigned
         const timetables = await Timetable.find({
@@ -138,7 +139,7 @@ router.get("/teacher/my-classes", authTeacher, async (req, res) => {
         .populate('entries.subjectId', 'name code')
         .lean();
 
-        console.log('Found timetables:', timetables.length);
+        logger.info('Found timetables:', timetables.length);
 
         // Extract unique class-section combinations and assigned subjects
         const teacherIdString = String(teacherId);
@@ -188,7 +189,7 @@ router.get("/teacher/my-classes", authTeacher, async (req, res) => {
 
         // If no timetables found, fallback to all classes in the school/campus
         if (classSections.length === 0) {
-            console.log('No timetables found, fetching all class-section combinations');
+            logger.info('No timetables found, fetching all class-section combinations');
 
             const filter = { schoolId };
             if (campusId) {
@@ -220,10 +221,10 @@ router.get("/teacher/my-classes", authTeacher, async (req, res) => {
             }
         }
 
-        console.log('Unique class-sections:', classSections);
+        logger.info('Unique class-sections:', classSections);
         res.json(classSections);
     } catch (err) {
-        console.error('Error in teacher/my-classes:', err);
+        logger.error('Error in teacher/my-classes:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -306,13 +307,13 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
                     createdBy: teacherId
                 });
             } catch (notifErr) {
-                console.error('Failed to create assignment notification:', notifErr);
+                logger.error('Failed to create assignment notification:', notifErr);
             }
         }
 
         res.status(201).json({ message: "Assignment created successfully", assignment });
     } catch (err) {
-        console.error('Create assignment error:', err);
+        logger.error('Create assignment error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -853,7 +854,7 @@ router.get("/student/assignments", authStudent, async (req, res) => {
             targetType: 'student',
             targetId: req.user?.id,
         });
-        console.error('Student assignments error:', err);
+        logger.error('Student assignments error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1109,7 +1110,7 @@ router.get("/teacher/submissions", authTeacher, async (req, res) => {
 
         res.json(rows);
     } catch (err) {
-        console.error('Error in teacher/submissions:', err);
+        logger.error('Error in teacher/submissions:', err);
         res.status(500).json({ error: err.message });
     }
 });

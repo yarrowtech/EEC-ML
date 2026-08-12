@@ -115,3 +115,56 @@ def convert_pdf_to_images(path: Path, dpi: int = 300) -> Iterator[tuple[int, Ima
                 yield page_number, image
             finally:
                 image.close()
+
+
+def select_visual_pdf_pages(
+    path: Path,
+    *,
+    max_pages: int,
+    min_text_chars: int,
+) -> list[int]:
+    """Select bounded pages likely to contain evidence text extraction misses.
+
+    Scanned/low-text pages rank first, followed by pages containing raster images
+    or substantial vector drawings. Page numbers are one-based for citations.
+    """
+
+    if max_pages <= 0:
+        return []
+
+    candidates: list[tuple[int, int]] = []
+    with open_pdf(path) as document:
+        for index, page in enumerate(document):
+            text_length = len(" ".join(page.get_text("text").split()))
+            image_count = len(page.get_images(full=True))
+            drawing_count = len(page.get_drawings())
+            low_text = text_length < min_text_chars
+            visually_significant = low_text or image_count > 0 or drawing_count >= 4
+            if not visually_significant:
+                continue
+
+            score = 0
+            if low_text:
+                score += 1000 + max(0, min_text_chars - text_length)
+            score += min(image_count, 10) * 100
+            score += min(drawing_count, 50) * 3
+            candidates.append((score, index + 1))
+
+    selected = sorted(candidates, key=lambda item: (-item[0], item[1]))[:max_pages]
+    return sorted(page_number for _, page_number in selected)
+
+
+def render_pdf_page_png(path: Path, page_number: int, *, max_dimension: int) -> bytes:
+    """Render one page to bounded PNG bytes using PyMuPDF."""
+
+    if max_dimension < 256:
+        raise ValueError("max_dimension must be at least 256 pixels")
+    with open_pdf(path) as document:
+        if page_number < 1 or page_number > document.page_count:
+            raise ValueError(f"page_number must be between 1 and {document.page_count}")
+        page = document[page_number - 1]
+        rect = page.rect
+        longest_side = max(float(rect.width), float(rect.height), 1.0)
+        scale = min(2.0, max_dimension / longest_side)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        return pixmap.tobytes("png")

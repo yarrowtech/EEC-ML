@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const express = require('express');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
@@ -105,6 +111,31 @@ const findDuplicateSection = async ({ schoolId, campusId, classId, name, exclude
 
   const existingSections = await Section.find(filter).select('_id name').lean();
   return existingSections.find((item) => normalizeKey(item.name) === normalizedName) || null;
+};
+
+const findDuplicateClass = async ({ schoolId, campusId, academicYearId, name, stream, excludeId = null }) => {
+  const normalizedName = normalizeKey(name);
+  const normalizedStream = normalizeStream(stream) || '';
+  if (!normalizedName) return null;
+
+  const filter = {
+    schoolId,
+    ...(campusId
+      ? { campusId }
+      : { $or: [{ campusId: null }, { campusId: { $exists: false } }] }),
+    ...(academicYearId
+      ? { academicYearId }
+      : { academicYearId: { $in: [null] } }),
+  };
+  if (excludeId && mongoose.isValidObjectId(excludeId)) {
+    filter._id = { $ne: excludeId };
+  }
+
+  const existingClasses = await ClassModel.find(filter).select('_id name stream').lean();
+  return existingClasses.find((item) => (
+    normalizeKey(item.name) === normalizedName
+    && (normalizeStream(item.stream) || '') === normalizedStream
+  )) || null;
 };
 
 const generateInvoicesForAcademicYear = async ({ schoolId, campusId, academicYearId }) => {
@@ -706,6 +737,17 @@ router.post('/classes', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Class 11/12 stream setup is allowed only in the active academic year' });
     }
 
+    const duplicateClass = await findDuplicateClass({
+      schoolId,
+      campusId,
+      academicYearId: academicYearId || null,
+      name,
+      stream: validatedClassMeta.stream,
+    });
+    if (duplicateClass) {
+      return res.status(409).json({ error: 'A class with this name already exists for the selected campus and academic year' });
+    }
+
     const created = await ClassModel.create({
       schoolId,
       campusId: campusId || null,
@@ -778,6 +820,18 @@ router.put('/classes/:id', adminAuth, async (req, res) => {
       .lean();
     if (!existing) {
       return res.status(404).json({ error: 'Class not found' });
+    }
+
+    const duplicateClass = await findDuplicateClass({
+      schoolId,
+      campusId,
+      academicYearId: academicYearId || null,
+      name,
+      stream: validatedClassMeta.stream,
+      excludeId: id,
+    });
+    if (duplicateClass) {
+      return res.status(409).json({ error: 'A class with this name already exists for the selected campus and academic year' });
     }
 
     const updated = await ClassModel.findByIdAndUpdate(

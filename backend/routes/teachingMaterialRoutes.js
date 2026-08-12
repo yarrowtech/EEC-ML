@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
@@ -8,6 +14,7 @@ const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const authTeacher = require('../middleware/authTeacher');
+const { logger } = require('../utils/logger');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -39,6 +46,11 @@ const buildSourceId = (material, attachment, index) => {
 
 const triggerMaterialIngest = async (material, attachments = []) => {
   const ingestible = attachments.filter(isVectorIngestible);
+  let academicYearId = material.academicYearId || '';
+  if (!academicYearId && material.classId) {
+    const classDoc = await Class.findById(material.classId).select('academicYearId').lean();
+    academicYearId = classDoc?.academicYearId || '';
+  }
 
   // Always delete all existing vectors for this material first to prevent
   // stale/duplicate chunks when re-uploading (fixes multi-attachment case
@@ -61,7 +73,10 @@ const triggerMaterialIngest = async (material, attachments = []) => {
         school_id: String(material.schoolId),
         class_id: String(material.classId || ''),
         section_id: String(material.sectionId || ''),
+        academic_year_id: String(academicYearId || ''),
+        subject_id: String(material.subjectId || ''),
         subject_name: material.subjectName || '',
+        curriculum_code: material.curriculumCode || '',
         chapter_id: material.chapterId || '',
         chapter_title: material.chapterTitle || '',
         topic_title: material.topicTitle || '',
@@ -85,6 +100,7 @@ const resolveDenormalizedNames = async (classId, sectionId, subjectId) => {
   if (classId) {
     const classDoc = await Class.findById(classId).lean();
     result.className = classDoc ? classDoc.name : '';
+    result.academicYearId = classDoc?.academicYearId || null;
   }
 
   if (sectionId) {
@@ -112,6 +128,7 @@ router.post('/', async (req, res, next) => {
       classId,
       sectionId,
       subjectId,
+      curriculumCode,
       chapterId,
       chapterTitle,
       topicTitle,
@@ -157,6 +174,7 @@ router.post('/', async (req, res, next) => {
       classId,
       sectionId,
       subjectId: subjectId || null,
+      curriculumCode: curriculumCode || '',
       chapterId: chapterId || '',
       chapterTitle: chapterTitle || '',
       topicTitle: topicTitle || '',
@@ -208,7 +226,7 @@ router.post('/', async (req, res, next) => {
 
     // Fire-and-forget: parse/embed supported attachments into Qdrant.
     triggerMaterialIngest(material, attachments || []).catch((err) =>
-      console.error('[material ingest] failed for material', String(material._id), err.message)
+      logger.error('[material ingest] failed for material', String(material._id), err.message)
     );
 
     res.status(201).json({
@@ -217,7 +235,7 @@ router.post('/', async (req, res, next) => {
       material
     });
   } catch (error) {
-    console.error('Error creating teaching material:', error);
+    logger.error('Error creating teaching material:', error);
     next(error);
   }
 });
@@ -275,7 +293,7 @@ router.get('/', async (req, res, next) => {
       pages: Math.ceil(total / parseInt(limit))
     });
   } catch (error) {
-    console.error('Error fetching teaching materials:', error);
+    logger.error('Error fetching teaching materials:', error);
     next(error);
   }
 });
@@ -305,7 +323,7 @@ router.get('/:id', async (req, res, next) => {
       material
     });
   } catch (error) {
-    console.error('Error fetching teaching material:', error);
+    logger.error('Error fetching teaching material:', error);
     next(error);
   }
 });
@@ -384,7 +402,7 @@ router.patch('/:id', async (req, res, next) => {
     // Re-index supported documents if attachments were replaced
     if (attachmentsChanged) {
       triggerMaterialIngest(material, material.attachments || []).catch((err) =>
-        console.error('[material ingest] failed on update for material', String(material._id), err.message)
+        logger.error('[material ingest] failed on update for material', String(material._id), err.message)
       );
     }
 
@@ -394,7 +412,7 @@ router.patch('/:id', async (req, res, next) => {
       material
     });
   } catch (error) {
-    console.error('Error updating teaching material:', error);
+    logger.error('Error updating teaching material:', error);
     next(error);
   }
 });
@@ -418,7 +436,7 @@ router.delete('/:id', async (req, res, next) => {
     // TODO: Delete files from Cloudinary if needed
     // For now, files remain in Cloudinary (can be cleaned up later)
     deleteMaterialVectors(material._id).catch((err) =>
-      console.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+      logger.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
     );
 
     res.json({
@@ -426,7 +444,7 @@ router.delete('/:id', async (req, res, next) => {
       message: 'Material deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting teaching material:', error);
+    logger.error('Error deleting teaching material:', error);
     next(error);
   }
 });
@@ -462,7 +480,7 @@ router.post('/:id/publish', async (req, res, next) => {
 
     // Re-index attachments: archiving removes vectors, so republish must restore them.
     triggerMaterialIngest(material, material.attachments || []).catch((err) =>
-      console.error('[material ingest] failed on publish for material', String(material._id), err.message)
+      logger.error('[material ingest] failed on publish for material', String(material._id), err.message)
     );
 
     res.json({
@@ -471,7 +489,7 @@ router.post('/:id/publish', async (req, res, next) => {
       material
     });
   } catch (error) {
-    console.error('Error publishing material:', error);
+    logger.error('Error publishing material:', error);
     next(error);
   }
 });
@@ -497,7 +515,7 @@ router.post('/:id/archive', async (req, res, next) => {
 
     // Archived materials must stop feeding the AI tutor's RAG context.
     deleteMaterialVectors(material._id).catch((err) =>
-      console.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+      logger.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
     );
 
     res.json({
@@ -505,7 +523,7 @@ router.post('/:id/archive', async (req, res, next) => {
       message: 'Material archived successfully'
     });
   } catch (error) {
-    console.error('Error archiving material:', error);
+    logger.error('Error archiving material:', error);
     next(error);
   }
 });
@@ -545,7 +563,7 @@ router.post('/folder/create', async (req, res, next) => {
       folder
     });
   } catch (error) {
-    console.error('Error creating folder:', error);
+    logger.error('Error creating folder:', error);
     next(error);
   }
 });
@@ -576,7 +594,7 @@ router.get('/folders/list', async (req, res, next) => {
       folders
     });
   } catch (error) {
-    console.error('Error fetching folders:', error);
+    logger.error('Error fetching folders:', error);
     next(error);
   }
 });
@@ -605,7 +623,7 @@ router.post('/bulk/delete', async (req, res, next) => {
       deletedCount: result.deletedCount
     });
   } catch (error) {
-    console.error('Error bulk deleting:', error);
+    logger.error('Error bulk deleting:', error);
     next(error);
   }
 });
@@ -641,7 +659,7 @@ router.patch('/bulk/move', async (req, res, next) => {
       modifiedCount: result.modifiedCount
     });
   } catch (error) {
-    console.error('Error bulk moving:', error);
+    logger.error('Error bulk moving:', error);
     next(error);
   }
 });
@@ -714,7 +732,7 @@ router.get('/:id/analytics', async (req, res, next) => {
       analytics
     });
   } catch (error) {
-    console.error('Error fetching analytics:', error);
+    logger.error('Error fetching analytics:', error);
     next(error);
   }
 });

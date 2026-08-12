@@ -9,6 +9,13 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
     ollama_summary_model: str = "qwen2.5:14b"
     ollama_clean_model: str = "llama3.2:3b"  # lightweight model for ingestion-time cleaning
+    ollama_vision_model: str = "qwen3.5:9b-q8_0"
+    ollama_vision_num_ctx: int = 16384
+    ollama_vision_timeout: int = 180
+    ollama_vision_enabled: bool = True
+    ollama_vision_max_pages: int = 6
+    ollama_vision_max_image_dimension: int = 1600
+    ollama_vision_min_text_chars: int = 80
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""

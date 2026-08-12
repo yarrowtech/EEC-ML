@@ -16,16 +16,19 @@ from langchain_ollama import ChatOllama
 from app.core.config import settings
 
 # Modes that produce long structured output need a higher token budget.
-LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize", "quiz"}
+LONG_OUTPUT_MODES = {"mind_map", "notes", "flashcards", "summarize", "quiz", "visual_quiz", "visual_explain"}
 
 MODE_TEMPERATURE: dict[str, float] = {
     "quiz":                  0.9,
+    "visual_quiz":           0.7,
     "flashcards":            0.85,
     "practice_basic":        0.5,
     "practice_intermediate": 0.6,
     "practice_advanced":     0.65,
     "engagement_swap":       0.8,
     "explain":               0.6,
+    "visual_explain":        0.5,
+    "custom":                0.6,
     "homework_help":         0.6,
     "real_world":            0.7,
     "misconception":         0.5,

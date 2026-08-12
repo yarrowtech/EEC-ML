@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { logger } = require('../utils/logger');
 
 /**
  * Middleware to authenticate requests from Super Admin Portal
@@ -20,7 +21,7 @@ const superAdminAuth = (req, res, next) => {
     // Verify API key
     const expectedApiKey = process.env.SUPER_ADMIN_INCOMING_API_KEY;
     if (!expectedApiKey) {
-      console.error('SUPER_ADMIN_INCOMING_API_KEY not configured in environment variables');
+      logger.error('SUPER_ADMIN_INCOMING_API_KEY not configured in environment variables');
       return res.status(500).json({
         success: false,
         error: 'Server configuration error'
@@ -39,7 +40,7 @@ const superAdminAuth = (req, res, next) => {
       const secret = process.env.SUPER_ADMIN_INCOMING_SECRET;
 
       if (!secret) {
-        console.error('SUPER_ADMIN_INCOMING_SECRET not configured');
+        logger.error('SUPER_ADMIN_INCOMING_SECRET not configured');
         return res.status(500).json({
           success: false,
           error: 'Server configuration error'
@@ -70,7 +71,7 @@ const superAdminAuth = (req, res, next) => {
     next();
 
   } catch (error) {
-    console.error('Super Admin authentication error:', error);
+    logger.error({ err: error }, 'Super Admin authentication error');
     return res.status(500).json({
       success: false,
       error: 'Authentication failed'

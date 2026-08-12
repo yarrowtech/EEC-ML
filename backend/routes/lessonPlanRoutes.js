@@ -13,10 +13,12 @@ const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const LessonPlan = require('../models/LessonPlan');
 const LessonPlanCompletion = require('../models/LessonPlanCompletion');
+const AcademicYear = require('../models/AcademicYear');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const Timetable = require('../models/Timetable');
+const TeacherAllocation = require('../models/TeacherAllocation');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
 const TeachingMaterial = require('../models/TeachingMaterial');
@@ -137,6 +139,11 @@ const deleteMaterialVectors = (materialId) =>
 
 const ingestPublishedMaterialAttachments = async (material) => {
   const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];
+  let academicYearId = material.academicYearId || '';
+  if (!academicYearId && material.classId) {
+    const classDoc = await ClassModel.findById(material.classId).select('academicYearId').lean();
+    academicYearId = classDoc?.academicYearId || '';
+  }
 
   if (!attachments.length) {
     try {
@@ -168,7 +175,10 @@ const ingestPublishedMaterialAttachments = async (material) => {
           school_id: String(material.schoolId),
           class_id: String(material.classId || ''),
           section_id: String(material.sectionId || ''),
+          academic_year_id: String(academicYearId || ''),
+          subject_id: String(material.subjectId || ''),
           subject_name: material.subjectName || '',
+          curriculum_code: material.curriculumCode || '',
           chapter_id: material.chapterId || '',
           chapter_title: material.chapterTitle || '',
           topic_title: material.topicTitle || '',
@@ -314,6 +324,7 @@ const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter
       material.className = plan.className || '';
       material.sectionName = plan.sectionName || '';
       material.subjectName = plan.subject || '';
+      material.curriculumCode = plan.curriculumCode || '';
       material.chapterId = base.chapterId;
       material.chapterTitle = base.chapterTitle;
       material.topicTitle = base.topicTitle;
@@ -346,6 +357,7 @@ const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter
         className: plan.className || '',
         sectionName: plan.sectionName || '',
         subjectName: plan.subject || '',
+        curriculumCode: plan.curriculumCode || '',
         chapterId: base.chapterId,
         chapterTitle: base.chapterTitle,
         topicTitle: base.topicTitle,
@@ -600,6 +612,7 @@ const publishPlanLevelResourceMaterial = async ({ schoolId, campusId, plan }) =>
     material.className = plan.className || '';
     material.sectionName = plan.sectionName || '';
     material.subjectName = plan.subject || '';
+    material.curriculumCode = plan.curriculumCode || '';
     material.chapterId = payload.chapterId;
     material.chapterTitle = payload.chapterTitle;
     material.topicTitle = payload.topicTitle;
@@ -632,6 +645,7 @@ const publishPlanLevelResourceMaterial = async ({ schoolId, campusId, plan }) =>
       className: plan.className || '',
       sectionName: plan.sectionName || '',
       subjectName: plan.subject || '',
+      curriculumCode: plan.curriculumCode || '',
       chapterId: payload.chapterId,
       chapterTitle: payload.chapterTitle,
       topicTitle: payload.topicTitle,
@@ -811,31 +825,55 @@ const normalizeCompletionPayload = ({ status, isCompleted, completionPercent }) 
 };
 
 const getAllocationCombos = async ({ schoolId, campusId, classId, sectionId, teacherId = null }) => {
-  const timetables = await Timetable.find(buildTimetableFilter(schoolId, campusId, classId, sectionId))
-    .populate('entries.teacherId', 'name')
-    .populate('entries.subjectId', 'name')
-    .lean();
+  const allocationFilter = { schoolId, classId, sectionId };
+  if (teacherId) allocationFilter.teacherId = teacherId;
+  if (campusId) {
+    allocationFilter.$or = [
+      { campusId },
+      { campusId: null },
+      { campusId: { $exists: false } },
+    ];
+  }
+
+  const [timetables, allocations] = await Promise.all([
+    Timetable.find(buildTimetableFilter(schoolId, campusId, classId, sectionId))
+      .populate('entries.teacherId', 'name')
+      .populate('entries.subjectId', 'name')
+      .lean(),
+    TeacherAllocation.find(allocationFilter)
+      .populate('teacherId', 'name')
+      .populate('subjectId', 'name')
+      .lean(),
+  ]);
 
   const comboMap = new Map();
+  const addCombo = ({ teacher, subject }) => {
+    const tid = teacher?._id;
+    const sid = subject?._id;
+    const tname = normalizeString(teacher?.name);
+    const sname = normalizeString(subject?.name);
+    if (!tid || !sid || !tname || !sname) return;
+    if (teacherId && String(tid) !== String(teacherId)) return;
+
+    const key = `${tid}::${sid}`;
+    if (!comboMap.has(key)) {
+      comboMap.set(key, {
+        teacherId: String(tid),
+        teacherName: tname,
+        subjectId: String(sid),
+        subjectName: sname,
+        label: `${tname} (${sname})`,
+      });
+    }
+  };
+
   timetables.forEach((tt) => {
     (tt.entries || []).forEach((entry) => {
-      const tid = entry.teacherId?._id;
-      const sid = entry.subjectId?._id;
-      const tname = entry.teacherId?.name;
-      const sname = entry.subjectId?.name;
-      if (!tid || !sid || !tname || !sname) return;
-      if (teacherId && String(tid) !== String(teacherId)) return;
-      const key = `${tid}::${sid}`;
-      if (!comboMap.has(key)) {
-        comboMap.set(key, {
-          teacherId: String(tid),
-          teacherName: String(tname),
-          subjectId: String(sid),
-          subjectName: String(sname),
-          label: `${tname} (${sname})`
-        });
-      }
+      addCombo({ teacher: entry.teacherId, subject: entry.subjectId });
     });
+  });
+  allocations.forEach((allocation) => {
+    addCombo({ teacher: allocation.teacherId, subject: allocation.subjectId });
   });
 
   return Array.from(comboMap.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -983,26 +1021,72 @@ router.get('/teacher/options', authTeacher, async (req, res) => {
 
     const requestedClassId = normalizeString(req.query?.classId);
     const requestedSectionId = normalizeString(req.query?.sectionId);
+    const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean();
+    const activeYearId = normalizeString(activeYear?._id);
 
     const ttFilter = { schoolId, 'entries.teacherId': teacherId };
     if (campusId) ttFilter.campusId = campusId;
+    const teacherAllocationFilter = { schoolId, teacherId };
+    if (campusId) {
+      teacherAllocationFilter.$or = [
+        { campusId },
+        { campusId: null },
+        { campusId: { $exists: false } },
+      ];
+    }
 
-    const teacherTables = await Timetable.find(ttFilter)
-      .populate('classId', 'name')
-      .populate('sectionId', 'name')
-      .populate('entries.subjectId', 'name')
-      .lean();
+    const [teacherTables, teacherAllocations] = await Promise.all([
+      Timetable.find(ttFilter)
+        .populate('classId', 'name academicYearId standard stream')
+        .populate('sectionId', 'name')
+        .populate('entries.subjectId', 'name')
+        .lean(),
+      TeacherAllocation.find(teacherAllocationFilter)
+        .populate('classId', 'name academicYearId standard stream')
+        .populate('sectionId', 'name')
+        .lean(),
+    ]);
+
+    const activeTeacherTables = activeYearId
+      ? teacherTables.filter((tt) => {
+          const timetableYearId = normalizeString(tt.academicYearId);
+          const classYearId = normalizeString(tt.classId?.academicYearId);
+          return (timetableYearId || classYearId) === activeYearId;
+        })
+      : teacherTables;
+    const activeTeacherAllocations = activeYearId
+      ? teacherAllocations.filter((allocation) => (
+          normalizeString(allocation.classId?.academicYearId) === activeYearId
+        ))
+      : teacherAllocations;
 
     const classMap = new Map();
     const sectionMap = new Map();
+    const classNameKeys = new Set();
 
-    teacherTables.forEach((tt) => {
-      const cid = String(tt.classId?._id || '');
-      const sid = String(tt.sectionId?._id || '');
+    const addClassSection = (classDoc, sectionDoc) => {
+      const cid = String(classDoc?._id || '');
+      const sid = String(sectionDoc?._id || '');
       if (!cid || !sid) return;
-      if (!classMap.has(cid)) classMap.set(cid, { id: cid, name: tt.classId?.name || '' });
+      const className = normalizeString(classDoc?.name);
+      const classStream = normalizeLower(classDoc?.stream);
+      const classNameKey = `${normalizeLower(className)}::${classStream}`;
+      const classLabel = classStream
+        ? `${className} (${classStream.charAt(0).toUpperCase()}${classStream.slice(1)})`
+        : className;
+      if (className && !classNameKeys.has(classNameKey)) {
+        classNameKeys.add(classNameKey);
+        classMap.set(cid, { id: cid, name: classLabel });
+      }
       const skey = `${cid}::${sid}`;
-      if (!sectionMap.has(skey)) sectionMap.set(skey, { id: sid, classId: cid, name: tt.sectionId?.name || '' });
+      if (!sectionMap.has(skey)) sectionMap.set(skey, { id: sid, classId: cid, name: sectionDoc?.name || '' });
+    };
+
+    activeTeacherTables.forEach((tt) => {
+      addClassSection(tt.classId, tt.sectionId);
+    });
+    activeTeacherAllocations.forEach((allocation) => {
+      addClassSection(allocation.classId, allocation.sectionId);
     });
 
     const classes = Array.from(classMap.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -2827,8 +2911,6 @@ router.get('/teacher/intervention', authTeacher, async (req, res) => {
 
     const MasteryScore = require('../models/MasteryScore');
     const { MASTERY, ENGAGEMENT } = require('../config/workflowThresholds');
-    const TeacherAllocation = require('../models/TeacherAllocation');
-
     // Get all subjects this teacher is allocated to
     const allocations = await TeacherAllocation.find({ schoolId, teacherId })
       .select('subject className sections')

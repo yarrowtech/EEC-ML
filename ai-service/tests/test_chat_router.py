@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.modules.chat import router as chat_router
+import app.modules.chat.service as chat_service
 from app.modules.chat.service import NOT_FOUND_MESSAGE
 
 client = TestClient(app)
@@ -23,12 +23,13 @@ class FakeChain:
 
 
 def test_no_material_returns_safe_message_without_calling_llm(monkeypatch):
-    monkeypatch.setattr(chat_router, "retrieve_relevant_chunks", lambda req: [])
+    # Patch retrieval in the service (where it now lives)
+    monkeypatch.setattr(chat_service, "retrieve_relevant_chunks_with_citations", lambda req: ([], []))
 
-    def forbidden():
+    def forbidden(*args, **kwargs):
         raise AssertionError("LLM must not be called when no material matched")
 
-    monkeypatch.setattr(chat_router, "_create_chain", forbidden)
+    monkeypatch.setattr(chat_service, "create_chain", forbidden)
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 200
     body = resp.json()
@@ -40,10 +41,12 @@ def test_no_material_returns_safe_message_without_calling_llm(monkeypatch):
 
 def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     monkeypatch.setattr(
-        chat_router, "retrieve_relevant_chunks", lambda req: ["Chunk about photosynthesis."]
+        chat_service,
+        "retrieve_relevant_chunks_with_citations",
+        lambda req: (["Chunk about photosynthesis."], []),
     )
     fake = FakeChain()
-    monkeypatch.setattr(chat_router, "_create_chain", lambda **_: fake)
+    monkeypatch.setattr(chat_service, "create_chain", lambda mode, **_: fake)
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 200
     body = resp.json()
@@ -51,24 +54,34 @@ def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     assert body["noMaterialFound"] is False
     assert body["content"] == "Photosynthesis converts light energy."
 
-    system_msg, user_msg = FakeChain.last_messages
-    assert "ONLY the retrieved course material" in system_msg.content
+    # System message should contain the safety prefix and RAG instruction
+    system_msg = FakeChain.last_messages[0]
+    user_msg = FakeChain.last_messages[-1]
+    assert "ONLY" in system_msg.content
     assert "Chunk about photosynthesis." in user_msg.content
 
 
 def test_llm_failure_returns_502(monkeypatch):
-    monkeypatch.setattr(chat_router, "retrieve_relevant_chunks", lambda req: ["chunk"])
+    monkeypatch.setattr(
+        chat_service,
+        "retrieve_relevant_chunks_with_citations",
+        lambda req: (["chunk"], []),
+    )
 
     class BrokenChain:
         def invoke(self, messages):
             raise ConnectionError("connection refused")
 
-    monkeypatch.setattr(chat_router, "_create_chain", lambda **_: BrokenChain())
+    monkeypatch.setattr(chat_service, "create_chain", lambda mode, **_: BrokenChain())
     resp = client.post("/generate/tutor", json=PAYLOAD)
     assert resp.status_code == 502
 
 
 def test_unknown_mode_rejected_before_llm_call(monkeypatch):
-    monkeypatch.setattr(chat_router, "retrieve_relevant_chunks", lambda req: ["chunk"])
+    monkeypatch.setattr(
+        chat_service,
+        "retrieve_relevant_chunks_with_citations",
+        lambda req: (["chunk"], []),
+    )
     resp = client.post("/generate/tutor", json={**PAYLOAD, "mode": "poetry"})
     assert resp.status_code == 400

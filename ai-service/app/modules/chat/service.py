@@ -1,12 +1,33 @@
+# Copyright (c) 2026 HouseofMusa and YarrowTech
+# All rights reserved. Unauthorized copying, modification, distribution,
+# or duplication is prohibited without prior written permission.
+
 import logging
 import math
+import re
 
 from fastapi import HTTPException
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.config import settings
+from app.core.llm import active_model_name, create_chain
 from app.modules.chat.schemas import TutorGenerateRequest
+from app.modules.chat.visuals import build_tutor_visuals, visual_prompt_context
 from app.modules.embeddings.service import embed_texts
+from app.modules.parser.cleaner import _strip_injection_attempts, _strip_teacher_notes
 from app.modules.retrieval.service import retrieve_from_qdrant
+from app.modules.stem.service import detect_discipline
+from app.modules.stem.verifier import verify_stem_question
+
+# Safety guardrail prepended to every student-facing tutor system prompt.
+_SAFETY_PREFIX = (
+    "You are a school tutor for students aged 6–18. "
+    "You must ONLY answer questions directly related to the study material provided below. "
+    "If asked anything unrelated to the material — personal questions, political topics, "
+    "adult content, violence, or any topic outside the provided text — respond with: "
+    "'I can only help with your study material. Please ask your teacher about anything else.' "
+    "Never generate harmful, adult, or inappropriate content under any circumstances.\n\n"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +36,192 @@ NOT_FOUND_MESSAGE = (
     "Try picking a topic your teacher has already published, or ask them to upload content on this topic."
 )
 
+STEM_INSTRUCTIONS: dict[str, str] = {
+    "mathematics": (
+        "Preserve mathematical notation, show grade-appropriate steps, define symbols, and clearly label "
+        "exact versus approximate results. Do not invent a formula absent from the retrieved material."
+    ),
+    "physics": (
+        "Define every variable used, carry units through each calculation, check dimensional consistency, "
+        "and distinguish measured values from assumptions."
+    ),
+    "chemistry": (
+        "Preserve element capitalization, subscripts, superscripts, charges, states, and reaction arrows. "
+        "Do not claim an equation is balanced unless the retrieved material supports it."
+    ),
+    "biology": (
+        "Clearly distinguish structures, biological processes, observations, evidence, and causal claims. "
+        "Avoid implying that correlation alone proves causation."
+    ),
+    "engineering": (
+        "State inputs, outputs, assumptions, constraints, trade-offs, and relevant safety considerations."
+    ),
+    "technology": (
+        "State inputs, outputs, assumptions, constraints, and safety or privacy considerations where relevant."
+    ),
+}
+
+_VISUAL_PAGE_PATTERN = re.compile(r"Visual evidence from source PDF page\s+(\d+)", re.IGNORECASE)
+_VISUAL_FOCUS_STOP_WORDS = {
+    "about", "explain", "from", "have", "help", "how", "into", "page", "show", "that",
+    "the", "this", "using", "visual", "what", "when", "where", "which", "with",
+}
+
+
+def _focused_visual_context(req: TutorGenerateRequest, chunks: list[str], limit: int = 3500) -> str:
+    """Keep relevant visual evidence and a bounded nearby chapter-text window."""
+
+    visual_chunks = [chunk for chunk in chunks if _VISUAL_PAGE_PATTERN.search(chunk)]
+    if not visual_chunks:
+        return "\n\n".join(chunks)
+
+    text = "\n\n".join(chunk for chunk in chunks if not _VISUAL_PAGE_PATTERN.search(chunk))
+    if len(text) > limit:
+        query = " ".join(filter(None, [req.topic, req.subTopic, req.question]))
+        terms = sorted({
+            token for token in re.findall(r"[a-z0-9]+", query.casefold())
+            if len(token) >= 4 and token not in _VISUAL_FOCUS_STOP_WORDS
+        }, key=len, reverse=True)
+        normalized_text = text.casefold()
+        focus = next(
+            (position for term in terms if (position := normalized_text.find(term)) >= 0),
+            0,
+        )
+        start = max(0, focus - (limit // 3))
+        text = text[start:start + limit]
+
+    # The local tutor runs with a 16K context window. One tightly bounded page plus
+    # nearby text leaves enough room for safety/teaching instructions and the answer.
+    selected = ([text] if text.strip() else []) + [visual_chunks[0][:5000]]
+    return "\n\n".join(selected)
+
+
+def _visual_grounding_instruction(context: str, mode: str) -> str | None:
+    """Tell the tutor how to teach from retrieved page images without inventing visuals."""
+
+    pages = sorted({int(page) for page in _VISUAL_PAGE_PATTERN.findall(context)})
+    if not pages:
+        return None
+
+    page_list = ", ".join(str(page) for page in pages)
+    shared = (
+        f"VISUAL EVIDENCE RULES: Retrieved teacher-material visual evidence is available for PDF page(s) {page_list}. "
+        "Refer to a visual as 'page N' so the student can open the matching Visual evidence card below the answer. "
+        "Use only objects, labels, values, formulas, spatial relationships, and uncertainties explicitly described "
+        "in the retrieved visual evidence. Never claim to see an element that is not described, never invent a new "
+        "diagram, and never treat a filename as evidence. VISIBLE-LABEL FIDELITY: do not add an inferred endpoint, "
+        "tick, value, symbol, colour, or label merely because it would normally appear in such a diagram. "
+        "SOURCE-EXERCISE LOCK: a visual description may contain a printed student exercise. Never fill its blanks, "
+        "select its answer, calculate its requested distances/results, or reveal its solution, even when the student "
+        "asks for an explanation. Teach the method without completing the printed task. "
+    )
+    if mode in {"explain", "visual_explain"}:
+        return shared + (
+            "Include a short 'Visual walkthrough' section using this sequence: Look (where to focus on the cited page), "
+            "Notice (the important visible labels or relationship), and Connect (how that visual supports the concept). "
+            "Use unsolved language such as 'compare the distance to each labelled endpoint' rather than stating the "
+            "result of the printed exercise."
+        )
+    if mode in {"quiz", "visual_quiz"}:
+        return shared + (
+            "When an explanatory diagram, graph, number line, table, circuit, or labelled structure supports it, include "
+            "at least one newly authored question labelled 'Visual question — use page N'. The question must require the "
+            "student to inspect that cited visual. If the retrieved visual is itself an exercise, ask only a non-solving "
+            "observation question about visible labels or structure; do not copy, solve, or reveal its answer."
+        )
+    if mode == "homework_help":
+        return shared + (
+            "Use the cited visual only to direct the student's attention with a Socratic clue, then ask one guiding "
+            "question. Do not state the answer or complete any printed exercise."
+        )
+    return shared + (
+        "Briefly point out the relevant visible feature when it materially improves understanding. Do not solve any "
+        "exercise printed on the source page."
+    )
+
+
+def _visual_explanation_reveals_exercise_answer(context: str, content: str) -> bool:
+    """Detect common local-model failures after an exercise-page explanation."""
+
+    if not _VISUAL_PAGE_PATTERN.search(context):
+        return False
+    exercise_markers = ("____", "fill in the", "which of", "which number", "should the")
+    if not any(marker in context.casefold() for marker in exercise_markers):
+        return False
+    answer_patterns = (
+        r"\banswer\s+is\b",
+        r"\bnearest\s+(?:ten|hundred|thousand)\s+is\b",
+        r"\bdistance\s*(?:=|is)\s*\d",
+        r"\b\d[\d,]*\s+(?:units?|jumps?)\s+(?:away|from|to)\b",
+    )
+    return any(re.search(pattern, content, re.IGNORECASE) for pattern in answer_patterns)
+
+
+def _safe_visual_explanation(req: TutorGenerateRequest, context: str) -> str:
+    pages = sorted({int(page) for page in _VISUAL_PAGE_PATTERN.findall(context)})
+    page = pages[0] if pages else 1
+    return (
+        f"### Visual walkthrough — page {page}\n\n"
+        f"- **Look:** Open the Visual evidence card for page {page} and locate the value or object the question highlights.\n"
+        "- **Notice:** Identify the two labelled endpoints or comparison points around it. Keep the printed blanks unsolved.\n"
+        f"- **Connect:** For {req.topic}, compare the highlighted position with each labelled endpoint and choose the "
+        "closer one yourself. The visual turns the rule into a distance comparison without revealing the workbook answer."
+    )
+
+
+def _visual_quiz_reuses_source_exercise(context: str, content: str) -> bool:
+    if not _VISUAL_PAGE_PATTERN.search(context):
+        return False
+    if not any(marker in context.casefold() for marker in ("____", "fill in the", "which number", "should the")):
+        return False
+    copied_task_patterns = (
+        r"\bwhat\s+is\s+the\s+nearest\s+(?:ten|hundred|thousand)\s+of\b",
+        r"\bwhich\s+number\b[^?\n]*\bnearest\s+(?:ten|hundred|thousand)\b",
+        r"\bround\s+[\d,]+\s+to\s+the\s+nearest\b",
+        r"\bnearest\s+(?:ten|hundred|thousand)s?\b[^?\n]*\?",
+    )
+    return any(re.search(pattern, content, re.IGNORECASE) for pattern in copied_task_patterns)
+
+
+def _safe_visual_question(context: str) -> str:
+    pages = sorted({int(page) for page in _VISUAL_PAGE_PATTERN.findall(context)})
+    page = pages[0] if pages else 1
+    return (
+        f"### Visual question — use page {page}\n\n"
+        "Without calculating or filling any blank, identify two labels you can see in the visual and describe where "
+        "each one appears. Then explain how the layout helps you understand the topic."
+    )
+
+
+def _generated_visual_precision_issues(visuals: list[dict], context: str, content: str) -> list[str]:
+    if not visuals:
+        return []
+    allowed_degrees = {int(value) for value in re.findall(r"(\d{1,4})\s*°", context)}
+    for visual in visuals:
+        for item in visual.get("items", []):
+            if isinstance(item.get("degrees"), int):
+                allowed_degrees.add(item["degrees"])
+    used_degrees = {int(value) for value in re.findall(r"(\d{1,4})\s*°", content)}
+    issues = []
+    unsupported = sorted(used_degrees - allowed_degrees)
+    if unsupported:
+        issues.append("unsupported degree values: " + ", ".join(f"{value}°" for value in unsupported))
+    self_check = re.search(r"self[- ]check", content, re.IGNORECASE)
+    if self_check and re.search(r"(?:answer|solution)\s*:", content[self_check.start():], re.IGNORECASE):
+        issues.append("self-check answers were revealed")
+    return issues
+
 MODE_INSTRUCTIONS: dict[str, str] = {
+    "custom": (
+        "Answer the student's custom question directly and conversationally. Follow the student's requested format "
+        "when possible, but use only the retrieved teacher-published material."
+    ),
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
+    "visual_explain": (
+        "Explain the requested concept through retrieved visual evidence. Guide the student through what to look at, "
+        "what to notice, and how the visible relationship supports the concept. If no relevant visual page is "
+        "available, say so and provide a concise material-grounded text explanation instead."
+    ),
     "summarize": (
         "Summarize the material into concise revision notes with bullet points covering only the key ideas. "
         "For any exercises, activities, or practice questions in the material (fill-in-the-blanks, "
@@ -32,6 +237,11 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "Base every question and answer option solely on story content, vocabulary, or exercises visible "
         "to students. Never write questions about pedagogical methods, repetition counts, audio resources, "
         "teacher suggestions, or anything that belongs in a 'Note to the Teacher' section."
+    ),
+    "visual_quiz": (
+        "Create a short quiz grounded in retrieved teacher material and visual evidence. Include at least one newly "
+        "authored observation question that requires opening the cited page. Do not copy, solve, or reveal an exercise "
+        "already printed in the source material."
     ),
     "misconception": (
         "A student answered a quiz question incorrectly. Your job is to:\n"
@@ -415,6 +625,32 @@ MODE_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+_VISUAL_DEPTH_INSTRUCTIONS = {
+    "simple": (
+        "Keep the explanation compact and child-friendly: one core idea, a Look–Notice–Connect walkthrough, "
+        "one grounded example, and one quick self-check question."
+    ),
+    "detailed": (
+        "Give a thorough explanation with these sections: Core idea; Visual walkthrough (Look, Notice, Connect); "
+        "Verified labels and relationships; Step-by-step reasoning; two grounded examples; common misconception; "
+        "and two unsolved self-check questions. Define every mathematical term and symbol used."
+    ),
+    "deep": (
+        "Give an in-depth lesson with these sections: Learning objective; prerequisite idea; Core idea; detailed "
+        "Visual walkthrough; Verified labels and relationships; derivation or reasoning; three progressively harder "
+        "grounded examples; comparison table; common misconceptions; real-world connection supported by the material; "
+        "summary; and three unsolved self-check questions. Clearly distinguish facts visible in the diagram from "
+        "deductions. Examples must use only quantities and situations explicitly supported by retrieved material or "
+        "the verified generated visual; do not invent extension calculations merely to make examples harder."
+    ),
+}
+
+_LEARNING_GOAL_INSTRUCTIONS = {
+    "understand": "Prioritise intuition and explain why each visible relationship works.",
+    "revision": "Prioritise precise definitions, key facts, memory cues, and a compact exam-ready recap.",
+    "practice": "Prioritise guided application and finish with unsolved, newly authored practice prompts.",
+}
+
 
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
@@ -475,6 +711,8 @@ def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
             school_id=req.schoolId,
             class_id=req.classId,
             section_id=req.sectionId,
+            academic_year_id=req.academicYearId,
+            subject_id=req.subjectId,
             subject=req.subject,
             chapter_title=req.chapterTitle,
             topic=req.topic,
@@ -492,6 +730,8 @@ def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[
             school_id=req.schoolId,
             class_id=req.classId,
             section_id=req.sectionId,
+            academic_year_id=req.academicYearId,
+            subject_id=req.subjectId,
             subject=req.subject,
             chapter_title=req.chapterTitle,
             topic=req.topic,
@@ -555,10 +795,24 @@ def _quiz_instruction_for_type(question_type: str, default: str, count: int | No
     )
 
 
-def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
+def build_prompt(
+    req: TutorGenerateRequest,
+    context: str,
+    verification_context: str | None = None,
+    generated_visuals: list[dict] | None = None,
+) -> tuple[str, str]:
     instruction = MODE_INSTRUCTIONS.get(req.mode)
     if not instruction:
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}")
+
+    if req.mode == "visual_explain":
+        depth = (req.responseDepth or "detailed").strip().lower()
+        goal = (req.learningGoal or "understand").strip().lower()
+        instruction = " ".join(filter(None, [
+            instruction,
+            _VISUAL_DEPTH_INSTRUCTIONS.get(depth, _VISUAL_DEPTH_INSTRUCTIONS["detailed"]),
+            _LEARNING_GOAL_INSTRUCTIONS.get(goal, _LEARNING_GOAL_INSTRUCTIONS["understand"]),
+        ]))
 
     grade = req.gradeLevel or "school"
 
@@ -606,12 +860,28 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
     else:
         system = base_system
 
+    discipline = detect_discipline(req.subject, req.discipline)
+    stem_instruction = STEM_INSTRUCTIONS.get(discipline)
+    if stem_instruction:
+        system = f"{system} STEM RESPONSE RULES ({discipline}): {stem_instruction}"
+
+    visual_instruction = _visual_grounding_instruction(context, req.mode)
+    if visual_instruction:
+        system = f"{system} {visual_instruction}"
+    generated_visual_context = visual_prompt_context(generated_visuals or [])
+    if generated_visual_context:
+        system = (
+            f"{system} GENERATED ON-SCREEN VISUAL RULE: A safe code-rendered diagram will be shown below your answer. "
+            "Do not say that no visual is available. Describe how the student should use the rendered diagram, and do "
+            "not contradict its verified labels."
+        )
+
     # For quiz mode, override the default MCQ instruction when a specific question type is requested.
-    if req.mode == "quiz" and req.questionType:
+    if req.mode in {"quiz", "visual_quiz"} and req.questionType:
         instruction = _quiz_instruction_for_type(req.questionType, instruction, None)
 
     # For quiz mode, prepend difficulty level to instruction when provided.
-    if req.mode == "quiz" and req.difficulty:
+    if req.mode in {"quiz", "visual_quiz"} and req.difficulty:
         diff = req.difficulty.strip().lower()
         difficulty_note = {
             "easy": "Focus on basic recall and comprehension — suitable for beginners.",
@@ -635,4 +905,97 @@ def build_prompt(req: TutorGenerateRequest, context: str) -> tuple[str, str]:
         )
     if req.question and req.mode not in {"homework_help", "misconception"}:
         parts.append(f"Extra instructions:\n{req.question.strip()}")
+    if verification_context and req.mode != "homework_help":
+        parts.append(
+            "Deterministic verification context (use only to check arithmetic; it does not expand the "
+            f"retrieved curriculum scope):\n{verification_context}"
+        )
+    if visual_instruction:
+        parts.append(
+            "FINAL VISUAL RESPONSE CONSTRAINT — apply this after reading the material and the student's request:\n"
+            f"{visual_instruction}"
+        )
+    if generated_visual_context:
+        parts.append(f"Generated on-screen visual specification:\n{generated_visual_context}")
     return system, "\n\n".join(parts)
+
+
+def generate_tutor_response(req: TutorGenerateRequest) -> dict:
+    """Full RAG pipeline for student tutor requests.
+
+    Owns: retrieval → sanitization → prompt building → LLM invocation → response shaping.
+    The router endpoint delegates entirely to this function.
+    """
+    chunks, citations = retrieve_relevant_chunks_with_citations(req)
+    if not chunks:
+        return {
+            "mode": req.mode,
+            "model": None,
+            "content": NOT_FOUND_MESSAGE,
+            "groundedInMaterial": False,
+            "noMaterialFound": True,
+            "citations": [],
+        }
+
+    full_visual_context = _strip_injection_attempts(_strip_teacher_notes("\n\n".join(chunks)))
+    raw_context = _strip_teacher_notes(_focused_visual_context(req, chunks))
+    context = _strip_injection_attempts(raw_context)
+    visuals = build_tutor_visuals(req, full_visual_context)
+
+    verification_context = verify_stem_question(req.question) if req.mode != "homework_help" else None
+    system, user_prompt = build_prompt(req, context, verification_context, visuals)
+    system = _SAFETY_PREFIX + system
+
+    messages: list = [SystemMessage(content=system)]
+    if req.conversationHistory:
+        for turn in req.conversationHistory:
+            if turn.role == "assistant":
+                messages.append(AIMessage(content=turn.text))
+            else:
+                messages.append(HumanMessage(content=turn.text))
+    messages.append(HumanMessage(content=user_prompt))
+
+    chain = create_chain(mode=req.mode)
+    try:
+        content = chain.invoke(messages)
+        if req.mode in {"explain", "visual_explain"} and _visual_explanation_reveals_exercise_answer(context, content):
+            revision = HumanMessage(content=(
+                "Rewrite the draft as a concise Look–Notice–Connect visual explanation. The draft revealed answers "
+                "to a printed student exercise. Remove every calculated distance, rounded result, selected endpoint, "
+                "and filled blank. Preserve only the general method and exact visible labels. Refer to the source as "
+                "'page N'. Return only the corrected explanation."
+            ))
+            content = chain.invoke(messages + [AIMessage(content=content), revision])
+            if _visual_explanation_reveals_exercise_answer(context, content):
+                content = _safe_visual_explanation(req, context)
+        elif req.mode in {"quiz", "visual_quiz"} and _visual_quiz_reuses_source_exercise(context, content):
+            revision = HumanMessage(content=(
+                "Rewrite the quiz because the draft copied and answered exercises printed on the cited page. Remove "
+                "every question that asks for a rounded result, filled blank, calculated distance, or completed table "
+                "from the source page. Keep other grounded questions. Include one newly authored item labelled "
+                "'Visual question — use page N' that asks only about visible labels, objects, or layout and requires "
+                "opening the cited page. Return only the corrected quiz."
+            ))
+            content = chain.invoke(messages + [AIMessage(content=content), revision])
+            if _visual_quiz_reuses_source_exercise(context, content):
+                content = _safe_visual_question(context)
+        precision_issues = _generated_visual_precision_issues(visuals, full_visual_context, content)
+        if precision_issues:
+            content = chain.invoke(messages + [AIMessage(content=content), HumanMessage(content=(
+                "Correct the draft while preserving its useful structure and level of detail. Remove these precision "
+                f"violations: {'; '.join(precision_issues)}. Use only degree values and relationships explicitly present "
+                "in the retrieved material or generated visual specification. Leave all self-check and practice "
+                "questions unsolved. Return only the corrected lesson."
+            ))])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
+
+    return {
+        "mode": req.mode,
+        "model": active_model_name(),
+        "content": content,
+        "groundedInMaterial": True,
+        "noMaterialFound": False,
+        "citations": citations,
+        "visuals": visuals,
+    }

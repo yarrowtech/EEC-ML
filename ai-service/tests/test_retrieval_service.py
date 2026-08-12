@@ -61,6 +61,114 @@ def test_chapter_scroll_never_calls_search_chunks(monkeypatch):
     assert "poem text" in result[0]
 
 
+def test_chapter_returns_visual_evidence_and_page_citation(monkeypatch):
+    text_hit = {
+        **_hit("Place value explanation", 1.0, 0),
+        "material_id": "material-1",
+        "source_name": "math.pdf",
+        "source_url": "https://example.test/math.pdf",
+        "chunk_type": "text",
+    }
+    visual_hit = {
+        **_hit("Visual evidence from source PDF page 4. Number line from 0 to 100.", 1.0, 1),
+        "material_id": "material-1",
+        "source_name": "math.pdf",
+        "source_url": "https://example.test/math.pdf",
+        "chunk_type": "visual",
+        "page_number": 4,
+    }
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kwargs: [visual_hit, text_hit])
+
+    chunks, citations = service.retrieve_from_qdrant_with_meta(
+        school_id="school-1",
+        class_id="class-1",
+        section_id="section-1",
+        subject="Mathematics",
+        chapter_title="Place Value",
+        topic="Number lines",
+        sub_topic=None,
+        question=None,
+    )
+
+    assert chunks == ["Place value explanation", visual_hit["text"]]
+    assert citations[0]["source_url"] == "https://example.test/math.pdf"
+    assert citations[0]["visual_pages"][0]["page_number"] == 4
+
+
+def test_chapter_visual_pages_are_ranked_by_query_terms(monkeypatch):
+    visual_pages = [
+        {
+            **_hit("Visual evidence showing travel distances.", 1.0, 0),
+            "material_id": "material-1",
+            "source_name": "math.pdf",
+            "source_url": "https://example.test/math.pdf",
+            "chunk_type": "visual",
+            "page_number": 1,
+        },
+        {
+            **_hit("Visual evidence showing rounding on a number line.", 1.0, 1),
+            "material_id": "material-1",
+            "source_name": "math.pdf",
+            "source_url": "https://example.test/math.pdf",
+            "chunk_type": "visual",
+            "page_number": 8,
+        },
+    ]
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kwargs: visual_pages)
+    monkeypatch.setattr(settings, "max_context_chunks", 1)
+
+    chunks, citations = service.retrieve_from_qdrant_with_meta(
+        school_id="school-1",
+        class_id="class-1",
+        section_id="section-1",
+        subject="Mathematics",
+        chapter_title="Place Value",
+        topic="rounding",
+        sub_topic="number line",
+        question="Explain the rounding diagram",
+    )
+
+    assert "number line" in chunks[0]
+    assert citations[0]["visual_pages"][0]["page_number"] == 8
+
+
+def test_chapter_visual_ranking_drops_unrelated_pages(monkeypatch):
+    visual_pages = [
+        {
+            **_hit("Visual evidence showing rounding on a labelled number line.", 1.0, 0),
+            "material_id": "material-1",
+            "source_name": "math.pdf",
+            "chunk_type": "visual",
+            "page_number": 8,
+        },
+        {
+            **_hit("Visual evidence showing a river crossing puzzle and pebbles.", 1.0, 1),
+            "material_id": "material-1",
+            "source_name": "math.pdf",
+            "chunk_type": "visual",
+            "page_number": 12,
+        },
+    ]
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kwargs: visual_pages)
+
+    chunks, citations = service.retrieve_from_qdrant_with_meta(
+        school_id="school-1",
+        class_id="class-1",
+        section_id="section-1",
+        subject="Mathematics",
+        chapter_title="Place Value",
+        topic="rounding",
+        sub_topic="number line",
+        question="Explain rounding visually",
+    )
+
+    assert len(chunks) == 1
+    assert citations[0]["visual_pages"] == [{
+        "page_number": 8,
+        "description": visual_pages[0]["text"][:500],
+    }]
+
+
 def test_chapter_overlap_is_merged_not_duplicated(monkeypatch):
     # Simulate two chunks sharing a 30-char overlap at their boundary.
     shared = "shared overlap text here okay "  # 30 chars
@@ -92,6 +200,41 @@ def test_falls_back_to_subject_search_when_chapter_has_no_chunks(monkeypatch):
     assert len(calls) == 1
     assert calls[0]["chapter_title"] is None
     assert calls[0]["subject_name"] == "science"
+
+
+def test_chapter_retries_legacy_subject_name_when_subject_id_has_no_chunks(monkeypatch):
+    calls = []
+
+    def fake_chapter(**kwargs):
+        calls.append(kwargs)
+        return [] if kwargs["subject_id"] else [_hit("legacy mathematics", 1.0, 0)]
+
+    monkeypatch.setattr(service, "get_chapter_chunks", fake_chapter)
+
+    assert _retrieve(subject="Mathematics", subject_id="subject-1") == ["legacy mathematics"]
+    assert [call["subject_id"] for call in calls] == ["subject-1", None]
+    assert calls[1]["subject_name"] == "mathematics"
+
+
+def test_subject_search_retries_legacy_subject_name_when_subject_id_has_no_hits(monkeypatch):
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kwargs: [])
+    calls = []
+
+    def fake_search(**kwargs):
+        calls.append(kwargs)
+        if kwargs["subject_id"]:
+            return []
+        return [_hit("legacy algebra", settings.rag_relevance_threshold + 0.1, 0)]
+
+    monkeypatch.setattr(service, "search_chunks", fake_search)
+
+    assert _retrieve(
+        subject="Mathematics",
+        subject_id="subject-1",
+        chapter_title=None,
+    ) == ["legacy algebra"]
+    assert [call["subject_id"] for call in calls] == ["subject-1", None]
+    assert calls[1]["subject_name"] == "mathematics"
 
 
 def test_subject_fallback_applies_relevance_threshold(monkeypatch):
@@ -141,3 +284,18 @@ def test_subject_results_capped_at_max_context_chunks(monkeypatch):
     hits = [_hit(f"chunk {i}", 0.9, i) for i in range(10)]
     monkeypatch.setattr(service, "search_chunks", lambda **kw: hits)
     assert len(_retrieve(chapter_title=None)) == settings.max_context_chunks
+
+
+def test_hybrid_search_prefers_exact_formula_match(monkeypatch):
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [])
+    threshold = settings.rag_relevance_threshold
+    formula_hit = {
+        **_hit("Newton's second law is F = ma.", threshold - 0.04, 1),
+        "formulas": ["F = ma"],
+    }
+    generic_hit = _hit("A general discussion of force.", threshold + 0.01, 0)
+    monkeypatch.setattr(service, "search_chunks", lambda **kw: [generic_hit, formula_hit])
+
+    result = _retrieve(chapter_title=None, question="Explain F = ma")
+
+    assert result[0] == formula_hit["text"]

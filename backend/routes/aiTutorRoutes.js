@@ -1,6 +1,13 @@
+/**
+ * Copyright (c) 2026 HouseofMusa and YarrowTech
+ * All rights reserved. Unauthorized copying, modification, distribution,
+ * or duplication is prohibited without prior written permission.
+ */
+
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
@@ -9,7 +16,7 @@ const LessonPlan = require('../models/LessonPlan');
 const { buildStudentContext } = require('../utils/studentContextBuilder');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const ALLOWED_MODES = ['explain', 'summarize', 'quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary'];
+const ALLOWED_MODES = ['custom', 'explain', 'visual_explain', 'summarize', 'quiz', 'visual_quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary'];
 
 const MAX_MATERIALS = 50;
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -116,7 +123,10 @@ const ingestMaterialAttachments = async (material) => {
         school_id: String(material.schoolId),
         class_id: String(material.classId || ''),
         section_id: String(material.sectionId || ''),
+        academic_year_id: String(material.academicYearId || ''),
+        subject_id: String(material.subjectId || ''),
         subject_name: material.subjectName || '',
+        curriculum_code: material.curriculumCode || '',
         chapter_id: material.chapterId || '',
         chapter_title: material.chapterTitle || '',
         topic_title: material.topicTitle || '',
@@ -135,6 +145,61 @@ const ensureMaterialsIndexed = async (materials) => {
   return indexedAttachmentCount;
 };
 
+router.get('/source-page', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const campusId = req.campusId;
+    const studentId = req.user?.id;
+    const materialId = normalizeString(req.query?.materialId);
+    const pageNumber = Number(req.query?.page);
+    if (!schoolId || !studentId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!mongoose.Types.ObjectId.isValid(materialId) || !Number.isInteger(pageNumber) || pageNumber < 1) {
+      return res.status(400).json({ error: 'materialId and a positive page number are required' });
+    }
+
+    const studentFilter = { _id: studentId, schoolId };
+    if (campusId) studentFilter.campusId = campusId;
+    const student = await StudentUser.findOne(studentFilter).select('classId sectionId').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const materialFilter = {
+      _id: materialId,
+      schoolId,
+      status: 'published',
+      publishedForStudentPortal: true,
+    };
+    if (campusId) {
+      materialFilter.$or = [
+        { campusId },
+        { campusId: null },
+        { campusId: { $exists: false } },
+      ];
+    }
+    if (student.classId) materialFilter.classId = student.classId;
+    if (student.sectionId) materialFilter.sectionId = student.sectionId;
+    const material = await TeachingMaterial.findOne(materialFilter).select('_id').lean();
+    if (!material) return res.status(404).json({ error: 'Published material not found for this student' });
+
+    const pageResponse = await axios.post(
+      `${AI_SERVICE_URL}/ingest/material-page`,
+      {
+        material_id: materialId,
+        page_number: pageNumber,
+        school_id: String(schoolId),
+        class_id: String(student.classId || ''),
+        section_id: String(student.sectionId || ''),
+      },
+      { responseType: 'arraybuffer', timeout: 60_000 }
+    );
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.send(pageResponse.data);
+  } catch (err) {
+    const status = err?.response?.status === 404 ? 404 : 502;
+    return res.status(status).json({ error: 'Unable to render the cited material page' });
+  }
+});
+
 router.post('/generate', authStudent, async (req, res) => {
   try {
     const schoolId = req.schoolId;
@@ -143,7 +208,7 @@ router.post('/generate', authStudent, async (req, res) => {
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
-    const { subject, topic, subTopic, mode, question, chapterTitle, difficulty, wrongAnswer } = req.body || {};
+    const { subject, topic, subTopic, mode, question, chapterTitle, difficulty, responseDepth, learningGoal, wrongAnswer } = req.body || {};
     const normalizedMode = normalizeString(mode);
     if (!ALLOWED_MODES.includes(normalizedMode)) {
       return res.status(400).json({ error: `mode must be one of: ${ALLOWED_MODES.join(', ')}` });
@@ -208,6 +273,11 @@ router.post('/generate', authStudent, async (req, res) => {
       subTopic,
       materials,
     });
+    const normalizedSubject = normalizeString(subject).toLowerCase();
+    const selectedMaterial = materials.find(
+      (material) => normalizeString(material.subjectName).toLowerCase() === normalizedSubject
+    ) || null;
+    const academicYearId = selectedMaterial?.academicYearId || materials[0]?.academicYearId || null;
 
     // Build student context for personalised LLM response — fire and forget on error
     let studentContext = '';
@@ -237,8 +307,13 @@ router.post('/generate', authStudent, async (req, res) => {
       schoolId: String(schoolId),
       classId: student.classId ? String(student.classId) : null,
       sectionId: student.sectionId ? String(student.sectionId) : null,
+      academicYearId: academicYearId ? String(academicYearId) : null,
+      subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
+      curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
       chapterTitle: resolvedChapterTitle,
       difficulty: normalizeString(difficulty) || null,
+      responseDepth: normalizeString(responseDepth) || null,
+      learningGoal: normalizeString(learningGoal) || null,
       wrongAnswer: normalizeString(wrongAnswer) || null,
       studentContext: studentContext || null,
       conversationHistory: conversationHistory.length ? conversationHistory : null,
@@ -251,6 +326,8 @@ router.post('/generate', authStudent, async (req, res) => {
         model: aiResponse.data?.model,
         groundedInMaterial: aiResponse.data?.groundedInMaterial || false,
         noMaterialFound: aiResponse.data?.noMaterialFound || false,
+        citations: Array.isArray(aiResponse.data?.citations) ? aiResponse.data.citations : [],
+        visuals: Array.isArray(aiResponse.data?.visuals) ? aiResponse.data.visuals : [],
         sourceMaterialCount: materials.length,
         sourceLessonPlanCount: lessonPlans.length,
         candidateChunkCount: 0,

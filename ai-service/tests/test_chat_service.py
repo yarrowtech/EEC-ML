@@ -39,6 +39,154 @@ def test_grade_level_defaults_to_school(make_request):
     assert "for a school student" in system
 
 
+def test_physics_prompt_requires_variables_units_and_dimensions(make_request):
+    system, _ = service.build_prompt(make_request(subject="Physics"), "context")
+    assert "Define every variable" in system
+    assert "dimensional consistency" in system
+
+
+def test_visual_explanation_prompt_requires_page_linked_walkthrough(make_request):
+    context = (
+        "Visual evidence from source PDF page 8.\n"
+        "Diagram labels: 2,300; 2,350; 2,400.\n"
+        "Diagram descriptions: A number line showing neighbouring hundreds."
+    )
+    system, user = service.build_prompt(
+        make_request(mode="explain", subject="Mathematics"),
+        context,
+    )
+    assert "PDF page(s) 8" in system
+    assert "Visual walkthrough" in system
+    assert "Look" in system
+    assert "Notice" in system
+    assert "Connect" in system
+    assert "VISIBLE-LABEL FIDELITY" in system
+    assert "SOURCE-EXERCISE LOCK" in system
+    assert "calculate its requested distances/results" in system
+    assert "FINAL VISUAL RESPONSE CONSTRAINT" in user
+    assert "SOURCE-EXERCISE LOCK" in user
+
+
+def test_visual_quiz_prompt_requests_new_page_dependent_question(make_request):
+    context = "Visual evidence from source PDF page 7.\nDiagram descriptions: A labelled number line."
+    system, _ = service.build_prompt(make_request(mode="quiz"), context)
+    assert "Visual question — use page N" in system
+    assert "do not copy, solve, or reveal" in system
+
+
+def test_generated_visual_prompt_tells_model_diagram_is_on_screen(make_request):
+    visual = [{
+        "type": "angle_turns",
+        "items": [{"label": "Quarter turn", "degrees": 90, "angle_name": "Right angle"}],
+    }]
+    system, user = service.build_prompt(
+        make_request(mode="visual_explain", topic="Angles as Turns"),
+        "A quarter turn creates a 90° angle.",
+        generated_visuals=visual,
+    )
+    assert "Do not say that no visual is available" in system
+    assert "Quarter turn = 90° = Right angle" in user
+
+
+def test_visual_explain_depth_and_goal_customize_structure(make_request):
+    _, user = service.build_prompt(
+        make_request(
+            mode="visual_explain",
+            responseDepth="deep",
+            learningGoal="revision",
+        ),
+        "A visual concept from the material.",
+    )
+    assert "three progressively harder" in user
+    assert "comparison table" in user
+    assert "exam-ready recap" in user
+    assert "unsolved self-check" in user
+    assert "do not invent extension calculations" in user
+
+
+def test_text_only_prompt_does_not_claim_visual_evidence(make_request):
+    system, _ = service.build_prompt(make_request(mode="explain"), "A plain text explanation.")
+    assert "VISUAL EVIDENCE RULES" not in system
+
+
+def test_visual_context_is_bounded_around_requested_topic(make_request):
+    chapter = ("unrelated introduction " * 500) + "ROUNDING TARGET SECTION " + ("later text " * 500)
+    visual = "Visual evidence from source PDF page 8. Diagram labels: 2,300 | 2,400."
+
+    context = service._focused_visual_context(
+        make_request(topic="rounding with a number line"),
+        [chapter, visual],
+    )
+
+    assert "ROUNDING TARGET SECTION" in context
+    assert visual in context
+    assert len(context) <= 3500 + len(visual) + 2
+
+
+def test_visual_exercise_answer_detector_catches_calculated_solution():
+    context = (
+        "Visual evidence from source PDF page 8. Which number should the rabbit choose? "
+        "______ is the nearest hundred."
+    )
+    assert service._visual_explanation_reveals_exercise_answer(
+        context,
+        "The nearest hundred is 2,300 because it is 46 units away.",
+    )
+
+
+def test_visual_exercise_answer_detector_allows_method_only_explanation():
+    context = "Visual evidence from source PDF page 8. Fill in the ______ blank."
+    assert not service._visual_explanation_reveals_exercise_answer(
+        context,
+        "Compare the highlighted position with each labelled endpoint.",
+    )
+
+
+def test_visual_quiz_detector_catches_copied_rounding_task():
+    context = "Visual evidence from source PDF page 8. Fill in the ______ nearest hundred."
+    assert service._visual_quiz_reuses_source_exercise(
+        context,
+        "What is the nearest hundred of 2,346?\nA) 2,300\nAnswer: A",
+    )
+
+
+def test_visual_quiz_detector_allows_observation_question():
+    context = "Visual evidence from source PDF page 8. Fill in the ______ blank."
+    assert not service._visual_quiz_reuses_source_exercise(
+        context,
+        "Visual question — use page 8: Which animal is visible beside the number line?",
+    )
+
+
+def test_generated_visual_precision_detects_unsupported_degrees_and_answers():
+    visuals = [{"type": "angle_turns", "items": [{"degrees": 90}, {"degrees": 180}]}]
+    issues = service._generated_visual_precision_issues(
+        visuals,
+        "Quarter turn 90°. Half turn 180°.",
+        "Example: 225°. Self-check questions\n1. Try it. Answer: 225°",
+    )
+    assert "unsupported degree values: 225°" in issues
+    assert "self-check answers were revealed" in issues
+
+
+def test_verification_context_does_not_expand_curriculum_scope(make_request):
+    _, user = service.build_prompt(
+        make_request(subject="Mathematics", question="Calculate 12 / 3"),
+        "context",
+        "Restricted verifier checked `12 / 3` and obtained `4.0`.",
+    )
+    assert "does not expand the retrieved curriculum scope" in user
+
+
+def test_homework_prompt_never_receives_verification_answer(make_request):
+    _, user = service.build_prompt(
+        make_request(mode="homework_help", subject="Mathematics", question="Calculate 12 / 3"),
+        "context",
+        "Restricted verifier checked `12 / 3` and obtained `4.0`.",
+    )
+    assert "obtained `4.0`" not in user
+
+
 # --- retrieve_relevant_chunks routing ---
 
 
