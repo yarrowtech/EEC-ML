@@ -2930,7 +2930,7 @@ const Students = ({ setShowAdminHeader }) => {
       }
 
       finishImportProgress();
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       await Swal.fire({
         icon: "success",

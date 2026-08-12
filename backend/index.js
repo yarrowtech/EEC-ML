@@ -229,6 +229,10 @@ app.use((err, req, res, _next) => {
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '::';
 const httpServer = http.createServer(app);
+// Long-running requests (e.g. large bulk student uploads processed row-by-row)
+// need more than Node's 5-minute default before the socket is torn down.
+httpServer.requestTimeout = 600000; // 10 minutes
+httpServer.headersTimeout = 600000;
 const io = configureSocketServer(httpServer, corsOrigin, tenantResolver, redisClient);
 app.set('io', io);
 
