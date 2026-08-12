@@ -95,6 +95,25 @@ def test_chapter_returns_visual_evidence_and_page_citation(monkeypatch):
     assert citations[0]["visual_pages"][0]["page_number"] == 4
 
 
+def test_citations_dedupe_legacy_and_current_ids_by_source_url():
+    shared = {
+        "source_name": "eemm102.pdf",
+        "source_url": "https://example.test/eemm102.pdf",
+        "chapter_title": "Fractions",
+        "chunk_type": "visual",
+        "page_number": 1,
+        "text": "Visual evidence from page 1.",
+    }
+    citations = service._dedupe_citations([
+        {**shared, "material_id": "smart_learning_materials/file_old"},
+        {**shared, "material_id": "6a7c446a7c70d4508e96f370"},
+    ])
+
+    assert len(citations) == 1
+    assert citations[0]["material_id"] == "6a7c446a7c70d4508e96f370"
+    assert [page["page_number"] for page in citations[0]["visual_pages"]] == [1]
+
+
 def test_chapter_visual_pages_are_ranked_by_query_terms(monkeypatch):
     visual_pages = [
         {
@@ -214,6 +233,26 @@ def test_chapter_retries_legacy_subject_name_when_subject_id_has_no_chunks(monke
     assert _retrieve(subject="Mathematics", subject_id="subject-1") == ["legacy mathematics"]
     assert [call["subject_id"] for call in calls] == ["subject-1", None]
     assert calls[1]["subject_name"] == "mathematics"
+
+
+def test_chapter_retries_mathematic_singular_title_variant(monkeypatch):
+    calls = []
+
+    def fake_chapter(**kwargs):
+        calls.append(kwargs["chapter_title"])
+        if kwargs["chapter_title"] == "Mathematic Chapter 004":
+            return [_hit("Making Sums Equal", 1.0, 0)]
+        return []
+
+    monkeypatch.setattr(service, "get_chapter_chunks", fake_chapter)
+    result = _retrieve(
+        subject="Mathematics",
+        subject_id="subject-1",
+        chapter_title="Mathematics Chapter 004",
+        topic="Making Sums Equal",
+    )
+    assert result == ["Making Sums Equal"]
+    assert calls[:2] == ["Mathematics Chapter 004", "Mathematic Chapter 004"]
 
 
 def test_subject_search_retries_legacy_subject_name_when_subject_id_has_no_hits(monkeypatch):

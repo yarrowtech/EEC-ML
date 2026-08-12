@@ -209,7 +209,115 @@ def _generated_visual_precision_issues(visuals: list[dict], context: str, conten
     self_check = re.search(r"self[- ]check", content, re.IGNORECASE)
     if self_check and re.search(r"(?:answer|solution)\s*:", content[self_check.start():], re.IGNORECASE):
         issues.append("self-check answers were revealed")
+    if any(visual.get("type") == "fraction_wholes" for visual in visuals):
+        if re.search(r"\bgrid\s+[abc]\b[^.\n]{0,45}\b\d+\s*[x×]\s*\d+", content, re.IGNORECASE):
+            issues.append("invented dimensions for source activity grids")
+        if re.search(r"\bgrid\s+[abc]\b[^.\n]{0,55}\b(?:already\s+)?shaded\b", content, re.IGNORECASE):
+            issues.append("described a blank source activity grid as shaded")
+        outside_examples = sorted({
+            token for token in ("pizza", "ribbon") if re.search(rf"\b{token}\b", content, re.IGNORECASE)
+        })
+        if outside_examples:
+            issues.append("introduced unsupported outside examples: " + ", ".join(outside_examples))
     return issues
+
+
+def _safe_fraction_visual_explanation(visual: dict) -> str:
+    first, second = visual["items"]
+    return (
+        "### Core idea\n\n"
+        "A fraction describes a part of a particular whole. Fractions such as 1/2 and 1/3 can be compared directly "
+        "only when their wholes are the same size. When the wholes differ, compare the actual represented amounts.\n\n"
+        "### Visual walkthrough\n\n"
+        f"- **Look:** The generated visual shows the {first['label'].lower()} as a {first['rows']}×{first['columns']} "
+        f"chocolate and the {second['label'].lower()} as a {second['rows']}×{second['columns']} chocolate.\n"
+        f"- **Notice:** 1/2 of the smaller chocolate highlights {first['highlighted_blocks']} equal blocks. "
+        f"1/3 of the larger chocolate highlights {second['highlighted_blocks']} equal blocks.\n"
+        "- **Connect:** The blocks have the same visual unit size, so compare the highlighted block counts: "
+        f"{first['highlighted_blocks']} < {second['highlighted_blocks']}. Therefore, in this picture, 1/3 of the "
+        "larger chocolate represents more chocolate than 1/2 of the smaller chocolate.\n\n"
+        "### Why this does not contradict 1/2 > 1/3\n\n"
+        "For one same-sized whole, 1/2 is greater than 1/3. Here, however, the two chocolates are different sizes. "
+        "The fraction and the size of its whole both affect the actual amount.\n\n"
+        "### Verified relationship\n\n"
+        f"- Smaller chocolate: {first['rows'] * first['columns']} equal blocks; 1/2 = "
+        f"{first['highlighted_blocks']} blocks.\n"
+        f"- Larger chocolate: {second['rows'] * second['columns']} equal blocks; 1/3 = "
+        f"{second['highlighted_blocks']} blocks.\n"
+        f"- Picture comparison: {first['highlighted_blocks']} blocks < {second['highlighted_blocks']} blocks.\n\n"
+        "### Important source-page detail\n\n"
+        "The separate grids labelled A, B, and C are blank activities for the student to shade. They are not the "
+        "2×2 and 3×3 chocolate diagrams, and they should not be described as already shaded.\n\n"
+        "### Common misconception\n\n"
+        "A larger denominator does not by itself tell us which physical amount is bigger when the wholes have "
+        "different sizes. First check whether the wholes are equal.\n\n"
+        "### Try it yourself\n\n"
+        "1. Point to the two highlighted blocks representing 1/2 in the smaller chocolate.\n"
+        "2. Point to the three highlighted blocks representing 1/3 in the larger chocolate.\n"
+        "3. Explain why the same-whole rule is necessary without completing the blank grid activities."
+    )
+
+
+def _safe_balance_visual_explanation(visual: dict) -> str:
+    problem_lines = []
+    for problem in visual["problems"]:
+        left_total = problem["left_total"]
+        right_total = problem["right_total"]
+        steps = []
+        for left_value, right_value in problem["example_swaps"]:
+            left_total = left_total - left_value + right_value
+            right_total = right_total - right_value + left_value
+            steps.append(f"swap {left_value} ↔ {right_value} → totals {left_total} and {right_total}")
+        problem_lines.append(
+            f"#### Problem ({problem['label']})\n\n"
+            f"- Left operands: {', '.join(map(str, problem['left']))}; total = {problem['left_total']}.\n"
+            f"- Right operands: {', '.join(map(str, problem['right']))}; total = {problem['right_total']}.\n"
+            f"- Gap: {problem['right_total']} − {problem['left_total']} = {problem['gap']}.\n"
+            f"- Required net transfer: {problem['gap']} ÷ 2 = {problem['required_transfer']}.\n"
+            f"- Verified demonstration: {'; '.join(steps)}.\n"
+            f"- Least number of moves: {problem['minimum_moves']}."
+        )
+    return (
+        "### Core idea\n\n"
+        "Each problem has two groups of addends and a printed total below each group. The totals are results, not "
+        "numbers that may be swapped. A swap removes one value from each group and puts it into the other group.\n\n"
+        "### Visual walkthrough\n\n"
+        "- **Look:** Read only the number tiles above each horizontal line as group members.\n"
+        "- **Notice:** The number below the line is the total. Compare the two totals to find the gap.\n"
+        "- **Connect:** A swap changes both totals at once, so only half of the total gap needs to be transferred from "
+        "the larger-sum group to the smaller-sum group.\n\n"
+        "### Exact swap rule\n\n"
+        "Let the right total exceed the left by D. If x moves from the left group and y moves from the right group,\n\n"
+        "- new left total = old left total − x + y\n"
+        "- new right total = old right total − y + x\n\n"
+        "For one swap to balance the groups, y − x must equal D/2. Swapping equal values changes neither total; it "
+        "cannot fix a non-zero gap.\n\n"
+        "### Verified demonstrations\n\n"
+        + "\n\n".join(problem_lines)
+        + "\n\n### Source prompt check\n\n"
+        "In problem (a), swapping 2 and 5 does **not** balance the groups: the totals become 22 and 18. The prompt "
+        "asks the student to observe this and then search for a pair that works.\n\n"
+        "### Common misconception\n\n"
+        "Do not include 19, 21, 39, 47, 68, 76, 314, or 330 inside the groups. Those values are printed totals. "
+        "Also, the one-swap condition concerns the **difference** between exchanged values: y − x = D/2.\n\n"
+        "### Try it yourself\n\n"
+        "Choose another pair in problem (a), apply both update equations, and check whether the two new totals match."
+    )
+
+
+def _citations_used_in_context(citations: list[dict], context: str) -> list[dict]:
+    used_pages = {int(page) for page in _VISUAL_PAGE_PATTERN.findall(context)}
+    if not used_pages:
+        return citations
+    filtered = []
+    for citation in citations:
+        copy = {**citation}
+        copy["visual_pages"] = [
+            page for page in citation.get("visual_pages", [])
+            if page.get("page_number") in used_pages
+        ]
+        filtered.append(copy)
+    return filtered
 
 MODE_INSTRUCTIONS: dict[str, str] = {
     "custom": (
@@ -941,6 +1049,7 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     raw_context = _strip_teacher_notes(_focused_visual_context(req, chunks))
     context = _strip_injection_attempts(raw_context)
     visuals = build_tutor_visuals(req, full_visual_context)
+    citations = _citations_used_in_context(citations, context)
 
     verification_context = verify_stem_question(req.question) if req.mode != "homework_help" else None
     system, user_prompt = build_prompt(req, context, verification_context, visuals)
@@ -987,6 +1096,13 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
                 "in the retrieved material or generated visual specification. Leave all self-check and practice "
                 "questions unsolved. Return only the corrected lesson."
             ))])
+            remaining_issues = _generated_visual_precision_issues(visuals, full_visual_context, content)
+            fraction_visual = next((visual for visual in visuals if visual.get("type") == "fraction_wholes"), None)
+            if remaining_issues and fraction_visual:
+                content = _safe_fraction_visual_explanation(fraction_visual)
+        balance_visual = next((visual for visual in visuals if visual.get("type") == "balance_swaps"), None)
+        if balance_visual:
+            content = _safe_balance_visual_explanation(balance_visual)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 

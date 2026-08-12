@@ -36,4 +36,23 @@ describe('TutorVisualSources', () => {
   test('rejects unsafe source protocols', () => {
     expect(safeSourcePageUrl('javascript:alert(1)', 1)).toBe('');
   });
+
+  test('deduplicates the same cited source page across legacy material ids', () => {
+    render(<TutorVisualSources citations={[
+      {
+        material_id: 'current-id',
+        source_name: 'eemm102.pdf',
+        source_url: 'https://cdn.example.test/eemm102.pdf',
+        visual_pages: [{ page_number: 1 }],
+      },
+      {
+        material_id: 'legacy-id',
+        source_name: 'eemm102.pdf',
+        source_url: 'https://cdn.example.test/eemm102.pdf',
+        visual_pages: [{ page_number: 1 }],
+      },
+    ]} />);
+
+    expect(screen.getAllByText('eemm102.pdf · page 1')).toHaveLength(1);
+  });
 });

@@ -114,15 +114,28 @@ def _get_chapter_chunks_with_legacy_subject_fallback(
     subject_name: str | None,
     chapter_title: str,
 ) -> list[dict]:
-    chunks = get_chapter_chunks(
-        school_id=school_id,
-        class_id=class_id,
-        section_id=section_id,
-        academic_year_id=academic_year_id,
-        subject_id=subject_id,
-        subject_name=subject_name,
-        chapter_title=chapter_title,
-    )
+    chapter_titles = [chapter_title]
+    normalized_title = chapter_title.casefold()
+    if "mathematics" in normalized_title:
+        chapter_titles.append(re.sub(r"mathematics", "Mathematic", chapter_title, flags=re.IGNORECASE))
+    elif re.search(r"\bmathematic\b", normalized_title):
+        chapter_titles.append(re.sub(r"\bmathematic\b", "Mathematics", chapter_title, flags=re.IGNORECASE))
+
+    chunks = []
+    matched_title = chapter_title
+    for candidate_title in dict.fromkeys(chapter_titles):
+        chunks = get_chapter_chunks(
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=subject_id,
+            subject_name=subject_name,
+            chapter_title=candidate_title,
+        )
+        if chunks:
+            matched_title = candidate_title
+            break
     if chunks or not subject_id or not subject_name:
         return chunks
 
@@ -133,15 +146,19 @@ def _get_chapter_chunks_with_legacy_subject_fallback(
         subject_id,
         subject_name,
     )
-    return get_chapter_chunks(
-        school_id=school_id,
-        class_id=class_id,
-        section_id=section_id,
-        academic_year_id=academic_year_id,
-        subject_id=None,
-        subject_name=subject_name,
-        chapter_title=chapter_title,
-    )
+    for candidate_title in dict.fromkeys([matched_title, *chapter_titles]):
+        chunks = get_chapter_chunks(
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=None,
+            subject_name=subject_name,
+            chapter_title=candidate_title,
+        )
+        if chunks:
+            return chunks
+    return []
 
 
 def _search_chunks_with_legacy_subject_fallback(
@@ -337,23 +354,28 @@ def retrieve_from_qdrant_with_meta(
 
 def _dedupe_citations(chunks: list[dict]) -> list[dict]:
     """Return one citation per source, including retrieved visual page evidence."""
-    citations_by_material: dict[str, dict] = {}
+    citations_by_source: dict[str, dict] = {}
     for chunk in chunks:
         mid = chunk.get("material_id", "")
         if not mid:
             continue
-        citation = citations_by_material.setdefault(
-            mid,
+        source_url = chunk.get("source_url", "")
+        source_name = chunk.get("source_name", "")
+        source_key = source_url.strip().casefold() or f"{source_name.strip().casefold()}::{mid}"
+        citation = citations_by_source.setdefault(
+            source_key,
             {
                 "material_id": mid,
-                "source_name": chunk.get("source_name", ""),
-                "source_url": chunk.get("source_url", ""),
+                "source_name": source_name,
+                "source_url": source_url,
                 "chapter_title": chunk.get("chapter_title", ""),
                 "discipline": chunk.get("discipline", ""),
                 "curriculum_code": chunk.get("curriculum_code", ""),
                 "visual_pages": [],
             },
         )
+        if re.fullmatch(r"[0-9a-f]{24}", str(mid), re.IGNORECASE):
+            citation["material_id"] = mid
         page_number = chunk.get("page_number")
         if chunk.get("chunk_type") == "visual" and isinstance(page_number, int):
             existing_pages = {page["page_number"] for page in citation["visual_pages"]}
@@ -362,4 +384,4 @@ def _dedupe_citations(chunks: list[dict]) -> list[dict]:
                     "page_number": page_number,
                     "description": chunk.get("text", "")[:500],
                 })
-    return list(citations_by_material.values())
+    return list(citations_by_source.values())

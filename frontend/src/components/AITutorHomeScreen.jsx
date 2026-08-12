@@ -94,6 +94,8 @@ import { saveLearningActivity } from '../utils/learningContinuity';
 import { TutorMessageContent, renderInlineTutorText } from './tutor/TutorMessageContent';
 import TutorVisualSources from './tutor/TutorVisualSources';
 import TutorGeneratedVisuals from './tutor/TutorGeneratedVisuals';
+import TutorAnswerActions from './tutor/TutorAnswerActions';
+import TutorEmptyState from './tutor/TutorEmptyState';
 import {
   createConversationId,
   deleteTutorConversation,
@@ -2212,6 +2214,12 @@ const COMPOSER_PLACEHOLDER_EXAMPLES = [
   "What's the difference between mitosis and meiosis?",
 ];
 
+const TUTOR_PROGRESS_STAGES = [
+  'Finding the most relevant teacher material…',
+  'Checking examples and visual evidence…',
+  'Building a clear answer for you…',
+];
+
 const STARTER_PROMPTS = [
   { mode: 'Custom Chat', text: 'Ask your own question about this topic', icon: Bot },
   { mode: 'Visual Explain', text: 'Walk me through the diagram or visual step by step', icon: Images },
@@ -2955,6 +2963,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const [visualGoal, setVisualGoal] = useState('understand');
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
+  const [thinkingStage, setThinkingStage] = useState(0);
   const [attachmentName, setAttachmentName] = useState('');
   const messagesScrollRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -2998,6 +3007,20 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const supportsVoice = typeof window !== 'undefined'
     && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const [typedPlaceholder, setTypedPlaceholder] = useState('');
+
+  useEffect(() => {
+    if (!sending) {
+      setThinkingStage(0);
+      return undefined;
+    }
+    setThinkingStage(0);
+    const secondStage = window.setTimeout(() => setThinkingStage(1), 1400);
+    const thirdStage = window.setTimeout(() => setThinkingStage(2), 3600);
+    return () => {
+      window.clearTimeout(secondStage);
+      window.clearTimeout(thirdStage);
+    };
+  }, [sending]);
 
   // Typewriter effect: cycles through example questions in the composer
   // placeholder while it's empty, typing/deleting one character at a time.
@@ -3145,6 +3168,12 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     return options;
   }, [selectedSubject]);
 
+  const chooseTopic = (value) => {
+    const selected = topics.find((topic) => topic.title === value);
+    setTopicTitle(value);
+    setChapterTitle(selected?.chapterTitle || '');
+  };
+
   // Keep the current conversation saved to the student's account as each
   // exchange settles, so it follows them across devices and nothing is lost
   // on refresh/navigation. Gated on `sending` so a streaming reply (which
@@ -3272,7 +3301,17 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     setMessages((prev) => [
       ...prev,
       { id: userId, role: 'user', text: userLabel },
-      { id: assistantId, role: 'assistant', thinking: true, text: '', mode, subject: selectedSubject?.title || '', topic: topicTitle },
+      {
+        id: assistantId,
+        role: 'assistant',
+        thinking: true,
+        text: '',
+        mode,
+        subject: selectedSubject?.title || '',
+        topic: topicTitle,
+        requestText: outgoing,
+        requestChip: chipLabel,
+      },
     ]);
     setSending(true);
     try {
@@ -3372,7 +3411,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             <p className="truncate text-xs text-[#78827B]">
               {sending ? (
                 <span className="inline-flex items-center gap-1 font-semibold text-[#F59E0B]">
-                  Thinking
+                  {TUTOR_PROGRESS_STAGES[thinkingStage]}
                   {[0, 0.15, 0.3].map((d) => (
                     <Motion.span key={d} animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: d }} className="size-1 rounded-full bg-[#F59E0B]" />
                   ))}
@@ -3412,11 +3451,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                 >
                   <Select
                     value={topicTitle || undefined}
-                    onValueChange={(value) => {
-                      const selected = topics.find((t) => t.title === value);
-                      setTopicTitle(value);
-                      setChapterTitle(selected?.chapterTitle || '');
-                    }}
+                    onValueChange={chooseTopic}
                   >
                     <SelectTrigger className="h-9 w-[128px] rounded-lg border-[#E7E3D9] bg-white text-xs text-[#26332E] shadow-sm sm:w-[150px]">
                       <SelectValue placeholder="Chapter / topic" />
@@ -3589,18 +3624,31 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                             )}
                           >
                             {msg.thinking ? (
-                              <div className="flex min-w-[120px] items-center gap-2 text-slate-500">
-                                <span className="text-sm font-medium">Thinking</span>
-                                <span className="flex items-center gap-1">
-                                  {[0, 0.15, 0.3].map((delay) => (
-                                    <Motion.span
-                                      key={delay}
-                                      animate={{ y: [0, -5, 0] }}
-                                      transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut', delay }}
-                                      className="size-1.5 rounded-full bg-[#F59E0B]"
+                              <div className="min-w-[230px] py-0.5 text-slate-500" aria-live="polite">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex items-center gap-1">
+                                    {[0, 0.15, 0.3].map((delay) => (
+                                      <Motion.span
+                                        key={delay}
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut', delay }}
+                                        className="size-1.5 rounded-full bg-[#F59E0B]"
+                                      />
+                                    ))}
+                                  </span>
+                                  <span className="text-sm font-semibold text-[#4E5B54]">{TUTOR_PROGRESS_STAGES[thinkingStage]}</span>
+                                </div>
+                                <div className="mt-2 flex gap-1">
+                                  {TUTOR_PROGRESS_STAGES.map((stage, stageIndex) => (
+                                    <span
+                                      key={stage}
+                                      className={cn(
+                                        'h-1 flex-1 rounded-full transition-colors duration-300',
+                                        stageIndex <= thinkingStage ? 'bg-[#F59E0B]' : 'bg-[#E7E3D9]'
+                                      )}
                                     />
                                   ))}
-                                </span>
+                                </div>
                               </div>
                             ) : (
                               msg.role === 'assistant' ? (
@@ -3618,30 +3666,40 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                               ) : msg.text
                             )}
                             {msg.role === 'assistant' && !msg.error && !msg.thinking && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <span className={cn(
-                                  'text-[11px] font-medium',
-                                  msg.noMaterialFound ? 'text-amber-700' : 'text-[#F59E0B]'
-                                )}>
-                                  {msg.noMaterialFound
-                                    ? 'No matching uploaded material found'
-                                    : msg.groundedInMaterial
-                                      ? 'Grounded in your teacher\'s material'
-                                      : 'General answer from the tutor'}
-                                </span>
-                                {!msg.streaming && (
-                                  <button
-                                    type="button"
-                                    onClick={() => copyMessage(msg)}
-                                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#FEF3C7] hover:text-[#B45309]"
-                                    aria-label="Copy answer"
-                                  >
-                                    {copiedId === msg.id
-                                      ? <><Check className="size-3 text-[#F59E0B]" /> Copied</>
-                                      : <><Copy className="size-3" /> Copy</>}
-                                  </button>
+                              <>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className={cn(
+                                    'text-[11px] font-medium',
+                                    msg.noMaterialFound ? 'text-amber-700' : 'text-[#F59E0B]'
+                                  )}>
+                                    {msg.noMaterialFound
+                                      ? 'No matching uploaded material found'
+                                      : msg.groundedInMaterial
+                                        ? 'Grounded in your teacher\'s material'
+                                        : 'General answer from the tutor'}
+                                  </span>
+                                  {!msg.streaming && (
+                                    <button
+                                      type="button"
+                                      onClick={() => copyMessage(msg)}
+                                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#FEF3C7] hover:text-[#B45309]"
+                                      aria-label="Copy answer"
+                                    >
+                                      {copiedId === msg.id
+                                        ? <><Check className="size-3 text-[#F59E0B]" /> Copied</>
+                                        : <><Copy className="size-3" /> Copy</>}
+                                    </button>
+                                  )}
+                                </div>
+                                {!msg.streaming && i === messages.length - 1 && (
+                                  <TutorAnswerActions
+                                    onRetry={msg.requestChip
+                                      ? () => handleSend({ text: msg.requestText, chip: msg.requestChip })
+                                      : undefined}
+                                    onAdjust={(adjustment) => handleSend(adjustment)}
+                                  />
                                 )}
-                              </div>
+                              </>
                             )}
                           </div>
                         </div>
@@ -3675,46 +3733,18 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                   </AnimatePresence>
                 </div>
               ) : (
-                <Motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex h-full flex-col items-center justify-center px-2 text-center"
-                >
-                  <Motion.div
-                    animate={{ y: [0, -6, 0] }}
-                    transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-                    className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-[#FEF3C7] text-[#F59E0B]"
-                  >
-                    <MessageCircleQuestion className="size-7" />
-                  </Motion.div>
-                  <p className="font-[Nunito] text-lg font-extrabold text-[#26332E]">Ask me anything, {studentFirstName}.</p>
-                  <p className="mt-1 max-w-sm text-sm leading-relaxed text-[#78827B]">
-                    Pick a subject up top for answers from your teacher’s material, or start with one of these:
-                  </p>
-                  <div className="mt-5 grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
-                    {STARTER_PROMPTS.map((starter) => {
-                      const Icon = starter.icon;
-                      return (
-                        <Motion.button
-                          key={starter.text}
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => applyStarter(starter)}
-                          className="flex items-center gap-2.5 rounded-xl border border-[#E7E3D9] bg-white px-3 py-2.5 text-left text-sm text-[#26332E] transition-colors hover:border-[#F3DFAE] hover:bg-[#FBF9F4]"
-                        >
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#FEF3C7] text-[#F59E0B]">
-                            <Icon className="size-4" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-[11px] font-semibold text-[#F59E0B]">{starter.mode}</span>
-                            <span className="block truncate text-xs text-[#78827B]">{starter.text}</span>
-                          </span>
-                        </Motion.button>
-                      );
-                    })}
-                  </div>
-                </Motion.div>
+                <TutorEmptyState
+                  studentName={studentFirstName}
+                  subjects={subjects}
+                  curriculumStatus={curriculumStatus}
+                  selectedSubject={selectedSubject}
+                  topics={topics}
+                  selectedTopic={topicTitle}
+                  starters={STARTER_PROMPTS}
+                  onChooseSubject={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
+                  onChooseTopic={chooseTopic}
+                  onChooseStarter={applyStarter}
+                />
               )}
           </div>
           <AnimatePresence>

@@ -91,6 +91,33 @@ The angle renderer also includes a degree/type/fraction comparison table. A post
 precision guard detects unsupported degree values and revealed self-check answers, then asks
 the model to correct the response against retrieved and deterministically verified facts.
 
+The Chapter 002 fractions failure is fixed end-to-end. Visual Explain recognizes the
+different-sized chocolate example and renders a responsive 2×2 chocolate with 2 highlighted
+blocks beside a 3×3 chocolate with 3 highlighted blocks, followed by the verified `2 < 3`
+comparison and same-whole rule. It explicitly keeps source Grids A/B/C as blank student
+activities. Precision checks reject invented grid dimensions, false pre-shading, and outside
+pizza/ribbon examples; a deterministic grounded fallback is used if a model rewrite still
+violates those facts. Citations now deduplicate legacy/current material IDs by source URL and
+show only the visual page actually included in the focused prompt. Live Chapter 002 validation
+returned one page-1 citation and one `fraction_wholes` visual with the correct relationship.
+
+The Chapter 004 **Making Sums Equal** failure is also fixed end-to-end. Retrieval now retries
+the legacy singular/plural chapter-title variants (`Mathematic`/`Mathematics`) before widening
+the search, so the tutor selects `eemm104.pdf` instead of an unrelated chapter. A deterministic
+`balance_swaps` visual separates operands from the printed totals, displays the gap and required
+half-gap transfer, and shows only mathematically verified demonstrations. Visual Explain uses a
+grounded deterministic explanation for this activity so a model cannot treat totals such as 21
+or 314 as swappable operands. Live validation returned one page-1 citation and the correct
+groups and totals for problems (a)–(d).
+
+The Student AI Tutor UX now guides an empty conversation through three visible steps:
+**subject → chapter/topic → learning action**. Subject and chapter choices are selectable
+directly inside the conversation area, while general questions remain available. During a
+request, the tutor reports whether it is finding teacher material, checking examples/visuals,
+or constructing the response. The latest completed answer also offers **Helpful**, **Adjust**,
+and **Try again** controls; Adjust can request a simpler, more detailed, or visual version
+without making the student retype the question.
+
 ## Start here next
 
 Evaluate the pilot UI on desktop and mobile, then expand the teacher-approved pilot to

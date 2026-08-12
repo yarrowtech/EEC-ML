@@ -93,7 +93,9 @@ const TutorVisualSources = ({ citations = [] }) => {
       pageNumber: page.page_number,
       url: safeSourcePageUrl(citation.source_url, page.page_number),
     }))
-  )).filter((source) => source.url).slice(0, 3);
+  )).filter((source) => source.url).filter((source, index, all) => (
+    all.findIndex((candidate) => candidate.url === source.url) === index
+  )).slice(0, 3);
 
   if (visualSources.length === 0) return null;
   return (

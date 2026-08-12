@@ -169,6 +169,66 @@ def test_generated_visual_precision_detects_unsupported_degrees_and_answers():
     assert "self-check answers were revealed" in issues
 
 
+def test_fraction_visual_precision_rejects_invented_grid_facts_and_examples():
+    visuals = [{"type": "fraction_wholes", "items": []}]
+    issues = service._generated_visual_precision_issues(
+        visuals,
+        "The source contains blank Grids A, B, and C.",
+        "Grid A is a shaded 5x7 grid. Imagine a pizza and a ribbon.",
+    )
+    assert "invented dimensions for source activity grids" in issues
+    assert "described a blank source activity grid as shaded" in issues
+    assert "introduced unsupported outside examples: pizza, ribbon" in issues
+
+
+def test_fraction_fallback_is_precise_and_keeps_source_grids_blank():
+    visual = {
+        "items": [
+            {"label": "Smaller chocolate", "rows": 2, "columns": 2, "highlighted_blocks": 2},
+            {"label": "Larger chocolate", "rows": 3, "columns": 3, "highlighted_blocks": 3},
+        ],
+    }
+    content = service._safe_fraction_visual_explanation(visual)
+    assert "2 blocks < 3 blocks" in content
+    assert "1/3 of the larger chocolate represents more" in content
+    assert "grids labelled A, B, and C are blank activities" in content
+    assert "pizza" not in content.casefold()
+
+
+def test_citations_keep_only_visual_pages_used_in_focused_context():
+    citations = [{
+        "material_id": "material-1",
+        "visual_pages": [{"page_number": 1}, {"page_number": 7}],
+    }]
+    result = service._citations_used_in_context(
+        citations,
+        "Visual evidence from source PDF page 1.",
+    )
+    assert result[0]["visual_pages"] == [{"page_number": 1}]
+
+
+def test_balance_fallback_keeps_totals_out_of_groups_and_verifies_swaps():
+    visual = {
+        "problems": [
+            {
+                "label": "a", "left": [1, 2, 7, 9], "right": [3, 4, 5, 9],
+                "left_total": 19, "right_total": 21, "gap": 2, "required_transfer": 1,
+                "example_swaps": [[2, 3]], "minimum_moves": 1,
+            },
+            {
+                "label": "d", "left": [77, 78, 79, 80], "right": [81, 82, 83, 84],
+                "left_total": 314, "right_total": 330, "gap": 16, "required_transfer": 8,
+                "example_swaps": [[77, 81], [78, 82]], "minimum_moves": 2,
+            },
+        ],
+    }
+    content = service._safe_balance_visual_explanation(visual)
+    assert "Left operands: 1, 2, 7, 9; total = 19" in content
+    assert "swap 2 ↔ 3 → totals 20 and 20" in content
+    assert "swap 78 ↔ 82 → totals 322 and 322" in content
+    assert "swapping 2 and 5 does **not** balance" in content
+
+
 def test_verification_context_does_not_expand_curriculum_scope(make_request):
     _, user = service.build_prompt(
         make_request(subject="Mathematics", question="Calculate 12 / 3"),

@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import { Images } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const endpointFor = (degrees, radius = 52, cx = 70, cy = 72) => {
   const radians = (-degrees * Math.PI) / 180;
@@ -49,14 +50,165 @@ const AngleTurn = ({ item }) => {
   );
 };
 
+const ChocolateGrid = ({ item }) => {
+  const rows = Number(item.rows) || 1;
+  const columns = Number(item.columns) || 1;
+  const highlighted = Number(item.highlighted_blocks) || 0;
+  const width = columns * 56;
+  const height = rows * 42;
+  const cells = Array.from({ length: rows * columns }, (_, index) => ({
+    index,
+    row: Math.floor(index / columns),
+    column: index % columns,
+  }));
+  return (
+    <div className="rounded-xl border border-amber-100 bg-white p-4 text-center shadow-sm">
+      <p className="text-sm font-bold text-slate-800">{item.label}</p>
+      <p className="mt-0.5 text-xs text-slate-500">{item.numerator}/{item.denominator} of the whole</p>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`${item.label}: ${highlighted} of ${rows * columns} equal blocks highlighted`}
+        className="mx-auto mt-3 h-36 w-full max-w-[280px]"
+      >
+        {cells.map((cell) => {
+          const isHighlighted = cell.index < highlighted;
+          return (
+            <g key={cell.index}>
+              <rect
+                x={cell.column * 56 + 2}
+                y={cell.row * 42 + 2}
+                width="52"
+                height="38"
+                rx="6"
+                fill={isHighlighted ? item.color : '#f8e1bd'}
+                stroke="#92400e"
+                strokeWidth="2"
+              />
+              <rect
+                x={cell.column * 56 + 8}
+                y={cell.row * 42 + 8}
+                width="40"
+                height="26"
+                rx="4"
+                fill="none"
+                stroke={isHighlighted ? '#fff7ed' : '#d6a76b'}
+                strokeWidth="2"
+              />
+            </g>
+          );
+        })}
+      </svg>
+      <p className="mt-2 text-sm font-extrabold" style={{ color: item.color }}>
+        {highlighted} highlighted blocks
+      </p>
+      <p className="text-xs text-slate-500">out of {rows * columns} equal blocks</p>
+    </div>
+  );
+};
+
+const FractionWholesVisual = ({ visual }) => (
+  <section className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-violet-50 p-4">
+    <div className="flex items-center gap-2 text-sm font-bold text-amber-950">
+      <Images className="size-4" /> {visual.title}
+    </div>
+    <p className="mt-1 text-xs leading-relaxed text-slate-600">{visual.caption}</p>
+    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+      {visual.items.map((item) => <ChocolateGrid key={item.label} item={item} />)}
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
+      <div className="rounded-xl bg-slate-900 px-4 py-3 text-center text-lg font-black text-white">
+        2 blocks <span className="px-2 text-amber-300">&lt;</span> 3 blocks
+      </div>
+      <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold leading-relaxed text-emerald-900">
+        {visual.comparison}
+      </p>
+    </div>
+    <div className="mt-2 rounded-xl border border-violet-100 bg-white p-3 text-xs leading-relaxed text-slate-700">
+      <span className="font-bold text-violet-800">Rule:</span> {visual.rule}
+    </div>
+    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{visual.source_activity_note}</p>
+  </section>
+);
+
+const NumberGroup = ({ title, numbers, total, tone }) => (
+  <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-center">
+    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</p>
+    <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+      {numbers.map((number, index) => (
+        <span
+          key={`${number}-${index}`}
+          className={cn(
+            'inline-flex min-w-9 items-center justify-center rounded-lg border px-2 py-1.5 text-sm font-bold',
+            tone === 'left' ? 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-900' : 'border-amber-200 bg-amber-50 text-amber-900'
+          )}
+        >
+          {number}
+        </span>
+      ))}
+    </div>
+    <div className="mx-auto mt-2 w-24 border-t-2 border-slate-400 pt-1 text-base font-black text-slate-900">
+      = {total}
+    </div>
+    <p className="text-[10px] font-semibold text-slate-400">printed total</p>
+  </div>
+);
+
+const BalanceSwapsVisual = ({ visual }) => (
+  <section className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-fuchsia-50 p-4">
+    <div className="flex items-center gap-2 text-sm font-bold text-cyan-950">
+      <Images className="size-4" /> {visual.title}
+    </div>
+    <p className="mt-1 text-xs leading-relaxed text-slate-600">{visual.caption}</p>
+    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+      {visual.problems.map((problem) => (
+        <article key={problem.label} className="rounded-2xl border border-white bg-white/70 p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-black text-slate-900">Problem ({problem.label})</h4>
+            <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[11px] font-bold text-cyan-800">
+              Minimum {problem.minimum_moves} {problem.minimum_moves === 1 ? 'move' : 'moves'}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+            <NumberGroup title="Left group" numbers={problem.left} total={problem.left_total} tone="left" />
+            <div className="text-center">
+              <p className="text-lg font-black text-slate-500">↔</p>
+              <p className="text-[10px] font-bold text-slate-400">swap</p>
+            </div>
+            <NumberGroup title="Right group" numbers={problem.right} total={problem.right_total} tone="right" />
+          </div>
+          <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-950">
+            <p><span className="font-bold">Gap:</span> {problem.right_total} − {problem.left_total} = {problem.gap}</p>
+            <p><span className="font-bold">Required transfer per completed solution:</span> {problem.gap} ÷ 2 = {problem.required_transfer}</p>
+            <p className="mt-1 font-bold">
+              Verified example: {problem.example_swaps.map(([left, right]) => `${left} ↔ ${right}`).join(', then ')}
+            </p>
+          </div>
+        </article>
+      ))}
+    </div>
+    <div className="mt-3 rounded-xl border border-cyan-100 bg-white p-3 text-xs leading-relaxed text-slate-700">
+      <span className="font-bold text-cyan-900">Swap rule:</span> {visual.rule}
+    </div>
+  </section>
+);
+
 const TutorGeneratedVisuals = ({ visuals = [] }) => {
-  const supported = visuals.filter((visual) => visual?.type === 'angle_turns' && Array.isArray(visual.items));
+  const supported = visuals.filter((visual) => (
+    (
+      ['angle_turns', 'fraction_wholes'].includes(visual?.type) && Array.isArray(visual.items)
+    ) || (visual?.type === 'balance_swaps' && Array.isArray(visual.problems))
+  ));
   if (!supported.length) return null;
 
   return (
     <div className="mt-4 space-y-3">
       {supported.map((visual) => (
-        <section key={visual.id || visual.title} className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-amber-50 p-4">
+        visual.type === 'balance_swaps'
+          ? <BalanceSwapsVisual key={visual.id || visual.title} visual={visual} />
+          : visual.type === 'fraction_wholes'
+          ? <FractionWholesVisual key={visual.id || visual.title} visual={visual} />
+          : <section key={visual.id || visual.title} className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-amber-50 p-4">
           <div className="flex items-center gap-2 text-sm font-bold text-violet-900">
             <Images className="size-4" /> {visual.title}
           </div>
@@ -86,7 +238,7 @@ const TutorGeneratedVisuals = ({ visuals = [] }) => {
               </tbody>
             </table>
           </div>
-        </section>
+          </section>
       ))}
     </div>
   );
