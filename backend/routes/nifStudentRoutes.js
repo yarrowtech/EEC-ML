@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
@@ -7,6 +8,19 @@ const ClassModel = require('../models/Class');
 const { generatePassword } = require('../utils/generator');
 
 const router = express.Router();
+
+// In-memory store for bulk-import jobs. Large imports (100s of rows, each
+// needing a password hash + a few DB round trips) can take minutes — far
+// longer than a hosting platform's reverse-proxy request timeout (e.g.
+// Render's ~100s) — so the endpoint kicks the work off in the background
+// and the frontend polls /students/bulk/status/:jobId for progress instead
+// of holding one long-lived HTTP request open.
+const bulkImportJobs = new Map();
+const BULK_IMPORT_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const pruneBulkImportJob = (jobId) => {
+  setTimeout(() => bulkImportJobs.delete(jobId), BULK_IMPORT_JOB_TTL_MS).unref?.();
+};
 
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
@@ -102,24 +116,11 @@ const normalizeClassLikeValue = (value) => {
 const isNumericClassLabel = (value) => /^\d{1,2}$/.test(String(value || '').trim());
 const normalizeLookupKey = (value) => normalizeClassLikeValue(value).toLowerCase();
 
-router.post('/students/bulk', adminAuth, async (req, res) => {
-  // #swagger.tags = ['Students']
+const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, isSuperAdmin, campusName, campusType }) => {
+  const job = bulkImportJobs.get(jobId);
+  if (!job) return;
+
   try {
-    const schoolId = resolveSchoolId(req, res);
-    if (!schoolId) return;
-    const campusId = resolveCampusId(req);
-
-    const { students } = req.body || {};
-    if (!Array.isArray(students) || students.length === 0) {
-      return res.status(400).json({ error: 'students array is required' });
-    }
-
-    const results = {
-      imported: 0,
-      failed: 0,
-      errors: [],
-    };
-
     const classDocs = await ClassModel.find({ schoolId }).select('name').lean();
     const classLookup = new Set(
       classDocs
@@ -129,6 +130,8 @@ router.post('/students/bulk', adminAuth, async (req, res) => {
 
     const sequenceByPrefix = new Map();
     const parentSequenceByPrefix = new Map();
+    const req = { admin, isSuperAdmin, body: { campusName, campusType } };
+    const results = job.results;
 
     for (let i = 0; i < students.length; i += 1) {
       const row = students[i] || {};
@@ -309,12 +312,83 @@ router.post('/students/bulk', adminAuth, async (req, res) => {
           message: err.message || 'Failed to import row',
         });
       }
+      job.processed = i + 1;
     }
 
-    return res.status(200).json(results);
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Unable to import students';
+  } finally {
+    job.finishedAt = Date.now();
+    pruneBulkImportJob(jobId);
+  }
+};
+
+router.post('/students/bulk', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+
+    const { students } = req.body || {};
+    if (!Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({ error: 'students array is required' });
+    }
+
+    const jobId = crypto.randomUUID();
+    bulkImportJobs.set(jobId, {
+      schoolId: String(schoolId),
+      status: 'processing',
+      total: students.length,
+      processed: 0,
+      results: { imported: 0, failed: 0, errors: [] },
+      createdAt: Date.now(),
+    });
+
+    runBulkImportJob(jobId, {
+      students,
+      schoolId,
+      campusId,
+      admin: req.admin,
+      isSuperAdmin: req.isSuperAdmin,
+      campusName: req.body?.campusName,
+      campusType: req.body?.campusType,
+    }).catch((err) => {
+      const job = bulkImportJobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+        job.error = err.message || 'Unable to import students';
+        job.finishedAt = Date.now();
+      }
+    });
+
+    return res.status(202).json({ jobId, total: students.length });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Unable to import students' });
   }
+});
+
+router.get('/students/bulk/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Students']
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return;
+
+  const job = bulkImportJobs.get(req.params.jobId);
+  if (!job || job.schoolId !== String(schoolId)) {
+    return res.status(404).json({ error: 'Import job not found' });
+  }
+
+  return res.status(200).json({
+    status: job.status,
+    total: job.total,
+    processed: job.processed,
+    imported: job.results.imported,
+    failed: job.results.failed,
+    errors: job.status === 'completed' || job.status === 'failed' ? job.results.errors : [],
+    error: job.error,
+  });
 });
 
 router.get('/students/archived', adminAuth, async (req, res) => {

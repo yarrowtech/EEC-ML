@@ -2910,7 +2910,15 @@ const Students = ({ setShowAdminHeader }) => {
         }
       }
 
-      const res = await fetch(`${API_BASE}/api/nif/students/bulk`, {
+      // The fake ticking progress bar only covers file parsing; once the
+      // job starts, real per-row progress from the server takes over.
+      if (importProgressTimerRef.current) {
+        clearInterval(importProgressTimerRef.current);
+        importProgressTimerRef.current = null;
+      }
+      setImportProgress(0);
+
+      const startRes = await fetch(`${API_BASE}/api/nif/students/bulk`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2919,18 +2927,54 @@ const Students = ({ setShowAdminHeader }) => {
         body: JSON.stringify({ students: payload }),
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
         await Swal.fire({
           icon: "error",
           title: "Import failed",
-          text: data.message || res.statusText,
+          text: startData.message || startData.error || startRes.statusText,
+        });
+        return;
+      }
+
+      // Large imports run in the background on the server (a single HTTP
+      // request would outlive hosting-provider proxy timeouts), so poll
+      // for progress instead of waiting on the original request.
+      const jobId = startData.jobId;
+      let data;
+      while (true) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const statusRes = await fetch(
+          `${API_BASE}/api/nif/students/bulk/status/${jobId}`,
+          { headers: { authorization: `Bearer ${localStorage.getItem("token")}` } }
+        );
+        if (!statusRes.ok) continue;
+        data = await statusRes.json().catch(() => null);
+        if (!data) continue;
+
+        setImportProgress(
+          data.total ? Math.min(99, Math.round((data.processed / data.total) * 100)) : importProgress
+        );
+
+        if (data.status === "completed" || data.status === "failed") break;
+      }
+
+      if (importProgressTimerRef.current) {
+        clearInterval(importProgressTimerRef.current);
+        importProgressTimerRef.current = null;
+      }
+
+      if (data.status === "failed") {
+        await Swal.fire({
+          icon: "error",
+          title: "Import failed",
+          text: data.error || "An error occurred during import",
         });
         return;
       }
 
       finishImportProgress();
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       await Swal.fire({
         icon: "success",
