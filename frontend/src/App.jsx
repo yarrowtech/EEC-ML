@@ -21,6 +21,7 @@ import FloatingGamesButton from "./components/FloatingGamesButton";
 import GamesPage from "./games/GamesPage";
 import SuperAdminApp from "./Super Admin/SuperAdminApp";
 import ArchivedStudents from "./admin/ArchivedStudents";
+import AdminFeeQrDisplay from "./admin/pages/AdminFeeQrDisplay";
 
 const ROLES = Object.freeze({
   STUDENT: "Student",
@@ -132,6 +133,12 @@ function App() {
         <Route
           path="/admin/archived-students"
           element={withAuth([ROLES.SCHOOL_ADMIN], <ArchivedStudents />)}
+        />
+        {/* Chrome-free "second screen" QR display — deliberately outside
+            AdminLayout so it renders with no sidebar/header, just the QR. */}
+        <Route
+          path="/admin/fees/qr-display"
+          element={withAuth([ROLES.SCHOOL_ADMIN], <AdminFeeQrDisplay />)}
         />
         <Route
           path="/admin/*"

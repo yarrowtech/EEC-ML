@@ -1379,6 +1379,17 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
     }
 
     const leaves = await TeacherLeave.find(query).sort({ createdAt: -1 }).lean();
+    const teacherIds = [...new Set(
+      leaves
+        .map((leave) => String(leave.teacherId || '').trim())
+        .filter((teacherId) => mongoose.isValidObjectId(teacherId))
+    )];
+    const teachers = teacherIds.length
+      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('_id email mobile').lean()
+      : [];
+    const teacherById = new Map(
+      teachers.map((teacher) => [String(teacher._id), teacher])
+    );
     res.json({
       leaves: leaves.map((leave) => ({
         id: leave._id,
@@ -1386,6 +1397,8 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
         campusId: leave.campusId || null,
         teacherId: leave.teacherId,
         teacherName: leave.teacherName || '',
+        teacherEmail: teacherById.get(String(leave.teacherId))?.email || '',
+        teacherPhone: teacherById.get(String(leave.teacherId))?.mobile || '',
         type: leave.type,
         startDate: leave.startDate,
         endDate: leave.endDate,

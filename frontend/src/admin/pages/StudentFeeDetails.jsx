@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -10,7 +10,9 @@ import {
   Landmark,
   Loader2,
   Mail,
+  MonitorSmartphone,
   Phone,
+  QrCode,
   Receipt,
   Smartphone,
   User,
@@ -76,6 +78,9 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
   const [savingPayment, setSavingPayment] = useState(false);
   const [savingDiscount, setSavingDiscount] = useState(false);
   const [actionMessage, setActionMessage] = useState({ type: '', text: '' });
+  const [creatingQr, setCreatingQr] = useState(false);
+  const [activeQrCodeId, setActiveQrCodeId] = useState('');
+  const qrPollTimerRef = useRef(null);
 
   useEffect(() => {
     setShowAdminHeader(false);
@@ -303,6 +308,91 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message || 'Online payment failed' });
       setSavingPayment(false);
+    }
+  };
+
+  // Polls the QR payment session from the admin's own screen (independent of
+  // the second-screen display's own polling) so the invoice/payment history
+  // here refreshes automatically the instant the payer scans and pays.
+  const pollQrStatus = useCallback((qrCodeId) => {
+    clearTimeout(qrPollTimerRef.current);
+    const check = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/fees/admin/razorpay/qr/${qrCodeId}/status`, {
+          headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          qrPollTimerRef.current = setTimeout(check, 3000);
+          return;
+        }
+        if (data.status === 'captured') {
+          setActiveQrCodeId('');
+          setPaymentForm(EMPTY_PAYMENT_FORM);
+          setActionMessage({ type: 'success', text: 'QR payment received and recorded automatically.' });
+          await fetchDetails();
+          return;
+        }
+        if (data.status === 'expired') {
+          setActiveQrCodeId('');
+          setActionMessage({ type: 'error', text: 'QR code expired without payment.' });
+          return;
+        }
+        qrPollTimerRef.current = setTimeout(check, 3000);
+      } catch {
+        qrPollTimerRef.current = setTimeout(check, 3000);
+      }
+    };
+    check();
+  }, [fetchDetails]);
+
+  useEffect(() => () => clearTimeout(qrPollTimerRef.current), []);
+
+  const handleOpenQr = async () => {
+    const amount = Number(paymentForm.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setActionMessage({ type: 'error', text: 'Enter a valid amount first' });
+      return;
+    }
+    setCreatingQr(true);
+    setActionMessage({ type: '', text: '' });
+    try {
+      const res = await fetch(`${API_BASE}/api/fees/admin/razorpay/qr`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ invoiceId, amount }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to create QR code');
+      }
+
+      const qrParams = new URLSearchParams({
+        qrId: data.qrCodeId,
+        imageUrl: data.imageUrl || '',
+        amount: String(data.amount || amount),
+        studentName: student?.name || '',
+      });
+      const displayWindow = window.open(
+        `/admin/fees/qr-display?${qrParams.toString()}`,
+        'razorpay-qr-display',
+        'width=440,height=680'
+      );
+      if (!displayWindow) {
+        setActionMessage({ type: 'error', text: 'Enable pop-ups for this site to open the QR display.' });
+        return;
+      }
+
+      setActiveQrCodeId(data.qrCodeId);
+      setActionMessage({ type: 'success', text: 'QR opened on a new screen — waiting for payment…' });
+      pollQrStatus(data.qrCodeId);
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err.message || 'Unable to create QR code' });
+    } finally {
+      setCreatingQr(false);
     }
   };
 
@@ -741,9 +831,30 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
                   {paymentForm.method === 'razorpay' ? 'Pay Online via Razorpay' : 'Record Payment'}
                 </button>
                 {paymentForm.method === 'razorpay' ? (
-                  <p className="text-xs text-slate-500">
-                    Opens Razorpay Checkout and auto-updates payment history after verification.
-                  </p>
+                  <>
+                    <p className="text-xs text-slate-500">
+                      Opens Razorpay Checkout and auto-updates payment history after verification.
+                    </p>
+
+                    <div className="border-t border-slate-100 pt-3">
+                      <button
+                        onClick={handleOpenQr}
+                        disabled={creatingQr || Boolean(activeQrCodeId) || !paymentForm.amount}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-lg border-2 border-indigo-200 bg-indigo-50 text-indigo-700 px-4 py-2.5 text-sm font-semibold hover:bg-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {creatingQr ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <MonitorSmartphone className="w-4 h-4" />
+                        )}
+                        {activeQrCodeId ? 'Waiting for QR payment…' : 'Open UPI QR on Second Screen'}
+                      </button>
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
+                        <QrCode className="w-3.5 h-3.5 shrink-0" />
+                        Opens a full-screen QR (no other UI) in a new window — show it to the payer, scan with any UPI app, and the payment is recorded automatically the moment it succeeds.
+                      </p>
+                    </div>
+                  </>
                 ) : (
                   <p className="text-xs text-slate-400">
                     {paymentMethodMeta(paymentForm.method).referenceLabel} is required so this payment can be traced back to a physical receipt or bank statement.

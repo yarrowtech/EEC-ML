@@ -39,19 +39,35 @@ const SecretField = ({ id, label, value, onChange, placeholder }) => {
   );
 };
 
-/* ─── already-saved secret: masked preview chip, never re-decrypted ─── */
-const SavedSecretChip = ({ preview, onChange }) => (
-  <div className="flex h-11 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5">
-    <span className="inline-flex items-center gap-2 font-mono text-sm text-slate-600">
-      <Lock size={13} className="text-slate-400" />
-      {preview || '••••••••'}
+/* ─── already-saved secret: masked preview chip, with an explicit,
+   audited "reveal" action to decrypt and show the real value on demand ─── */
+const SavedSecretChip = ({ preview, revealedValue, revealing, onToggleReveal, onChange }) => (
+  <div className="flex h-11 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5">
+    <span className="inline-flex min-w-0 items-center gap-2 font-mono text-sm text-slate-600">
+      <Lock size={13} className="shrink-0 text-slate-400" />
+      <span className="truncate">{revealedValue || preview || '••••••••'}</span>
     </span>
-    <button type="button" onClick={onChange} className="text-xs font-semibold text-amber-600 hover:text-amber-700">Change</button>
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        onClick={onToggleReveal}
+        disabled={revealing}
+        className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+        aria-label={revealedValue ? 'Hide secret' : 'Show secret'}
+        title={revealedValue ? 'Hide secret' : 'Show secret'}
+      >
+        {revealing ? <Loader2 size={15} className="animate-spin" /> : revealedValue ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+      <button type="button" onClick={onChange} className="text-xs font-semibold text-amber-600 hover:text-amber-700">Change</button>
+    </div>
   </div>
 );
 
 /* ─── secret field with saved-chip / edit-mode toggle ─── */
-const ManagedSecretField = ({ id, label, hasSaved, preview, editing, onStartEdit, onCancelEdit, value, onChange, placeholder }) => (
+const ManagedSecretField = ({
+  id, label, hasSaved, preview, revealedValue, revealing, onToggleReveal,
+  editing, onStartEdit, onCancelEdit, value, onChange, placeholder,
+}) => (
   <div className="space-y-2">
     <div className="flex items-center justify-between">
       <Label htmlFor={id}>{label}</Label>
@@ -60,7 +76,7 @@ const ManagedSecretField = ({ id, label, hasSaved, preview, editing, onStartEdit
       )}
     </div>
     {hasSaved && !editing ? (
-      <SavedSecretChip preview={preview} onChange={onStartEdit} />
+      <SavedSecretChip preview={preview} revealedValue={revealedValue} revealing={revealing} onToggleReveal={onToggleReveal} onChange={onStartEdit} />
     ) : (
       <SecretField id={id} label={label} value={value} onChange={onChange} placeholder={placeholder} />
     )}
@@ -74,6 +90,9 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
   const [editingKeySecret, setEditingKeySecret] = useState(false);
   const [editingWebhookSecret, setEditingWebhookSecret] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [revealedSecrets, setRevealedSecrets] = useState(null); // { keySecret, webhookSecret } | null
+  const [revealing, setRevealing] = useState(false);
+  const [visibleSecretFields, setVisibleSecretFields] = useState({ keySecret: false, webhookSecret: false });
 
   useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
 
@@ -95,8 +114,33 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
     setForm({ keyId: currentSlot.keyId || '', keySecret: '', webhookSecret: '' });
     setEditingKeySecret(!currentSlot.hasKeySecret);
     setEditingWebhookSecret(!currentSlot.hasWebhookSecret);
+    // Never carry a decrypted secret across a mode switch or a save/reload —
+    // revealing again should always be a fresh, deliberate, audited action.
+    setRevealedSecrets(null);
+    setVisibleSecretFields({ keySecret: false, webhookSecret: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateway.settings, viewMode]);
+
+  const toggleRevealSecret = async (field) => {
+    if (visibleSecretFields[field]) {
+      setVisibleSecretFields((current) => ({ ...current, [field]: false }));
+      return;
+    }
+    if (revealedSecrets) {
+      setVisibleSecretFields((current) => ({ ...current, [field]: true }));
+      return;
+    }
+    setRevealing(true);
+    try {
+      const data = await gateway.reveal(viewMode);
+      setRevealedSecrets(data);
+      setVisibleSecretFields((current) => ({ ...current, [field]: true }));
+    } catch (error) {
+      toast.error(error.message || 'Unable to reveal secret');
+    } finally {
+      setRevealing(false);
+    }
+  };
 
   const formValid = useMemo(() => {
     if (!viewMode) return false;
@@ -247,6 +291,9 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
                   <ManagedSecretField
                     id="keySecret" label="Key Secret"
                     hasSaved={slot.hasKeySecret} preview={slot.keySecretPreview}
+                    revealedValue={visibleSecretFields.keySecret ? revealedSecrets?.keySecret : ''}
+                    revealing={revealing}
+                    onToggleReveal={() => toggleRevealSecret('keySecret')}
                     editing={editingKeySecret}
                     onStartEdit={() => setEditingKeySecret(true)}
                     onCancelEdit={() => { setEditingKeySecret(false); setForm((c) => ({ ...c, keySecret: '' })); }}
@@ -256,6 +303,9 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
                   <ManagedSecretField
                     id="webhookSecret" label="Webhook Secret"
                     hasSaved={slot.hasWebhookSecret} preview={slot.webhookSecretPreview}
+                    revealedValue={visibleSecretFields.webhookSecret ? revealedSecrets?.webhookSecret : ''}
+                    revealing={revealing}
+                    onToggleReveal={() => toggleRevealSecret('webhookSecret')}
                     editing={editingWebhookSecret}
                     onStartEdit={() => setEditingWebhookSecret(true)}
                     onCancelEdit={() => { setEditingWebhookSecret(false); setForm((c) => ({ ...c, webhookSecret: '' })); }}

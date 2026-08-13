@@ -154,6 +154,34 @@ const saveSettings = async (req, res, next) => {
   }
 };
 
+// Deliberately separate from getSettings/publicSettings, which never include
+// decrypted secrets. Only reachable via an explicit admin action (not part
+// of the normal page load), and every reveal is audit-logged.
+const revealSecrets = async (req, res, next) => {
+  try {
+    const organization = await ensureOrganization(req, res);
+    if (!organization) return;
+    const mode = String(req.body?.mode || '').trim().toLowerCase();
+    if (!MODES.includes(mode)) return res.status(400).json({ error: 'Mode must be test or live' });
+    const slot = organization.paymentGateway?.razorpay?.[mode];
+    if (!slot?.keySecret && !slot?.webhookSecret) {
+      return res.status(404).json({ error: `No ${mode} credentials saved yet` });
+    }
+    await PaymentAudit.create({
+      organizationId: organization._id,
+      action: 'gateway.secret_revealed',
+      userId: req.admin?.id || null,
+      metadata: { provider: 'razorpay', mode },
+    });
+    return res.json({
+      keySecret: slot.keySecret ? decrypt(slot.keySecret) : '',
+      webhookSecret: slot.webhookSecret ? decrypt(slot.webhookSecret) : '',
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const activateMode = async (req, res, next) => {
   try {
     const organization = await ensureOrganization(req, res);
@@ -244,5 +272,5 @@ const disconnect = async (req, res, next) => {
   }
 };
 
-module.exports = { activateMode, disconnect, getSettings, publicSettings, saveSettings, testConnection };
+module.exports = { activateMode, disconnect, getSettings, publicSettings, revealSecrets, saveSettings, testConnection };
 module.exports.validatePayload = validatePayload;

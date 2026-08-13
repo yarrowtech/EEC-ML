@@ -21,7 +21,11 @@ const NotificationService = require('../utils/notificationService');
 const { logger } = require('../utils/logger');
 const {
   buildRazorpayReceipt,
+  closeRazorpayQrCode,
   createRazorpayOrder,
+  createRazorpayQrCode,
+  fetchRazorpayQrCode,
+  fetchRazorpayQrPayments,
   verifyRazorpaySignature,
   buildTransactionId,
 } = require('../utils/paymentGatewayService');
@@ -1179,6 +1183,172 @@ router.post('/admin/razorpay/verify', adminAuth, paymentGatewayResolver, async (
 
   } catch (err) {
     res.status(400).json({ error: err.message || 'Unable to verify payment' });
+  }
+});
+
+// Creates a single-use, fixed-amount UPI QR code for a "second screen" /
+// kiosk-style display: admin picks the amount, the QR is shown to the payer
+// on its own screen, and the poll endpoint below auto-records the payment
+// the moment Razorpay confirms it — no manual entry needed.
+router.post('/admin/razorpay/qr', adminAuth, paymentGatewayResolver, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    if (!requireCampusId(req, res)) return;
+
+    const { invoiceId, amount } = req.body || {};
+    if (!invoiceId || !mongoose.isValidObjectId(invoiceId)) {
+      return res.status(400).json({ error: 'Valid invoiceId is required' });
+    }
+
+    const invoice = await FeeInvoice.findOne({ _id: invoiceId, schoolId }).lean();
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+    const hasInvoiceAccess = await ensureInvoiceCampusAccess({
+      invoice,
+      schoolId,
+      campusId: req.campusId,
+    });
+    if (!hasInvoiceAccess) {
+      return res.status(403).json({ error: 'Invoice not available for this campus' });
+    }
+    await applyLateFeesForFilter({ schoolId, filter: { _id: invoiceId } });
+    const refreshedInvoice = await FeeInvoice.findOne({ _id: invoiceId, schoolId }).lean();
+    if (!refreshedInvoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    const balance = Math.max(
+      0,
+      Number(refreshedInvoice.totalAmount || 0) -
+        Number(refreshedInvoice.discountAmount || 0) -
+        Number(refreshedInvoice.paidAmount || 0)
+    );
+    if (balance <= 0) {
+      return res.status(400).json({ error: 'Invoice is already paid' });
+    }
+
+    const paymentAmount = Number.isFinite(Number(amount)) ? Number(amount) : balance;
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+    if (paymentAmount > balance) {
+      return res.status(400).json({ error: 'Payment amount exceeds balance' });
+    }
+
+    const amountPaise = Math.round(paymentAmount * 100);
+    const closeBy = Math.floor(Date.now() / 1000) + 30 * 60; // QR self-expires after 30 minutes
+    const qrCode = await createRazorpayQrCode({
+      credentials: req.paymentGateway,
+      amountPaise,
+      closeBy,
+      name: `Fee payment ${String(refreshedInvoice._id).slice(-6)}`,
+      notes: {
+        invoiceId: String(invoiceId),
+        studentId: String(refreshedInvoice.studentId),
+        source: 'admin_qr',
+      },
+    });
+
+    const payment = await Payment.create({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      studentId: refreshedInvoice.studentId,
+      feeId: refreshedInvoice._id,
+      amount: paymentAmount,
+      providerOrderId: qrCode.id,
+      initiatedByType: 'admin',
+      initiatedById: req.admin?.id || null,
+    });
+    await PaymentAudit.create({
+      organizationId: req.paymentGateway.organizationId,
+      action: 'payment.qr_created',
+      userId: req.admin?.id || null,
+      metadata: { paymentId: payment._id, feeId: refreshedInvoice._id, qrCodeId: qrCode.id, amount: paymentAmount },
+    });
+
+    res.json({
+      success: true,
+      qrCodeId: qrCode.id,
+      imageUrl: qrCode.image_url,
+      amount: paymentAmount,
+      expiresAt: new Date(closeBy * 1000).toISOString(),
+      invoiceId,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Unable to create QR code' });
+  }
+});
+
+// Polled by both the admin's screen and the second-screen QR display. Cheap
+// once captured (reads our own DB); only calls out to Razorpay while pending.
+router.get('/admin/razorpay/qr/:qrCodeId/status', adminAuth, paymentGatewayResolver, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { qrCodeId } = req.params;
+
+    const paymentIntent = await Payment.findOne({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      providerOrderId: qrCodeId,
+    });
+    if (!paymentIntent) {
+      return res.status(404).json({ error: 'QR payment session not found' });
+    }
+
+    if (paymentIntent.status === 'captured') {
+      const receipt = await FeePayment.findOne({
+        organizationId: req.paymentGateway.organizationId,
+        schoolId,
+        gatewayOrderId: qrCodeId,
+      }).lean();
+      return res.json({ status: 'captured', payment: receipt });
+    }
+
+    const qrPayments = await fetchRazorpayQrPayments({ credentials: req.paymentGateway, qrCodeId });
+    const capturedPayment = (qrPayments?.items || []).find((item) => item.status === 'captured');
+    if (capturedPayment) {
+      const captured = await capturePayment({
+        payment: paymentIntent,
+        providerPaymentId: capturedPayment.id,
+        source: 'admin_qr_poll',
+        userId: req.admin?.id || null,
+      });
+      return res.json({ status: 'captured', payment: captured.receipt });
+    }
+
+    const qrCode = await fetchRazorpayQrCode({ credentials: req.paymentGateway, qrCodeId });
+    if (qrCode.status === 'closed' && qrCode.close_reason !== 'completed') {
+      return res.json({ status: 'expired' });
+    }
+    return res.json({ status: 'pending' });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Unable to check QR status' });
+  }
+});
+
+router.post('/admin/razorpay/qr/:qrCodeId/cancel', adminAuth, paymentGatewayResolver, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { qrCodeId } = req.params;
+    const paymentIntent = await Payment.findOne({
+      organizationId: req.paymentGateway.organizationId,
+      schoolId,
+      providerOrderId: qrCodeId,
+      status: { $ne: 'captured' },
+    });
+    if (paymentIntent) {
+      await closeRazorpayQrCode({ credentials: req.paymentGateway, qrCodeId }).catch(() => {});
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'Unable to cancel QR code' });
   }
 });
 

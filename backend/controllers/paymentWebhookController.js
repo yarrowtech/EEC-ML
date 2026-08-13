@@ -5,13 +5,16 @@ const { capturePayment, failPayment } = require('../services/paymentLifecycleSer
 const { decrypt } = require('../utils/encryption');
 const { verifyRazorpayWebhookSignature } = require('../utils/paymentGatewayService');
 
-const supportedEvents = new Set(['payment.captured', 'payment.failed', 'order.paid']);
+const supportedEvents = new Set(['payment.captured', 'payment.failed', 'order.paid', 'qr_code.credited']);
 
 const getEventDetails = (payload) => {
   const paymentEntity = payload?.payload?.payment?.entity || {};
   const orderEntity = payload?.payload?.order?.entity || {};
+  // QR-code payments have no order_id — the QR code's own id is the key we
+  // stored as providerOrderId when the QR was created.
+  const qrCodeEntity = payload?.payload?.qr_code?.entity || {};
   return {
-    orderId: paymentEntity.order_id || orderEntity.id || '',
+    orderId: qrCodeEntity.id || paymentEntity.order_id || orderEntity.id || '',
     paymentId: paymentEntity.id || '',
     reason: paymentEntity.error_description || paymentEntity.error_reason || paymentEntity.error_code || '',
   };

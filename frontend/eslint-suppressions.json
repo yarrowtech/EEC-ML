@@ -249,7 +249,7 @@
   },
   "src/App.jsx": {
     "react/react-in-jsx-scope": {
-      "count": 52
+      "count": 54
     }
   },
   "src/Super Admin/SuperAdminApp.jsx": {
@@ -536,6 +536,11 @@
       "count": 45
     }
   },
+  "src/admin/pages/AdminFeeQrDisplay.jsx": {
+    "react/react-in-jsx-scope": {
+      "count": 33
+    }
+  },
   "src/admin/pages/AdminSettings.jsx": {
     "react/prop-types": {
       "count": 15
@@ -645,10 +650,10 @@
       "count": 1
     },
     "react/prop-types": {
-      "count": 18
+      "count": 24
     },
     "react/react-in-jsx-scope": {
-      "count": 105
+      "count": 111
     }
   },
   "src/admin/pages/ReportCardManagement.jsx": {

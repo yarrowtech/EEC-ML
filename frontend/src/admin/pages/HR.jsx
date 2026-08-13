@@ -1,10 +1,43 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { FileText, Users, Building2, CalendarCheck, Plus, X, CreditCard, Search, Filter, ChevronDown, ChevronUp, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee } from 'lucide-react';
+import { FileText, Users, Building2, CalendarCheck, Plus, X, CreditCard, Search, Filter, ChevronDown, ChevronUp, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye } from 'lucide-react';
 import IDCard from '../components/IDCard';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const ADMIN_PROFILE_CACHE_KEY = 'admin_profile_cache_v1';
+
+const getAdminProfileCacheKey = () => {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return `${ADMIN_PROFILE_CACHE_KEY}:anonymous`;
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return `${ADMIN_PROFILE_CACHE_KEY}:fallback`;
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    const adminId = payload?.id || 'unknown';
+    const schoolId = payload?.schoolId || 'school';
+    const campusId = payload?.campusId || 'campus';
+    return `${ADMIN_PROFILE_CACHE_KEY}:${adminId}_${schoolId}_${campusId}`;
+  } catch {
+    return `${ADMIN_PROFILE_CACHE_KEY}:fallback`;
+  }
+};
+
+const getSchoolDisplayName = () => {
+  try {
+    const raw = sessionStorage.getItem(getAdminProfileCacheKey());
+    if (raw) {
+      const profile = JSON.parse(raw);
+      const schoolName = String(profile?.schoolName || profile?.campusName || '').trim();
+      if (schoolName) return schoolName;
+    }
+  } catch {
+    // fall through to fallback
+  }
+  return 'EEC School';
+};
 
 const HR = ({ setShowAdminHeader }) => {
   const [searchParams] = useSearchParams();
@@ -110,6 +143,8 @@ const HR = ({ setShowAdminHeader }) => {
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
   const [leaveSearch, setLeaveSearch] = useState('');
   const [showLeaveFilters, setShowLeaveFilters] = useState(false);
+  const [showLeaveLetterModal, setShowLeaveLetterModal] = useState(false);
+  const [selectedLeaveRequest, setSelectedLeaveRequest] = useState(null);
 
   // Expense filters
   const [expenseTeacherFilter, setExpenseTeacherFilter] = useState('all');
@@ -134,6 +169,123 @@ const HR = ({ setShowAdminHeader }) => {
   };
 
   const normalizedStatus = (status) => String(status || '').trim().toLowerCase();
+
+  const formatLongDate = (value) => {
+    if (!value) return '-';
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+      ? new Date(`${value}T00:00:00`)
+      : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return String(value);
+    return new Intl.DateTimeFormat('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(parsed);
+  };
+
+  const formatLeaveDateRange = (startDate, endDate) => {
+    const start = formatLongDate(startDate);
+    const end = formatLongDate(endDate);
+    if (!startDate && !endDate) return '-';
+    if (String(startDate || '').trim() === String(endDate || '').trim()) return start;
+    if (!endDate || start === end) return start;
+    return `${start} to ${end}`;
+  };
+
+  const formatLeaveSubjectDate = (startDate, endDate) => {
+    const start = formatLongDate(startDate);
+    const end = formatLongDate(endDate);
+    if (!startDate && !endDate) return '';
+    if (String(startDate || '').trim() === String(endDate || '').trim() || !endDate || start === end) {
+      return `on ${start}`;
+    }
+    return `from ${start} to ${end}`;
+  };
+
+  const schoolDisplayName = useMemo(() => getSchoolDisplayName(), []);
+
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+
+  const handlePrintLeaveLetter = () => {
+    if (!selectedLeaveRequest) return;
+    const teacherName = selectedLeaveRequest.teacherName || 'Teacher';
+    const teacherEmail = String(selectedLeaveRequest.teacherEmail || '').trim() || 'Not provided';
+    const teacherPhone = String(selectedLeaveRequest.teacherPhone || '').trim() || 'Not provided';
+    const subjectDate = formatLeaveSubjectDate(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
+    const leavePeriod = formatLeaveDateRange(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
+    const printHtml = `
+      <html>
+        <head>
+          <title>Leave Letter</title>
+          <style>
+            @page { size: A4; margin: 18mm; }
+            html, body { width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; color: #111827; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { width: 100%; min-height: 297mm; box-sizing: border-box; }
+            .header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+            .title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+            .muted { color: #6b7280; font-size: 12px; margin: 0; line-height: 1.5; }
+            .body { font-size: 13px; line-height: 1.8; }
+            .body p { margin: 0 0 14px; }
+            .subject { text-align: center; font-weight: 600; }
+            .reason { white-space: pre-wrap; }
+            .signature { margin-top: 40px; }
+            .signature .name { font-weight: 700; margin-top: 6px; }
+            .label { font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="header">
+              <div>
+                <p class="title">${escapeHtml(`${schoolDisplayName} Administration`)}</p>
+                <p class="muted">Human Resource Department</p>
+              </div>
+              <div style="text-align:right;">
+                <p class="muted">${escapeHtml(formatLongDate(selectedLeaveRequest.createdAt))}</p>
+                <p class="muted">Status: ${escapeHtml(selectedLeaveRequest.status || '-')}</p>
+              </div>
+            </div>
+
+            <div class="body">
+              <p><span class="label">To,</span><br />The HR/Admin<br />${escapeHtml(schoolDisplayName)}</p>
+              <p class="subject"><span class="label">Subject:</span> Application for ${escapeHtml(selectedLeaveRequest.type || 'leave')} ${escapeHtml(subjectDate)}</p>
+              <p>Dear Sir/Madam,</p>
+              <p>I respectfully request leave for the period mentioned above. The reason provided by me is shown below.</p>
+              <p class="reason">${escapeHtml(selectedLeaveRequest.reason?.trim() || 'No reason provided.')}</p>
+              ${selectedLeaveRequest.adminNote ? `<p><span class="label">Admin note:</span><br />${escapeHtml(selectedLeaveRequest.adminNote)}</p>` : ''}
+              <p>I request you to kindly consider this leave application and grant approval.</p>
+              <p>Regards,</p>
+              <div class="signature">
+                <p class="name">${escapeHtml(teacherName)}</p>
+                <p class="muted">Email: ${escapeHtml(teacherEmail)}</p>
+                <p class="muted">Phone: ${escapeHtml(teacherPhone)}</p>
+              </div>
+              <p class="muted" style="margin-top: 18px;">Leave period: ${escapeHtml(leavePeriod)}</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1200');
+    if (!printWindow) return;
+
+    printWindow.document.open();
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 300);
+  };
 
   const countWeekdaysInMonth = (month) => {
     const [yearStr, monthStr] = String(month || '').split('-');
@@ -302,6 +454,16 @@ const HR = ({ setShowAdminHeader }) => {
 
   // Active filter count helper
   const countActiveFilters = (filters) => filters.filter((f) => f !== 'all' && f !== '').length;
+
+  const openLeaveLetter = (leave) => {
+    setSelectedLeaveRequest(leave || null);
+    setShowLeaveLetterModal(true);
+  };
+
+  const closeLeaveLetter = () => {
+    setShowLeaveLetterModal(false);
+    setSelectedLeaveRequest(null);
+  };
 
   const formatWorkingHours = (minutes) => {
     const totalMinutes = Number(minutes || 0);
@@ -1382,12 +1544,19 @@ const HR = ({ setShowAdminHeader }) => {
                             <td className="px-5 py-3">
                               <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">{r.type}</span>
                             </td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{r.startDate}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{r.endDate}</td>
+                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.startDate)}</td>
+                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.endDate)}</td>
                             <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={r.reason || ''}>{r.reason || '-'}</td>
                             <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
                             <td className="px-5 py-3 text-sm">
                               <div className="flex gap-2">
+                                <button
+                                  onClick={() => openLeaveLetter(r)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors"
+                                  title="View leave letter"
+                                >
+                                  <Eye size={12} /> View
+                                </button>
                                 <button
                                   onClick={() => reviewLeaveRequest(r.id, 'Approved')}
                                   disabled={status === 'approved' || status === 'accepted'}
@@ -1419,6 +1588,103 @@ const HR = ({ setShowAdminHeader }) => {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {showLeaveLetterModal && selectedLeaveRequest && (
+      <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col">
+              <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-yellow-50 to-white">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-yellow-700">Leave application</p>
+                  <h3 className="mt-1 text-lg font-bold text-gray-900">{selectedLeaveRequest.teacherName || 'Teacher'}</h3>
+                  <p className="text-sm text-gray-500">
+                    {selectedLeaveRequest.type || 'Leave request'} · {formatLeaveDateRange(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate)}
+                  </p>
+                </div>
+                <button
+                  onClick={closeLeaveLetter}
+                  className="p-2 rounded-lg hover:bg-black/5 text-gray-500 hover:text-gray-700 transition-colors"
+                  aria-label="Close leave letter"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 sm:p-8 bg-[#fcfaf4] overflow-y-auto">
+                <div className="mx-auto max-w-2xl bg-white border border-amber-100 rounded-2xl shadow-sm p-6 sm:p-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{schoolDisplayName} Administration</p>
+                      <p className="text-sm text-gray-500">Human Resource Department</p>
+                    </div>
+                    <div className="text-right text-sm text-gray-500">
+                      <p>{formatLongDate(selectedLeaveRequest.createdAt)}</p>
+                      <p className="mt-1">Status: <span className="font-medium text-gray-800">{selectedLeaveRequest.status || '-'}</span></p>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 space-y-5 text-sm text-gray-800 leading-7">
+                    <p>
+                      <span className="font-semibold">To,</span><br />
+                      The HR/Admin<br />
+                      {schoolDisplayName}
+                    </p>
+
+                    <p className="text-center">
+                      <span className="font-semibold">Subject:</span> Application for {selectedLeaveRequest.type || 'leave'} {formatLeaveSubjectDate(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate)}
+                    </p>
+
+                    <p>Dear Sir/Madam,</p>
+
+                    <p>
+                      I respectfully request leave for the period mentioned above. The reason provided by me is shown below.
+                    </p>
+
+                    {/* <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-2">Reason / Letter body</p> */}
+                      <p className="whitespace-pre-wrap text-gray-80 -mt-5">
+                        {selectedLeaveRequest.reason?.trim() || 'No reason provided.'}
+                      </p>
+                    {/* </div> */}
+
+                    {selectedLeaveRequest.adminNote ? (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 mb-2">Admin note</p>
+                        <p className="whitespace-pre-wrap text-gray-800">{selectedLeaveRequest.adminNote}</p>
+                      </div>
+                    ) : null}
+
+                    <p>
+                      I request you to kindly consider this leave application and grant approval.
+                    </p>
+
+                    <div className="">
+                      <p>Regards,</p>
+                      <p className="font-semibold text-gray-900">{selectedLeaveRequest.teacherName || 'Teacher'}</p>
+                      <p className="text-sm text-gray-600">{selectedLeaveRequest.teacherPhone || 'Not provided'}</p>
+                      <p className="text-sm text-gray-600">{selectedLeaveRequest.teacherEmail || 'Not provided'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-2">
+                <button
+                  onClick={handlePrintLeaveLetter}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium"
+                >
+                  <FileText size={16} />
+                  Print
+                </button>
+                <button
+                  onClick={closeLeaveLetter}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

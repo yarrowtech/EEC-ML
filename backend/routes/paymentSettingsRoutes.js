@@ -8,6 +8,7 @@ router.get('/', adminAuth, controller.getSettings);
 router.post('/', adminAuth, controller.saveSettings);
 router.post('/test', adminAuth, controller.testConnection);
 router.post('/activate', adminAuth, controller.activateMode);
+router.post('/reveal', adminAuth, controller.revealSecrets);
 router.delete('/', adminAuth, controller.disconnect);
 
 module.exports = router;

@@ -86,8 +86,13 @@ export default function usePaymentGateway() {
     }
   };
 
+  // Deliberately not stored in `settings` — the decrypted secret should only
+  // ever live in the component that explicitly asked to reveal it, for as
+  // short a time as possible.
+  const reveal = async (mode) => request('/reveal', { method: 'POST', body: JSON.stringify({ mode }) });
+
   return {
     settings, loading, saving, testing, disconnecting, activating, error,
-    refresh, save, test, activate, disconnect,
+    refresh, save, test, activate, disconnect, reveal,
   };
 }
