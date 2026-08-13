@@ -478,7 +478,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
         {activeTab === 'school' && !isSuperAdmin && (
           <div className="space-y-6">
             {/* school logo card */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
                 <h2 className="text-base font-semibold text-gray-900">School Branding</h2>
                 <p className="text-xs text-gray-400 mt-0.5">Upload your school logo for reports and portal display</p>
@@ -551,7 +551,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                   </button>
                 )}
               </div>
-            </div>
+            </div> */}
 
             {/* school details card */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -561,7 +561,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
               </div>
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
                 {/* <Field label="School ID" value={schoolForm.id} readOnly /> */}
-                <Field label="School Name" value={schoolForm.name} onChange={(e) => setSchoolForm((p) => ({ ...p, name: e.target.value }))} placeholder="Enter school name" icon={Building2} />
+                <Field label="School Name" value={schoolForm.name} onChange={(e) => setSchoolForm((p) => ({ ...p, name: e.target.value }))} placeholder="Enter school name" icon={Building2} className='md:col-span-2' />
                 <Field label="Address" value={schoolForm.address} onChange={(e) => setSchoolForm((p) => ({ ...p, address: e.target.value }))} placeholder="Enter address" icon={MapPin} className="md:col-span-2" />
                 <Field label="Contact Email" value={schoolForm.contactEmail} onChange={(e) => setSchoolForm((p) => ({ ...p, contactEmail: e.target.value }))} placeholder="Enter contact email" icon={Mail} />
                 <Field label="Contact Phone" value={schoolForm.contactPhone} onChange={(e) => setSchoolForm((p) => ({ ...p, contactPhone: e.target.value }))} placeholder="Enter contact phone" icon={Phone} />

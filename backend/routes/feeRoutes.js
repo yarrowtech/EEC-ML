@@ -293,6 +293,10 @@ const applyLateFeeToInvoiceIfEligible = async ({ invoice, schoolId, structureCac
   return true;
 };
 
+// Same late-fee math as applyLateFeeToInvoiceIfEligible, but applied via a
+// single bulkWrite instead of one invoice.save() per overdue invoice — the
+// per-invoice loop was doing hundreds of sequential DB round trips on every
+// GET /invoices call for schools with a lot of overdue invoices.
 const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
   const overdueFilter = {
     ...filter,
@@ -300,17 +304,54 @@ const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
     balanceAmount: { $gt: 0 },
   };
 
-  const overdueInvoices = await FeeInvoice.find(overdueFilter);
+  const overdueInvoices = await FeeInvoice.find(overdueFilter).lean();
   if (!overdueInvoices.length) return 0;
 
   const structureCache = new Map();
-  let appliedCount = 0;
+  const bulkOps = [];
   for (const invoice of overdueInvoices) {
+    if (!shouldAutoApplyLateFee(invoice)) continue;
     // eslint-disable-next-line no-await-in-loop
-    const applied = await applyLateFeeToInvoiceIfEligible({ invoice, schoolId, structureCache });
-    if (applied) appliedCount += 1;
+    const perDayLateFeeAmount = await resolveInvoiceLateFeeAmount({ invoice, schoolId, structureCache });
+    if (perDayLateFeeAmount <= 0) continue;
+    const overdueDays = getOverdueDays(invoice);
+    if (overdueDays <= 0) continue;
+
+    const expectedLateFeeTotal = perDayLateFeeAmount * overdueDays;
+    const alreadyAppliedLateFee = normalizeLateFeeAmount(invoice.lateFeeAmountApplied);
+    const lateFeeDelta = expectedLateFeeTotal - alreadyAppliedLateFee;
+    if (lateFeeDelta <= 0) continue;
+
+    const updated = {
+      totalAmount: Number(invoice.totalAmount || 0) + lateFeeDelta,
+      lateFeeAmountApplied: alreadyAppliedLateFee + lateFeeDelta,
+      lateFeeAppliedAt: new Date(),
+    };
+    const snapshotHeads = Array.isArray(invoice.feeHeadsSnapshot) ? [...invoice.feeHeadsSnapshot] : [];
+    const lateFeeHeadIndex = snapshotHeads.findIndex(
+      (item) => String(item?.label || '').trim().toLowerCase() === 'late fee'
+    );
+    if (lateFeeHeadIndex >= 0) {
+      snapshotHeads[lateFeeHeadIndex] = {
+        ...snapshotHeads[lateFeeHeadIndex],
+        amount: normalizeLateFeeAmount(snapshotHeads[lateFeeHeadIndex].amount) + lateFeeDelta,
+      };
+    } else {
+      snapshotHeads.push({ label: 'Late fee', amount: lateFeeDelta });
+    }
+    updated.feeHeadsSnapshot = snapshotHeads;
+    const recomputed = { ...invoice, ...updated };
+    recomputeInvoiceStatus(recomputed);
+    updated.balanceAmount = recomputed.balanceAmount;
+    updated.status = recomputed.status;
+
+    bulkOps.push({ updateOne: { filter: { _id: invoice._id }, update: { $set: updated } } });
   }
-  return appliedCount;
+
+  if (bulkOps.length) {
+    await FeeInvoice.bulkWrite(bulkOps, { ordered: false });
+  }
+  return bulkOps.length;
 };
 
 

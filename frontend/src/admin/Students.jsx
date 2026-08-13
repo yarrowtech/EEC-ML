@@ -1579,13 +1579,90 @@ const Students = ({ setShowAdminHeader }) => {
     }
   };
 
+  const CRED_ICON_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const CRED_ICON_EYE_OFF = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
+  const CRED_ICON_COPY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+  const CRED_ICON_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  const CRED_ICON_X = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+  const buildCredentialPasswordBlock = (label, resetAt, rawPassword, idPrefix) => {
+    if (resetAt) {
+      const message = `Password reset by the user at ${resetAt.toLocaleString()}`;
+      return {
+        html: `
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase">${escapeHtml(label)}</div>
+            <div class="text-sm text-gray-600 mt-1">${escapeHtml(message)}</div>
+          </div>
+        `,
+        wire: () => {},
+      };
+    }
+    if (!rawPassword) {
+      return {
+        html: `
+          <div>
+            <div class="text-xs font-semibold text-gray-500 uppercase">${escapeHtml(label)}</div>
+            <div class="text-sm text-gray-400 mt-1">Not available</div>
+          </div>
+        `,
+        wire: () => {},
+      };
+    }
+    const valueId = `swal-${idPrefix}-value`;
+    const toggleId = `swal-${idPrefix}-toggle`;
+    const copyId = `swal-${idPrefix}-copy`;
+    const toggleBtnClass = "inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 active:scale-95 transition-all";
+    const copyBtnBaseClasses = ["border-gray-200", "bg-gray-50", "text-gray-600", "hover:bg-gray-100"];
+    const copyBtnSuccessClasses = ["border-emerald-200", "bg-emerald-50", "text-emerald-600"];
+    const copyBtnClass = `inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold active:scale-95 transition-all ${copyBtnBaseClasses.join(" ")}`;
+    return {
+      html: `
+        <div>
+          <div class="text-xs font-semibold text-gray-500 uppercase">${escapeHtml(label)}</div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <div class="font-mono text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 min-w-30" id="${valueId}" data-visible="false">••••••••</div>
+            <button type="button" id="${toggleId}" class="${toggleBtnClass}">${CRED_ICON_EYE}<span>Show</span></button>
+            <button type="button" id="${copyId}" class="${copyBtnClass}">${CRED_ICON_COPY}<span>Copy</span></button>
+          </div>
+        </div>
+      `,
+      wire: () => {
+        const valueEl = document.getElementById(valueId);
+        const toggleBtn = document.getElementById(toggleId);
+        const copyBtn = document.getElementById(copyId);
+        if (!valueEl || !toggleBtn || !copyBtn) return;
+        toggleBtn.addEventListener("click", () => {
+          const nowVisible = valueEl.dataset.visible !== "true";
+          valueEl.textContent = nowVisible ? rawPassword : "••••••••";
+          valueEl.dataset.visible = nowVisible ? "true" : "false";
+          toggleBtn.innerHTML = nowVisible
+            ? `${CRED_ICON_EYE_OFF}<span>Hide</span>`
+            : `${CRED_ICON_EYE}<span>Show</span>`;
+        });
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(rawPassword);
+            copyBtn.innerHTML = `${CRED_ICON_CHECK}<span>Copied!</span>`;
+            copyBtn.classList.remove(...copyBtnBaseClasses);
+            copyBtn.classList.add(...copyBtnSuccessClasses);
+            setTimeout(() => {
+              copyBtn.innerHTML = `${CRED_ICON_COPY}<span>Copy</span>`;
+              copyBtn.classList.remove(...copyBtnSuccessClasses);
+              copyBtn.classList.add(...copyBtnBaseClasses);
+            }, 1500);
+          } catch {
+            copyBtn.innerHTML = `${CRED_ICON_X}<span>Failed</span>`;
+          }
+        });
+      },
+    };
+  };
+
   const handleViewStudentCredentials = (student) => {
     if (!student) return;
     const loginId = student.username || student.studentCode || "-";
     const studentResetAt = student.lastLoginAt ? new Date(student.lastLoginAt) : null;
-    const passwordValue = studentResetAt
-      ? `Password reset by the user at ${studentResetAt.toLocaleDateString()}`
-      : student.initialPassword || "Not available";
     const linkedParent =
       student.parent ||
       parentDirectory.find((p) => {
@@ -1596,9 +1673,10 @@ const Students = ({ setShowAdminHeader }) => {
     const parent = linkedParent;
     const parentId = parent?.username || parent?.userId || "-";
     const parentResetAt = parent?.lastLoginAt ? new Date(parent.lastLoginAt) : null;
-    const parentPassword = parentResetAt
-      ? `Password reset by the user at ${parentResetAt.toLocaleDateString()}`
-      : parent?.initialPassword || "Not available";
+
+    const studentBlock = buildCredentialPasswordBlock("Password", studentResetAt, student.initialPassword, "spw");
+    const parentBlock = buildCredentialPasswordBlock("Parent Password", parentResetAt, parent?.initialPassword, "ppw");
+
     Swal.fire({
       icon: "info",
       title: "Student Credentials",
@@ -1608,24 +1686,20 @@ const Students = ({ setShowAdminHeader }) => {
             <div class="text-xs font-semibold text-gray-500 uppercase">Student ID</div>
             <div class="font-mono text-sm text-gray-900">${escapeHtml(loginId)}</div>
           </div>
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Password</div>
-            <div class="font-mono text-sm text-gray-900" id="swal-view-spw">••••••••</div>
-            <button onclick="(function(){var e=document.getElementById('swal-view-spw');e.textContent=e.textContent==='••••••••'?${JSON.stringify(passwordValue)}:'••••••••';})()" class="text-xs text-indigo-600 underline mt-1">Show / Hide</button>
-          </div>
+          ${studentBlock.html}
           <div class="pt-2 border-t border-gray-200"></div>
           <div>
             <div class="text-xs font-semibold text-gray-500 uppercase">Parent ID</div>
             <div class="font-mono text-sm text-gray-900">${escapeHtml(parentId)}</div>
           </div>
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Parent Password</div>
-            <div class="font-mono text-sm text-gray-900" id="swal-view-ppw">••••••••</div>
-            <button onclick="(function(){var e=document.getElementById('swal-view-ppw');e.textContent=e.textContent==='••••••••'?${JSON.stringify(parentPassword)}:'••••••••';})()" class="text-xs text-indigo-600 underline mt-1">Show / Hide</button>
-          </div>
+          ${parentBlock.html}
         </div>
       `,
       confirmButtonColor: "#EAB308",
+      didOpen: () => {
+        studentBlock.wire();
+        parentBlock.wire();
+      },
     });
   };
 
@@ -3272,7 +3346,23 @@ const Students = ({ setShowAdminHeader }) => {
                     </tr>
                   </thead>
                   <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
-                    {paginatedStudents.map((student) => {
+                    {studentsLoading && studentData.length === 0 ? (
+                      Array.from({ length: 8 }).map((_, i) => (
+                        <tr key={`student-skeleton-${i}`} className="animate-pulse">
+                          <td className="px-2 py-3.5"><div className="h-4 w-4 rounded bg-gray-200" /></td>
+                          <td className="px-2 py-3.5">
+                            <div className="h-3.5 w-3/4 rounded bg-gray-200 mb-2" />
+                            <div className="h-3 w-1/2 rounded bg-gray-100" />
+                          </td>
+                          <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-200" /></td>
+                          <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-200" /></td>
+                          <td className="px-2 py-3.5"><div className="h-3.5 w-3/4 rounded bg-gray-200" /></td>
+                          <td className="px-2 py-3.5"><div className="h-3.5 w-1/2 rounded bg-gray-200 mx-auto" /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      <>
+                        {paginatedStudents.map((student) => {
                       const studentKey = student._id || student.id;
                       const admissionYear = student.admissionDate
                         ? new Date(student.admissionDate).getFullYear()
@@ -3503,6 +3593,8 @@ const Students = ({ setShowAdminHeader }) => {
                           )}
                         </td>
                       </tr>
+                    )}
+                      </>
                     )}
                   </tbody>
                 </table>

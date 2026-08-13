@@ -512,7 +512,7 @@ router.get("/get-students", adminAuth, async (req, res) => {
     const filter = buildScopedFilter(req);
     filter.isArchived = { $ne: true };
     filter.status = { $nin: EXITED_STUDENT_STATUSES };
-    const students = await StudentUser.find(filter);
+    const students = await StudentUser.find(filter).select('-password').lean();
     res.status(200).json(students);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -535,6 +535,7 @@ router.get("/get-parents", adminAuth, async (req, res) => {
   try {
     const filter = buildScopedFilter(req);
     const parents = await ParentUser.find(filter)
+      .select('-password')
       .populate({
         path: 'childrenIds',
         select: 'name grade section performance address pinCode status isArchived',
