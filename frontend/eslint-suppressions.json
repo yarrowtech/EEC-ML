@@ -538,7 +538,7 @@
   },
   "src/admin/pages/AdminSettings.jsx": {
     "react/prop-types": {
-      "count": 10
+      "count": 15
     }
   },
   "src/admin/pages/Assignments.jsx": {
