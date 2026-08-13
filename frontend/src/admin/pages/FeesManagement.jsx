@@ -39,7 +39,7 @@ const EMPTY_FORM = {
   academicYearId: '',
   board: 'GENERAL',
   name: '',
-  lateFeeAmount: 0,
+  lateFeeAmount: '',
   feeHeads: [],
   installments: [],
 };
@@ -274,7 +274,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const addHead = () =>
     setForm((prev) => ({
       ...prev,
-      feeHeads: [...prev.feeHeads, { label: '', customLabel: '', amount: 0 }],
+      feeHeads: [...prev.feeHeads, { label: '', customLabel: '', amount: '' }],
     }));
 
   const removeHead = (index) =>
@@ -292,7 +292,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const addInstallment = () =>
     setForm((prev) => ({
       ...prev,
-      installments: [...prev.installments, { label: '', amount: 0, dueDate: '' }],
+      installments: [...prev.installments, { label: '', amount: '', dueDate: '' }],
     }));
 
   const removeInstallment = (index) =>
@@ -706,7 +706,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                     type="number"
                     min="0"
                     value={form.lateFeeAmount}
-                    onChange={(e) => setForm((prev) => ({ ...prev, lateFeeAmount: toAmount(e.target.value) }))}
+                    onChange={(e) => setForm((prev) => ({ ...prev, lateFeeAmount: e.target.value }))}
                     placeholder="0"
                     className={`${iCls} pl-7`}
                   />
@@ -770,7 +770,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                           type="number"
                           min="0"
                           value={item.amount}
-                          onChange={(e) => updateHead(index, 'amount', toAmount(e.target.value))}
+                          onChange={(e) => updateHead(index, 'amount', e.target.value)}
                           placeholder="Amount"
                           className={`${iCls} pl-7`}
                         />
@@ -825,7 +825,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                             type="number"
                             min="0"
                             value={item.amount}
-                            onChange={(e) => updateInstallment(index, 'amount', toAmount(e.target.value))}
+                            onChange={(e) => updateInstallment(index, 'amount', e.target.value)}
                             placeholder="Amount"
                             className={`${iCls} pl-7`}
                           />
