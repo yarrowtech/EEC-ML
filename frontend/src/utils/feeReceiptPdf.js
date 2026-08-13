@@ -117,7 +117,7 @@ export const downloadFeeReceiptPdf = async ({
   const resolvedUsername = receipt?.username || student?.username || '-';
   const resolvedSession = receipt?.session || student?.academicYear || '-';
   const resolvedParentName = receipt?.parentName || student?.guardianName || '-';
-  const resolvedTxn = payment.gatewayPaymentId || payment.transactionId || '-';
+  const resolvedTxn = payment.gatewayPaymentId || payment.referenceNumber || payment.transactionId || '-';
   const notes =
     Array.isArray(receipt?.notes) && receipt.notes.length
       ? receipt.notes

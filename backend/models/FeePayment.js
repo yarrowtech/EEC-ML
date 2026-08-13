@@ -9,6 +9,11 @@ const feePaymentSchema = new mongoose.Schema(
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR', trim: true },
     method: { type: String, default: 'cash' },
+    // Receipt no. (cash), UPI transaction ID, bank UTR/reference no., or card
+    // transaction reference — required for manually-recorded methods so
+    // there's always a traceable reference on the receipt.
+    referenceNumber: { type: String, trim: true, default: '' },
+    bankName: { type: String, trim: true, default: '' },
     paidOn: { type: Date, default: Date.now },
     notes: { type: String, trim: true },
     initiatedByType: { type: String, default: null, trim: true },

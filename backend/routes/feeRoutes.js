@@ -815,12 +815,28 @@ router.post('/payments', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
     const { invoiceId, amount, method, notes, paidOn } = req.body || {};
+    const referenceNumber = String(req.body?.referenceNumber || '').trim();
+    const bankName = String(req.body?.bankName || '').trim();
     if (!invoiceId || !mongoose.isValidObjectId(invoiceId)) {
       return res.status(400).json({ error: 'Valid invoiceId is required' });
     }
     const paymentAmount = Number(amount);
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
       return res.status(400).json({ error: 'Valid payment amount is required' });
+    }
+    const resolvedMethod = String(method || 'cash').trim().toLowerCase();
+    const REFERENCE_LABEL_BY_METHOD = {
+      cash: 'Receipt number',
+      upi: 'UPI transaction ID',
+      bank: 'Bank transaction / UTR number',
+      card: 'Card transaction reference',
+    };
+    const referenceLabel = REFERENCE_LABEL_BY_METHOD[resolvedMethod];
+    if (referenceLabel && !referenceNumber) {
+      return res.status(400).json({ error: `${referenceLabel} is required for ${resolvedMethod} payments` });
+    }
+    if (resolvedMethod === 'bank' && !bankName) {
+      return res.status(400).json({ error: 'Bank name is required for bank transfer payments' });
     }
 
     const invoice = await FeeInvoice.findOne({ _id: invoiceId, schoolId });
@@ -856,7 +872,9 @@ router.post('/payments', adminAuth, async (req, res) => {
       transactionId: buildTransactionId('ADM'),
       amount: paymentAmount,
       currency: 'INR',
-      method: method || 'cash',
+      method: resolvedMethod,
+      referenceNumber: referenceNumber || undefined,
+      bankName: resolvedMethod === 'bank' ? bankName : undefined,
       notes: notes ? String(notes).trim() : undefined,
       paidOn: paidOn ? new Date(paidOn) : undefined,
       initiatedByType: 'admin',

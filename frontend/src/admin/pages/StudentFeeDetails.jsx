@@ -3,17 +3,40 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
+  Banknote,
   BadgeCheck,
+  CreditCard,
   Download,
+  Landmark,
   Loader2,
   Mail,
   Phone,
+  Receipt,
+  Smartphone,
   User,
   Wallet,
+  Zap,
 } from 'lucide-react';
 import { downloadFeeReceiptPdf } from '../../utils/feeReceiptPdf';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const PAYMENT_METHODS = [
+  { key: 'cash', label: 'Cash', icon: Banknote, referenceLabel: 'Receipt Number', referencePlaceholder: 'e.g. RC-2026-00123', needsBank: false },
+  { key: 'upi', label: 'UPI', icon: Smartphone, referenceLabel: 'UPI Transaction ID', referencePlaceholder: 'e.g. 402912345678', needsBank: false },
+  { key: 'bank', label: 'Bank Transfer', icon: Landmark, referenceLabel: 'Transaction / UTR Number', referencePlaceholder: 'e.g. UTR1234567890', needsBank: true },
+  { key: 'card', label: 'Card', icon: CreditCard, referenceLabel: 'Card Transaction Reference', referencePlaceholder: 'e.g. approval code or last 4 digits', needsBank: false },
+  { key: 'razorpay', label: 'Razorpay (Online)', icon: Zap, referenceLabel: null, referencePlaceholder: '', needsBank: false },
+];
+const paymentMethodMeta = (key) => PAYMENT_METHODS.find((m) => m.key === key) || PAYMENT_METHODS[0];
+
+const EMPTY_PAYMENT_FORM = {
+  amount: '',
+  method: 'cash',
+  referenceNumber: '',
+  bankName: '',
+  notes: '',
+};
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-IN', {
@@ -45,11 +68,7 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [paymentForm, setPaymentForm] = useState({
-    amount: '',
-    method: 'cash',
-    notes: '',
-  });
+  const [paymentForm, setPaymentForm] = useState(EMPTY_PAYMENT_FORM);
   const [discountForm, setDiscountForm] = useState({
     amount: '',
     note: '',
@@ -144,6 +163,15 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
       await handleRazorpayPayment();
       return;
     }
+    const activeMethod = paymentMethodMeta(paymentForm.method);
+    if (activeMethod.referenceLabel && !paymentForm.referenceNumber.trim()) {
+      setActionMessage({ type: 'error', text: `${activeMethod.referenceLabel} is required for ${activeMethod.label} payments` });
+      return;
+    }
+    if (activeMethod.needsBank && !paymentForm.bankName.trim()) {
+      setActionMessage({ type: 'error', text: 'Bank name is required for bank transfer payments' });
+      return;
+    }
     setSavingPayment(true);
     setActionMessage({ type: '', text: '' });
     try {
@@ -157,6 +185,8 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
           invoiceId,
           amount: Number(paymentForm.amount || 0),
           method: paymentForm.method || 'cash',
+          referenceNumber: paymentForm.referenceNumber.trim(),
+          bankName: paymentForm.bankName.trim(),
           notes: paymentForm.notes || '',
         }),
       });
@@ -164,7 +194,7 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to record payment');
       }
-      setPaymentForm({ amount: '', method: 'cash', notes: '' });
+      setPaymentForm(EMPTY_PAYMENT_FORM);
       setActionMessage({ type: 'success', text: 'Payment recorded successfully.' });
       fetchDetails();
     } catch (err) {
@@ -251,7 +281,7 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
             if (!verifyRes.ok) {
               throw new Error(verifyData?.error || 'Unable to verify online payment');
             }
-            setPaymentForm({ amount: '', method: 'cash', notes: '' });
+            setPaymentForm(EMPTY_PAYMENT_FORM);
             setActionMessage({ type: 'success', text: 'Online payment captured successfully.' });
             await fetchDetails();
           } catch (verifyErr) {
@@ -566,8 +596,11 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
                         </p>
                         <p className="text-sm text-slate-500">
                           {payment.method?.toUpperCase() || 'CASH'}
+                          {payment.bankName ? ` · ${payment.bankName}` : ''}
                         </p>
-                        {payment.transactionId ? (
+                        {payment.referenceNumber ? (
+                          <p className="text-xs text-slate-400">{paymentMethodMeta(payment.method).referenceLabel || 'Ref'}: {payment.referenceNumber}</p>
+                        ) : payment.transactionId ? (
                           <p className="text-xs text-slate-400">Ref: {payment.transactionId}</p>
                         ) : null}
                       </div>
@@ -596,48 +629,113 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
 
           <div className="flex flex-col gap-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Collect Payment</h3>
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100">
+                  <Wallet size={16} className="text-emerald-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">Collect Payment</h3>
+              </div>
               {actionMessage.text ? (
                 <div
-                  className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
+                  className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
                     actionMessage.type === 'success'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : 'border-red-200 bg-red-50 text-red-700'
                   }`}
                 >
+                  {actionMessage.type !== 'success' && <AlertCircle size={14} className="shrink-0" />}
                   {actionMessage.text}
                 </div>
               ) : null}
-              <div className="space-y-3">
-                <input
-                  type="number"
-                  min="0"
-                  value={paymentForm.amount}
-                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Amount"
-                />
-                <select
-                  value={paymentForm.method}
-                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="bank">Bank Transfer</option>
-                  <option value="razorpay">Razorpay</option>
-                </select>
-                <input
-                  type="text"
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, notes: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Notes"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Payment Method</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PAYMENT_METHODS.map(({ key, label, icon: MethodIcon }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setPaymentForm((prev) => ({ ...prev, method: key, referenceNumber: '', bankName: '' }))}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all ${
+                          paymentForm.method === key
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <MethodIcon size={15} className={paymentForm.method === key ? 'text-emerald-600' : 'text-slate-400'} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* method-specific required fields */}
+                {paymentMethodMeta(paymentForm.method).referenceLabel && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                      {paymentMethodMeta(paymentForm.method).referenceLabel} <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Receipt size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={paymentForm.referenceNumber}
+                        onChange={(e) => setPaymentForm((prev) => ({ ...prev, referenceNumber: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400"
+                        placeholder={paymentMethodMeta(paymentForm.method).referencePlaceholder}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {paymentMethodMeta(paymentForm.method).needsBank && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                      Bank Name <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Landmark size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={paymentForm.bankName}
+                        onChange={(e) => setPaymentForm((prev) => ({ ...prev, bankName: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400"
+                        placeholder="e.g. HDFC Bank"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Notes (optional)</label>
+                  <input
+                    type="text"
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400"
+                    placeholder="Any additional notes"
+                  />
+                </div>
+
                 <button
                   onClick={handlePaymentSave}
                   disabled={savingPayment}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 text-white px-4 py-2 text-sm font-semibold hover:bg-emerald-700 disabled:bg-gray-300"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 text-white px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:bg-gray-300 transition-colors"
                 >
                   {savingPayment ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                   {paymentForm.method === 'razorpay' ? 'Pay Online via Razorpay' : 'Record Payment'}
@@ -646,7 +744,11 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
                   <p className="text-xs text-slate-500">
                     Opens Razorpay Checkout and auto-updates payment history after verification.
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    {paymentMethodMeta(paymentForm.method).referenceLabel} is required so this payment can be traced back to a physical receipt or bank statement.
+                  </p>
+                )}
               </div>
             </div>
 
