@@ -4,7 +4,11 @@ const School = require('../models/School');
 const { encrypt, decrypt } = require('../utils/encryption');
 const { testRazorpayConnection } = require('../utils/paymentGatewayService');
 
-const gatewaySelect = '+paymentGateway.razorpay.keySecret +paymentGateway.razorpay.webhookSecret';
+const MODES = ['test', 'live'];
+
+const gatewaySelect = MODES
+  .map((mode) => `+paymentGateway.razorpay.${mode}.keySecret +paymentGateway.razorpay.${mode}.webhookSecret`)
+  .join(' ');
 
 const resolveOrganization = async (req) => {
   if (req.isSuperAdmin) return null;
@@ -14,20 +18,36 @@ const resolveOrganization = async (req) => {
   return Organization.findOne(filter).select(gatewaySelect);
 };
 
+// Last-4-chars preview only — safe to store and return unencrypted, matches
+// how Stripe/Razorpay's own dashboards show already-saved secrets.
+const buildPreview = (secret) => (secret ? `••••${secret.slice(-4)}` : '');
+
+const publicModeSettings = (slot = {}) => ({
+  keyId: slot.keyId || '',
+  hasKeySecret: Boolean(slot.keySecret),
+  keySecretPreview: slot.keySecretPreview || '',
+  hasWebhookSecret: Boolean(slot.webhookSecret),
+  webhookSecretPreview: slot.webhookSecretPreview || '',
+  connected: Boolean(slot.keyId && slot.keySecret && slot.webhookSecret),
+  connectedAt: slot.connectedAt || null,
+  lastVerifiedAt: slot.lastVerifiedAt || null,
+});
+
 const publicSettings = (organization) => {
   const gateway = organization?.paymentGateway || {};
   const razorpay = gateway.razorpay || {};
-  const connected = Boolean(gateway.enabled && razorpay.keyId && razorpay.keySecret);
+  const mode = gateway.mode || 'test';
+  const activeSlot = razorpay[mode] || {};
+  const connected = Boolean(gateway.enabled && activeSlot.keyId && activeSlot.keySecret);
   return {
     enabled: Boolean(gateway.enabled),
     provider: gateway.provider || 'razorpay',
-    mode: gateway.mode || 'test',
-    keyId: razorpay.keyId || '',
+    mode,
     connected,
-    accountName: connected ? (razorpay.accountName || '') : '',
-    accountEmail: connected ? (razorpay.accountEmail || '') : '',
-    connectedAt: connected ? (razorpay.connectedAt || null) : null,
-    lastVerifiedAt: connected ? (razorpay.lastVerifiedAt || null) : null,
+    accountName: razorpay.accountName || '',
+    accountEmail: razorpay.accountEmail || '',
+    test: publicModeSettings(razorpay.test),
+    live: publicModeSettings(razorpay.live),
   };
 };
 
@@ -56,17 +76,17 @@ const getSettings = async (req, res, next) => {
   }
 };
 
-const validatePayload = (body, current) => {
+const validatePayload = (body, currentSlot) => {
   const mode = String(body?.mode || '').trim().toLowerCase();
   const keyId = String(body?.keyId || '').trim();
   const incomingKeySecret = String(body?.keySecret || '').trim();
   const incomingWebhookSecret = String(body?.webhookSecret || '').trim();
-  if (!['test', 'live'].includes(mode)) throw new Error('Mode must be test or live');
+  if (!MODES.includes(mode)) throw new Error('Mode must be test or live');
   if (!new RegExp(`^rzp_${mode}_[A-Za-z0-9]+$`).test(keyId)) {
     throw new Error(`Key ID must be a valid Razorpay ${mode} key`);
   }
-  const keySecret = incomingKeySecret || (current?.keySecret ? decrypt(current.keySecret) : '');
-  const webhookSecret = incomingWebhookSecret || (current?.webhookSecret ? decrypt(current.webhookSecret) : '');
+  const keySecret = incomingKeySecret || (currentSlot?.keySecret ? decrypt(currentSlot.keySecret) : '');
+  const webhookSecret = incomingWebhookSecret || (currentSlot?.webhookSecret ? decrypt(currentSlot.webhookSecret) : '');
   if (keySecret.length < 8 || keySecret.length > 200) throw new Error('A valid Key Secret is required');
   if (webhookSecret.length < 8 || webhookSecret.length > 200) throw new Error('A valid Webhook Secret is required');
   return { mode, keyId, keySecret, webhookSecret };
@@ -76,9 +96,11 @@ const saveSettings = async (req, res, next) => {
   try {
     const organization = await ensureOrganization(req, res);
     if (!organization) return;
+    const razorpay = organization.paymentGateway?.razorpay || {};
     let values;
     try {
-      values = validatePayload(req.body, organization.paymentGateway?.razorpay);
+      const requestedMode = String(req.body?.mode || '').trim().toLowerCase();
+      values = validatePayload(req.body, razorpay[requestedMode]);
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }
@@ -88,18 +110,32 @@ const saveSettings = async (req, res, next) => {
       ? await School.findById(organization.schoolId).select('name officialEmail contactEmail').lean()
       : null;
     const now = new Date();
+    const existingSlot = razorpay[values.mode] || {};
+    const updatedSlot = {
+      keyId: values.keyId,
+      keySecret: encrypt(values.keySecret),
+      keySecretPreview: buildPreview(values.keySecret),
+      webhookSecret: encrypt(values.webhookSecret),
+      webhookSecretPreview: buildPreview(values.webhookSecret),
+      connectedAt: existingSlot.connectedAt || now,
+      lastVerifiedAt: now,
+    };
+
+    // Saving a mode's credentials doesn't switch which mode is live — except
+    // the very first connection ever, where auto-activating avoids a
+    // redundant extra click for the common case.
+    const hadAnyModeConnected = Boolean(razorpay.test?.keyId || razorpay.live?.keyId);
+    const nextActiveMode = hadAnyModeConnected ? (organization.paymentGateway.mode || 'test') : values.mode;
+
     organization.paymentGateway = {
       provider: 'razorpay',
       enabled: true,
-      mode: values.mode,
+      mode: nextActiveMode,
       razorpay: {
-        keyId: values.keyId,
-        keySecret: encrypt(values.keySecret),
-        webhookSecret: encrypt(values.webhookSecret),
         accountName: school?.name || organization.name,
         accountEmail: school?.officialEmail || school?.contactEmail || '',
-        connectedAt: organization.paymentGateway?.razorpay?.connectedAt || now,
-        lastVerifiedAt: now,
+        test: values.mode === 'test' ? updatedSlot : (razorpay.test || {}),
+        live: values.mode === 'live' ? updatedSlot : (razorpay.live || {}),
       },
     };
     await organization.save();
@@ -118,28 +154,56 @@ const saveSettings = async (req, res, next) => {
   }
 };
 
+const activateMode = async (req, res, next) => {
+  try {
+    const organization = await ensureOrganization(req, res);
+    if (!organization) return;
+    const mode = String(req.body?.mode || '').trim().toLowerCase();
+    if (!MODES.includes(mode)) return res.status(400).json({ error: 'Mode must be test or live' });
+    const slot = organization.paymentGateway?.razorpay?.[mode];
+    if (!slot?.keyId || !slot?.keySecret || !slot?.webhookSecret) {
+      return res.status(400).json({ error: `Save ${mode} credentials before activating ${mode} mode` });
+    }
+    organization.set('paymentGateway.mode', mode);
+    organization.set('paymentGateway.enabled', true);
+    await organization.save();
+    await PaymentAudit.create({
+      organizationId: organization._id,
+      action: 'gateway.mode_activated',
+      userId: req.admin?.id || null,
+      metadata: { provider: 'razorpay', mode },
+    });
+    return res.json(publicSettings(organization));
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const testConnection = async (req, res, next) => {
   try {
     const organization = await ensureOrganization(req, res);
     if (!organization) return;
-    const razorpay = organization.paymentGateway?.razorpay;
-    if (!organization.paymentGateway?.enabled || !razorpay?.keyId || !razorpay?.keySecret) {
-      return res.status(400).json({ success: false, error: 'Payment gateway is not configured' });
+    const requestedMode = String(req.body?.mode || '').trim().toLowerCase();
+    const mode = MODES.includes(requestedMode) ? requestedMode : (organization.paymentGateway?.mode || 'test');
+    const slot = organization.paymentGateway?.razorpay?.[mode];
+    if (!slot?.keyId || !slot?.keySecret) {
+      return res.status(400).json({ success: false, error: `${mode === 'live' ? 'Live' : 'Test'} mode is not configured` });
     }
-    await testRazorpayConnection({ keyId: razorpay.keyId, keySecret: decrypt(razorpay.keySecret) });
-    razorpay.lastVerifiedAt = new Date();
+    await testRazorpayConnection({ keyId: slot.keyId, keySecret: decrypt(slot.keySecret) });
+    slot.lastVerifiedAt = new Date();
     await organization.save();
     await PaymentAudit.create({
       organizationId: organization._id,
       action: 'gateway.connection_tested',
       userId: req.admin?.id || null,
-      metadata: { provider: 'razorpay', success: true },
+      metadata: { provider: 'razorpay', mode, success: true },
     });
     return res.json({
       success: true,
-      accountName: razorpay.accountName || organization.name,
-      accountEmail: razorpay.accountEmail || '',
-      lastVerifiedAt: razorpay.lastVerifiedAt,
+      mode,
+      accountName: organization.paymentGateway.razorpay.accountName || organization.name,
+      accountEmail: organization.paymentGateway.razorpay.accountEmail || '',
+      lastVerifiedAt: slot.lastVerifiedAt,
     });
   } catch (error) {
     if (error.code === 'RAZORPAY_REQUEST_FAILED') {
@@ -153,17 +217,26 @@ const disconnect = async (req, res, next) => {
   try {
     const organization = await ensureOrganization(req, res);
     if (!organization) return;
-    organization.set('paymentGateway.enabled', false);
-    organization.set('paymentGateway.razorpay', {
-      keyId: '', keySecret: '', webhookSecret: '', accountEmail: '', accountName: '',
+    const requestedMode = String(req.body?.mode || '').trim().toLowerCase();
+    const mode = MODES.includes(requestedMode) ? requestedMode : (organization.paymentGateway?.mode || 'test');
+    const emptySlot = {
+      keyId: '', keySecret: '', keySecretPreview: '', webhookSecret: '', webhookSecretPreview: '',
       connectedAt: null, lastVerifiedAt: null,
-    });
+    };
+    organization.set(`paymentGateway.razorpay.${mode}`, emptySlot);
+    const otherMode = mode === 'live' ? 'test' : 'live';
+    const otherSlot = organization.paymentGateway?.razorpay?.[otherMode];
+    // Only fully disable online payments if the mode being disconnected was
+    // the active one and there's nothing usable left in the other mode.
+    if (organization.paymentGateway.mode === mode && !otherSlot?.keyId) {
+      organization.set('paymentGateway.enabled', false);
+    }
     await organization.save();
     await PaymentAudit.create({
       organizationId: organization._id,
       action: 'gateway.disconnected',
       userId: req.admin?.id || null,
-      metadata: { provider: 'razorpay' },
+      metadata: { provider: 'razorpay', mode },
     });
     return res.json({ success: true, ...publicSettings(organization) });
   } catch (error) {
@@ -171,5 +244,5 @@ const disconnect = async (req, res, next) => {
   }
 };
 
-module.exports = { disconnect, getSettings, publicSettings, saveSettings, testConnection };
+module.exports = { activateMode, disconnect, getSettings, publicSettings, saveSettings, testConnection };
 module.exports.validatePayload = validatePayload;

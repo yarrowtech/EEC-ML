@@ -39,8 +39,9 @@ module.exports = async function paymentWebhookController(req, res, next) {
     const payment = await Payment.findOne({ provider: 'razorpay', providerOrderId: details.orderId });
     if (!payment) return res.status(404).json({ error: 'Payment order not found' });
     const organization = await Organization.findById(payment.organizationId)
-      .select('+paymentGateway.razorpay.webhookSecret');
-    const encryptedSecret = organization?.paymentGateway?.razorpay?.webhookSecret;
+      .select('+paymentGateway.razorpay.test.webhookSecret +paymentGateway.razorpay.live.webhookSecret');
+    const mode = organization?.paymentGateway?.mode || 'test';
+    const encryptedSecret = organization?.paymentGateway?.razorpay?.[mode]?.webhookSecret;
     if (!organization || !encryptedSecret) return res.status(503).json({ error: 'Webhook is not configured' });
 
     const valid = verifyRazorpayWebhookSignature({

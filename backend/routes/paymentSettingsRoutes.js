@@ -7,6 +7,7 @@ const router = express.Router();
 router.get('/', adminAuth, controller.getSettings);
 router.post('/', adminAuth, controller.saveSettings);
 router.post('/test', adminAuth, controller.testConnection);
+router.post('/activate', adminAuth, controller.activateMode);
 router.delete('/', adminAuth, controller.disconnect);
 
 module.exports = router;

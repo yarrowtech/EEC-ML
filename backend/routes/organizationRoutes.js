@@ -216,7 +216,7 @@ router.get('/super-admin/organizations/payment-status', adminAuth, ensureSuperAd
         paymentEnabled: Boolean(gateway.enabled),
         provider: gateway.provider || 'razorpay',
         mode: gateway.mode || 'test',
-        lastVerifiedAt: gateway.razorpay?.lastVerifiedAt || null,
+        lastVerifiedAt: gateway.razorpay?.[gateway.mode || 'test']?.lastVerifiedAt || null,
         totalTransactions: Number(counts.totalTransactions || 0),
         capturedTransactions: Number(counts.capturedTransactions || 0),
         subscriptionStatus: school.subscriptionStatus || organization.subscription?.status || 'unknown',

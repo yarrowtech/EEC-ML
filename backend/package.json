@@ -12,6 +12,8 @@
     "tenant:migrate:apply": "node scripts/migrateOrganizations.js --apply",
     "payments:migrate": "node scripts/migratePaymentGateways.js",
     "payments:migrate:apply": "node scripts/migratePaymentGateways.js --apply",
+    "payments:migrate-modes": "node scripts/migratePaymentGatewayModes.js",
+    "payments:migrate-modes:apply": "node scripts/migratePaymentGatewayModes.js --apply",
     "push:keys": "node scripts/generateVapidKeys.js",
     "start": "node index.js",
     "dev": "nodemon index.js"

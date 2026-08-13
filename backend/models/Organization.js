@@ -23,16 +23,34 @@ const organizationSchema = new mongoose.Schema(
     paymentGateway: {
       provider: { type: String, enum: ['razorpay'], default: 'razorpay' },
       enabled: { type: Boolean, default: false },
+      // Which mode's credentials are actually used to process real payments.
       mode: { type: String, enum: ['test', 'live'], default: 'test' },
       razorpay: {
-        keyId: { type: String, trim: true, default: '' },
-        // Encrypted AES-256-GCM envelopes. Explicit selection prevents accidental leaks.
-        keySecret: { type: String, default: '', select: false },
-        webhookSecret: { type: String, default: '', select: false },
         accountEmail: { type: String, trim: true, lowercase: true, default: '' },
         accountName: { type: String, trim: true, default: '' },
-        connectedAt: { type: Date, default: null },
-        lastVerifiedAt: { type: Date, default: null },
+        // Test and live keys are stored independently so switching modes
+        // never mixes one mode's credentials into the other's fields.
+        test: {
+          keyId: { type: String, trim: true, default: '' },
+          // Encrypted AES-256-GCM envelopes. Explicit selection prevents accidental leaks.
+          keySecret: { type: String, default: '', select: false },
+          webhookSecret: { type: String, default: '', select: false },
+          // Last-4-chars preview, safe to return to the browser at rest —
+          // lets the settings UI show "a secret is saved" without decrypting.
+          keySecretPreview: { type: String, default: '' },
+          webhookSecretPreview: { type: String, default: '' },
+          connectedAt: { type: Date, default: null },
+          lastVerifiedAt: { type: Date, default: null },
+        },
+        live: {
+          keyId: { type: String, trim: true, default: '' },
+          keySecret: { type: String, default: '', select: false },
+          webhookSecret: { type: String, default: '', select: false },
+          keySecretPreview: { type: String, default: '' },
+          webhookSecretPreview: { type: String, default: '' },
+          connectedAt: { type: Date, default: null },
+          lastVerifiedAt: { type: Date, default: null },
+        },
       },
     },
     customDomains: [{ type: String, lowercase: true, trim: true }],

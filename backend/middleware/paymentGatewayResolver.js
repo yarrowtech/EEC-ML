@@ -8,7 +8,8 @@ const findRequestOrganization = async (req) => {
     : (req.schoolId ? { schoolId: req.schoolId } : null);
   if (!filter) return null;
   return Organization.findOne(filter)
-    .select('+paymentGateway.razorpay.keySecret +paymentGateway.razorpay.webhookSecret');
+    .select('+paymentGateway.razorpay.test.keySecret +paymentGateway.razorpay.test.webhookSecret '
+      + '+paymentGateway.razorpay.live.keySecret +paymentGateway.razorpay.live.webhookSecret');
 };
 
 const paymentGatewayResolver = async (req, res, next) => {
@@ -22,7 +23,8 @@ const paymentGatewayResolver = async (req, res, next) => {
     }
 
     const gateway = organization.paymentGateway;
-    const razorpay = gateway?.razorpay;
+    const mode = gateway?.mode || 'test';
+    const razorpay = gateway?.razorpay?.[mode];
     if (!gateway?.enabled || !razorpay?.keyId || !razorpay?.keySecret || !razorpay?.webhookSecret) {
       return res.status(503).json({
         error: 'Online payments are not configured for this school',
@@ -34,7 +36,7 @@ const paymentGatewayResolver = async (req, res, next) => {
       organizationId: organization._id,
       schoolId: organization.schoolId,
       provider: gateway.provider,
-      mode: gateway.mode,
+      mode,
       keyId: razorpay.keyId,
       keySecret: decrypt(razorpay.keySecret),
       webhookSecret: razorpay.webhookSecret ? decrypt(razorpay.webhookSecret) : '',

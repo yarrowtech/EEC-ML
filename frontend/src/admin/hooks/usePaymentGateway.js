@@ -22,6 +22,7 @@ export default function usePaymentGateway() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
@@ -52,21 +53,32 @@ export default function usePaymentGateway() {
     }
   };
 
-  const test = async () => {
+  const test = async (mode) => {
     setTesting(true);
     try {
-      const result = await request('/test', { method: 'POST', body: '{}' });
-      setSettings((current) => current ? { ...current, ...result, connected: true } : current);
+      const result = await request('/test', { method: 'POST', body: JSON.stringify({ mode }) });
+      await refresh();
       return result;
     } finally {
       setTesting(false);
     }
   };
 
-  const disconnect = async () => {
+  const activate = async (mode) => {
+    setActivating(true);
+    try {
+      const data = await request('/activate', { method: 'POST', body: JSON.stringify({ mode }) });
+      setSettings(data);
+      return data;
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const disconnect = async (mode) => {
     setDisconnecting(true);
     try {
-      const data = await request('', { method: 'DELETE' });
+      const data = await request('', { method: 'DELETE', body: JSON.stringify({ mode }) });
       setSettings(data);
       return data;
     } finally {
@@ -74,5 +86,8 @@ export default function usePaymentGateway() {
     }
   };
 
-  return { settings, loading, saving, testing, disconnecting, error, refresh, save, test, disconnect };
+  return {
+    settings, loading, saving, testing, disconnecting, activating, error,
+    refresh, save, test, activate, disconnect,
+  };
 }

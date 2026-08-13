@@ -30,11 +30,17 @@ describe('payment settings serialization', () => {
         enabled: true,
         provider: 'razorpay',
         mode: 'live',
-        razorpay: { keyId: 'rzp_live_public', keySecret: 'encrypted-a', webhookSecret: 'encrypted-b' },
+        razorpay: {
+          live: { keyId: 'rzp_live_public', keySecret: 'encrypted-a', webhookSecret: 'encrypted-b' },
+          test: {},
+        },
       },
     });
-    expect(payload).toMatchObject({ connected: true, keyId: 'rzp_live_public' });
+    expect(payload).toMatchObject({ connected: true, mode: 'live' });
+    expect(payload.live).toMatchObject({ keyId: 'rzp_live_public', hasKeySecret: true, hasWebhookSecret: true });
     expect(payload).not.toHaveProperty('keySecret');
     expect(payload).not.toHaveProperty('webhookSecret');
+    expect(JSON.stringify(payload)).not.toContain('encrypted-a');
+    expect(JSON.stringify(payload)).not.toContain('encrypted-b');
   });
 });

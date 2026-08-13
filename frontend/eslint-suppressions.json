@@ -641,11 +641,14 @@
     }
   },
   "src/admin/pages/PaymentGatewaySettings.jsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
     "react/prop-types": {
-      "count": 6
+      "count": 18
     },
     "react/react-in-jsx-scope": {
-      "count": 79
+      "count": 105
     }
   },
   "src/admin/pages/ReportCardManagement.jsx": {

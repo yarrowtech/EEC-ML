@@ -22,7 +22,10 @@ describe('paymentGatewayResolver tenant isolation', () => {
         enabled: true,
         provider: 'razorpay',
         mode: 'live',
-        razorpay: { keyId: 'rzp_live_a', keySecret: 'encrypted-key', webhookSecret: 'encrypted-hook' },
+        razorpay: {
+          live: { keyId: 'rzp_live_a', keySecret: 'encrypted-key', webhookSecret: 'encrypted-hook' },
+          test: {},
+        },
       },
     };
     const select = jest.fn().mockResolvedValue(organization);
