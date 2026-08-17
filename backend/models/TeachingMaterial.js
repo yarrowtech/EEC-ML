@@ -278,6 +278,14 @@ const teachingMaterialSchema = new mongoose.Schema({
     ref: 'TeachingMaterial'
   }],
 
+  // AI-generated classification (set after document ingestion)
+  bloomLevel: {
+    type: String,
+    enum: ['remember', 'understand', 'apply', 'analyse', 'evaluate', 'create', ''],
+    default: ''
+  },
+  learningOutcomes: [{ type: String, trim: true, maxlength: 300 }],
+
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

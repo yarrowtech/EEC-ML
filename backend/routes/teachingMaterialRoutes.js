@@ -13,6 +13,7 @@ const TeacherUser = require('../models/TeacherUser');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const CurriculumMap = require('../models/CurriculumMap');
 const authTeacher = require('../middleware/authTeacher');
 const { logger } = require('../utils/logger');
 
@@ -44,6 +45,32 @@ const buildSourceId = (material, attachment, index) => {
   return `${String(material._id)}:${String(stableAttachmentId)}`;
 };
 
+// Upsert the material's topicTitle into the CurriculumMap for this school/subject/class.
+// Creates the CurriculumMap document if it doesn't exist, and adds the topic if not already listed.
+const updateCurriculumMapFromMaterial = async (material) => {
+  const { topicTitle, subjectName, className, sectionName, schoolId, teacherId } = material;
+  if (!topicTitle || !subjectName || !className) return;
+
+  // Ensure the CurriculumMap row exists for this school/subject/class
+  await CurriculumMap.findOneAndUpdate(
+    { schoolId, subject: subjectName, className },
+    { $setOnInsert: { section: sectionName || '', createdBy: teacherId, topics: [] } },
+    { upsert: true }
+  );
+
+  // Add topic only if not already present (avoid duplicates)
+  const map = await CurriculumMap.findOne({ schoolId, subject: subjectName, className }).lean();
+  const exists = map?.topics?.some((t) => t.title === topicTitle);
+  if (!exists) {
+    const nextOrder = (map?.topics?.length || 0) + 1;
+    await CurriculumMap.updateOne(
+      { schoolId, subject: subjectName, className },
+      { $push: { topics: { order: nextOrder, title: topicTitle, description: '', estimatedWeeks: 1 } } }
+    );
+    logger.info('[curriculum-map] auto-added topic "%s" to %s / %s', topicTitle, subjectName, className);
+  }
+};
+
 const triggerMaterialIngest = async (material, attachments = []) => {
   const ingestible = attachments.filter(isVectorIngestible);
   let academicYearId = material.academicYearId || '';
@@ -57,11 +84,21 @@ const triggerMaterialIngest = async (material, attachments = []) => {
   // where only index===0 used to be replaced)
   await deleteMaterialVectors(material._id).catch(() => {});
 
-  if (!ingestible.length) return;
+  if (!ingestible.length) {
+    // Even without attachments, keep curriculum map in sync
+    await updateCurriculumMapFromMaterial(material).catch((err) =>
+      logger.warn('[curriculum-map] update skipped:', err.message)
+    );
+    return;
+  }
+
+  let bloomLevel = '';
+  let learningOutcomes = [];
+  let detectedTopic = '';
 
   for (let index = 0; index < ingestible.length; index += 1) {
     const attachment = ingestible[index];
-    await axios.post(
+    const { data: ingestData } = await axios.post(
       `${AI_SERVICE_URL}/ingest/material`,
       {
         url: attachment.url,
@@ -83,7 +120,33 @@ const triggerMaterialIngest = async (material, attachments = []) => {
       },
       { timeout: 300_000 }
     );
+    // Use classification from first attachment (primary document)
+    if (index === 0) {
+      bloomLevel = ingestData?.bloom_level || '';
+      learningOutcomes = ingestData?.learning_outcomes || [];
+      // Save auto-detected topic only if teacher left topicTitle blank
+      if (!material.topicTitle && ingestData?.detected_topic) {
+        detectedTopic = ingestData.detected_topic;
+      }
+    }
   }
+
+  // Persist Bloom level, learning outcomes, and auto-detected topic back to the material
+  const aiUpdates = {};
+  if (bloomLevel) aiUpdates.bloomLevel = bloomLevel;
+  if (learningOutcomes.length) aiUpdates.learningOutcomes = learningOutcomes;
+  if (detectedTopic) aiUpdates.topicTitle = detectedTopic;
+  if (Object.keys(aiUpdates).length) {
+    await TeachingMaterial.updateOne(
+      { _id: material._id },
+      { $set: aiUpdates }
+    ).catch((err) => logger.warn('[material ingest] failed to save AI fields:', err.message));
+  }
+
+  // After all attachments are indexed, sync topic into curriculum map
+  await updateCurriculumMapFromMaterial(material).catch((err) =>
+    logger.warn('[curriculum-map] update skipped:', err.message)
+  );
 };
 
 // Middleware to ensure teacher is authenticated
@@ -207,19 +270,17 @@ router.post('/', async (req, res, next) => {
     }
     if (expiresAt) materialData.expiresAt = new Date(expiresAt);
 
-    // Create version record if content exists
-    if (content) {
-      materialData.currentVersion = 1;
-      materialData.versions = [{
-        versionNumber: 1,
-        content,
-        title,
-        attachments: attachments || [],
-        editedBy: req.userId,
-        editedAt: new Date(),
-        changeDescription: 'Initial version'
-      }];
-    }
+    // Always create version 1 so attachment-only materials are also versioned
+    materialData.currentVersion = 1;
+    materialData.versions = [{
+      versionNumber: 1,
+      content: content || '',
+      title,
+      attachments: attachments || [],
+      editedBy: req.userId,
+      editedAt: new Date(),
+      changeDescription: 'Initial version'
+    }];
 
     const material = new TeachingMaterial(materialData);
     await material.save();
@@ -354,25 +415,25 @@ router.patch('/:id', async (req, res, next) => {
       });
     }
 
-    // Store old version if content changed
-    if (content && content !== material.content) {
-      const newVersion = material.currentVersion + 1;
+    // Snapshot current state into version history whenever content OR attachments change
+    const contentChanged = content !== undefined && content !== material.content;
+    const attachmentsChanged = attachments !== undefined;
+    if (contentChanged || attachmentsChanged) {
       material.versions.push({
         versionNumber: material.currentVersion,
         content: material.content,
         title: material.title,
-        attachments: material.attachments,
+        attachments: material.attachments.toObject ? material.attachments.toObject() : material.attachments,
         editedBy: req.userId,
         editedAt: new Date(),
-        changeDescription: req.body.changeDescription || 'Updated version'
+        changeDescription: req.body.changeDescription || (contentChanged ? 'Content updated' : 'Attachments updated')
       });
-      material.currentVersion = newVersion;
+      material.currentVersion += 1;
     }
 
     // Update fields
     if (title) material.title = title.trim();
-    if (content) material.content = content;
-    const attachmentsChanged = !!attachments;
+    if (contentChanged) material.content = content;
     if (attachments) material.attachments = attachments;
     if (tags) material.tags = tags;
     if (priority) material.priority = priority;

@@ -23,6 +23,9 @@ from app.modules.parser.pdf import (
     render_pdf_page_png,
     select_visual_pdf_pages,
 )
+from app.modules.classifier.bloom import classify_bloom
+from app.modules.classifier.outcomes import extract_learning_outcomes
+from app.modules.classifier.topic import detect_topic
 from app.modules.stem.service import build_embedding_text, build_stem_metadata
 from app.modules.vision.client import VisionExtractionError, extract_visual_content
 
@@ -163,8 +166,11 @@ def ingest_material(
     concepts: list[str] | None = None,
     formulas: list[str] | None = None,
     units: list[str] | None = None,
-) -> tuple[int, str]:
-    """Download, parse, chunk, embed and upsert a material. Returns (chunks_indexed, document_type)."""
+) -> tuple[int, str, str, list[str], str]:
+    """Download, parse, chunk, embed and upsert a material.
+
+    Returns (chunks_indexed, document_type, bloom_level, learning_outcomes, detected_topic).
+    """
     extension = resolve_extension(url, file_name, content_type)
     if extension not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
@@ -182,11 +188,11 @@ def ingest_material(
     raw_text = (raw_text or "").strip()
     if not raw_text and not visual_pairs:
         logger.warning("No text extracted from material %s", material_id)
-        return 0, document_type
+        return 0, document_type, "understand", [], ""
 
     chunk_pairs = chunk_text_with_offsets(raw_text) if raw_text else []
     if not chunk_pairs and not visual_pairs:
-        return 0, document_type
+        return 0, document_type, "understand", [], ""
 
     text_chunks = [text for text, _ in chunk_pairs]
     chunks = text_chunks + [text for _, text in visual_pairs]
@@ -268,4 +274,27 @@ def ingest_material(
         document_type,
         len(visual_pairs),
     )
-    return indexed, document_type
+
+    # All classifiers run on already-parsed text (no extra download).
+    # All are best-effort and never block the ingest from completing.
+    sample_text = raw_text or " ".join(text for _, text in visual_pairs)
+
+    bloom_level = classify_bloom(sample_text)
+
+    learning_outcomes = extract_learning_outcomes(
+        sample_text, subject_name=subject_name, topic=topic_title
+    )
+
+    # Auto-detect topic only when the caller did not supply one
+    detected_topic = ""
+    if not topic_title:
+        detected_topic = detect_topic(
+            sample_text, subject=subject_name, chapter=chapter_title
+        )
+
+    logger.info(
+        "Classified material %s: bloom=%s, outcomes=%d, detected_topic=%r",
+        material_id, bloom_level, len(learning_outcomes), detected_topic or "(not run)",
+    )
+
+    return indexed, document_type, bloom_level, learning_outcomes, detected_topic

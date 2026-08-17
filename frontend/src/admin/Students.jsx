@@ -1579,6 +1579,77 @@ const Students = ({ setShowAdminHeader }) => {
     }
   };
 
+  const handleResetStudentCredentials = async (student) => {
+    if (!student?._id) return;
+    const studentName = escapeHtml(student.name || "this student");
+    const confirm = await Swal.fire({
+      icon: "warning",
+      title: "Reset Student Credentials?",
+      html: `<p>This will generate a new temporary password for <strong>${studentName}</strong>.<br/>The student must use it to log in and will be prompted to change it.</p>`,
+      showCancelButton: true,
+      confirmButtonText: "Yes, Reset",
+      confirmButtonColor: "#EAB308",
+      cancelButtonText: "Cancel",
+    });
+    if (!confirm.isConfirmed) return;
+
+    setCredentialLoadingId(student._id);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/password-reset/reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ role: "student", userId: student._id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || data.message || res.statusText || "Failed to reset credentials");
+      }
+      const loginId = data.loginId || student.username || student.studentCode || "-";
+      const newPassword = data.password || "-";
+      Swal.fire({
+        icon: "success",
+        title: "Credentials Reset",
+        html: `
+          <div class="text-left space-y-4">
+            <p class="text-gray-700 mb-4">New temporary credentials for <strong>${studentName}</strong>:</p>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
+              <div>
+                <p class="text-xs font-semibold text-yellow-700 uppercase mb-1">Student ID</p>
+                <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-yellow-100">
+                  <code class="text-sm font-mono text-gray-800" id="swal-rst-id">${escapeHtml(loginId)}</code>
+                  <button onclick="navigator.clipboard.writeText(document.getElementById('swal-rst-id').textContent)" class="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded">Copy</button>
+                </div>
+              </div>
+              <div>
+                <p class="text-xs font-semibold text-yellow-700 uppercase mb-1">New Password</p>
+                <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-yellow-100">
+                  <code class="text-sm font-mono text-gray-800" id="swal-rst-pw">${escapeHtml(newPassword)}</code>
+                  <button onclick="navigator.clipboard.writeText(document.getElementById('swal-rst-pw').textContent)" class="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded">Copy</button>
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">⚠️ Share these credentials securely. The student should change their password after logging in.</p>
+          </div>
+        `,
+        width: "600px",
+        confirmButtonText: "Done",
+        confirmButtonColor: "#EAB308",
+      });
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "Reset Failed",
+        text: err.message || "Unable to reset credentials",
+      });
+    } finally {
+      setCredentialLoadingId(null);
+    }
+  };
+
   const CRED_ICON_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
   const CRED_ICON_EYE_OFF = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
   const CRED_ICON_COPY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
@@ -3506,6 +3577,21 @@ const Students = ({ setShowAdminHeader }) => {
                                 <KeyRound size={13} />
                                 Credentials
                               </button>
+                              {student.studentPortalUser && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResetStudentCredentials(student);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-md font-medium bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition px-2 py-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                                  disabled={isCredentialLoading}
+                                  title="Reset Credentials"
+                                >
+                                  <KeyRound size={12} />
+                                  Reset
+                                </button>
+                              )}
                               {portalReady && (
                                 <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-semibold">
                                   Portal Ready

@@ -48,7 +48,7 @@ async def delete_material_vectors(material_id: str) -> DeleteMaterialResponse:
 
 @router.post("/material", response_model=IngestMaterialResponse)
 async def ingest_material_endpoint(req: IngestMaterialRequest) -> IngestMaterialResponse:
-    chunks_indexed, document_type = ingest_material(
+    chunks_indexed, document_type, bloom_level, learning_outcomes, detected_topic = ingest_material(
         url=req.url,
         material_id=req.material_id,
         source_id=req.source_id or req.material_id,
@@ -75,4 +75,7 @@ async def ingest_material_endpoint(req: IngestMaterialRequest) -> IngestMaterial
         material_id=req.material_id,
         chunks_indexed=chunks_indexed,
         document_type=document_type,
+        bloom_level=bloom_level,
+        learning_outcomes=learning_outcomes,
+        detected_topic=detected_topic,
     )

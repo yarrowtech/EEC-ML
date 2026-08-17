@@ -29,6 +29,9 @@ class IngestMaterialResponse(BaseModel):
     material_id: str
     chunks_indexed: int
     document_type: str
+    bloom_level: str = "understand"
+    learning_outcomes: list[str] = Field(default_factory=list)
+    detected_topic: str = ""
 
 
 class DeleteMaterialResponse(BaseModel):
