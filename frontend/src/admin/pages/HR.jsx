@@ -1518,7 +1518,7 @@ const HR = ({ setShowAdminHeader }) => {
                         <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
                         <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">From</th>
                         <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">To</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
+                        {/* <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th> */}
                         <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                         <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -1534,7 +1534,7 @@ const HR = ({ setShowAdminHeader }) => {
                             </td>
                             <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.startDate)}</td>
                             <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.endDate)}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={r.reason || ''}>{r.reason || '-'}</td>
+                            {/* <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={r.reason || ''}>{r.reason || '-'}</td> */}
                             <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
                             <td className="px-5 py-3 text-sm">
                               <div className="flex gap-2">
