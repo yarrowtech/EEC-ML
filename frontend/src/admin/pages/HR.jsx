@@ -890,24 +890,12 @@ const HR = ({ setShowAdminHeader }) => {
 
   const printIDCard = () => {
     if (!idCardRef.current) return;
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>ID Card</title>
-          <style>
-            body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          ${idCardRef.current.outerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    // Print the current page instead of copying HTML into a blank popup
+    // window — a popup has none of this app's stylesheets loaded, so the
+    // Tailwind-styled card rendered with no layout/colors at all (which is
+    // why it looked completely empty). #id-card-print-section below hides
+    // everything else on the page during printing so only the card shows.
+    window.print();
   };
 
   // Add New functionality merged from NewAdd component
@@ -1671,13 +1659,13 @@ const HR = ({ setShowAdminHeader }) => {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-2">
-                <button
+                {/* <button
                   onClick={handlePrintLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium"
                 >
                   <FileText size={16} />
                   Print
-                </button>
+                </button> */}
                 <button
                   onClick={closeLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium"
@@ -2220,6 +2208,22 @@ const HR = ({ setShowAdminHeader }) => {
         {/* ID Card Modal */}
         {showIDCard && idCardData && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            {/* Printing the current page (instead of a blank popup) means every
+                stylesheet is already loaded correctly — this just hides
+                everything except the card while a print is in progress. */}
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #id-card-print-section, #id-card-print-section * { visibility: visible; }
+                #id-card-print-section {
+                  position: fixed;
+                  inset: 0;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                }
+              }
+            `}</style>
             <div className="bg-white rounded-xl shadow-2xl border border-gray-200 p-6 max-w-lg w-full">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold text-gray-900">🎓 ID Card Generated Successfully!</h3>
@@ -2232,7 +2236,9 @@ const HR = ({ setShowAdminHeader }) => {
               </div>
 
               <div className="mb-6 flex justify-center">
-                <IDCard ref={idCardRef} person={idCardData} type={idCardType} />
+                <div id="id-card-print-section">
+                  <IDCard ref={idCardRef} person={idCardData} type={idCardType} />
+                </div>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
