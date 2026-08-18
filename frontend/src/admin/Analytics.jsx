@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import jsPDF from 'jspdf';
 import {
   BarChart,
@@ -320,48 +320,51 @@ const Analytics = ({ setShowAdminHeader }) => {
     return () => controller.abort();
   }, []);
 
+  // Default the session picker to the active year exactly once, when it
+  // first loads — re-running this on every selectedSession change (as it
+  // used to) meant picking "All Sessions" got silently reverted a moment
+  // later, which is why the Session filter never actually seemed to work.
+  const didInitSessionRef = useRef(false);
   useEffect(() => {
-    if (!sessionOptions.length) return;
+    if (!sessionOptions.length || didInitSessionRef.current) return;
     const activeSession = sessionOptions[0];
-    if (activeSession?.name && selectedSession !== activeSession.name) {
+    if (activeSession?.name) {
       setSelectedSession(activeSession.name);
+      didInitSessionRef.current = true;
     }
-  }, [sessionOptions, selectedSession]);
+  }, [sessionOptions]);
 
-  const activeAcademicYearId = sessionOptions[0]?._id ? String(sessionOptions[0]._id) : '';
+  // "All Sessions" means unscoped — show classes/sections/data across every
+  // academic year. Picking the specific session name scopes everything
+  // (Class options -> Section options -> analytics data) to that year.
+  const activeAcademicYearId = (selectedSession !== ALL_SESSIONS && sessionOptions[0]?._id)
+    ? String(sessionOptions[0]._id)
+    : '';
   const activeClassCatalog = useMemo(
     () => classCatalog.filter((item) => !activeAcademicYearId || String(item?.academicYearId || '') === activeAcademicYearId),
     [classCatalog, activeAcademicYearId]
   );
-  const activeClassIds = useMemo(
-    () => new Set(activeClassCatalog.map((item) => String(item?._id || '')).filter(Boolean)),
-    [activeClassCatalog]
-  );
-  const activeSectionCatalog = useMemo(
-    () => sectionCatalog.filter((item) => activeClassIds.has(String(item?.classId || ''))),
-    [sectionCatalog, activeClassIds]
-  );
-
   const availableClassOptions = useMemo(
     () => [ALL_CLASSES, ...activeClassCatalog.map((item) => item?.name).filter(Boolean)],
     [activeClassCatalog]
   );
 
+  // Scoped to the one class the admin picked (which is itself already
+  // session-scoped via activeClassCatalog) — not every class in the
+  // session, which was letting sections from other classes leak in.
+  const selectedClassDoc = useMemo(
+    () => activeClassCatalog.find((item) => item?.name === selectedClass) || null,
+    [activeClassCatalog, selectedClass]
+  );
   const availableSectionOptions = useMemo(() => {
-    if (selectedClass === ALL_CLASSES) return [ALL_SECTIONS];
-    const scopedNames = activeSectionCatalog
+    if (selectedClass === ALL_CLASSES || !selectedClassDoc) return [ALL_SECTIONS];
+    const classId = String(selectedClassDoc._id || '');
+    const scopedNames = sectionCatalog
+      .filter((item) => String(item?.classId || '') === classId)
       .map((item) => item?.name)
       .filter(Boolean);
-    if (scopedNames.length) return [ALL_SECTIONS, ...scopedNames];
-
-    // Fallback: local catalog by classId (if scoped API returns empty unexpectedly).
-    const selectedClassDoc = activeClassCatalog.find((item) => item?.name === selectedClass);
-    const fallbackNames = sectionCatalog
-      .filter((item) => String(item?.classId) === String(selectedClassDoc?._id || ''))
-      .map((item) => item?.name)
-      .filter(Boolean);
-    return [ALL_SECTIONS, ...fallbackNames];
-  }, [selectedClass, activeSectionCatalog, activeClassCatalog, sectionCatalog]);
+    return [ALL_SECTIONS, ...scopedNames];
+  }, [selectedClass, selectedClassDoc, sectionCatalog]);
 
   useEffect(() => {
     if (selectedSection !== ALL_SECTIONS && !availableSectionOptions.includes(selectedSection)) {
@@ -412,7 +415,15 @@ const Analytics = ({ setShowAdminHeader }) => {
       setReportsLoading(true);
       setReportsError('');
       try {
-        const res = await fetch(buildApiUrl('/api/reports/summary'), {
+        const params = new URLSearchParams();
+        const grade = selectedClass === ALL_CLASSES ? '' : selectedClass;
+        const section = normalizeSectionValue(selectedSection);
+        const academicYearId = activeAcademicYearId;
+        if (grade) params.append('grade', grade);
+        if (section) params.append('section', section);
+        if (academicYearId) params.append('academicYearId', academicYearId);
+        const query = params.toString() ? `?${params.toString()}` : '';
+        const res = await fetch(buildApiUrl(`/api/reports/summary${query}`), {
           headers: getAuthHeaders(),
           signal: controller.signal,
         });
@@ -433,7 +444,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     };
     loadReports();
     return () => controller.abort();
-  }, []);
+  }, [selectedClass, selectedSection, activeAcademicYearId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -692,10 +703,8 @@ const Analytics = ({ setShowAdminHeader }) => {
     selectedClass !== ALL_CLASSES ||
     selectedSection !== ALL_SECTIONS;
 
-  const scopedStudentCount = Number(progressAnalytics?.totalStudents ?? reportsSummary?.users?.students ?? 0);
-  const scopedAttendanceRate = Number(
-    progressAnalytics?.attendanceRate ?? attendanceRate ?? 0
-  );
+  const scopedStudentCount = Number(reportsSummary?.users?.students ?? progressAnalytics?.totalStudents ?? 0);
+  const scopedAttendanceRate = Number(attendanceRate ?? progressAnalytics?.attendanceRate ?? 0);
   const scopedAverageScore = Number(progressAnalytics?.averageScore ?? 0);
 
   const recentActivity = useMemo(() => {
@@ -1051,7 +1060,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     pdf.setFont(undefined, 'normal');
     pdf.text(`Generated: ${generatedAt}`, margin, 21);
     pdf.text(
-      `Session: ${activeAcademicYearName || selectedSession} | Class: ${selectedClass} | Section: ${selectedSection}`,
+      `Session: ${selectedSession === ALL_SESSIONS ? ALL_SESSIONS : (activeAcademicYearName || selectedSession)} | Class: ${selectedClass} | Section: ${selectedSection}`,
       margin,
       27
     );
@@ -1232,15 +1241,18 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <select
                     value={selectedSession}
                     onChange={(e) => setSelectedSession(e.target.value)}
-                    disabled
-                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                    disabled={!sessionOptions.length}
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {sessionOptions.length ? (
-                      sessionOptions.map((session) => (
-                        <option key={session?._id || session?.name || ALL_SESSIONS} value={session?.name || ALL_SESSIONS}>
-                          {session?.name || ALL_SESSIONS}
-                        </option>
-                      ))
+                      <>
+                        <option value={ALL_SESSIONS}>{ALL_SESSIONS}</option>
+                        {sessionOptions.map((session) => (
+                          <option key={session?._id || session?.name} value={session?.name || ALL_SESSIONS}>
+                            {session?.name || ALL_SESSIONS}
+                          </option>
+                        ))}
+                      </>
                     ) : (
                       <option value="">No active session found</option>
                     )}
@@ -1400,7 +1412,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                     </div>
                   </div>
                   <span className="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-100 flex-shrink-0">
-                    {activeAcademicYearName || selectedSession || 'No active session'}
+                    {selectedSession === ALL_SESSIONS ? ALL_SESSIONS : (activeAcademicYearName || selectedSession || 'No active session')}
                   </span>
                 </div>
                 {feesLoading && !feesChartData.length ? (

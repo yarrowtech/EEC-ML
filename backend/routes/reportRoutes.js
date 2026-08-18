@@ -323,14 +323,54 @@ router.get('/summary', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
 
+    const { grade, section, academicYearId } = req.query;
+
+    const studentMatch = { schoolId: new mongoose.Types.ObjectId(schoolId), status: 'Active' };
+    if (grade) {
+      const raw = String(grade).trim();
+      const noClassPrefix = raw.replace(/^class\s*/i, '').trim();
+      const variants = new Set([raw]);
+      if (noClassPrefix) {
+        variants.add(noClassPrefix);
+        variants.add(`Class ${noClassPrefix}`);
+      }
+      studentMatch.grade = {
+        $in: Array.from(variants).map(
+          (item) => new RegExp(`^${item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        ),
+      };
+    }
+    if (section) {
+      studentMatch.section = new RegExp(`^${String(section).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    }
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      // StudentUser.academicYear stores the AcademicYear's *name*, not its ObjectId.
+      const year = await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean();
+      if (year?.name) {
+        studentMatch.academicYear = new RegExp(`^${year.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      }
+    }
+
+    const isScoped = Boolean(grade || section || (academicYearId && mongoose.isValidObjectId(academicYearId)));
+
     const [studentCount, teacherCount, parentCount] = await Promise.all([
-      StudentUser.countDocuments({ schoolId, status: 'Active' }),
+      StudentUser.countDocuments(studentMatch),
       TeacherUser.countDocuments({ schoolId }),
       ParentUser.countDocuments({ schoolId }),
     ]);
 
+    const feeMatch = { schoolId: new mongoose.Types.ObjectId(schoolId) };
+    if (grade) {
+      const gradeToken = String(grade).replace(/^class\s*/i, '').trim();
+      feeMatch.className = new RegExp(`^(class\\s*)?${gradeToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    }
+    if (section) feeMatch.section = new RegExp(`^${String(section).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      feeMatch.academicYearId = new mongoose.Types.ObjectId(academicYearId);
+    }
+
     const feeTotals = await FeeInvoice.aggregate([
-      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId) } },
+      { $match: feeMatch },
       {
         $group: {
           _id: null,
@@ -344,12 +384,7 @@ router.get('/summary', adminAuth, async (req, res) => {
     const fee = feeTotals[0] || { totalAmount: 0, paidAmount: 0, balanceAmount: 0 };
 
     const attendanceTotals = await StudentUser.aggregate([
-      {
-        $match: {
-          schoolId: new mongoose.Types.ObjectId(schoolId),
-          status: 'Active',
-        },
-      },
+      { $match: studentMatch },
       { $unwind: { path: '$attendance', preserveNullAndEmptyArrays: false } },
       {
         $group: {
@@ -375,6 +410,7 @@ router.get('/summary', adminAuth, async (req, res) => {
       users: { students: studentCount, teachers: teacherCount, parents: parentCount },
       fees: fee,
       attendance,
+      scoped: isScoped,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

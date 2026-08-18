@@ -4,6 +4,7 @@ const router = express.Router();
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
 const Assignment = require('../models/Assignment');
+const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
 
@@ -223,7 +224,12 @@ router.get('/analytics', adminAuth, async (req, res) => {
     applyGradeAndSectionFilter(studentFilter, { grade, section });
 
     if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
-      studentFilter.academicYear = academicYearId;
+      // StudentUser.academicYear stores the AcademicYear's *name* (e.g. "2024-2025"),
+      // not its ObjectId, so resolve the id to a name before filtering.
+      const year = await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean();
+      if (year?.name) {
+        studentFilter.academicYear = new RegExp(`^${escapeRegex(year.name.trim())}$`, 'i');
+      }
     }
 
     const students = await StudentUser.find(studentFilter);
