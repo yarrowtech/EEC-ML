@@ -37,19 +37,17 @@
 - [x] Auto-generate Learning Outcomes from document content
 - [x] Auto-update Knowledge Graph on every ingest
 - [x] Bloom classification of document content on ingest
-- [ ] Document versioning (retain old versions, never auto-delete)
+- [x] Document versioning (snapshot on every edit; GET /:id/versions + POST /:id/versions/:n/restore)
 - [x] Topic auto-detection from content (currently manual)
 
 ---
 
 ## 3. AI Orchestrator
 
-- [ ] Central AI Orchestrator module in FastAPI
-- [ ] Node.js calls ONLY the Orchestrator (not individual endpoints)
-- [ ] Orchestrator routes requests to correct AI engine
-- [ ] Loose coupling between all AI modules
-
-> **Note:** Node currently calls individual AI endpoints directly — this violates the architecture.
+- [x] Central AI Orchestrator module in FastAPI
+- [x] Node.js calls ONLY the Orchestrator (not individual endpoints)
+- [x] Orchestrator routes requests to correct AI engine
+- [x] Loose coupling between all AI modules
 
 ---
 
@@ -60,9 +58,9 @@
 - [x] Relevance threshold filtering
 - [x] "No materials found" graceful fallback message
 - [x] Retrieved chunks stripped of teacher notes before LLM
-- [ ] Hybrid search (semantic + BM25 keyword)
+- [x] Hybrid search (semantic + BM25 keyword)
 - [x] Cross-session conversation memory (persisted, not in-memory)
-- [ ] Academic year filter on retrieval
+- [x] Academic year filter on retrieval
 
 ---
 
@@ -72,11 +70,11 @@
 - [x] curriculumMapRoutes.js backend routes
 - [x] LearningPathMapView.jsx student-facing map
 - [x] Graph traversal logic (walk prerequisites to find root causes)
-- [ ] Auto-update graph when new document is ingested
-- [ ] Concept node extraction from documents
-- [ ] Learning Outcome nodes linked to chapters
-- [ ] Question nodes linked to concepts
-- [ ] Student → Mastery edges auto-maintained
+- [x] Auto-update graph when new document is ingested
+- [x] Concept node extraction from documents
+- [x] Learning Outcome nodes linked to chapters
+- [x] Question nodes linked to concepts
+- [x] Student → Mastery edges auto-maintained
 
 ---
 
@@ -157,12 +155,12 @@
 - [x] Quiz mode UI (QuizUI with animated progress, score screen)
 - [x] ExamQuestion.js + PracticeQuestion.js models
 - [x] PracticeTestInterface.jsx + PracticePapersPortal.jsx
-- [ ] Short answer question generation
-- [ ] Long answer question generation
-- [ ] Bloom-level question generation
-- [ ] Difficulty level selection
-- [ ] Generated questions saved permanently to Question Bank
-- [ ] Teacher can edit AI-generated questions
+- [x] Short answer question generation
+- [x] Long answer question generation
+- [x] Bloom-level question generation
+- [x] Difficulty level selection (teacher-explicit via POST /api/ai-tutor/teacher/generate)
+- [x] Generated questions saved permanently to Question Bank
+- [x] Teacher can edit AI-generated questions
 - [x] Adaptive difficulty based on mastery score
 
 ---
@@ -336,17 +334,17 @@
 | Category | Done | Partial | Not Started | Total |
 |---|---|---|---|---|
 | Infrastructure | 10 | 0 | 3 | 13 |
-| Document Ingestion | 13 | 0 | 1 | 14 |
-| AI Orchestrator | 0 | 0 | 4 | 4 |
-| RAG Engine | 6 | 0 | 2 | 8 |
-| Knowledge Graph | 4 | 0 | 5 | 9 |
+| Document Ingestion | 14 | 0 | 0 | 14 |
+| AI Orchestrator | 4 | 0 | 0 | 4 |
+| RAG Engine | 8 | 0 | 0 | 8 |
+| Knowledge Graph | 9 | 0 | 0 | 9 |
 | Mastery Engine | 10 | 0 | 0 | 10 |
 | Error Classification | 5 | 0 | 0 | 5 |
 | Gap Detection | 5 | 0 | 0 | 5 |
 | Bloom Engine | 4 | 0 | 0 | 4 |
-| Student Memory | 8 | 0 | 1 | 9 |
+| Student Memory | 9 | 0 | 0 | 9 |
 | AI Tutor Engine | 9 | 0 | 0 | 9 |
-| Question Generator | 6 | 0 | 6 | 12 |
+| Question Generator | 12 | 0 | 0 | 12 |
 | Answer Evaluator | 11 | 0 | 0 | 11 |
 | Flashcard Generator | 7 | 0 | 0 | 7 |
 | Summary Generator | 3 | 0 | 0 | 3 |
@@ -360,16 +358,16 @@
 | Research-Grade Features | 2 | 0 | 12 | 14 |
 | Permissions & Controls | 13 | 0 | 1 | 14 |
 | Future ML | 0 | 0 | 5 | 5 |
-| **TOTAL** | **170** | **0** | **54** | **224** |
+| **TOTAL** | **189** | **0** | **35** | **224** |
 
-**Overall: ~76% of all planned items checked off**
+**Overall: ~84% of all planned items checked off**
 
 ---
 
 ## Next 5 Things to Build (in order)
 
-1. **Prompt Library** — externalise all hardcoded prompts (architectural requirement; fork agent in progress)
-2. **AI Orchestrator** — fix the architectural violation (Node calling endpoints directly)
-3. **Hybrid search** — add BM25 keyword fallback to Qdrant semantic retrieval
-4. **Short/long answer + Bloom question generation** — expand Question Generator beyond MCQ
-5. **Student agency on recommendations** — let student accept/reject recommended next topic
+1. **Document versioning UI** — frontend for browsing version history and restoring snapshots (backend endpoints now live)
+2. **Language Assessment remaining items** — 2 unchecked items in section 19
+3. **Speech Module remaining items** — 2 unchecked items in section 20
+4. **Research-Grade Features** — 12 unchecked items (personalized spaced repetition, Bayesian mastery, etc.)
+5. **Permissions & Controls remaining** — 1 unchecked item in section 23

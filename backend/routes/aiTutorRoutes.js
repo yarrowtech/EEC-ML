@@ -16,7 +16,7 @@ const LessonPlan = require('../models/LessonPlan');
 const { buildStudentContext } = require('../utils/studentContextBuilder');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-const ALLOWED_MODES = ['custom', 'explain', 'visual_explain', 'summarize', 'quiz', 'visual_quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary'];
+const ALLOWED_MODES = ['custom', 'explain', 'visual_explain', 'summarize', 'quiz', 'visual_quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary', 'quiz_generate', 'short_answer', 'long_answer', 'bloom_question', 'hinge_question'];
 
 const MAX_MATERIALS = 50;
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -313,27 +313,30 @@ router.post('/generate', authStudent, async (req, res) => {
       // Non-critical — fall back to generic response if context build fails
     }
 
-    const aiResponse = await axios.post(`${AI_SERVICE_URL}/generate/tutor`, {
-      mode: normalizedMode,
-      subject: normalizeString(subject) || 'General Knowledge',
-      topic: normalizedTopic || normalizedQuestion,
-      subTopic: normalizeString(subTopic) || null,
-      gradeLevel: student.grade ? `Grade ${student.grade}` : null,
-      question: normalizeString(question) || null,
-      candidates: [],
-      schoolId: String(schoolId),
-      classId: student.classId ? String(student.classId) : null,
-      sectionId: student.sectionId ? String(student.sectionId) : null,
-      academicYearId: academicYearId ? String(academicYearId) : null,
-      subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
-      curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
-      chapterTitle: resolvedChapterTitle,
-      difficulty: masteryBasedDifficulty,
-      responseDepth: normalizeString(responseDepth) || null,
-      learningGoal: normalizeString(learningGoal) || null,
-      wrongAnswer: normalizeString(wrongAnswer) || null,
-      studentContext: studentContext || null,
-      conversationHistory: conversationHistory.length ? conversationHistory : null,
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
+      task_type: 'generate',
+      payload: {
+        mode: normalizedMode,
+        subject: normalizeString(subject) || 'General Knowledge',
+        topic: normalizedTopic || normalizedQuestion,
+        subTopic: normalizeString(subTopic) || null,
+        gradeLevel: student.grade ? `Grade ${student.grade}` : null,
+        question: normalizeString(question) || null,
+        candidates: [],
+        schoolId: String(schoolId),
+        classId: student.classId ? String(student.classId) : null,
+        sectionId: student.sectionId ? String(student.sectionId) : null,
+        academicYearId: academicYearId ? String(academicYearId) : null,
+        subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
+        curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
+        chapterTitle: resolvedChapterTitle,
+        difficulty: masteryBasedDifficulty,
+        responseDepth: normalizeString(responseDepth) || null,
+        learningGoal: normalizeString(learningGoal) || null,
+        wrongAnswer: normalizeString(wrongAnswer) || null,
+        studentContext: studentContext || null,
+        conversationHistory: conversationHistory.length ? conversationHistory : null,
+      },
     }, { timeout: 180000 });
 
     return res.json({
@@ -465,14 +468,17 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
       return res.status(400).json({ error: 'questionText, correctAnswer, and studentAnswer are required' });
     }
 
-    const evalResp = await axios.post(`${AI_SERVICE_URL}/evaluate/answer`, {
-      questionText, correctAnswer, studentAnswer,
-      subject: normalizeString(subject),
-      topicTitle: normalizeString(topicTitle),
-      chapterTitle: normalizeString(chapterTitle),
-      gradeLevel: normalizeString(gradeLevel),
-      questionType,
-      context: normalizeString(context),
+    const evalResp = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
+      task_type: 'evaluate',
+      payload: {
+        questionText, correctAnswer, studentAnswer,
+        subject: normalizeString(subject),
+        topicTitle: normalizeString(topicTitle),
+        chapterTitle: normalizeString(chapterTitle),
+        gradeLevel: normalizeString(gradeLevel),
+        questionType,
+        context: normalizeString(context),
+      },
     }, { timeout: 120000 });
 
     const result = evalResp.data;
@@ -784,6 +790,159 @@ router.post('/teacher/correct-answer', authTeacher, async (req, res) => {
     return res.json({ success: true, message: 'Answer correction saved' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/question-bank/save ─────────────────────────────────────
+// Teacher saves AI-generated questions permanently to Question Bank.
+// Accepts an array of question objects (mcq / short_answer / long_answer).
+router.post('/question-bank/save', authTeacher, async (req, res) => {
+  try {
+    const GeneratedQuestion = require('../models/GeneratedQuestion');
+    const { questions, subjectName, chapterTitle, topicTitle } = req.body || {};
+    if (!Array.isArray(questions) || !questions.length) {
+      return res.status(400).json({ error: 'questions array is required' });
+    }
+    const docs = questions.map((q) => ({
+      schoolId:    req.schoolId,
+      teacherId:   req.userId,
+      subjectName: q.subjectName || subjectName || '',
+      chapterTitle:q.chapterTitle || chapterTitle || '',
+      topicTitle:  q.topicTitle || topicTitle || '',
+      questionType:q.questionType || 'mcq',
+      questionText:q.questionText || '',
+      options:     q.options || [],
+      modelAnswer: q.modelAnswer || '',
+      explanation: q.explanation || '',
+      keywords:    q.keywords || [],
+      markingCriteria: q.markingCriteria || [],
+      bloomLevel:  q.bloomLevel || '',
+      difficulty:  q.difficulty || 'medium',
+      marks:       q.marks || 1,
+    }));
+    const saved = await GeneratedQuestion.insertMany(docs);
+    return res.json({ success: true, data: { saved: saved.length, ids: saved.map((d) => d._id) } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/question-bank ──────────────────────────────────────────
+// Teacher retrieves their school's Question Bank with optional filters.
+router.get('/question-bank', authTeacher, async (req, res) => {
+  try {
+    const GeneratedQuestion = require('../models/GeneratedQuestion');
+    const { subject, chapter, topic, type, approved, limit = 100, skip = 0 } = req.query;
+    const filter = { schoolId: req.schoolId };
+    if (subject) filter.subjectName = { $regex: subject, $options: 'i' };
+    if (chapter) filter.chapterTitle = { $regex: chapter, $options: 'i' };
+    if (topic)   filter.topicTitle   = { $regex: topic,   $options: 'i' };
+    if (type)    filter.questionType  = type;
+    if (approved === 'true') filter.isApproved = true;
+    const [total, questions] = await Promise.all([
+      GeneratedQuestion.countDocuments(filter),
+      GeneratedQuestion.find(filter).sort({ generatedAt: -1 }).skip(Number(skip)).limit(Number(limit)).lean(),
+    ]);
+    return res.json({ success: true, data: { total, questions } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/ai-tutor/question-bank/:id — teacher edits a question ──────────
+router.patch('/question-bank/:id', authTeacher, async (req, res) => {
+  try {
+    const GeneratedQuestion = require('../models/GeneratedQuestion');
+    const allowed = ['questionText', 'options', 'modelAnswer', 'explanation', 'keywords',
+      'markingCriteria', 'bloomLevel', 'difficulty', 'marks', 'isApproved'];
+    const update = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) update[key] = req.body[key];
+    }
+    update.teacherEdited = true;
+    const q = await GeneratedQuestion.findOneAndUpdate(
+      { _id: req.params.id, schoolId: req.schoolId },
+      { $set: update },
+      { new: true }
+    );
+    if (!q) return res.status(404).json({ error: 'Question not found' });
+    return res.json({ success: true, data: q });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/ai-tutor/question-bank/:id/approve — teacher approves question ─
+router.patch('/question-bank/:id/approve', authTeacher, async (req, res) => {
+  try {
+    const GeneratedQuestion = require('../models/GeneratedQuestion');
+    const q = await GeneratedQuestion.findOneAndUpdate(
+      { _id: req.params.id, schoolId: req.schoolId },
+      { $set: { isApproved: true } },
+      { new: true }
+    );
+    if (!q) return res.status(404).json({ error: 'Question not found' });
+    return res.json({ success: true, data: { _id: q._id, isApproved: true } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/teacher/generate ─────────────────────────────────────────
+// Teacher-controlled question generation with explicit difficulty (required).
+router.post('/teacher/generate', authTeacher, async (req, res) => {
+  try {
+    const {
+      mode = 'quiz',
+      subject,
+      topic,
+      subTopic,
+      chapterTitle,
+      gradeLevel,
+      difficulty,
+      count,
+    } = req.body;
+
+    if (!subject || !topic) {
+      return res.status(400).json({ success: false, message: 'subject and topic are required' });
+    }
+    if (!['easy', 'medium', 'hard'].includes(difficulty)) {
+      return res.status(400).json({
+        success: false,
+        message: 'difficulty is required and must be easy, medium, or hard',
+      });
+    }
+
+    const allowedModes = ['quiz', 'visual_quiz', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'flashcards'];
+    const normalizedMode = allowedModes.includes(mode) ? mode : 'quiz';
+
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
+      task_type: 'generate_questions',
+      payload: {
+        mode: normalizedMode,
+        subject: normalizeString(subject),
+        topic: normalizeString(topic),
+        subTopic: normalizeString(subTopic) || null,
+        chapterTitle: normalizeString(chapterTitle) || null,
+        gradeLevel: normalizeString(gradeLevel) || null,
+        difficulty,
+        count: Math.min(parseInt(count, 10) || 5, 20),
+        schoolId: String(req.schoolId),
+      },
+    }, { timeout: 180000 });
+
+    return res.json({
+      success: true,
+      data: {
+        content: aiResponse.data?.content || '',
+        model: aiResponse.data?.model,
+        difficulty,
+        mode: normalizedMode,
+      },
+    });
+  } catch (err) {
+    logger.error('[teacher/generate] error:', err.message);
+    return res.status(500).json({ success: false, message: 'Question generation failed', error: err.message });
   }
 });
 

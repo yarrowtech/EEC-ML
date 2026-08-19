@@ -21,6 +21,7 @@ from app.modules.chat.router import router as chat_router
 from app.modules.documents.router import router as ingest_router
 from app.modules.evaluator.router import router as evaluator_router
 from app.modules.language_memory.router import router as memory_router
+from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.speech.router import router as speech_router
 from app.modules.summaries.router import router as summaries_router
 
@@ -62,6 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(orchestrator_router)   # ← single unified entry point for all AI tasks
 app.include_router(ingest_router)
 app.include_router(summaries_router)
 app.include_router(chat_router)

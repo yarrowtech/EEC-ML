@@ -93,6 +93,53 @@ router.get('/insights', authTeacher, async (req, res) => {
   }
 });
 
+// GET /api/curriculum-map/mastery-graph?subject=&className=&studentId=
+// Student→Mastery edge view: returns curriculum topics with the student's mastery score for each.
+// This is the "Student → Mastery edges auto-maintained" knowledge-graph query.
+router.get('/mastery-graph', authTeacher, async (req, res) => {
+  try {
+    const { subject, className, studentId } = req.query;
+    if (!subject || !className || !studentId) {
+      return res.status(400).json({ error: 'subject, className, and studentId are required' });
+    }
+    const MasteryScore = require('../models/MasteryScore');
+
+    const [map, masteryRecords] = await Promise.all([
+      CurriculumMap.findOne({ schoolId: req.schoolId, subject: { $regex: subject, $options: 'i' }, className }).lean(),
+      MasteryScore.find({ studentId, schoolId: req.schoolId, subject: { $regex: subject, $options: 'i' } }).lean(),
+    ]);
+
+    const masteryByTopic = {};
+    for (const r of masteryRecords) {
+      if (r.topicTitle) masteryByTopic[r.topicTitle.toLowerCase()] = r;
+    }
+
+    const topics = (map?.topics || []).sort((a, b) => a.order - b.order).map((t) => ({
+      order: t.order,
+      title: t.title,
+      description: t.description,
+      learningOutcomes: t.learningOutcomes || [],
+      concepts: t.concepts || [],
+      mastery: masteryByTopic[t.title?.toLowerCase()] || null,
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        subject,
+        className,
+        studentId,
+        topics,
+        overallAvg: topics.length
+          ? Math.round(topics.filter((t) => t.mastery).reduce((s, t) => s + t.mastery.score, 0) / (topics.filter((t) => t.mastery).length || 1))
+          : null,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/curriculum-map/:id
 router.delete('/:id', authTeacher, async (req, res) => {
   try {

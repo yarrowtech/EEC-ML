@@ -615,28 +615,27 @@ router.post('/student/submit', authStudent, async (req, res) => {
       if (subjectScores.size) {
         const Subject = require('../models/Subject');
         const MasteryScore = require('../models/MasteryScore');
-        const { runWorkflowTriggers } = require('../services/masteryEngine');
+        const { runWorkflowTriggers, computeEnhancedMasteryScore } = require('../services/masteryEngine');
         for (const [key, entry] of subjectScores) {
           const pct = Math.round((entry.correct / entry.total) * 100);
           const subjectDoc = await Subject.findById(entry.subjectId).lean().catch(() => null);
           const subjectName = subjectDoc?.name || key;
           const topicId = `${subjectName}::practice`;
-          const doc = await MasteryScore.findOneAndUpdate(
+          const existing = await MasteryScore.findOne({ studentId, subject: subjectName, topicId }).lean();
+          const currentScore = existing?.score ?? 0;
+          const attemptCount = (existing?.attemptCount ?? 0) + 1;
+          const daysSince = existing?.lastUpdated
+            ? Math.floor((Date.now() - new Date(existing.lastUpdated)) / 86400000)
+            : 0;
+          const finalScore = computeEnhancedMasteryScore({ currentScore, newScore: pct, attemptCount, daysSinceLastPractice: daysSince });
+          await MasteryScore.findOneAndUpdate(
             { studentId, subject: subjectName, topicId },
-            {
-              $set: { schoolId, topicTitle: 'Practice', chapterTitle: '', lastUpdated: new Date() },
-              $inc: { attemptCount: 1 },
-              $max: { score: pct },
-            },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { $set: { schoolId, topicTitle: 'Practice', chapterTitle: '', score: finalScore, attemptCount, lastUpdated: new Date() } },
+            { upsert: true }
           );
-          if (!doc) continue;
-          const blended = doc.attemptCount <= 1 ? pct : Math.round((doc.score * 0.7) + (pct * 0.3));
-          doc.score = Math.max(doc.score, blended);
-          await doc.save();
           runWorkflowTriggers({
             studentId, schoolId, subject: subjectName, topicId,
-            topicTitle: 'Practice', chapterTitle: '', score: doc.score, attemptCount: doc.attemptCount,
+            topicTitle: 'Practice', chapterTitle: '', score: finalScore, attemptCount,
           });
         }
       }

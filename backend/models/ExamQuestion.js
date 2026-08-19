@@ -12,8 +12,10 @@ const examQuestionSchema = new mongoose.Schema({
   topicTitle:   { type: String, default: '' },
   chapterTitle: { type: String, default: '' },
   subject:      { type: String, default: '' },
-  bloomLevel:   { type: String, enum: ['remember', 'understand', 'apply', 'analyse', 'evaluate', 'create', ''], default: '' },
-  order:        { type: Number, default: 0 },
+  bloomLevel:         { type: String, enum: ['remember', 'understand', 'apply', 'analyse', 'evaluate', 'create', ''], default: '' },
+  conceptTags:        [{ type: String, trim: true }],   // concept keywords this question tests
+  curriculumTopicId:  { type: mongoose.Schema.Types.ObjectId, ref: 'CurriculumMap', default: null },
+  order:              { type: Number, default: 0 },
 }, { timestamps: true });
 
 examQuestionSchema.index({ examId: 1, order: 1 });

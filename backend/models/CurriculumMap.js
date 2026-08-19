@@ -1,10 +1,13 @@
 const mongoose = require('mongoose');
 
 const topicSchema = new mongoose.Schema({
-  order:           { type: Number, required: true },
-  title:           { type: String, required: true },
-  description:     { type: String, default: '' },
-  estimatedWeeks:  { type: Number, default: 1 },
+  order:            { type: Number, required: true },
+  title:            { type: String, required: true },
+  description:      { type: String, default: '' },
+  estimatedWeeks:   { type: Number, default: 1 },
+  // Knowledge-graph enrichment populated on document ingest
+  learningOutcomes: [{ type: String, trim: true }],
+  concepts:         [{ type: String, trim: true }],
 }, { _id: true });
 
 const curriculumMapSchema = new mongoose.Schema({

@@ -42,6 +42,9 @@ _MODE_SUBDIR: dict[str, str] = {
     "visual_quiz":         "question_generation/visual_quiz.txt",
     "quiz_generate":       "question_generation/quiz_generate.txt",
     "hinge_question":      "question_generation/hinge_question.txt",
+    "short_answer":        "question_generation/short_answer.txt",
+    "long_answer":         "question_generation/long_answer.txt",
+    "bloom_question":      "question_generation/bloom_question.txt",
     # summary
     "summarize":           "summary/summarize.txt",
     "notes":               "summary/notes.txt",

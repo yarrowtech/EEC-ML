@@ -11,9 +11,12 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     FilterSelector,
+    MatchText,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
+    TextIndexParams,
+    TokenizerType,
     VectorParams,
 )
 
@@ -50,6 +53,23 @@ def _ensure_collection() -> None:
             )
         except Exception:
             pass
+
+    # Full-text index on chunk_text enables BM25-style keyword search via MatchText.
+    try:
+        client.create_payload_index(
+            collection_name=settings.qdrant_collection,
+            field_name="chunk_text",
+            field_schema=TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.WORD,
+                min_token_len=3,
+                max_token_len=30,
+                lowercase=True,
+            ),
+        )
+    except Exception:
+        pass
+
     _collection_ready = True
 
 
@@ -170,6 +190,78 @@ def get_chapter_chunks(
         {
             "id": str(point.id),
             "score": 1.0,
+            "text": point.payload.get("chunk_text", ""),
+            "chapter_title": point.payload.get("chapter_title", ""),
+            "topic_title": point.payload.get("topic_title", ""),
+            "chunk_index": point.payload.get("chunk_index", 0),
+            "start_char": point.payload.get("start_char"),
+            "source_name": point.payload.get("source_name", ""),
+            "source_url": point.payload.get("source_url", ""),
+            "material_id": point.payload.get("material_id", ""),
+            "chunk_type": point.payload.get("chunk_type", "text"),
+            "page_number": point.payload.get("page_number"),
+            "subject_id": point.payload.get("subject_id", ""),
+            "discipline": point.payload.get("discipline", ""),
+            "curriculum_code": point.payload.get("curriculum_code", ""),
+            "concepts": point.payload.get("concepts", []),
+            "formulas": point.payload.get("formulas", []),
+            "units": point.payload.get("units", []),
+        }
+        for point in results
+        if point.payload.get("chunk_text")
+    ]
+
+
+def keyword_search_chunks(
+    *,
+    query_text: str,
+    school_id: str,
+    class_id: str | None = None,
+    section_id: str | None = None,
+    academic_year_id: str | None = None,
+    subject_id: str | None = None,
+    subject_name: str | None = None,
+    limit: int = 12,
+) -> list[dict]:
+    """Keyword retrieval using Qdrant full-text search on chunk_text.
+
+    Runs parallel to semantic search and merged via RRF to form the hybrid result.
+    Returns same dict shape as search_chunks() so callers handle them uniformly.
+    """
+    _ensure_collection()
+    client = make_qdrant_client()
+    conditions: list[FieldCondition] = [
+        FieldCondition(key="school_id", match=MatchValue(value=school_id)),
+        FieldCondition(key="chunk_text", match=MatchText(text=query_text)),
+    ]
+    if class_id:
+        conditions.append(FieldCondition(key="class_id", match=MatchValue(value=class_id)))
+    if section_id:
+        conditions.append(FieldCondition(key="section_id", match=MatchValue(value=section_id)))
+    if academic_year_id:
+        conditions.append(FieldCondition(key="academic_year_id", match=MatchValue(value=academic_year_id)))
+    if subject_id:
+        conditions.append(FieldCondition(key="subject_id", match=MatchValue(value=subject_id)))
+    elif subject_name:
+        conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
+
+    try:
+        results, _ = client.scroll(
+            collection_name=settings.qdrant_collection,
+            scroll_filter=Filter(must=conditions),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        logger.warning("Qdrant keyword search failed: %s", exc)
+        return []
+
+    return [
+        {
+            "id": str(point.id),
+            "score": 1.0,  # keyword hits are binary; RRF handles ranking
+            "dense_score": 0.0,
             "text": point.payload.get("chunk_text", ""),
             "chapter_title": point.payload.get("chapter_title", ""),
             "topic_title": point.payload.get("topic_title", ""),

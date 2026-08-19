@@ -6,7 +6,7 @@ import logging
 import re
 
 from app.core.config import settings
-from app.modules.documents.repository import get_chapter_chunks, search_chunks
+from app.modules.documents.repository import get_chapter_chunks, keyword_search_chunks, search_chunks
 from app.modules.embeddings.service import embed_texts
 from app.modules.stem.service import rerank_stem_hits, stem_query_tokens
 
@@ -32,6 +32,24 @@ def _select_hybrid_hits(query_text: str, hits: list[dict]) -> list[dict]:
             )
         )
     ][: settings.max_context_chunks]
+
+
+def _reciprocal_rank_fusion(lists: list[list[dict]], k: int = 60) -> list[dict]:
+    """Merge multiple ranked result lists using Reciprocal Rank Fusion.
+
+    RRF score = sum(1 / (k + rank)) across all lists. Deduplication by chunk ID.
+    Higher score = earlier in more ranked lists = better combined hit.
+    """
+    scores: dict[str, dict] = {}
+    for ranked in lists:
+        for rank, item in enumerate(ranked):
+            cid = item.get("id", "")
+            if not cid:
+                continue
+            if cid not in scores:
+                scores[cid] = {**item, "rrf_score": 0.0}
+            scores[cid]["rrf_score"] += 1.0 / (k + rank + 1)
+    return sorted(scores.values(), key=lambda x: x["rrf_score"], reverse=True)
 
 
 def _rank_visual_chunks(query_text: str, chunks: list[dict]) -> list[dict]:
@@ -164,6 +182,7 @@ def _get_chapter_chunks_with_legacy_subject_fallback(
 def _search_chunks_with_legacy_subject_fallback(
     *,
     query_vector: list[float],
+    query_text: str,
     school_id: str,
     class_id: str | None,
     section_id: str | None,
@@ -172,7 +191,8 @@ def _search_chunks_with_legacy_subject_fallback(
     subject_name: str | None,
     limit: int,
 ) -> list[dict]:
-    hits = search_chunks(
+    # ── Semantic retrieval ─────────────────────────────────────────────────────
+    semantic_hits = search_chunks(
         query_vector=query_vector,
         school_id=school_id,
         class_id=class_id,
@@ -183,25 +203,52 @@ def _search_chunks_with_legacy_subject_fallback(
         subject_name=subject_name,
         limit=limit,
     )
-    if hits or not subject_id or not subject_name:
-        return hits
+    if not semantic_hits and subject_id and subject_name:
+        logger.info(
+            "No subject hits for subject_id=%s; retrying legacy subject_name=%r",
+            subject_id,
+            subject_name,
+        )
+        semantic_hits = search_chunks(
+            query_vector=query_vector,
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=None,
+            chapter_title=None,
+            subject_name=subject_name,
+            limit=limit,
+        )
 
-    logger.info(
-        "No subject hits for subject_id=%s; retrying legacy subject_name=%r",
-        subject_id,
-        subject_name,
-    )
-    return search_chunks(
-        query_vector=query_vector,
+    # ── Keyword (BM25-style) retrieval — runs even when semantic succeeds ──────
+    keyword_hits = keyword_search_chunks(
+        query_text=query_text,
         school_id=school_id,
         class_id=class_id,
         section_id=section_id,
         academic_year_id=academic_year_id,
-        subject_id=None,
-        chapter_title=None,
+        subject_id=subject_id,
         subject_name=subject_name,
-        limit=limit,
+        limit=limit // 2,
     )
+
+    if not keyword_hits and not semantic_hits:
+        return []
+
+    if not keyword_hits:
+        return semantic_hits
+
+    if not semantic_hits:
+        return keyword_hits
+
+    # ── Reciprocal Rank Fusion ─────────────────────────────────────────────────
+    merged = _reciprocal_rank_fusion([semantic_hits, keyword_hits])
+    logger.info(
+        "Hybrid RRF: %d semantic + %d keyword → %d merged hits",
+        len(semantic_hits), len(keyword_hits), len(merged),
+    )
+    return merged
 
 
 def retrieve_from_qdrant(
@@ -261,6 +308,7 @@ def retrieve_from_qdrant(
 
     hits = _search_chunks_with_legacy_subject_fallback(
         query_vector=query_vector,
+        query_text=query_text,
         school_id=school_id,
         class_id=class_id,
         section_id=section_id,
@@ -272,7 +320,7 @@ def retrieve_from_qdrant(
     relevant = _select_hybrid_hits(query_text, hits)
     if relevant:
         logger.info(
-            "Qdrant subject RAG: %d chunks subject=%r scores=%s",
+            "Qdrant hybrid RAG: %d chunks subject=%r scores=%s",
             len(relevant),
             subject,
             [round(h.get("score", 0), 3) for h in relevant],
@@ -336,6 +384,7 @@ def retrieve_from_qdrant_with_meta(
 
     hits = _search_chunks_with_legacy_subject_fallback(
         query_vector=query_vector,
+        query_text=query_text,
         school_id=school_id,
         class_id=class_id,
         section_id=section_id,

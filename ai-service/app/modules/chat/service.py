@@ -579,6 +579,58 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "]\n"
         "Ensure exactly one option per question has isCorrect: true. Vary difficulty across questions."
     ),
+    "short_answer": (
+        "You are an assessment expert generating short answer questions.\n"
+        "Generate exactly 5 short answer questions on the given topic.\n"
+        "Return ONLY valid JSON — no explanation, no markdown, no extra text.\n"
+        "Format:\n"
+        "[\n"
+        "  {\n"
+        '    "questionText": "...",\n'
+        '    "modelAnswer": "A concise 2-4 sentence model answer.",\n'
+        '    "keywords": ["keyword1", "keyword2", "keyword3"],\n'
+        '    "bloomLevel": "remember|understand|apply|analyse",\n'
+        '    "difficulty": "easy|medium|hard",\n'
+        '    "marks": 2\n'
+        "  }\n"
+        "]\n"
+        "Include 3-5 keywords a correct student answer MUST contain. Vary Bloom levels across questions."
+    ),
+    "long_answer": (
+        "You are an assessment expert generating long answer / essay questions.\n"
+        "Generate exactly 3 structured essay questions on the given topic.\n"
+        "Return ONLY valid JSON — no explanation, no markdown, no extra text.\n"
+        "Format:\n"
+        "[\n"
+        "  {\n"
+        '    "questionText": "...",\n'
+        '    "modelAnswer": "A detailed 100-150 word model answer.",\n'
+        '    "markingCriteria": ["criterion1: description", "criterion2: description"],\n'
+        '    "bloomLevel": "analyse|evaluate|create",\n'
+        '    "difficulty": "medium|hard",\n'
+        '    "marks": 5\n'
+        "  }\n"
+        "]\n"
+        "Include 3-5 marking criteria. Target higher-order Bloom levels. "
+        "Each question should require extended written response (paragraph to page length)."
+    ),
+    "bloom_question": (
+        "You are an assessment expert generating questions at specific Bloom's Taxonomy levels.\n"
+        "Generate 2 questions at EACH of the 6 Bloom levels for the given topic (12 total).\n"
+        "Return ONLY valid JSON:\n"
+        "[\n"
+        "  {\n"
+        '    "bloomLevel": "remember|understand|apply|analyse|evaluate|create",\n'
+        '    "questionText": "...",\n'
+        '    "questionType": "mcq|short_answer|long_answer",\n'
+        '    "modelAnswer": "...",\n'
+        '    "difficulty": "easy|medium|hard"\n'
+        "  }\n"
+        "]\n"
+        "Lower Bloom levels (remember, understand) → MCQ or short_answer. "
+        "Higher levels (analyse, evaluate, create) → long_answer. "
+        "Questions must explicitly require the cognitive skill of that Bloom level."
+    ),
     "differentiated_plan": (
         "You are a differentiation expert. Generate content on the given topic at THREE levels:\n"
         "**FOUNDATION** (for students still developing understanding):\n"

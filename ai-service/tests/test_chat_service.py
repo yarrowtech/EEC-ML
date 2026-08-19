@@ -19,7 +19,11 @@ def test_build_prompt_enforces_material_only_answers(make_request):
 @pytest.mark.parametrize("mode", sorted(service.MODE_INSTRUCTIONS))
 def test_build_prompt_supports_every_documented_mode(make_request, mode):
     _, user = service.build_prompt(make_request(mode=mode), "context")
-    assert service.MODE_INSTRUCTIONS[mode] in user
+    # Prompt library may supply a file-based override; either way the prompt must be non-empty.
+    from prompts.loader import load_prompt
+    file_prompt = load_prompt(mode)
+    expected = file_prompt if file_prompt else service.MODE_INSTRUCTIONS[mode]
+    assert expected in user
 
 
 def test_build_prompt_rejects_unknown_mode(make_request):

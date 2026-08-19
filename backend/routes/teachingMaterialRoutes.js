@@ -46,8 +46,9 @@ const buildSourceId = (material, attachment, index) => {
 };
 
 // Upsert the material's topicTitle into the CurriculumMap for this school/subject/class.
-// Creates the CurriculumMap document if it doesn't exist, and adds the topic if not already listed.
-const updateCurriculumMapFromMaterial = async (material) => {
+// Also stores learning outcomes and concepts extracted from the document — these are the
+// "Learning Outcome nodes" and "Concept nodes" of the Knowledge Graph.
+const updateCurriculumMapFromMaterial = async (material, { learningOutcomes = [], concepts = [] } = {}) => {
   const { topicTitle, subjectName, className, sectionName, schoolId, teacherId } = material;
   if (!topicTitle || !subjectName || !className) return;
 
@@ -58,16 +59,38 @@ const updateCurriculumMapFromMaterial = async (material) => {
     { upsert: true }
   );
 
-  // Add topic only if not already present (avoid duplicates)
   const map = await CurriculumMap.findOne({ schoolId, subject: subjectName, className }).lean();
-  const exists = map?.topics?.some((t) => t.title === topicTitle);
-  if (!exists) {
+  const existing = map?.topics?.find((t) => t.title === topicTitle);
+
+  if (!existing) {
     const nextOrder = (map?.topics?.length || 0) + 1;
     await CurriculumMap.updateOne(
       { schoolId, subject: subjectName, className },
-      { $push: { topics: { order: nextOrder, title: topicTitle, description: '', estimatedWeeks: 1 } } }
+      {
+        $push: {
+          topics: {
+            order: nextOrder,
+            title: topicTitle,
+            description: '',
+            estimatedWeeks: 1,
+            learningOutcomes: learningOutcomes.slice(0, 10),
+            concepts: concepts.slice(0, 20),
+          },
+        },
+      }
     );
     logger.info('[curriculum-map] auto-added topic "%s" to %s / %s', topicTitle, subjectName, className);
+  } else if (learningOutcomes.length || concepts.length) {
+    // Topic exists — enrich it with the latest learning outcomes and concepts
+    await CurriculumMap.updateOne(
+      { schoolId, subject: subjectName, className, 'topics._id': existing._id },
+      {
+        $set: {
+          'topics.$.learningOutcomes': learningOutcomes.slice(0, 10),
+          'topics.$.concepts': concepts.slice(0, 20),
+        },
+      }
+    );
   }
 };
 
@@ -85,8 +108,7 @@ const triggerMaterialIngest = async (material, attachments = []) => {
   await deleteMaterialVectors(material._id).catch(() => {});
 
   if (!ingestible.length) {
-    // Even without attachments, keep curriculum map in sync
-    await updateCurriculumMapFromMaterial(material).catch((err) =>
+    await updateCurriculumMapFromMaterial(material, {}).catch((err) =>
       logger.warn('[curriculum-map] update skipped:', err.message)
     );
     return;
@@ -143,8 +165,17 @@ const triggerMaterialIngest = async (material, attachments = []) => {
     ).catch((err) => logger.warn('[material ingest] failed to save AI fields:', err.message));
   }
 
-  // After all attachments are indexed, sync topic into curriculum map
-  await updateCurriculumMapFromMaterial(material).catch((err) =>
+  // Extract concept keywords from learning outcomes (each outcome is a concept statement)
+  const conceptKeywords = [...new Set(
+    learningOutcomes.flatMap((lo) =>
+      lo.split(/[\s,;]+/)
+        .map((w) => w.replace(/[^a-zA-Z]/g, '').toLowerCase())
+        .filter((w) => w.length > 4)
+    )
+  )].slice(0, 20);
+
+  // After all attachments are indexed, sync topic + learning outcomes + concepts into curriculum map
+  await updateCurriculumMapFromMaterial(material, { learningOutcomes, concepts: conceptKeywords }).catch((err) =>
     logger.warn('[curriculum-map] update skipped:', err.message)
   );
 };
@@ -878,6 +909,79 @@ router.post('/:id/reindex', authTeacher, async (req, res, next) => {
       success: true,
       message: `Re-indexed ${totalIndexed} chunks across ${ingestible.length} file(s)`,
       data: { chunksIndexed: totalIndexed },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── GET /:id/versions — list version history ───────────────────────────────────
+router.get('/:id/versions', authTeacher, async (req, res, next) => {
+  try {
+    const material = await TeachingMaterial.findById(req.params.id)
+      .select('title currentVersion versions schoolId teacherId')
+      .lean();
+    if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+
+    const versions = (material.versions || []).map((v) => ({
+      versionNumber: v.versionNumber,
+      title: v.title,
+      changeDescription: v.changeDescription,
+      editedBy: v.editedBy,
+      editedAt: v.editedAt,
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        currentVersion: material.currentVersion,
+        versions: versions.sort((a, b) => b.versionNumber - a.versionNumber),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── POST /:id/versions/:versionNumber/restore — roll back to a snapshot ────────
+router.post('/:id/versions/:versionNumber/restore', authTeacher, async (req, res, next) => {
+  try {
+    const { id, versionNumber } = req.params;
+    const vNum = parseInt(versionNumber, 10);
+    if (!Number.isFinite(vNum)) {
+      return res.status(400).json({ success: false, message: 'Invalid version number' });
+    }
+
+    const material = await TeachingMaterial.findById(id);
+    if (!material) return res.status(404).json({ success: false, message: 'Material not found' });
+
+    const snapshot = material.versions.find((v) => v.versionNumber === vNum);
+    if (!snapshot) {
+      return res.status(404).json({ success: false, message: `Version ${vNum} not found` });
+    }
+
+    // Snapshot the current live state before overwriting
+    material.versions.push({
+      versionNumber: material.currentVersion,
+      content: material.content,
+      title: material.title,
+      attachments: material.attachments.toObject ? material.attachments.toObject() : material.attachments,
+      editedBy: req.userId,
+      editedAt: new Date(),
+      changeDescription: `Auto-snapshot before restore to v${vNum}`,
+    });
+
+    material.title = snapshot.title;
+    material.content = snapshot.content;
+    material.attachments = snapshot.attachments;
+    material.currentVersion += 1;
+
+    await material.save();
+
+    return res.json({
+      success: true,
+      message: `Restored to version ${vNum}. Current version is now ${material.currentVersion - 1}.`,
+      data: { currentVersion: material.currentVersion - 1 },
     });
   } catch (error) {
     next(error);
