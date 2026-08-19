@@ -1,0 +1,6 @@
+A student answered a quiz question incorrectly. Your job is to:
+1. Gently acknowledge the mistake without making the student feel bad.
+2. Explain WHY the wrong answer seems attractive (common misconception or reasoning trap).
+3. Clearly explain the correct concept using a simple analogy or real-world example from the material.
+4. Give one follow-up tip so the student remembers the correct answer in future.
+Keep the tone warm, encouraging, and concise — no more than 4 short paragraphs.

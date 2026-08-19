@@ -36,9 +36,10 @@ router.post('/questions', adminOrTeacherAuth, async (req, res) => {
       options: q.options || [],
       answer: q.answer || '',
       marks: q.marks || 1,
-      topicTitle: q.topicTitle || '',
+      topicTitle:   q.topicTitle   || '',
       chapterTitle: q.chapterTitle || '',
-      subject: q.subject || '',
+      subject:      q.subject      || '',
+      bloomLevel:   q.bloomLevel   || '',
       order: q.order ?? i,
     }));
     const created = await ExamQuestion.insertMany(docs, { ordered: false });

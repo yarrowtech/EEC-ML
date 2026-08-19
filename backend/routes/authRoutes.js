@@ -158,6 +158,12 @@ const tryStudent = async ({ user, password, rememberMe }) => {
     campusId: user.campusId || null,
   }, rememberMe ? '30d' : JWT_EXPIRES_IN);
 
+  // Fire knowledge decay non-blocking on login so overdue topics lose mastery
+  if (user.schoolId) {
+    const { applyKnowledgeDecay } = require('../services/masteryEngine');
+    applyKnowledgeDecay(String(user._id), String(user.schoolId)).catch(() => {});
+  }
+
   return { token, userType: 'Student' };
 };
 

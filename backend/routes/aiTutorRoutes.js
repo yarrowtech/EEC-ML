@@ -282,6 +282,7 @@ router.post('/generate', authStudent, async (req, res) => {
     // Build student context for personalised LLM response — fire and forget on error
     let studentContext = '';
     let conversationHistory = [];
+    let masteryBasedDifficulty = normalizeString(difficulty) || null;
     try {
       const ctx = await buildStudentContext({
         studentId,
@@ -292,6 +293,22 @@ router.post('/generate', authStudent, async (req, res) => {
       });
       studentContext = ctx.contextBlock;
       conversationHistory = ctx.conversationHistory;
+
+      // Adaptive difficulty: override difficulty from student's mastery when not explicitly set
+      if (!difficulty && ['quiz', 'visual_quiz', 'practice_basic', 'practice_intermediate', 'practice_advanced'].includes(normalizedMode)) {
+        const MasteryScore = require('../models/MasteryScore');
+        const topicMastery = await MasteryScore.findOne({
+          studentId,
+          schoolId,
+          subject: normalizeString(subject),
+          topicTitle: { $regex: normalizeString(topic), $options: 'i' },
+        }).lean().catch(() => null);
+        if (topicMastery) {
+          masteryBasedDifficulty = topicMastery.score >= 75 ? 'hard'
+            : topicMastery.score >= 50 ? 'medium'
+            : 'easy';
+        }
+      }
     } catch {
       // Non-critical — fall back to generic response if context build fails
     }
@@ -311,7 +328,7 @@ router.post('/generate', authStudent, async (req, res) => {
       subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
       curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
       chapterTitle: resolvedChapterTitle,
-      difficulty: normalizeString(difficulty) || null,
+      difficulty: masteryBasedDifficulty,
       responseDepth: normalizeString(responseDepth) || null,
       learningGoal: normalizeString(learningGoal) || null,
       wrongAnswer: normalizeString(wrongAnswer) || null,
@@ -428,6 +445,344 @@ router.post('/exam-explanation', authStudent, async (req, res) => {
     return res.json({ success: true, data: { content: aiResponse.data?.content || '' } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/evaluate-answer — academic answer evaluator ────────────
+// Evaluates MCQ, short-answer, or long-answer responses and feeds mastery engine.
+router.post('/evaluate-answer', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    const {
+      questionText, correctAnswer, studentAnswer,
+      subject, topicTitle, chapterTitle, gradeLevel,
+      questionType = 'mcq', context = '', topicId,
+    } = req.body || {};
+
+    if (!questionText || !correctAnswer || !studentAnswer) {
+      return res.status(400).json({ error: 'questionText, correctAnswer, and studentAnswer are required' });
+    }
+
+    const evalResp = await axios.post(`${AI_SERVICE_URL}/evaluate/answer`, {
+      questionText, correctAnswer, studentAnswer,
+      subject: normalizeString(subject),
+      topicTitle: normalizeString(topicTitle),
+      chapterTitle: normalizeString(chapterTitle),
+      gradeLevel: normalizeString(gradeLevel),
+      questionType,
+      context: normalizeString(context),
+    }, { timeout: 120000 });
+
+    const result = evalResp.data;
+
+    // Store wrong answers as error records (non-blocking)
+    if (!result.isCorrect && studentId && subject) {
+      const { recordErrors } = require('../services/errorClassifier');
+      recordErrors({
+        studentId, schoolId, source: 'quiz',
+        wrongs: [{
+          questionId:    '',
+          questionText,
+          correctAnswer,
+          studentAnswer,
+          subject:       normalizeString(subject),
+          topicTitle:    normalizeString(topicTitle),
+          chapterTitle:  normalizeString(chapterTitle),
+        }],
+      }).catch(() => {});
+    }
+
+    // Feed result into mastery engine (non-blocking)
+    if (studentId && schoolId && subject && topicTitle) {
+      const MasteryScore = require('../models/MasteryScore');
+      const { runWorkflowTriggers } = require('../services/masteryEngine');
+      const scorePercent = Math.round(result.score * 100);
+      const tid = topicId || `${normalizeString(subject)}::${normalizeString(topicTitle)}`;
+      MasteryScore.findOneAndUpdate(
+        { studentId, subject: normalizeString(subject), topicId: tid },
+        {
+          $set: {
+            schoolId,
+            topicTitle: normalizeString(topicTitle),
+            chapterTitle: normalizeString(chapterTitle),
+            lastUpdated: new Date(),
+          },
+          $inc: { attemptCount: 1 },
+          $max: { score: scorePercent },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).then((doc) => {
+        if (!doc) return;
+        const blended = doc.attemptCount <= 1
+          ? scorePercent
+          : Math.round((doc.score * 0.7) + (scorePercent * 0.3));
+        doc.score = Math.max(doc.score, blended);
+        return doc.save().then(() => runWorkflowTriggers({
+          studentId, schoolId, subject: normalizeString(subject),
+          topicId: tid, topicTitle: normalizeString(topicTitle),
+          chapterTitle: normalizeString(chapterTitle),
+          score: doc.score, attemptCount: doc.attemptCount,
+        }));
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/teacher/student-sessions/:studentId ─────────────────────
+// Teacher visibility: read a student's AI tutor conversation history.
+router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res) => {
+  try {
+    const TutorConversation = require('../models/TutorConversation');
+    const { studentId } = req.params;
+    const { limit = 10 } = req.query;
+
+    // Verify student belongs to this school
+    const student = await StudentUser.findOne({
+      _id: studentId,
+      schoolId: req.schoolId,
+    }).select('name roll className sectionName').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found in this school' });
+
+    const conversations = await TutorConversation.find({
+      studentId,
+      schoolId: req.schoolId,
+    })
+      .sort({ updatedAt: -1 })
+      .limit(Number(limit))
+      .lean();
+
+    return res.json({ success: true, data: { student, conversations } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/flashcard-rating ──────────────────────────────────────
+// Student rates a flashcard as "got_it" or "still_learning" — feeds mastery engine
+// and updates spaced-repetition schedule for the card's topic.
+router.post('/flashcard-rating', authStudent, async (req, res) => {
+  try {
+    const { topicTitle, chapterTitle, subject, rating } = req.body;
+    if (!topicTitle || !subject || !['got_it', 'still_learning'].includes(rating)) {
+      return res.status(400).json({ error: 'topicTitle, subject, and rating ("got_it"|"still_learning") are required' });
+    }
+    const MasteryScore = require('../models/MasteryScore');
+    const { runWorkflowTriggers } = require('../services/masteryEngine');
+    const studentId = String(req.userId);
+    const schoolId = String(req.schoolId);
+
+    // Convert rating to a mastery delta: "got_it" nudges score up, "still_learning" nudges down
+    const delta = rating === 'got_it' ? 5 : -5;
+    const existing = await MasteryScore.findOne({ studentId, schoolId, subject, topicTitle });
+    const currentScore = existing?.score ?? 50;
+    const newScore = Math.min(100, Math.max(0, currentScore + delta));
+    const attemptCount = (existing?.attemptCount ?? 0) + 1;
+
+    const updated = await MasteryScore.findOneAndUpdate(
+      { studentId, schoolId, subject, topicTitle },
+      {
+        $set: { score: newScore, chapterTitle: chapterTitle || '', lastUpdated: new Date(), attemptCount },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    // Fire workflow side-effects non-blocking
+    runWorkflowTriggers({ studentId, schoolId, subject, topicTitle, chapterTitle: chapterTitle || '', score: newScore, attemptCount });
+
+    return res.json({ success: true, data: { newScore, rating, topicTitle } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/health-card ────────────────────────────────────────────
+// Unified student learning health card: mastery + gaps + spaced repetition + language
+// assessment + recommendations — all in one API call.
+router.get('/health-card', authStudent, async (req, res) => {
+  try {
+    const { subject } = req.query;
+    const studentId = String(req.userId);
+    const schoolId  = String(req.schoolId);
+
+    const MasteryScore             = require('../models/MasteryScore');
+    const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
+    const StudentInsight           = require('../models/StudentInsight');
+    const { recommendNextTopic }   = require('../services/recommendationEngine');
+    const { computeAtRisk }        = require('../services/mlEngine');
+
+    const masteryFilter = { studentId, schoolId };
+    if (subject) masteryFilter.subject = { $regex: subject, $options: 'i' };
+
+    const [masteryRecords, overdue, gaps, atRisk] = await Promise.all([
+      MasteryScore.find(masteryFilter).sort({ score: 1 }).lean(),
+      SpacedRepetitionSchedule.find({ studentId, schoolId, nextReviewDate: { $lt: new Date() } }).lean(),
+      StudentInsight.find({ studentId, schoolId, insightType: 'gap_detection', ...(subject ? { subject: { $regex: subject, $options: 'i' } } : {}) })
+        .sort({ generatedAt: -1 }).limit(5).lean(),
+      computeAtRisk({ studentId, schoolId }),
+    ]);
+
+    // Overall mastery summary
+    const avgMastery = masteryRecords.length
+      ? Math.round(masteryRecords.reduce((s, r) => s + r.score, 0) / masteryRecords.length)
+      : null;
+
+    // Subject breakdown
+    const subjectMap = {};
+    for (const r of masteryRecords) {
+      if (!subjectMap[r.subject]) subjectMap[r.subject] = { scores: [], weak: [] };
+      subjectMap[r.subject].scores.push(r.score);
+      if (r.score < 60) subjectMap[r.subject].weak.push(r.topicTitle);
+    }
+    const subjectSummary = Object.entries(subjectMap).map(([subj, v]) => ({
+      subject: subj,
+      avgMastery: Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length),
+      weakTopics: v.weak,
+    })).sort((a, b) => a.avgMastery - b.avgMastery);
+
+    // Get recommendation for the primary subject
+    const primarySubject = subject || subjectSummary[0]?.subject;
+    let recommendation = null;
+    if (primarySubject) {
+      try {
+        const rec = await recommendNextTopic({ studentId, schoolId, subject: primarySubject });
+        recommendation = rec.recommendation;
+      } catch (_) {}
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        studentId,
+        avgMastery,
+        atRisk,
+        subjectSummary,
+        overdueReviews: overdue.length,
+        overdueTopics: overdue.slice(0, 5).map((o) => ({ subject: o.subject, topicTitle: o.topicTitle, daysOverdue: Math.round((Date.now() - new Date(o.nextReviewDate)) / 86400000) })),
+        gaps: gaps.map((g) => ({ subject: g.subject, summary: g.summary, payload: g.payload })),
+        recommendation,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/academic-memory ────────────────────────────────────────
+// Returns a student's tracked academic memory: chapters studied, outcomes achieved,
+// and recent mistakes — used to personalise tutor context.
+router.get('/academic-memory', authStudent, async (req, res) => {
+  try {
+    const studentId = String(req.userId);
+    const schoolId  = String(req.schoolId);
+
+    const TutorConversation = require('../models/TutorConversation');
+    const MasteryScore      = require('../models/MasteryScore');
+    const ErrorRecord       = require('../models/ErrorRecord');
+
+    const [conversations, masteredTopics, recentErrors] = await Promise.all([
+      TutorConversation.find({ studentId, schoolId })
+        .select('topicTitle chapterTitle subject updatedAt')
+        .sort({ updatedAt: -1 })
+        .limit(50)
+        .lean(),
+      MasteryScore.find({ studentId, schoolId, score: { $gte: 80 } })
+        .select('subject topicTitle chapterTitle score lastUpdated')
+        .sort({ lastUpdated: -1 })
+        .lean(),
+      ErrorRecord.find({ studentId, schoolId })
+        .select('subject topicTitle errorType attemptedAt')
+        .sort({ attemptedAt: -1 })
+        .limit(30)
+        .lean(),
+    ]);
+
+    // Deduplicate studied chapters from conversations
+    const chaptersSet = new Set();
+    const studiedChapters = [];
+    for (const c of conversations) {
+      const key = `${c.subject}::${c.chapterTitle}`;
+      if (c.chapterTitle && !chaptersSet.has(key)) {
+        chaptersSet.add(key);
+        studiedChapters.push({ subject: c.subject, chapterTitle: c.chapterTitle, topicTitle: c.topicTitle, lastStudied: c.updatedAt });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        studiedChapters,
+        learningOutcomesAchieved: masteredTopics.map((m) => ({
+          subject: m.subject, topicTitle: m.topicTitle, chapterTitle: m.chapterTitle, masteryScore: m.score, achievedAt: m.lastUpdated,
+        })),
+        recentMistakes: recentErrors.map((e) => ({ subject: e.subject, topicTitle: e.topicTitle, errorType: e.errorType, at: e.attemptedAt })),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/save-note — save AI-generated notes to student profile ──
+router.post('/save-note', authStudent, async (req, res) => {
+  try {
+    const StudentNote = require('../models/StudentNote');
+    const { title, content, subject, topicTitle } = req.body || {};
+    if (!content) return res.status(400).json({ error: 'content is required' });
+    const note = await StudentNote.create({
+      studentId: req.userId,
+      schoolId: req.schoolId,
+      title: title || 'Study Notes',
+      content,
+      subject: subject || '',
+      topicTitle: topicTitle || '',
+    });
+    return res.json({ success: true, data: { _id: note._id, title: note.title, savedAt: note.savedAt } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/saved-notes — retrieve all saved notes for student ──────
+router.get('/saved-notes', authStudent, async (req, res) => {
+  try {
+    const StudentNote = require('../models/StudentNote');
+    const notes = await StudentNote.find({ studentId: req.userId, schoolId: req.schoolId })
+      .sort({ savedAt: -1 }).limit(50).lean();
+    return res.json({ success: true, data: notes });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/teacher/correct-answer ─────────────────────────────────
+// Teacher can override/correct an AI tutor response in a student's conversation.
+router.post('/teacher/correct-answer', authTeacher, async (req, res) => {
+  try {
+    const TutorConversation = require('../models/TutorConversation');
+    const { conversationId, messageIndex, correctedText, reason } = req.body || {};
+    if (!conversationId || correctedText == null) {
+      return res.status(400).json({ error: 'conversationId and correctedText are required' });
+    }
+    const conv = await TutorConversation.findOne({ _id: conversationId, schoolId: req.schoolId });
+    if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+    const idx = Number(messageIndex);
+    if (!Number.isNaN(idx) && conv.messages[idx]) {
+      conv.messages[idx].teacherCorrected = true;
+      conv.messages[idx].correctedText    = correctedText;
+      conv.messages[idx].correctionReason = reason || '';
+      conv.messages[idx].correctedBy      = req.userId;
+      conv.messages[idx].correctedAt      = new Date();
+      await conv.save();
+    }
+    return res.json({ success: true, message: 'Answer correction saved' });
+  } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });

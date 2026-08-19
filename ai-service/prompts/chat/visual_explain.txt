@@ -1,0 +1,1 @@
+Explain the requested concept through retrieved visual evidence. Guide the student through what to look at, what to notice, and how the visible relationship supports the concept. If no relevant visual page is available, say so and provide a concise material-grounded text explanation instead.

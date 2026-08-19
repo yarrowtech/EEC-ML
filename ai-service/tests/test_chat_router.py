@@ -39,11 +39,21 @@ def test_no_material_returns_safe_message_without_calling_llm(monkeypatch):
     assert body["model"] is None
 
 
+_RICH_CHUNK = (
+    "Photosynthesis is the process by which green plants, algae, and some bacteria convert light energy "
+    "into chemical energy stored in glucose. This process takes place mainly in the chloroplasts of plant "
+    "cells, where the green pigment chlorophyll absorbs sunlight. During photosynthesis, carbon dioxide "
+    "from the air and water from the soil are combined using light energy to produce glucose and oxygen. "
+    "The overall equation is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Photosynthesis is essential "
+    "for life on Earth because it produces the oxygen we breathe and forms the base of most food chains."
+)
+
+
 def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     monkeypatch.setattr(
         chat_service,
         "retrieve_relevant_chunks_with_citations",
-        lambda req: (["Chunk about photosynthesis."], []),
+        lambda req: ([_RICH_CHUNK], []),
     )
     fake = FakeChain()
     monkeypatch.setattr(chat_service, "create_chain", lambda mode, **_: fake)
@@ -58,14 +68,14 @@ def test_grounded_answer_passes_chunks_to_llm(monkeypatch):
     system_msg = FakeChain.last_messages[0]
     user_msg = FakeChain.last_messages[-1]
     assert "ONLY" in system_msg.content
-    assert "Chunk about photosynthesis." in user_msg.content
+    assert "Photosynthesis is the process" in user_msg.content
 
 
 def test_llm_failure_returns_502(monkeypatch):
     monkeypatch.setattr(
         chat_service,
         "retrieve_relevant_chunks_with_citations",
-        lambda req: (["chunk"], []),
+        lambda req: ([_RICH_CHUNK], []),
     )
 
     class BrokenChain:
@@ -81,7 +91,7 @@ def test_unknown_mode_rejected_before_llm_call(monkeypatch):
     monkeypatch.setattr(
         chat_service,
         "retrieve_relevant_chunks_with_citations",
-        lambda req: (["chunk"], []),
+        lambda req: ([_RICH_CHUNK], []),
     )
     resp = client.post("/generate/tutor", json={**PAYLOAD, "mode": "poetry"})
     assert resp.status_code == 400

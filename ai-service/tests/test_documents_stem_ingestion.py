@@ -22,7 +22,7 @@ def test_ingestion_embeds_enrichment_but_stores_original_chunks(monkeypatch, tmp
     monkeypatch.setattr(service, "embed_texts", fake_embed)
     monkeypatch.setattr(service, "upsert_chunks", fake_upsert)
 
-    indexed, document_type = service.ingest_material(
+    indexed, document_type, bloom_level, learning_outcomes, detected_topic = service.ingest_material(
         url="https://example.test/physics.pdf",
         material_id="material-1",
         source_id="source-1",
@@ -70,7 +70,7 @@ def test_ingestion_stores_visual_page_chunks_with_page_metadata(monkeypatch, tmp
 
     monkeypatch.setattr(service, "upsert_chunks", fake_upsert)
 
-    indexed, _ = service.ingest_material(
+    indexed, *_ = service.ingest_material(
         url="https://example.test/mathematics.pdf",
         material_id="material-1",
         source_id="source-1",

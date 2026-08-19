@@ -798,4 +798,90 @@ router.get('/:id/analytics', async (req, res, next) => {
   }
 });
 
+// DISABLE / ENABLE: Teacher soft-disables a material without deleting it
+// PATCH /:id/toggle-enabled — flips isEnabled; disabled materials are hidden from students and RAG
+router.patch('/:id/toggle-enabled', authTeacher, async (req, res, next) => {
+  try {
+    const material = await TeachingMaterial.findOne({
+      _id: req.params.id,
+      teacherId: req.userId,
+      schoolId: req.schoolId,
+    });
+    if (!material) {
+      return res.status(404).json({ success: false, message: 'Material not found' });
+    }
+    material.isEnabled = !material.isEnabled;
+    await material.save();
+    return res.json({
+      success: true,
+      message: material.isEnabled ? 'Material enabled' : 'Material disabled',
+      data: { _id: material._id, isEnabled: material.isEnabled },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// RE-INDEX: Teacher triggers re-ingestion of a specific material into Qdrant
+// POST /:id/reindex — deletes existing vectors and re-ingests all attachments
+router.post('/:id/reindex', authTeacher, async (req, res, next) => {
+  try {
+    const material = await TeachingMaterial.findOne({
+      _id: req.params.id,
+      teacherId: req.userId,
+      schoolId: req.schoolId,
+    }).lean();
+    if (!material) {
+      return res.status(404).json({ success: false, message: 'Material not found' });
+    }
+
+    // Delete existing vectors first
+    deleteMaterialVectors(material._id).catch(() => {});
+
+    // Re-ingest all supported attachments
+    const ingestible = (material.attachments || []).filter(isVectorIngestible);
+    if (!ingestible.length) {
+      return res.status(400).json({ success: false, message: 'No supported attachments to re-index' });
+    }
+
+    let totalIndexed = 0;
+    for (const attachment of ingestible) {
+      try {
+        const { data: ingestData } = await axios.post(
+          `${AI_SERVICE_URL}/ingest/material`,
+          {
+            url: attachment.url,
+            material_id: String(material._id),
+            source_id: String(attachment._id || attachment.url),
+            file_name: attachment.name,
+            content_type: attachment.type,
+            replace_existing: true,
+            school_id: String(material.schoolId),
+            class_id: material.classId ? String(material.classId) : '',
+            section_id: material.sectionId ? String(material.sectionId) : '',
+            academic_year_id: material.academicYearId ? String(material.academicYearId) : '',
+            subject_id: material.subjectId ? String(material.subjectId) : '',
+            subject_name: material.subjectName || '',
+            chapter_id: material.chapterId || '',
+            chapter_title: material.chapterTitle || '',
+            topic_title: material.topicTitle || '',
+          },
+          { timeout: 300000 }
+        );
+        totalIndexed += ingestData?.chunks_indexed || 0;
+      } catch (err) {
+        logger.error('[reindex] attachment failed:', attachment.url, err.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Re-indexed ${totalIndexed} chunks across ${ingestible.length} file(s)`,
+      data: { chunksIndexed: totalIndexed },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

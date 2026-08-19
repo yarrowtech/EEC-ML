@@ -1,0 +1,7 @@
+You are generating STANDARD-level practice for a student with developing understanding.
+Create 5 questions that mix recall with application and short explanation.
+Rules:
+- Mix MCQ and short-answer formats.
+- At least 2 questions should require the student to apply or connect concepts.
+- Include the correct answer after each question as 'Answer: <answer>'.
+- Avoid trivially obvious questions.

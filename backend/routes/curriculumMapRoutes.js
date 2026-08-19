@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authTeacher = require('../middleware/authTeacher');
 const CurriculumMap = require('../models/CurriculumMap');
+const { detectGaps } = require('../services/gapDetectionEngine');
+const StudentInsight = require('../models/StudentInsight');
 
 // GET /api/curriculum-map?subject=&className=&section=
 router.get('/', authTeacher, async (req, res) => {
@@ -50,6 +52,42 @@ router.patch('/:id/topic', authTeacher, async (req, res) => {
     map.topics.push({ order, title, description, estimatedWeeks });
     await map.save();
     return res.json({ success: true, data: map });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/curriculum-map/gaps?studentId=&subject=&className=
+// Teacher-facing: detect root-cause knowledge gaps for a specific student.
+router.get('/gaps', authTeacher, async (req, res) => {
+  try {
+    const { studentId, subject, className } = req.query;
+    if (!studentId || !subject) return res.status(400).json({ error: 'studentId and subject are required' });
+    const result = await detectGaps({
+      studentId,
+      schoolId: req.schoolId,
+      subject,
+      className: className || '',
+    });
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/curriculum-map/insights?subject=&limit=50
+// Teacher-facing: fetch stored gap-detection insight records for their school.
+router.get('/insights', authTeacher, async (req, res) => {
+  try {
+    const { subject, limit = 50 } = req.query;
+    const filter = { schoolId: req.schoolId, insightType: 'gap_detection' };
+    if (subject) filter.subject = { $regex: subject, $options: 'i' };
+    const insights = await StudentInsight.find(filter)
+      .sort({ generatedAt: -1 })
+      .limit(Number(limit))
+      .populate('studentId', 'name roll className sectionName')
+      .lean();
+    return res.json({ success: true, data: insights });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

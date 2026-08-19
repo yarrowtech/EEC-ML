@@ -111,4 +111,36 @@ router.get('/student', authStudent, async (req, res) => {
   }
 });
 
+// GET /api/recommendations/next?subject=&className=
+// Intelligent next-topic recommendation using curriculum map + gap detection + spaced repetition.
+// Returns a single explainable recommendation the student can accept or skip.
+router.get('/next', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    const { subject, className } = req.query;
+    const { recommendNextTopic } = require('../services/recommendationEngine');
+    const result = await recommendNextTopic({ studentId, schoolId, subject, className });
+    return res.json({ success: true, data: result.recommendation });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/recommendations/all-subjects
+// Returns one recommendation per subject the student has started.
+router.get('/all-subjects', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    const { recommendAcrossSubjects } = require('../services/recommendationEngine');
+    const recommendations = await recommendAcrossSubjects({ studentId, schoolId });
+    return res.json({ success: true, data: recommendations });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

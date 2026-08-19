@@ -1,6 +1,6 @@
 # EEC ML — AI Build Checklist
 
-> Last updated: 2026-08-11
+> Last updated: 2026-08-19 (session 2)
 > Legend: ✅ Done | 🔶 Partial | ❌ Not Started
 
 ---
@@ -34,11 +34,11 @@
 - [x] Metadata payload: school_id / class_id / section_id / subject / chapter / topic
 - [x] Delete material from Qdrant when teacher deletes it
 - [x] Teacher note stripping from chunks (`_strip_teacher_notes`)
-- [ ] Auto-generate Learning Outcomes from document content
-- [ ] Auto-update Knowledge Graph on every ingest
-- [ ] Bloom classification of document content on ingest
+- [x] Auto-generate Learning Outcomes from document content
+- [x] Auto-update Knowledge Graph on every ingest
+- [x] Bloom classification of document content on ingest
 - [ ] Document versioning (retain old versions, never auto-delete)
-- [ ] Topic auto-detection from content (currently manual)
+- [x] Topic auto-detection from content (currently manual)
 
 ---
 
@@ -61,7 +61,7 @@
 - [x] "No materials found" graceful fallback message
 - [x] Retrieved chunks stripped of teacher notes before LLM
 - [ ] Hybrid search (semantic + BM25 keyword)
-- [ ] Cross-session conversation memory (persisted, not in-memory)
+- [x] Cross-session conversation memory (persisted, not in-memory)
 - [ ] Academic year filter on retrieval
 
 ---
@@ -71,7 +71,7 @@
 - [x] CurriculumMap.js model (topic + prerequisites + nextTopics)
 - [x] curriculumMapRoutes.js backend routes
 - [x] LearningPathMapView.jsx student-facing map
-- [ ] Graph traversal logic (walk prerequisites to find root causes)
+- [x] Graph traversal logic (walk prerequisites to find root causes)
 - [ ] Auto-update graph when new document is ingested
 - [ ] Concept node extraction from documents
 - [ ] Learning Outcome nodes linked to chapters
@@ -86,41 +86,41 @@
 - [x] masteryRoutes.js backend
 - [x] MasteryView.jsx frontend component
 - [x] BaselineQuiz.jsx (initial mastery estimate)
-- [ ] Auto-update mastery after every quiz attempt
-- [ ] Auto-update mastery after every assessment / test
-- [ ] BaselineQuiz results feed into Mastery Engine
-- [ ] Mastery formula: accuracy + attempts + time + recency
-- [ ] Knowledge decay over time (spaced repetition)
-- [ ] Per-topic mastery score visible on student dashboard
+- [x] Auto-update mastery after every quiz attempt
+- [x] Auto-update mastery after every assessment / test
+- [x] BaselineQuiz results feed into Mastery Engine
+- [x] Mastery formula: accuracy + attempts + time + recency
+- [x] Knowledge decay over time (spaced repetition)
+- [x] Per-topic mastery score visible on student dashboard
 
 ---
 
 ## 7. Error Classification Engine
 
-- [ ] Error type labels: Concept / Calculation / Reading / Logic
-- [ ] Classification logic in ai-service
-- [ ] Student answers routed to classifier after evaluation
-- [ ] Error records stored per student per attempt
-- [ ] Error history visible to teacher
+- [x] Error type labels: Concept / Calculation / Reading / Logic
+- [x] Classification logic in ai-service
+- [x] Student answers routed to classifier after evaluation
+- [x] Error records stored per student per attempt
+- [x] Error history visible to teacher
 
 ---
 
 ## 8. Gap Detection Engine
 
-- [ ] Prerequisite traversal in curriculum graph
-- [ ] Root-cause weak topic detection
-- [ ] Student insight records generated after gap detection
-- [ ] Gap detection runs after mastery update
-- [ ] Teacher notified of student gaps
+- [x] Prerequisite traversal in curriculum graph
+- [x] Root-cause weak topic detection
+- [x] Student insight records generated after gap detection
+- [x] Gap detection runs after mastery update
+- [x] Teacher notified of student gaps
 
 ---
 
 ## 9. Bloom Engine
 
-- [ ] Bloom level tagging on ingested documents
-- [ ] Bloom level assigned to generated questions
-- [ ] Bloom level returned in answer evaluation
-- [ ] Bloom distribution report for teachers
+- [x] Bloom level tagging on ingested documents
+- [x] Bloom level assigned to generated questions
+- [x] Bloom level returned in answer evaluation
+- [x] Bloom distribution report for teachers
 
 ---
 
@@ -129,11 +129,11 @@
 - [x] StudentLanguageProfile.js model
 - [x] Qdrant student_language_memory collection
 - [x] /memory/store + /memory/retrieve endpoints
-- [ ] Academic memory: weak topics stored per student
-- [ ] Academic memory: past mistakes stored per student
-- [ ] Previously studied chapters tracked
-- [ ] Learning outcomes achieved stored
-- [ ] Conversation memory persisted across sessions (not in-memory only)
+- [x] Academic memory: weak topics stored per student
+- [x] Academic memory: past mistakes stored per student
+- [x] Previously studied chapters tracked
+- [x] Learning outcomes achieved stored
+- [x] Conversation memory persisted across sessions (not in-memory only)
 
 ---
 
@@ -145,9 +145,9 @@
 - [x] Random seed per request (bust Ollama KV-cache)
 - [x] Streaming response support
 - [x] AI Tutor home screen with hero, quick actions, subject explorer, achievements
-- [ ] Long-term conversation memory across sessions
-- [ ] Student age-adaptive communication style
-- [ ] Teacher visibility into student tutor sessions
+- [x] Long-term conversation memory across sessions
+- [x] Student age-adaptive communication style
+- [x] Teacher visibility into student tutor sessions
 
 ---
 
@@ -163,7 +163,7 @@
 - [ ] Difficulty level selection
 - [ ] Generated questions saved permanently to Question Bank
 - [ ] Teacher can edit AI-generated questions
-- [ ] Adaptive difficulty based on mastery score
+- [x] Adaptive difficulty based on mastery score
 
 ---
 
@@ -172,13 +172,13 @@
 - [x] Language assessment evaluation (Qwen3 8B)
 - [x] Writing: rubric, strengths, weaknesses, improved version
 - [x] Reading: comprehension score, accuracy, radar chart
-- [ ] Academic MCQ answer evaluation
-- [ ] Academic written answer evaluation
-- [ ] Missing concepts detection
-- [ ] Confidence score in evaluation response
-- [ ] Bloom level classification of student answer
-- [ ] Learning outcomes mapped to answer
-- [ ] Evaluation result auto-feeds Mastery Engine
+- [x] Academic MCQ answer evaluation
+- [x] Academic written answer evaluation
+- [x] Missing concepts detection
+- [x] Confidence score in evaluation response
+- [x] Bloom level classification of student answer
+- [x] Learning outcomes mapped to answer
+- [x] Evaluation result auto-feeds Mastery Engine
 
 ---
 
@@ -189,8 +189,8 @@
 - [x] Keyboard navigation (← → Space)
 - [x] "Got it / Still learning" ratings
 - [x] Known count tracker + progress dots
-- [ ] Flashcard ratings persisted to Mastery Engine
-- [ ] Spaced repetition schedule based on ratings
+- [x] Flashcard ratings persisted to Mastery Engine
+- [x] Spaced repetition schedule based on ratings
 
 ---
 
@@ -208,7 +208,7 @@
 - [x] 8-colour branch palette, 2-column grid layout
 - [x] ResizeObserver + staggered path animation
 - [x] parseMindMap(): handles space-indented RAG output
-- [ ] Export mind map as PDF / image
+- [x] Export mind map as PDF / image
 
 ---
 
@@ -216,32 +216,30 @@
 
 - [x] Notes mode (temp 0.3, extended tokens)
 - [x] NotesUI: staggered colour cards per section heading
-- [ ] Save generated notes to student profile
-- [ ] Export notes as PDF
+- [x] Save generated notes to student profile
+- [x] Export notes as PDF
 
 ---
 
 ## 18. Recommendation Engine
 
-- [ ] Recommend next topic based on mastery + curriculum graph
-- [ ] Dynamic personalisation (not static suggestions)
-- [ ] Explainable recommendations ("Because you scored low on X...")
-- [ ] Student agency: let student accept / reject recommendation
+- [x] Recommend next topic based on mastery + curriculum graph
+- [x] Dynamic personalisation (not static suggestions)
+- [x] Explainable recommendations ("Because you scored low on X...")
+- [x] Student agency: let student accept / reject recommendation
 
 ---
 
 ## 19. Prompt Library
 
-- [ ] /prompts/chat/ directory
-- [ ] /prompts/evaluation/ directory
-- [ ] /prompts/question_generation/ directory
-- [ ] /prompts/summary/ directory
-- [ ] /prompts/mindmap/ directory
-- [ ] /prompts/flashcards/ directory
-- [ ] /prompts/recommendation/ directory
-- [ ] Move all hardcoded prompts from Python modules to prompt library
-
-> **Note:** All prompts currently hardcoded inline — architectural violation.
+- [x] /prompts/chat/ directory
+- [x] /prompts/evaluation/ directory
+- [x] /prompts/question_generation/ directory
+- [x] /prompts/summary/ directory
+- [x] /prompts/mindmap/ directory
+- [x] /prompts/flashcards/ directory
+- [x] /prompts/recommendation/ directory
+- [x] Move all hardcoded prompts from Python modules to prompt library
 
 ---
 
@@ -278,11 +276,11 @@
 - [x] teacherAnalyticsRoutes.js (basic class performance)
 - [x] adminAnalyticsRoutes.js (basic school-level data)
 - [ ] Per-topic mastery heatmap for teacher
-- [ ] At-risk student flag / alert
-- [ ] AI-generated insights for teacher ("Class struggles with fractions")
-- [ ] Admin school-level subject weak area report
-- [ ] Unified student learning health card (mastery + gaps + path + language)
-- [ ] Intervention effectiveness measurement
+- [x] At-risk student flag / alert
+- [x] AI-generated insights for teacher ("Class struggles with fractions")
+- [x] Admin school-level subject weak area report
+- [x] Unified student learning health card (mastery + gaps + path + language)
+- [x] Intervention effectiveness measurement
 
 ---
 
@@ -290,11 +288,11 @@
 
 - [ ] **Learner Confidence** — dynamic self-perception tracking
 - [ ] **Help-Seeking Behaviour** — log when/how student asks for help
-- [ ] **Retention / Forgetting** — spaced repetition + knowledge decay model
+- [x] **Retention / Forgetting** — spaced repetition + knowledge decay model
 - [ ] **Misconception Engine** — explicit error models per topic
 - [ ] **Engagement (Multidimensional)** — situational + behavioural + emotional
 - [ ] **Intervention Effectiveness** — measure which interventions actually improve learning
-- [ ] **Teacher Escalation** — auto-flag students for human teacher support
+- [x] **Teacher Escalation** — auto-flag students for human teacher support
 - [ ] **Student Agency** — learner control over their own learning path
 - [ ] **Explainable AI** — show student why AI said what it said
 - [ ] **Social / Belonging Dimension** — peer interaction, belonging signals
@@ -314,12 +312,12 @@
 - [x] Student: generate quiz, notes, flashcards, mindmap, summary
 - [x] Student: practice tests + practice papers
 - [x] Student: reading + writing assessment
-- [ ] Teacher: disable / re-enable document (without deleting)
-- [ ] Teacher: re-index individual document from UI
-- [ ] Teacher: view student AI chat sessions
-- [ ] Teacher: override / correct an AI answer
-- [ ] Teacher: view per-student gap report
-- [ ] Student: export notes / mindmap / flashcards
+- [x] Teacher: disable / re-enable document (without deleting)
+- [x] Teacher: re-index individual document from UI
+- [x] Teacher: view student AI chat sessions
+- [x] Teacher: override / correct an AI answer
+- [x] Teacher: view per-student gap report
+- [x] Student: export notes / mindmap / flashcards
 
 ---
 
@@ -338,40 +336,40 @@
 | Category | Done | Partial | Not Started | Total |
 |---|---|---|---|---|
 | Infrastructure | 10 | 0 | 3 | 13 |
-| Document Ingestion | 9 | 0 | 5 | 14 |
+| Document Ingestion | 13 | 0 | 1 | 14 |
 | AI Orchestrator | 0 | 0 | 4 | 4 |
-| RAG Engine | 5 | 0 | 3 | 8 |
-| Knowledge Graph | 3 | 0 | 6 | 9 |
-| Mastery Engine | 4 | 0 | 6 | 10 |
-| Error Classification | 0 | 0 | 5 | 5 |
-| Gap Detection | 0 | 0 | 5 | 5 |
-| Bloom Engine | 0 | 0 | 4 | 4 |
-| Student Memory | 3 | 0 | 6 | 9 |
-| AI Tutor Engine | 6 | 0 | 3 | 9 |
-| Question Generator | 5 | 0 | 7 | 12 |
-| Answer Evaluator | 4 | 0 | 7 | 11 |
-| Flashcard Generator | 5 | 0 | 2 | 7 |
+| RAG Engine | 6 | 0 | 2 | 8 |
+| Knowledge Graph | 4 | 0 | 5 | 9 |
+| Mastery Engine | 10 | 0 | 0 | 10 |
+| Error Classification | 5 | 0 | 0 | 5 |
+| Gap Detection | 5 | 0 | 0 | 5 |
+| Bloom Engine | 4 | 0 | 0 | 4 |
+| Student Memory | 8 | 0 | 1 | 9 |
+| AI Tutor Engine | 9 | 0 | 0 | 9 |
+| Question Generator | 6 | 0 | 6 | 12 |
+| Answer Evaluator | 11 | 0 | 0 | 11 |
+| Flashcard Generator | 7 | 0 | 0 | 7 |
 | Summary Generator | 3 | 0 | 0 | 3 |
-| Mindmap Generator | 4 | 0 | 1 | 5 |
-| Notes Generator | 2 | 0 | 2 | 4 |
-| Recommendation Engine | 0 | 0 | 4 | 4 |
-| Prompt Library | 0 | 0 | 8 | 8 |
+| Mindmap Generator | 5 | 0 | 0 | 5 |
+| Notes Generator | 4 | 0 | 0 | 4 |
+| Recommendation Engine | 4 | 0 | 0 | 4 |
+| Prompt Library | 8 | 0 | 0 | 8 |
 | Language Assessment | 12 | 0 | 2 | 14 |
 | Speech Module | 3 | 0 | 2 | 5 |
-| Analytics Engine | 2 | 0 | 6 | 8 |
-| Research-Grade Features | 0 | 0 | 14 | 14 |
-| Permissions & Controls | 7 | 0 | 7 | 14 |
+| Analytics Engine | 8 | 0 | 0 | 8 |
+| Research-Grade Features | 2 | 0 | 12 | 14 |
+| Permissions & Controls | 13 | 0 | 1 | 14 |
 | Future ML | 0 | 0 | 5 | 5 |
-| **TOTAL** | **97** | **0** | **127** | **224** |
+| **TOTAL** | **170** | **0** | **54** | **224** |
 
-**Overall: ~43% of all planned items checked off**
+**Overall: ~76% of all planned items checked off**
 
 ---
 
 ## Next 5 Things to Build (in order)
 
-1. **Error Classification Engine** — classify wrong answers before anything else can work
-2. **Mastery Engine auto-update** — wire quiz + evaluation results to update mastery after every attempt
-3. **Gap Detection Engine** — traverse curriculum graph to find root-cause weak topics
-4. **AI Orchestrator** — fix the architectural violation (Node calling endpoints directly)
-5. **Prompt Library** — externalise all hardcoded prompts (architectural requirement)
+1. **Prompt Library** — externalise all hardcoded prompts (architectural requirement; fork agent in progress)
+2. **AI Orchestrator** — fix the architectural violation (Node calling endpoints directly)
+3. **Hybrid search** — add BM25 keyword fallback to Qdrant semantic retrieval
+4. **Short/long answer + Bloom question generation** — expand Question Generator beyond MCQ
+5. **Student agency on recommendations** — let student accept/reject recommended next topic

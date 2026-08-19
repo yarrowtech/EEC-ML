@@ -957,4 +957,147 @@ router.get('/improvement-trends', authTeacher, async (req, res) => {
   }
 });
 
+// ── GET /api/teacher-analytics/bloom-distribution?subject=&className= ──────────
+// Returns Bloom taxonomy level counts across all teaching materials for a subject/class.
+router.get('/bloom-distribution', authTeacher, async (req, res) => {
+  try {
+    const { subject, className } = req.query;
+    const TeachingMaterial = require('../models/TeachingMaterial');
+    const filter = { schoolId: req.schoolId };
+    if (subject)   filter.subjectName = { $regex: subject, $options: 'i' };
+    if (className) filter.className   = { $regex: className, $options: 'i' };
+
+    const pipeline = [
+      { $match: filter },
+      { $group: { _id: { $ifNull: ['$bloomLevel', 'unclassified'] }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ];
+    const results = await TeachingMaterial.aggregate(pipeline);
+    const distribution = results.map((r) => ({ bloomLevel: r._id, count: r.count }));
+    const total = distribution.reduce((s, r) => s + r.count, 0);
+    return res.json({ success: true, data: { distribution, total } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/error-breakdown?subject=&classId= ──────────────
+// Returns error type breakdown for the teacher's class — feeds the error history view.
+router.get('/error-breakdown', authTeacher, async (req, res) => {
+  try {
+    const { subject, classId } = req.query;
+    const ErrorRecord  = require('../models/ErrorRecord');
+    const studentIds   = await StudentUser.distinct('_id', {
+      schoolId: req.schoolId,
+      ...(classId ? { classId } : {}),
+    });
+    const matchFilter = { schoolId: req.schoolId, studentId: { $in: studentIds } };
+    if (subject) matchFilter.subject = { $regex: subject, $options: 'i' };
+
+    const pipeline = [
+      { $match: matchFilter },
+      { $group: { _id: { errorType: '$errorType', topicTitle: '$topicTitle' }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 100 },
+    ];
+    const results = await ErrorRecord.aggregate(pipeline);
+    return res.json({ success: true, data: results });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/at-risk?classId=&subject= ─────────────────────
+// Returns all at-risk students in the teacher's class with risk scores.
+router.get('/at-risk', authTeacher, async (req, res) => {
+  try {
+    const { classId, subject } = req.query;
+    const { computeAtRisk } = require('../services/mlEngine');
+
+    const studentFilter = { schoolId: req.schoolId };
+    if (classId) studentFilter.classId = classId;
+    const students = await StudentUser.find(studentFilter)
+      .select('_id name roll grade section')
+      .lean();
+
+    const results = await Promise.allSettled(
+      students.map(async (stu) => {
+        const risk = await computeAtRisk({ studentId: stu._id, schoolId: req.schoolId });
+        return { studentId: stu._id, name: stu.name, roll: stu.roll, grade: stu.grade, section: stu.section, ...risk };
+      })
+    );
+    const data = results
+      .filter((r) => r.status === 'fulfilled' && r.value.isAtRisk)
+      .map((r) => r.value)
+      .sort((a, b) => b.riskScore - a.riskScore);
+
+    return res.json({ success: true, data, total: data.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/teacher-analytics/class-insights?classId=&subject= ──────────────
+// AI-generated narrative summary for the whole class, using actual mastery data.
+router.get('/class-insights', authTeacher, async (req, res) => {
+  try {
+    const { classId, subject, className } = req.query;
+    const MasteryScore = require('../models/MasteryScore');
+    const axios = require('axios');
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
+    const studentFilter = { schoolId: req.schoolId };
+    if (classId) studentFilter.classId = classId;
+    const students = await StudentUser.find(studentFilter).select('_id name grade section').lean();
+
+    const filter = { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) } };
+    if (subject) filter.subject = { $regex: subject, $options: 'i' };
+    const masteryRecords = await MasteryScore.find(filter).lean();
+
+    // Aggregate topic averages
+    const topicMap = {};
+    for (const r of masteryRecords) {
+      const key = `${r.subject}::${r.topicTitle}`;
+      if (!topicMap[key]) topicMap[key] = { subject: r.subject, topicTitle: r.topicTitle, scores: [] };
+      topicMap[key].scores.push(r.score);
+    }
+    const topicSummary = Object.values(topicMap).map((t) => ({
+      subject: t.subject,
+      topicTitle: t.topicTitle,
+      avgMastery: Math.round(t.scores.reduce((a, b) => a + b, 0) / t.scores.length),
+      studentCount: t.scores.length,
+    })).sort((a, b) => a.avgMastery - b.avgMastery);
+
+    // Build a compact text summary to send to the AI
+    const weakTopics = topicSummary.slice(0, 5).map((t) => `${t.topicTitle} (avg ${t.avgMastery}%)`).join(', ');
+    const strongTopics = topicSummary.slice(-3).reverse().map((t) => `${t.topicTitle} (avg ${t.avgMastery}%)`).join(', ');
+    const classContext = [
+      `Class: ${className || req.query.className || 'Unknown'}, Subject: ${subject || 'All'}`,
+      `Students analysed: ${students.length}`,
+      `Weakest topics: ${weakTopics || 'N/A'}`,
+      `Strongest topics: ${strongTopics || 'N/A'}`,
+    ].join('\n');
+
+    const aiRes = await axios.post(`${AI_URL}/generate/tutor`, {
+      question: `Provide a concise class performance summary and 3 actionable teaching recommendations based on this data:\n${classContext}`,
+      mode: 'summarize',
+      subject: subject || 'General',
+      school_id: String(req.schoolId),
+    }, { timeout: 30000 });
+
+    return res.json({
+      success: true,
+      data: {
+        topicSummary,
+        weakTopics: topicSummary.slice(0, 5),
+        strongTopics: topicSummary.slice(-3).reverse(),
+        studentCount: students.length,
+        aiInsight: aiRes.data?.answer || '',
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

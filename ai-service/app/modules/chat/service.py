@@ -36,6 +36,30 @@ NOT_FOUND_MESSAGE = (
     "Try picking a topic your teacher has already published, or ask them to upload content on this topic."
 )
 
+THIN_MATERIAL_MESSAGE = (
+    "The uploaded material for this topic doesn't have enough content to answer with yet. "
+    "This page appears to be a chapter cover or introduction with no lesson text. "
+    "Ask your teacher to upload the full lesson pages for this topic."
+)
+
+# Minimum usable words in the retrieved context before we attempt LLM generation.
+# Below this threshold the model will hallucinate rather than ground its response.
+_MIN_CONTEXT_WORDS = 80
+
+
+def _context_word_count(context: str) -> int:
+    """Count usable words in the retrieved context, skipping visual-evidence header lines."""
+    total = 0
+    for line in context.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # The visual extraction pipeline emits this exact boilerplate header — ignore it.
+        if stripped.lower().startswith("visual evidence from source pdf page"):
+            continue
+        total += len(stripped.split())
+    return total
+
 STEM_INSTRUCTIONS: dict[str, str] = {
     "mathematics": (
         "Preserve mathematical notation, show grade-appropriate steps, define symbols, and clearly label "
@@ -760,6 +784,39 @@ _LEARNING_GOAL_INSTRUCTIONS = {
 }
 
 
+def _age_adaptive_style(grade_level: str) -> str:
+    """Return a communication-style instruction matched to the student's grade level."""
+    g = grade_level.lower().strip()
+    num = 0
+    for token in g.split():
+        if token.isdigit():
+            num = int(token)
+            break
+    if num <= 3 or "kg" in g or "kindergarten" in g or "primary" in g:
+        return (
+            "Use very simple words, very short sentences (under 12 words each), "
+            "concrete everyday examples a young child knows, and a warm playful tone. "
+            "Avoid jargon entirely. "
+        )
+    if num <= 6:
+        return (
+            "Use simple clear language suitable for ages 8-11. Explain one idea at a time. "
+            "Use familiar analogies and encourage curiosity. "
+        )
+    if num <= 9:
+        return (
+            "Use grade-appropriate vocabulary. You may introduce technical terms but always "
+            "define them immediately with an everyday example. Keep paragraphs short. "
+        )
+    if num <= 12:
+        return (
+            "Use precise academic language. The student can handle multi-step reasoning, "
+            "abstract concepts, and subject-specific terminology. "
+            "Encourage critical thinking and analysis. "
+        )
+    return ""
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
@@ -909,7 +966,13 @@ def build_prompt(
     verification_context: str | None = None,
     generated_visuals: list[dict] | None = None,
 ) -> tuple[str, str]:
-    instruction = MODE_INSTRUCTIONS.get(req.mode)
+    # Prefer file-based prompt library; fall back to hardcoded MODE_INSTRUCTIONS
+    try:
+        from prompts.loader import load_prompt as _load_prompt
+        _file_prompt = _load_prompt(req.mode)
+    except Exception:
+        _file_prompt = ""
+    instruction = _file_prompt or MODE_INSTRUCTIONS.get(req.mode)
     if not instruction:
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}")
 
@@ -923,9 +986,11 @@ def build_prompt(
         ]))
 
     grade = req.gradeLevel or "school"
+    age_style = _age_adaptive_style(grade)
 
     base_system = (
         f"You are a friendly AI tutor for a {grade} student studying {req.subject}. "
+        f"{age_style}"
         "You are a retrieval-augmented tutor. You must answer using ONLY the retrieved course "
         "material below. Do not use outside knowledge, common examples, assumptions, filenames, "
         "or URLs unless they appear inside the retrieved text. If the retrieved material does not "
@@ -1048,6 +1113,22 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     full_visual_context = _strip_injection_attempts(_strip_teacher_notes("\n\n".join(chunks)))
     raw_context = _strip_teacher_notes(_focused_visual_context(req, chunks))
     context = _strip_injection_attempts(raw_context)
+
+    if _context_word_count(context) < _MIN_CONTEXT_WORDS:
+        logger.warning(
+            "Thin material for %s / %s — context only %d usable words, refusing to generate",
+            req.subject, req.topic, _context_word_count(context),
+        )
+        return {
+            "mode": req.mode,
+            "model": None,
+            "content": THIN_MATERIAL_MESSAGE,
+            "groundedInMaterial": False,
+            "noMaterialFound": True,
+            "citations": [],
+            "visuals": [],
+        }
+
     visuals = build_tutor_visuals(req, full_visual_context)
     citations = _citations_used_in_context(citations, context)
 

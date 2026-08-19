@@ -476,9 +476,17 @@ function FlashcardUI({ text, subject, topic }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-[#F59E0B]">Card {idx + 1} / {cards.length}</span>
-        <span className="text-[11px] font-medium text-[#78827B]">
-          <span className="font-bold text-[#F59E0B]">{knownCount}</span> / {cards.length} known
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-medium text-[#78827B]">
+            <span className="font-bold text-[#F59E0B]">{knownCount}</span> / {cards.length} known
+          </span>
+          <button
+            onClick={() => exportFlashcardsPdf(cards, subject, topic)}
+            className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+          >
+            <FileText className="size-3" /> Export PDF
+          </button>
+        </div>
       </div>
 
       {/* Progress dots — clickable */}
@@ -706,6 +714,61 @@ function NodeToggle({ open, hex, onToggle }) {
   );
 }
 
+const exportMindMapPng = async (containerEl) => {
+  if (!containerEl) return;
+  const { default: html2canvas } = await import('html2canvas');
+  const canvas = await html2canvas(containerEl, { backgroundColor: '#f8fafc', scale: 2, useCORS: true });
+  const link = document.createElement('a');
+  link.download = `mindmap-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+
+const exportFlashcardsPdf = async (cards, subject, topic) => {
+  const { default: jsPDF } = await import('jspdf');
+  const doc   = new jsPDF({ unit: 'mm', format: 'a4' });
+  const margin = 15;
+  const pageW  = doc.internal.pageSize.getWidth();
+  const maxW   = pageW - margin * 2;
+  let y = 20;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(30, 30, 60);
+  doc.text(`Flashcards${topic ? ` — ${topic}` : ''}${subject ? ` (${subject})` : ''}`, margin, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 140);
+  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ${cards.length} cards`, margin, y);
+  y += 10;
+
+  cards.forEach((card, i) => {
+    const qLines = doc.splitTextToSize(`Q: ${card.q || card.question || ''}`, maxW - 4);
+    const aLines = doc.splitTextToSize(`A: ${card.a || card.answer || ''}`, maxW - 4);
+    const blockH = (qLines.length + aLines.length) * 5 + 14;
+    if (y + blockH > 275) { doc.addPage(); y = 20; }
+
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(margin, y, maxW, qLines.length * 5 + 8, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 60, 120);
+    doc.text(qLines, margin + 2, y + 5);
+    y += qLines.length * 5 + 10;
+
+    doc.setFillColor(240, 255, 245);
+    doc.roundedRect(margin, y, maxW, aLines.length * 5 + 8, 2, 2, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(20, 100, 60);
+    doc.text(aLines, margin + 2, y + 5);
+    y += aLines.length * 5 + 12;
+  });
+
+  doc.save(`flashcards-${Date.now()}.pdf`);
+};
+
 function MindMapUI({ text }) {
   const { root, branches } = useMemo(() => parseMindMap(text), [text]);
   const scrollRef = useRef(null);       // pannable viewport
@@ -713,6 +776,7 @@ function MindMapUI({ text }) {
   const nodeRefs = useRef({});          // node id -> DOM element
   const [expanded, setExpanded] = useState(() => new Set());
   const [svgPaths, setSvgPaths] = useState([]);
+  const [exporting, setExporting] = useState(false);
 
   // Drag-to-pan bookkeeping
   const pan = useRef({ active: false, startX: 0, startY: 0, left: 0, top: 0, moved: false });
@@ -837,6 +901,18 @@ function MindMapUI({ text }) {
             className="rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-200 transition-colors"
           >
             Collapse
+          </button>
+          <button
+            onClick={async () => {
+              setExporting(true);
+              try { await exportMindMapPng(containerRef.current); }
+              finally { setExporting(false); }
+            }}
+            disabled={exporting}
+            className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+          >
+            <FileText className="size-3" />
+            {exporting ? 'Exporting…' : 'Export PNG'}
           </button>
         </div>
       </div>
@@ -1183,15 +1259,31 @@ const exportNotesPdf = async (title, rawText) => {
   doc.save(`study-notes-${Date.now()}.pdf`);
 };
 
-function NotesUI({ text }) {
+function NotesUI({ text, subject, topic }) {
   const notes = useMemo(() => parseNotesResponse(text), [text]);
   const [markedSections, setMarkedSections] = useState(() => new Set());
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const handleExportPdf = async () => {
     setExporting(true);
     try { await exportNotesPdf(notes.title || 'Study Notes', text); }
     finally { setExporting(false); }
+  };
+
+  const handleSaveToProfile = async () => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const resp = await fetch(`${API_BASE}/api/ai-tutor/save-note`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: notes.title || 'Study Notes', content: text, subject: subject || '', topicTitle: topic || '' }),
+      });
+      if (resp.ok) setSaved(true);
+    } catch (_) {}
+    finally { setSaving(false); }
   };
   const studyStats = useMemo(() => {
     const minutes = Math.max(5, Math.min(30, notes.sections.length * 2 + Math.ceil(notes.tasks.length / 2) + Math.ceil(notes.words.length / 4)));
@@ -1243,6 +1335,15 @@ function NotesUI({ text }) {
             >
               <FileText className="size-3" />
               {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveToProfile}
+              disabled={saving || saved}
+              className="flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+            >
+              <CheckCircle2 className="size-3" />
+              {saved ? 'Saved!' : saving ? 'Saving…' : 'Save to Profile'}
             </button>
           </div>
         </div>
@@ -1982,7 +2083,7 @@ function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, su
   if (['quiz', 'visual_quiz'].includes(mode)) return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} subject={subject} topic={topic} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
-  if (mode === 'notes') return <NotesUI text={text} />;
+  if (mode === 'notes') return <NotesUI text={text} subject={subject} topic={topic} />;
   if (['explain', 'visual_explain'].includes(mode)) return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
   if (mode === 'worksheet') return <WorksheetUI text={text} />;

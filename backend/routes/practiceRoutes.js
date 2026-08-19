@@ -549,6 +549,30 @@ router.post('/student/submit', authStudent, async (req, res) => {
       await PracticeAttempt.insertMany(attempts);
     }
 
+    // Error classification — store wrong answers with error type labels
+    try {
+      const { recordErrors } = require('../services/errorClassifier');
+      const wrongItems = results
+        .filter((r) => !r.isCorrect)
+        .map((r) => {
+          const q = questionMap.get(String(r.questionId));
+          if (!q) return null;
+          const ans = answers.find((a) => String(a.questionId) === String(q._id));
+          return {
+            questionId:    q._id,
+            questionText:  q.question,
+            correctAnswer: q.correctAnswer,
+            studentAnswer: ans?.answer || '',
+            subject:       '',
+            subjectId:     q.subjectId,
+            topicTitle:    '',
+            chapterTitle:  '',
+          };
+        })
+        .filter(Boolean);
+      recordErrors({ studentId, schoolId, source: 'practice', wrongs: wrongItems });
+    } catch (_) { /* non-critical */ }
+
     // Misconception detection — if student got the same question wrong 3+ times, trigger AI content
     try {
       const wrongIds = results.filter((r) => !r.isCorrect).map((r) => String(r.questionId));
@@ -572,6 +596,48 @@ router.post('/student/submit', authStudent, async (req, res) => {
               relatedEntity: { entityType: 'practice_question', entityId: qId },
             }).catch(() => {});
           }
+        }
+      }
+    } catch (_) { /* non-critical */ }
+
+    // Non-blocking: update mastery per subjectId group
+    try {
+      const subjectScores = new Map();
+      for (const r of results) {
+        const q = questionMap.get(String(r.questionId));
+        if (!q) continue;
+        const key = String(q.subjectId);
+        if (!subjectScores.has(key)) subjectScores.set(key, { correct: 0, total: 0, subjectId: q.subjectId });
+        const entry = subjectScores.get(key);
+        entry.total += 1;
+        if (r.isCorrect) entry.correct += 1;
+      }
+      if (subjectScores.size) {
+        const Subject = require('../models/Subject');
+        const MasteryScore = require('../models/MasteryScore');
+        const { runWorkflowTriggers } = require('../services/masteryEngine');
+        for (const [key, entry] of subjectScores) {
+          const pct = Math.round((entry.correct / entry.total) * 100);
+          const subjectDoc = await Subject.findById(entry.subjectId).lean().catch(() => null);
+          const subjectName = subjectDoc?.name || key;
+          const topicId = `${subjectName}::practice`;
+          const doc = await MasteryScore.findOneAndUpdate(
+            { studentId, subject: subjectName, topicId },
+            {
+              $set: { schoolId, topicTitle: 'Practice', chapterTitle: '', lastUpdated: new Date() },
+              $inc: { attemptCount: 1 },
+              $max: { score: pct },
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+          if (!doc) continue;
+          const blended = doc.attemptCount <= 1 ? pct : Math.round((doc.score * 0.7) + (pct * 0.3));
+          doc.score = Math.max(doc.score, blended);
+          await doc.save();
+          runWorkflowTriggers({
+            studentId, schoolId, subject: subjectName, topicId,
+            topicTitle: 'Practice', chapterTitle: '', score: doc.score, attemptCount: doc.attemptCount,
+          });
         }
       }
     } catch (_) { /* non-critical */ }

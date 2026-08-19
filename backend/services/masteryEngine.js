@@ -8,6 +8,43 @@
 const { MASTERY, ENGAGEMENT, BADGE } = require('../config/workflowThresholds');
 const NotificationService = require('../utils/notificationService');
 
+// ── Knowledge decay ───────────────────────────────────────────────────────────
+// Daily decay rate: mastery decays toward a floor of 30% if not practised.
+// Applied when the student's SpacedRepetitionSchedule.nextReviewDate is past due.
+const DECAY_RATE_PER_DAY = 0.5;  // percentage points per day past due
+const DECAY_FLOOR = 30;           // mastery never drops below this
+
+async function applyKnowledgeDecay(studentId, schoolId) {
+  try {
+    const MasteryScore             = require('../models/MasteryScore');
+    const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
+    const now = new Date();
+    const overdue = await SpacedRepetitionSchedule.find({
+      studentId, schoolId,
+      nextReviewDate: { $lt: now },
+    }).lean();
+    if (!overdue.length) return;
+
+    for (const item of overdue) {
+      const daysLate = Math.max(0, (now - new Date(item.nextReviewDate)) / 86400000);
+      if (daysLate < 1) continue;
+      const decay = Math.round(daysLate * DECAY_RATE_PER_DAY);
+      if (decay <= 0) continue;
+      const doc = await MasteryScore.findOne({
+        studentId, schoolId, subject: item.subject,
+        topicTitle: { $regex: new RegExp(`^${item.topicTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      });
+      if (!doc) continue;
+      const newScore = Math.max(DECAY_FLOOR, doc.score - decay);
+      if (newScore < doc.score) {
+        doc.score = newScore;
+        doc.lastUpdated = now;
+        await doc.save();
+      }
+    }
+  } catch (_) { /* non-critical */ }
+}
+
 // ── Badge award ───────────────────────────────────────────────────────────────
 async function awardBadgeIfEarned(studentId, schoolId, subject, topicTitle, score) {
   if (score < BADGE.MASTERY_THRESHOLD) return;
@@ -228,13 +265,38 @@ function runWorkflowTriggers({ studentId, schoolId, subject, topicId, topicTitle
   if (topicTitle) {
     scheduleSpacedRepetition(s, sc, subject, topicTitle, chapterTitle || '', score).catch(() => {});
   }
+
+  // Gap detection — runs when score is low enough to warrant root-cause analysis
+  if (score < 60) {
+    const { runGapDetection } = require('./gapDetectionEngine');
+    runGapDetection({ studentId: s, schoolId: sc, subject, topicTitle }).catch(() => {});
+  }
+}
+
+// ── Enhanced multi-factor mastery score ───────────────────────────────────────
+// Blends accuracy (latest score), attempt confidence, recency, and current score.
+// Returns an integer 0-100.
+function computeEnhancedMasteryScore({
+  currentScore = 0,
+  newScore,
+  attemptCount = 1,
+  daysSinceLastPractice = 0,
+}) {
+  const confidence  = Math.min(1, attemptCount / 5);
+  const recencyBonus = Math.max(0, 1 - daysSinceLastPractice / 30);
+  const newWeight  = 0.3 + recencyBonus * 0.3;
+  const rawBlend   = Math.round(currentScore * (1 - newWeight) + newScore * newWeight);
+  const enhanced   = Math.round(currentScore + (rawBlend - currentScore) * confidence);
+  return Math.min(100, Math.max(0, enhanced));
 }
 
 module.exports = {
   runWorkflowTriggers,
+  applyKnowledgeDecay,
   awardBadgeIfEarned,
   unlockNextNode,
   alertTeacherIfStuck,
   sendNudge,
   scheduleSpacedRepetition,
+  computeEnhancedMasteryScore,
 };

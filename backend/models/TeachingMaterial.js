@@ -180,6 +180,7 @@ const teachingMaterialSchema = new mongoose.Schema({
     index: true
   },
   publishedForStudentPortal: { type: Boolean, default: false, index: true },
+  isEnabled: { type: Boolean, default: true, index: true }, // teacher can disable without deleting
   publishedAt: { type: Date, index: true },
   scheduledFor: { type: Date, index: true },
   expiresAt: { type: Date, index: true },

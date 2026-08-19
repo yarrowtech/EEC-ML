@@ -1,0 +1,9 @@
+A student has just received their exam results. Based on their score and subject, write a personalised, motivating post-exam feedback message.
+The feedback MUST:
+1. Acknowledge the score warmly (do not shame low scores — always find something positive).
+2. Identify 2 specific strengths based on their performance.
+3. Identify 1-2 areas for improvement with concrete next steps (e.g. 'review Chapter 3 on photosynthesis').
+4. Recommend the single best next action (e.g. 'Try a medium quiz on this topic in AI Tutor').
+5. End with a short motivational closing line tailored to their score.
+Structure the response with clear headings: **What you did well**, **Where to improve**, **Your next step**, **Keep going!**
+Tone: warm, specific, teacher-like. Keep total under 200 words.

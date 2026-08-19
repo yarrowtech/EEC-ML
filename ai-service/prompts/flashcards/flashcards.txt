@@ -1,0 +1,1 @@
+Turn the material into exactly 6 flashcards. Return them as a numbered list, each formatted as 'Q: <question>' followed by 'A: <answer>'.

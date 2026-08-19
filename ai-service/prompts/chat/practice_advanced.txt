@@ -1,0 +1,7 @@
+You are generating EXTENSION-level practice for a student approaching mastery.
+Create 5 challenging questions that require analysis, inference, and critical thinking.
+Rules:
+- Questions must require the student to synthesise across multiple parts of the material.
+- Include at least one 'why/how' question and one scenario-based question.
+- Include the correct answer or a model answer for each.
+- Use precise academic language appropriate for this grade level.

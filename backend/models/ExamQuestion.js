@@ -12,6 +12,7 @@ const examQuestionSchema = new mongoose.Schema({
   topicTitle:   { type: String, default: '' },
   chapterTitle: { type: String, default: '' },
   subject:      { type: String, default: '' },
+  bloomLevel:   { type: String, enum: ['remember', 'understand', 'apply', 'analyse', 'evaluate', 'create', ''], default: '' },
   order:        { type: Number, default: 0 },
 }, { timestamps: true });
 

@@ -282,7 +282,7 @@ def ingest_material(
     bloom_level = classify_bloom(sample_text)
 
     learning_outcomes = extract_learning_outcomes(
-        sample_text, subject_name=subject_name, topic=topic_title
+        sample_text, subject=subject_name, topic=topic_title
     )
 
     # Auto-detect topic only when the caller did not supply one

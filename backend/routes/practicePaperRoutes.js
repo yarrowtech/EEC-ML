@@ -566,6 +566,68 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
 
     await paper.save();
 
+    // Non-blocking: update mastery score for the practice paper's subject/topic
+    if (paper.subjectName) {
+      const { runWorkflowTriggers } = require('../services/masteryEngine');
+      const MasteryScore = require('../models/MasteryScore');
+      const topicId = paper.topicTitle
+        ? `${paper.subjectName}::${paper.topicTitle}`
+        : `${paper.subjectName}::${paper.chapterTitle || 'general'}`;
+      MasteryScore.findOneAndUpdate(
+        { studentId: req.userId, subject: paper.subjectName, topicId },
+        {
+          $set: {
+            schoolId: req.schoolId,
+            topicTitle: paper.topicTitle || paper.chapterTitle || '',
+            chapterTitle: paper.chapterTitle || '',
+            lastUpdated: new Date(),
+          },
+          $inc: { attemptCount: 1 },
+          $max: { score: gradeResult.percentage },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).then((doc) => {
+        if (!doc) return;
+        const blended = doc.attemptCount <= 1
+          ? gradeResult.percentage
+          : Math.round((doc.score * 0.7) + (gradeResult.percentage * 0.3));
+        const finalScore = Math.max(doc.score, blended);
+        doc.score = finalScore;
+        return doc.save().then(() => runWorkflowTriggers({
+          studentId: req.userId,
+          schoolId: req.schoolId,
+          subject: paper.subjectName,
+          topicId,
+          topicTitle: paper.topicTitle || paper.chapterTitle || '',
+          chapterTitle: paper.chapterTitle || '',
+          score: finalScore,
+          attemptCount: doc.attemptCount,
+        }));
+      }).catch(() => {});
+    }
+
+    // Non-blocking: classify and store wrong answers as error records
+    try {
+      const { recordErrors } = require('../services/errorClassifier');
+      const wrongItems = gradeResult.answers
+        .map((ans, idx) => {
+          if (ans.isCorrect) return null;
+          const q = paper.questions[idx];
+          return {
+            questionId:    String(q._id || idx),
+            questionText:  q.questionText,
+            correctAnswer: q.correctAnswer,
+            studentAnswer: ans.selectedAnswer || '',
+            subject:       paper.subjectName  || '',
+            subjectId:     paper.subjectId    || null,
+            topicTitle:    paper.topicTitle   || '',
+            chapterTitle:  paper.chapterTitle || '',
+          };
+        })
+        .filter(Boolean);
+      recordErrors({ studentId: req.userId, schoolId: req.schoolId, source: 'practice_paper', wrongs: wrongItems });
+    } catch (_) { /* non-critical */ }
+
     // Prepare response
     const responseData = {
       success: true,

@@ -490,6 +490,46 @@ router.get('/exam-integrity', adminAuth, async (req, res) => {
   }
 });
 
+// GET /api/admin-analytics/weak-areas?subject=&classId=
+// School-level subject weak area report — aggregates mastery by subject/topic for admin view.
+router.get('/weak-areas', adminAuth, async (req, res) => {
+  try {
+    const { subject, classId, limit = 20 } = req.query;
+    const ErrorRecord = require('../models/ErrorRecord');
+
+    const matchFilter = { schoolId: toObjId(req.schoolId) || req.schoolId };
+    if (subject) matchFilter.subject = { $regex: subject, $options: 'i' };
+    if (classId) {
+      const studentIds = await StudentUser.distinct('_id', { schoolId: req.schoolId, classId });
+      matchFilter.studentId = { $in: studentIds };
+    }
+
+    const [masteryWeak, errorAgg] = await Promise.all([
+      MasteryScore.aggregate([
+        { $match: { schoolId: req.schoolId, score: { $lt: 60 } } },
+        { $group: {
+          _id: { subject: '$subject', topicTitle: '$topicTitle' },
+          avgScore: { $avg: '$score' },
+          studentCount: { $sum: 1 },
+        }},
+        { $sort: { avgScore: 1 } },
+        { $limit: Number(limit) },
+        { $project: { subject: '$_id.subject', topicTitle: '$_id.topicTitle', avgScore: { $round: ['$avgScore', 1] }, studentCount: 1, _id: 0 } },
+      ]),
+      ErrorRecord.aggregate([
+        { $match: matchFilter },
+        { $group: { _id: { subject: '$subject', topicTitle: '$topicTitle', errorType: '$errorType' }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: Number(limit) },
+      ]),
+    ]);
+
+    return res.json({ success: true, data: { masteryWeak, errorBreakdown: errorAgg } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/admin-analytics/ai-insights
 // Proxies analytics payload to the Python AI service for LLM-generated insights.
 // report_type: "overview" | "dropout" | "teacher" | "integrity"

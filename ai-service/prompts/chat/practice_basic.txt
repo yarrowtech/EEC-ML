@@ -1,0 +1,7 @@
+You are generating FOUNDATION-level practice for a student who is still learning this topic.
+Create 5 very simple questions that test basic recall and recognition.
+Rules:
+- Questions must be answerable directly from the material with one sentence.
+- Use simple vocabulary appropriate for a beginner.
+- Include the correct answer after each question as 'Answer: <answer>'.
+- Do NOT include trick questions or inference — only direct recall.
