@@ -127,17 +127,19 @@ const saveSettings = async (req, res, next) => {
     const hadAnyModeConnected = Boolean(razorpay.test?.keyId || razorpay.live?.keyId);
     const nextActiveMode = hadAnyModeConnected ? (organization.paymentGateway.mode || 'test') : values.mode;
 
-    organization.paymentGateway = {
-      provider: 'razorpay',
-      enabled: true,
-      mode: nextActiveMode,
-      razorpay: {
-        accountName: school?.name || organization.name,
-        accountEmail: school?.officialEmail || school?.contactEmail || '',
-        test: values.mode === 'test' ? updatedSlot : (razorpay.test || {}),
-        live: values.mode === 'live' ? updatedSlot : (razorpay.live || {}),
-      },
-    };
+    // Set each path individually (mirroring activateMode/disconnect below)
+    // instead of reassigning the whole paymentGateway object — the other
+    // mode's slot wasn't fully selected by `gatewaySelect` (only its
+    // keySecret/webhookSecret were), so rebuilding it from that partial data
+    // and handing it back to Mongoose as a wholesale nested-object cast can
+    // fail validation even though nothing about that mode changed. Setting
+    // only the mode actually being saved avoids touching the other one.
+    organization.set('paymentGateway.provider', 'razorpay');
+    organization.set('paymentGateway.enabled', true);
+    organization.set('paymentGateway.mode', nextActiveMode);
+    organization.set('paymentGateway.razorpay.accountName', school?.name || organization.name);
+    organization.set('paymentGateway.razorpay.accountEmail', school?.officialEmail || school?.contactEmail || '');
+    organization.set(`paymentGateway.razorpay.${values.mode}`, updatedSlot);
     await organization.save();
     await PaymentAudit.create({
       organizationId: organization._id,

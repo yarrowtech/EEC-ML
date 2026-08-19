@@ -534,19 +534,54 @@ router.get("/get-parents", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
+    const schoolId = filter.schoolId || req.schoolId;
+    const activeYear = schoolId
+      ? await AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean()
+      : null;
+    const activeYearName = String(activeYear?.name || '').trim().toLowerCase();
+    // Class 11/12 stream sections (and any class already tied to an academic
+    // year) are the authoritative signal for "is this student in the active
+    // year" — the student's own academicYear string field can go stale after
+    // a manual grade edit or a promotion that didn't touch it.
+    let activeYearClassNames = null;
+    let otherYearClassNames = null;
+    if (activeYear) {
+      const allClasses = await ClassModel.find({ schoolId }).select('name academicYearId').lean();
+      activeYearClassNames = new Set();
+      otherYearClassNames = new Set();
+      allClasses.forEach((c) => {
+        const name = String(c.name || '').trim().toLowerCase();
+        if (!name) return;
+        if (String(c.academicYearId || '') === String(activeYear._id)) {
+          activeYearClassNames.add(name);
+        } else {
+          otherYearClassNames.add(name);
+        }
+      });
+    }
     const parents = await ParentUser.find(filter)
       .select('-password')
       .populate({
         path: 'childrenIds',
-        select: 'name grade section performance address pinCode status isArchived',
+        select: 'name grade section performance address pinCode status isArchived academicYear',
       })
       .lean();
     const withResolvedAddress = parents
       .map((parent) => {
       const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
-      const activeChildren = populatedChildren.filter(
-        (child) => child && child.isArchived !== true && !isExitedStudentStatus(child.status)
-      );
+      const activeChildren = populatedChildren.filter((child) => {
+        if (!child || child.isArchived === true || isExitedStudentStatus(child.status)) return false;
+        if (!activeYearName) return true;
+        const childGrade = String(child.grade || '').trim().toLowerCase();
+        if (childGrade && activeYearClassNames.has(childGrade)) return true;
+        if (childGrade && otherYearClassNames.has(childGrade)) {
+          // Grade maps to a known class from a different year — genuinely stale.
+          return false;
+        }
+        // Grade doesn't match any known class (legacy/free-text value) —
+        // fall back to the student's own academicYear string.
+        return String(child.academicYear || '').trim().toLowerCase() === activeYearName;
+      });
       if (populatedChildren.length > 0 && activeChildren.length === 0) {
         return null;
       }
@@ -968,6 +1003,41 @@ router.put('/students/:id', adminAuth, async (req, res) => {
     });
     if (!updated) {
       return res.status(404).json({ error: 'Record not found' });
+    }
+    const guardianNameChanged =
+      Object.prototype.hasOwnProperty.call(payload, 'guardianName') &&
+      String(existing.guardianName || '').trim() !== String(updated.guardianName || '').trim();
+    const fatherNameChanged =
+      Object.prototype.hasOwnProperty.call(payload, 'fatherName') &&
+      String(existing.fatherName || '').trim() !== String(updated.fatherName || '').trim();
+    const motherNameChanged =
+      Object.prototype.hasOwnProperty.call(payload, 'motherName') &&
+      String(existing.motherName || '').trim() !== String(updated.motherName || '').trim();
+    if (guardianNameChanged || fatherNameChanged || motherNameChanged) {
+      try {
+        // Prefer whichever name field the admin actually just edited (in
+        // guardian > father > mother order) rather than a static fallback
+        // chain — bulk-imported students often already have guardianName
+        // populated from the father's info, so a static fallback would keep
+        // showing the stale guardianName even after fatherName is corrected.
+        const nextParentName = String(
+          (guardianNameChanged && updated.guardianName) ||
+            (fatherNameChanged && updated.fatherName) ||
+            (motherNameChanged && updated.motherName) ||
+            updated.guardianName ||
+            updated.fatherName ||
+            updated.motherName ||
+            ''
+        ).trim();
+        if (nextParentName) {
+          await ParentUser.updateMany(
+            { childrenIds: updated._id },
+            { $set: { name: nextParentName } }
+          );
+        }
+      } catch (syncErr) {
+        console.error('Parent name sync failed after student update:', syncErr?.message || syncErr);
+      }
     }
     try {
       await autoGeneratePromotionInvoice({

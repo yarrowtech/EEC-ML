@@ -94,6 +94,19 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
     return matchesSearch && matchesGrade && matchesRelationship && matchesEngagement && matchesCommunication;
   });
 
+  const gradeOptions = useMemo(() => {
+    const unique = new Set();
+    parents.forEach((parent) => {
+      (Array.isArray(parent.grades) ? parent.grades : []).forEach((grade) => {
+        const trimmed = String(grade || '').trim();
+        if (trimmed && trimmed !== '—') unique.add(trimmed);
+      });
+    });
+    return Array.from(unique).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [parents]);
+
   const totalPages = Math.max(1, Math.ceil(filteredParents.length / PARENTS_PER_PAGE));
   const paginatedParents = useMemo(() => {
     const start = (currentPage - 1) * PARENTS_PER_PAGE;
@@ -533,10 +546,9 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               onChange={(e) => handleFilterGrade(e.target.value)}
             >
               <option value="All">All Grades</option>
-              <option value="Grade 9">Grade 9</option>
-              <option value="Grade 10">Grade 10</option>
-              <option value="Grade 11">Grade 11</option>
-              <option value="Grade 12">Grade 12</option>
+              {gradeOptions.map((grade) => (
+                <option key={grade} value={grade}>{grade}</option>
+              ))}
             </select>
             <select
               className="sm:w-40 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent bg-white shadow-sm text-sm text-gray-700"

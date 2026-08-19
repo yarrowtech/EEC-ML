@@ -83,6 +83,117 @@ const ManagedSecretField = ({
   </div>
 );
 
+/* ─── one row of the "saved credentials" overview: Key ID is plain (not a
+   secret), Key/Webhook Secret are masked with their own independent
+   per-mode reveal toggle ─── */
+const OverviewSecretRow = ({ label, hasSaved, preview, revealedValue, revealing, onToggleReveal }) => (
+  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+    <span className="shrink-0 font-medium text-slate-500">{label}</span>
+    {hasSaved ? (
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate font-mono text-slate-700">{revealedValue || preview || '••••••••'}</span>
+        <button
+          type="button"
+          onClick={onToggleReveal}
+          disabled={revealing}
+          className="shrink-0 text-slate-400 hover:text-slate-600 disabled:opacity-50"
+          aria-label={revealedValue ? `Hide ${label}` : `Show ${label}`}
+          title={revealedValue ? `Hide ${label}` : `Show ${label}`}
+        >
+          {revealing ? <Loader2 size={14} className="animate-spin" /> : revealedValue ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </span>
+    ) : (
+      <span className="text-slate-400">Not set</span>
+    )}
+  </div>
+);
+
+const SavedCredentialsOverview = ({ gateway }) => {
+  const [revealed, setRevealed] = useState({ test: null, live: null });
+  const [revealing, setRevealing] = useState({ test: false, live: false });
+  const [visible, setVisible] = useState({
+    test: { keySecret: false, webhookSecret: false },
+    live: { keySecret: false, webhookSecret: false },
+  });
+
+  // A fresh settings payload (after save/disconnect/mode switch elsewhere)
+  // invalidates any previously-decrypted values — revealing again should
+  // always be a deliberate, freshly-audited action.
+  useEffect(() => {
+    setRevealed({ test: null, live: null });
+    setVisible({ test: { keySecret: false, webhookSecret: false }, live: { keySecret: false, webhookSecret: false } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateway.settings]);
+
+  const toggleReveal = async (mode, field) => {
+    if (visible[mode][field]) {
+      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: false } }));
+      return;
+    }
+    if (revealed[mode]) {
+      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: true } }));
+      return;
+    }
+    setRevealing((current) => ({ ...current, [mode]: true }));
+    try {
+      const data = await gateway.reveal(mode);
+      setRevealed((current) => ({ ...current, [mode]: data }));
+      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: true } }));
+    } catch (error) {
+      toast.error(error.message || 'Unable to reveal secret');
+    } finally {
+      setRevealing((current) => ({ ...current, [mode]: false }));
+    }
+  };
+
+  if (!gateway.settings) return null;
+
+  return (
+    <Card className="bg-white">
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2"><Lock className="text-slate-500" size={18} /> Saved credentials</CardTitle>
+        <CardDescription>Test and Live credentials currently stored for this school, side by side.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5 pt-4 sm:grid-cols-2">
+        {['test', 'live'].map((mode) => {
+          const modeSlot = gateway.settings[mode] || {};
+          const meta = MODE_META[mode];
+          return (
+            <div key={mode} className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`size-2 rounded-full ${meta.dot}`} />
+                <p className="text-sm font-semibold text-slate-700">{meta.label} mode</p>
+                {gateway.settings.mode === mode && <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>}
+              </div>
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <span className="shrink-0 font-medium text-slate-500">Key ID</span>
+                <span className="truncate font-mono text-slate-700">{modeSlot.keyId || 'Not set'}</span>
+              </div>
+              <OverviewSecretRow
+                label="Key Secret"
+                hasSaved={modeSlot.hasKeySecret}
+                preview={modeSlot.keySecretPreview}
+                revealedValue={visible[mode].keySecret ? revealed[mode]?.keySecret : ''}
+                revealing={revealing[mode]}
+                onToggleReveal={() => toggleReveal(mode, 'keySecret')}
+              />
+              <OverviewSecretRow
+                label="Webhook Secret"
+                hasSaved={modeSlot.hasWebhookSecret}
+                preview={modeSlot.webhookSecretPreview}
+                revealedValue={visible[mode].webhookSecret ? revealed[mode]?.webhookSecret : ''}
+                revealing={revealing[mode]}
+                onToggleReveal={() => toggleReveal(mode, 'webhookSecret')}
+              />
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function PaymentGatewaySettings({ setShowAdminHeader }) {
   const gateway = usePaymentGateway();
   const [viewMode, setViewMode] = useState(null);
@@ -218,6 +329,8 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
             <p className={`mt-1 text-sm ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>{connected ? 'Online fee payments are available to students and parents.' : 'Students cannot pay fees online until credentials are saved and a mode is activated.'}</p>
           </div>
         </motion.div>
+
+        <SavedCredentialsOverview gateway={gateway} />
 
         {/* ─── test / live segmented control ─── */}
         <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1 shadow-xs">

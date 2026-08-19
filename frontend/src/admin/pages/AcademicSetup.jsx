@@ -481,35 +481,69 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     });
   }, [visibleSubjects, searchSubject, classNameById, activeSubjectClassId]);
 
+  const classOrderById = useMemo(() => {
+    const map = {};
+    classes.forEach((c) => { map[String(c._id)] = Number.isFinite(Number(c?.order)) ? Number(c.order) : 0; });
+    return map;
+  }, [classes]);
+
+  const byClassOrderThenName = (a, b) =>
+    (Number.isFinite(Number(a?.order)) ? Number(a.order) : 0) - (Number.isFinite(Number(b?.order)) ? Number(b.order) : 0) ||
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { numeric: true, sensitivity: "base" });
+
+  const bySectionName = (a, b) =>
+    String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { numeric: true, sensitivity: "base" });
+
   const classTeacherAllocations = useMemo(
     () =>
-      teacherAllocations.filter(
-        (a) =>
-          a.isClassTeacher &&
-          visibleClassIdSet.has(String(a.classId?._id || a.classId || "")) &&
-          visibleSectionIdSet.has(String(a.sectionId?._id || a.sectionId || ""))
-      ),
-    [teacherAllocations, visibleClassIdSet, visibleSectionIdSet]
+      teacherAllocations
+        .filter(
+          (a) =>
+            a.isClassTeacher &&
+            visibleClassIdSet.has(String(a.classId?._id || a.classId || "")) &&
+            visibleSectionIdSet.has(String(a.sectionId?._id || a.sectionId || ""))
+        )
+        .slice()
+        .sort(
+          (a, b) =>
+            (classOrderById[String(a.classId?._id || a.classId || "")] || 0) -
+              (classOrderById[String(b.classId?._id || b.classId || "")] || 0) ||
+            String(a.classId?.name || "").localeCompare(String(b.classId?.name || ""), undefined, { numeric: true, sensitivity: "base" }) ||
+            String(a.sectionId?.name || "").localeCompare(String(b.sectionId?.name || ""), undefined, { numeric: true, sensitivity: "base" })
+        ),
+    [teacherAllocations, visibleClassIdSet, visibleSectionIdSet, classOrderById]
   );
 
   const classTeacherClasses = useMemo(() => {
     if (!classTeacherForm.yearId) return [];
-    return visibleClasses.filter((c) => String(c.academicYearId) === String(classTeacherForm.yearId));
+    return visibleClasses
+      .filter((c) => String(c.academicYearId) === String(classTeacherForm.yearId))
+      .slice()
+      .sort(byClassOrderThenName);
   }, [visibleClasses, classTeacherForm.yearId]);
 
   const classTeacherSections = useMemo(() => {
     if (!classTeacherForm.classId) return [];
-    return visibleSections.filter((s) => String(s.classId) === String(classTeacherForm.classId));
+    return visibleSections
+      .filter((s) => String(s.classId) === String(classTeacherForm.classId))
+      .slice()
+      .sort(bySectionName);
   }, [visibleSections, classTeacherForm.classId]);
 
   const editClassTeacherClasses = useMemo(() => {
     if (!editClassTeacherForm.yearId) return [];
-    return visibleClasses.filter((c) => String(c.academicYearId) === String(editClassTeacherForm.yearId));
+    return visibleClasses
+      .filter((c) => String(c.academicYearId) === String(editClassTeacherForm.yearId))
+      .slice()
+      .sort(byClassOrderThenName);
   }, [visibleClasses, editClassTeacherForm.yearId]);
 
   const editClassTeacherSections = useMemo(() => {
     if (!editClassTeacherForm.classId) return [];
-    return visibleSections.filter((s) => String(s.classId) === String(editClassTeacherForm.classId));
+    return visibleSections
+      .filter((s) => String(s.classId) === String(editClassTeacherForm.classId))
+      .slice()
+      .sort(bySectionName);
   }, [visibleSections, editClassTeacherForm.classId]);
 
   const classRangeFromRaw = String(classRangeForm.from ?? "").trim();
