@@ -1514,13 +1514,13 @@ const HR = ({ setShowAdminHeader }) => {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead>
                       <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">From</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">To</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">From</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">To</th>
                         {/* <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th> */}
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
