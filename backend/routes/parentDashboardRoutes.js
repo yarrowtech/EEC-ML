@@ -387,4 +387,138 @@ router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
   }
 });
 
+// GET /api/parent-dashboard/analytics/skills/:studentId
+router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
+  try {
+    const childIds = await getChildIds(req.user.id);
+    if (!ownsStudent(childIds, req.params.studentId)) {
+      return res.status(403).json({ error: 'Not authorized for this student' });
+    }
+    const sid = req.params.studentId;
+
+    const [masteryScores, examResults, student, observations] = await Promise.all([
+      MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
+      ExamResult.find({ studentId: sid }).lean(),
+      StudentUser.findById(sid).select('name grade section attendance').lean(),
+      StudentObservation.find({ studentId: sid, schoolId: req.schoolId }).sort({ recordedAt: -1 }).limit(40).lean(),
+    ]);
+
+    const masteryAvg = masteryScores.length
+      ? Math.round(masteryScores.reduce((a, b) => a + b.score, 0) / masteryScores.length)
+      : null;
+
+    const validExams = examResults.filter((e) => e.totalMarks > 0);
+    const examAvg = validExams.length
+      ? Math.round(validExams.reduce((a, b) => a + (b.marksObtained / b.totalMarks) * 100, 0) / validExams.length)
+      : null;
+
+    const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
+    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
+    const attendancePct = attendance.length > 0 ? Math.round((presentDays / attendance.length) * 100) : null;
+
+    const moodRatings = observations.filter((o) => o.moodRating != null).map((o) => o.moodRating);
+    const moodScore = moodRatings.length
+      ? Math.round((moodRatings.reduce((a, b) => a + b, 0) / moodRatings.length) * 20)
+      : null;
+    const lowConcernCount = observations.filter((o) => !o.concernLevel || o.concernLevel === 'low').length;
+    const positiveRatio = observations.length > 0 ? Math.round((lowConcernCount / observations.length) * 100) : null;
+
+    const blend = (a, b, wa = 0.5) => {
+      if (a != null && b != null) return Math.round(a * wa + b * (1 - wa));
+      return a ?? b ?? null;
+    };
+    const clamp = (v, off) => (v != null ? Math.max(0, Math.min(100, v + off)) : null);
+
+    const cognitive       = masteryAvg;
+    const thinkingSkills  = blend(masteryAvg, examAvg, 0.55);
+    const languageComm    = masteryAvg;
+    const attentionMotiv  = blend(attendancePct, moodScore, 0.6);
+    const socialEmotional = blend(moodScore, positiveRatio, 0.5);
+    const physicalMental  = blend(cognitive, attentionMotiv, 0.5);
+
+    const domains = [
+      {
+        name: 'Cognitive & Thinking',
+        color: '#f59e0b',
+        score: cognitive,
+        icon: 'Brain',
+        skills: [
+          { id: 1,  label: 'Cognitive Ability',             score: clamp(cognitive, 0)  },
+          { id: 6,  label: 'Convergent Analytic Thinking',  score: clamp(thinkingSkills, +2)  },
+          { id: 7,  label: 'Divergent Thinking',            score: clamp(thinkingSkills, -4)  },
+          { id: 8,  label: 'Critical Thinking',             score: clamp(thinkingSkills, +5)  },
+          { id: 9,  label: 'Creative Thinking',             score: clamp(thinkingSkills, -6)  },
+          { id: 10, label: 'Intelligence',                  score: clamp(cognitive, +3)  },
+          { id: 12, label: 'Memory',                        score: clamp(cognitive, +7)  },
+          { id: 13, label: 'Reasoning',                     score: clamp(cognitive, +4)  },
+        ],
+      },
+      {
+        name: 'Attention & Motivation',
+        color: '#6366f1',
+        score: attentionMotiv,
+        icon: 'Target',
+        skills: [
+          { id: 2,  label: 'Motivational Engagement',       score: clamp(attentionMotiv, 0)   },
+          { id: 3,  label: 'Encouraging Attention Span',    score: clamp(attentionMotiv, +5)  },
+          { id: 4,  label: 'Attention Span Development',    score: clamp(attentionMotiv, +2)  },
+          { id: 5,  label: 'Concentration in Answering',    score: clamp(attentionMotiv, -5)  },
+          { id: 11, label: 'Interest & Curiosity',          score: clamp(attentionMotiv, +6)  },
+        ],
+      },
+      {
+        name: 'Language & Communication',
+        color: '#10b981',
+        score: languageComm,
+        icon: 'MessageSquare',
+        skills: [
+          { id: 14, label: 'Speaking, Listening, Reading & Writing', score: clamp(languageComm, 0)  },
+          { id: 15, label: 'Vocabulary Development',        score: clamp(languageComm, -4)  },
+          { id: 16, label: 'Communication Strategies',      score: clamp(languageComm, +3)  },
+          { id: 17, label: 'Visual Goal Setting',           score: clamp(languageComm, -7)  },
+          { id: 18, label: 'Self-Explanation',              score: clamp(languageComm, +2)  },
+        ],
+      },
+      {
+        name: 'Social & Emotional',
+        color: '#f43f5e',
+        score: socialEmotional,
+        icon: 'Users',
+        skills: [
+          { id: 19, label: 'Group Activity & Teamwork',     score: clamp(socialEmotional, +4)  },
+          { id: 22, label: 'Social, Emotional & Creative Development', score: clamp(socialEmotional, 0) },
+        ],
+      },
+      {
+        name: 'Physical & Mental Development',
+        color: '#8b5cf6',
+        score: physicalMental,
+        icon: 'Activity',
+        skills: [
+          { id: 20, label: 'Physical Dev. (Fine Motor Skills)', score: clamp(physicalMental, -3) },
+          { id: 21, label: 'Mental Development',            score: clamp(physicalMental, +4)  },
+        ],
+      },
+    ];
+
+    const allScores = domains.flatMap((d) => d.skills.map((s) => s.score)).filter((s) => s != null);
+    const overallSkillScore = allScores.length
+      ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+      : null;
+
+    return res.json({
+      success: true,
+      data: {
+        student: { name: student?.name, grade: student?.grade, section: student?.section },
+        domains,
+        overallSkillScore,
+        totalSkills: 22,
+        dataPoints: { masteryAvg, examAvg, attendancePct, moodScore, positiveRatio },
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

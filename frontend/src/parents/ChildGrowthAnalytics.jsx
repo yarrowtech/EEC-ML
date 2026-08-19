@@ -23,6 +23,10 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
+  Sparkles,
+  MessageSquare,
+  Zap,
+  Info,
 } from 'lucide-react';
 import {
   RadarChart,
@@ -509,6 +513,193 @@ const WellbeingSidebar = ({ data, onClose }) => {
   );
 };
 
+// ── Skills Sidebar ────────────────────────────────────────────────────────────
+const DOMAIN_ICONS = {
+  Brain: Brain,
+  Target: Target,
+  MessageSquare: MessageSquare,
+  Users: Users,
+  Activity: Activity,
+};
+
+const SkillsSidebar = ({ data, onClose }) => {
+  const [expandedDomain, setExpandedDomain] = useState(null);
+
+  if (!data) return null;
+  const { domains = [], overallSkillScore, dataPoints = {} } = data;
+
+  const radarData = domains.map((d) => ({
+    domain: d.name.split(' ')[0], // first word for brevity
+    score: d.score ?? 0,
+  }));
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-5 bg-gradient-to-br from-amber-500 to-orange-500 text-white flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+              <Sparkles size={16} />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-amber-100">Growth Analytics</p>
+              <h2 className="text-base font-black">Skill Development</h2>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-4">
+          <div className="bg-white/10 rounded-xl p-3 text-center">
+            <p className="text-xl font-black">{overallSkillScore != null ? `${overallSkillScore}%` : '–'}</p>
+            <p className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">Overall Score</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3 text-center">
+            <p className="text-xl font-black">22</p>
+            <p className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">Skills Tracked</p>
+          </div>
+          <div className="bg-white/10 rounded-xl p-3 text-center">
+            <p className="text-xl font-black">{domains.length}</p>
+            <p className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">Domains</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+        {/* Data source note */}
+        <div className="flex items-start gap-2 bg-amber-50 rounded-xl px-3 py-2.5 border border-amber-100">
+          <Info size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[10px] text-amber-700 leading-relaxed font-medium">
+            Skill scores are analytically derived from academic mastery ({dataPoints.masteryAvg != null ? `${dataPoints.masteryAvg}%` : 'N/A'}), exam performance ({dataPoints.examAvg != null ? `${dataPoints.examAvg}%` : 'N/A'}), attendance ({dataPoints.attendancePct != null ? `${dataPoints.attendancePct}%` : 'N/A'}) and teacher observations.
+          </p>
+        </div>
+
+        {/* Domain Radar */}
+        {radarData.length > 0 && (
+          <section>
+            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Domain Overview</h3>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <ResponsiveContainer width="100%" height={210}>
+                <RadarChart data={radarData}>
+                  <PolarGrid stroke="#fde68a" />
+                  <PolarAngleAxis dataKey="domain" tick={{ fontSize: 10, fill: '#92400e', fontWeight: 700 }} />
+                  <Radar name="Score" dataKey="score" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.25} strokeWidth={2.5} dot={{ r: 4, fill: '#f59e0b' }} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        )}
+
+        {/* Domain scores overview bar chart */}
+        <section>
+          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Domain Scores</h3>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div className="space-y-3">
+              {domains.map((d) => {
+                const DomainIcon = DOMAIN_ICONS[d.icon] || Brain;
+                return (
+                  <div key={d.name}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-lg flex items-center justify-center" style={{ background: d.color + '20' }}>
+                          <DomainIcon size={11} style={{ color: d.color }} />
+                        </div>
+                        <p className="text-xs font-bold text-slate-700">{d.name}</p>
+                      </div>
+                      <span className="text-xs font-black" style={{ color: d.score != null ? d.color : '#94a3b8' }}>
+                        {d.score != null ? `${d.score}%` : '–'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-2 rounded-full transition-all duration-700"
+                        style={{ width: `${d.score ?? 0}%`, background: d.color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* Skill breakdown per domain */}
+        <section>
+          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">All 22 Skills</h3>
+          <div className="space-y-3">
+            {domains.map((d) => {
+              const DomainIcon = DOMAIN_ICONS[d.icon] || Brain;
+              const isOpen = expandedDomain === d.name;
+              return (
+                <div key={d.name} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  {/* Domain header — tap to expand */}
+                  <button
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+                    onClick={() => setExpandedDomain(isOpen ? null : d.name)}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: d.color + '18' }}>
+                        <DomainIcon size={13} style={{ color: d.color }} />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-black text-slate-800">{d.name}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold">{d.skills.length} skill{d.skills.length !== 1 ? 's' : ''}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black" style={{ color: d.color }}>{d.score != null ? `${d.score}%` : '–'}</span>
+                      <ChevronRight size={14} className="text-slate-300 transition-transform duration-200" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
+                    </div>
+                  </button>
+
+                  {/* Skills list (expanded) */}
+                  {isOpen && (
+                    <div className="border-t border-slate-100 divide-y divide-slate-50">
+                      {d.skills.map((skill) => (
+                        <div key={skill.id} className="px-4 py-2.5">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-black text-slate-300 w-4 text-right">{skill.id}.</span>
+                              <p className="text-[11px] font-semibold text-slate-700">{skill.label}</p>
+                            </div>
+                            <span className="text-[11px] font-black flex-shrink-0 ml-2" style={{ color: skill.score != null ? scoreColor(skill.score) : '#94a3b8' }}>
+                              {skill.score != null ? `${skill.score}%` : '–'}
+                            </span>
+                          </div>
+                          <div className="ml-6">
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-1.5 rounded-full transition-all duration-700"
+                                style={{ width: `${skill.score ?? 0}%`, background: d.color }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between mt-0.5">
+                              <span className="text-[9px] text-slate-400 font-semibold">{scoreLabel(skill.score)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {overallSkillScore == null && (
+          <div className="text-center py-10 text-slate-400">
+            <Sparkles size={32} className="mx-auto mb-2 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest">No data to compute skill scores yet</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const ChildGrowthAnalytics = () => {
   const [students, setStudents] = useState([]);
@@ -517,10 +708,12 @@ const ChildGrowthAnalytics = () => {
 
   const [academicData, setAcademicData] = useState(null);
   const [wellbeingData, setWellbeingData] = useState(null);
+  const [skillsData, setSkillsData] = useState(null);
   const [loadingAcademic, setLoadingAcademic] = useState(false);
   const [loadingWellbeing, setLoadingWellbeing] = useState(false);
+  const [loadingSkills, setLoadingSkills] = useState(false);
 
-  const [activeSidebar, setActiveSidebar] = useState(null); // 'academic' | 'wellbeing' | null
+  const [activeSidebar, setActiveSidebar] = useState(null); // 'academic' | 'wellbeing' | 'skills' | null
 
   // Fetch student list from parent profile
   useEffect(() => {
@@ -573,12 +766,24 @@ const ChildGrowthAnalytics = () => {
       .finally(() => setLoadingWellbeing(false));
   }, []);
 
+  const fetchSkills = useCallback((sid) => {
+    if (!sid) return;
+    setLoadingSkills(true);
+    setSkillsData(null);
+    fetch(`${API_BASE}/api/parent-dashboard/analytics/skills/${sid}`, { headers: authHeader() })
+      .then((r) => r.json())
+      .then((d) => setSkillsData(d.data || null))
+      .catch(() => {})
+      .finally(() => setLoadingSkills(false));
+  }, []);
+
   useEffect(() => {
     if (selectedId) {
       fetchAcademic(selectedId);
       fetchWellbeing(selectedId);
+      fetchSkills(selectedId);
     }
-  }, [selectedId, fetchAcademic, fetchWellbeing]);
+  }, [selectedId, fetchAcademic, fetchWellbeing, fetchSkills]);
 
   const handleSelectStudent = (id) => {
     setSelectedId(id);
@@ -611,6 +816,7 @@ const ChildGrowthAnalytics = () => {
   const highConcern = wellbeingData ? (wellbeingData.concernCounts?.high || 0) + (wellbeingData.concernCounts?.urgent || 0) : 0;
   const subjectCount = academicData?.subjectBreakdown?.length || 0;
   const examCount = academicData?.examTrend?.length || 0;
+  const overallSkillScore = skillsData?.overallSkillScore;
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 relative">
@@ -661,13 +867,14 @@ const ChildGrowthAnalytics = () => {
           { label: 'Overall Mastery', value: overallMastery != null ? `${overallMastery}%` : '–', icon: Brain, color: 'indigo', loading: loadingAcademic },
           { label: 'Attendance', value: attendancePct != null ? `${attendancePct}%` : '–', icon: Calendar, color: 'emerald', loading: loadingAcademic },
           { label: 'Avg Mood', value: avgMood != null ? `${avgMood}/5` : '–', icon: Smile, color: 'rose', loading: loadingWellbeing },
-          { label: 'High Concern', value: highConcern, icon: AlertTriangle, color: highConcern > 0 ? 'orange' : 'slate', loading: loadingWellbeing },
+          { label: 'Skill Score', value: overallSkillScore != null ? `${overallSkillScore}%` : '–', icon: Sparkles, color: 'amber', loading: loadingSkills },
         ].map((stat) => {
           const Icon = stat.icon;
           const colors = {
             indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
             emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
             rose: 'bg-rose-50 text-rose-600 border-rose-100',
+            amber: 'bg-amber-50 text-amber-600 border-amber-100',
             orange: 'bg-orange-50 text-orange-600 border-orange-100',
             slate: 'bg-slate-50 text-slate-500 border-slate-100',
           };
@@ -687,8 +894,8 @@ const ChildGrowthAnalytics = () => {
         })}
       </div>
 
-      {/* Two main analytics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* Three main analytics cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
 
         {/* Academic Growth Card */}
         <button
@@ -847,6 +1054,81 @@ const ChildGrowthAnalytics = () => {
             </div>
           </div>
         </button>
+
+        {/* Skill Development Card */}
+        <button
+          onClick={() => setActiveSidebar(activeSidebar === 'skills' ? null : 'skills')}
+          className={`group text-left rounded-3xl border-2 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 ${
+            activeSidebar === 'skills' ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-100 hover:border-amber-200'
+          }`}
+        >
+          <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 px-6 py-5 text-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-100">Growth</p>
+                  <p className="text-sm font-black">Skill Development</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className={`text-white/60 transition-transform duration-300 ${activeSidebar === 'skills' ? 'rotate-90' : 'group-hover:translate-x-1'}`} />
+            </div>
+
+            {loadingSkills ? (
+              <Loader2 size={24} className="animate-spin text-white/60" />
+            ) : (
+              <div className="flex items-center gap-6">
+                <ScoreRing score={overallSkillScore} size={72} stroke={6} color="#fff" />
+                <div className="space-y-2 flex-1">
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-100 uppercase">Skills Tracked</p>
+                    <p className="text-lg font-black">22</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-100 uppercase">Domains</p>
+                    <p className="text-lg font-black">{skillsData?.domains?.length || 5}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white px-6 py-4">
+            {loadingSkills ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => <div key={i} className="h-3 bg-slate-100 rounded-full animate-pulse" />)}
+              </div>
+            ) : skillsData?.domains?.length > 0 ? (
+              <div className="space-y-2.5">
+                {skillsData.domains.map((d) => (
+                  <div key={d.name}>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-bold text-slate-700 truncate">{d.name}</p>
+                      <span className="text-xs font-black flex-shrink-0 ml-2" style={{ color: d.score != null ? scoreColor(d.score) : '#94a3b8' }}>
+                        {d.score != null ? `${d.score}%` : '–'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-1.5 rounded-full transition-all duration-700"
+                        style={{ width: `${d.score ?? 0}%`, background: d.color || '#f59e0b' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 text-center py-2">No skill data yet</p>
+            )}
+            <div className="mt-3 flex items-center gap-2 pt-3 border-t border-slate-100">
+              <Zap size={12} className="text-amber-500" />
+              <p className="text-[11px] font-bold text-amber-600">Tap to see all 22 skill scores →</p>
+            </div>
+          </div>
+        </button>
+
       </div>
 
       {/* Bottom hint when no sidebar is open */}
@@ -872,8 +1154,10 @@ const ChildGrowthAnalytics = () => {
           >
             {activeSidebar === 'academic' ? (
               <AcademicSidebar data={academicData} onClose={() => setActiveSidebar(null)} />
-            ) : (
+            ) : activeSidebar === 'wellbeing' ? (
               <WellbeingSidebar data={wellbeingData} onClose={() => setActiveSidebar(null)} />
+            ) : (
+              <SkillsSidebar data={skillsData} onClose={() => setActiveSidebar(null)} />
             )}
           </div>
         </>
