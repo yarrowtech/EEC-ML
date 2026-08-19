@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Users, 
-  Calendar, 
+import {
+  Users,
+  Calendar,
   Bell,
-  BookOpen, 
-  CreditCard, 
+  BookOpen,
+  CreditCard,
   Activity,
   MessageSquare,
   MessageCircle,
@@ -26,7 +26,8 @@ import {
   CheckCheck,
   Home,
   Eye,
-  LogOut
+  LogOut,
+  BarChart2,
 } from 'lucide-react';
 import AttendanceReport from './AttendanceReport';
 import AcademicReport from './AcademicReport';
@@ -42,12 +43,14 @@ import ParentChat from './ParentChat';
 import ClassRoutine from './ClassRoutine';
 import HolidayList from './HolidayList';
 import ExcuseLetters from './ExcuseLetters';
+import ChildGrowthAnalytics from './ChildGrowthAnalytics';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 
 const MENU_ITEMS = [
   { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
+  { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
   { icon: Calendar, label: 'Holiday List', description: 'School holidays', path: '/parents/holidays' },
   { icon: Clock, label: 'Class Routine', description: 'Weekly schedule', path: '/parents/routine' },
   { icon: Calendar, label: 'Attendance Report', description: 'Punctuality tracker', path: '/parents/attendance' },
@@ -303,6 +306,7 @@ const ParentPortal = () => {
     const message = String(notification?.message || '').toLowerCase();
     const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
     const blob = `${title} ${message} ${type}`;
+    if (blob.includes('analytics') || blob.includes('growth')) return '/parents/analytics';
     if (blob.includes('achievement')) return '/parents/achievements';
     if (blob.includes('attendance')) return '/parents/attendance';
     if (blob.includes('academic') || blob.includes('assignment')) return '/parents/academic';
@@ -710,6 +714,7 @@ const ParentPortal = () => {
                 />
               }
             />
+            <Route path="analytics" element={<ChildGrowthAnalytics />} />
             <Route path="attendance" element={<AttendanceReport />} />
             <Route path="holidays" element={<HolidayList />} />
             <Route path="routine" element={<ClassRoutine />} />
