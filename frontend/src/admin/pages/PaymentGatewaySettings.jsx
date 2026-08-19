@@ -83,6 +83,64 @@ const ManagedSecretField = ({
   </div>
 );
 
+/* ─── prominent Test/Live switch: flips which mode's credentials actually
+   process student payments right now. Blocked (with an explanatory toast)
+   if the target mode hasn't been configured yet. ─── */
+const ModeToggleSwitch = ({ gateway }) => {
+  const activeMode = gateway.settings?.mode || 'test';
+  const isLive = activeMode === 'live';
+  const testConfigured = Boolean(gateway.settings?.test?.connected);
+  const liveConfigured = Boolean(gateway.settings?.live?.connected);
+
+  const switchTo = async (mode) => {
+    if (mode === activeMode || gateway.activating) return;
+    const configured = mode === 'live' ? liveConfigured : testConfigured;
+    if (!configured) {
+      toast.error(`Save and connect ${MODE_META[mode].label} credentials first before switching to ${MODE_META[mode].label} mode.`);
+      return;
+    }
+    try {
+      await gateway.activate(mode);
+      toast.success(`${MODE_META[mode].label} mode is now active`);
+    } catch (error) {
+      toast.error(error.message || `Unable to switch to ${MODE_META[mode].label} mode`);
+    }
+  };
+
+  return (
+    <Card className={isLive ? 'border-emerald-200 bg-emerald-50/40' : 'border-blue-200 bg-blue-50/40'}>
+      <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">
+            {isLive ? 'Live mode — real payments are being processed' : 'Test mode — no real money moves'}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            {isLive
+              ? 'Students and parents are paying with real cards/UPI through Razorpay Live right now.'
+              : 'Students and parents can only pay with Razorpay test cards/UPI — safe for trying out the flow.'}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className={`text-sm font-semibold ${!isLive ? 'text-blue-700' : 'text-slate-400'}`}>Test</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isLive}
+            aria-label="Toggle Test / Live payment mode"
+            onClick={() => switchTo(isLive ? 'test' : 'live')}
+            disabled={gateway.activating}
+            className={`relative inline-flex h-8 w-16 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${isLive ? 'bg-emerald-500' : 'bg-blue-500'}`}
+          >
+            <span className={`inline-block h-6 w-6 translate-x-1 transform rounded-full bg-white shadow-sm transition-transform ${isLive ? 'translate-x-9' : ''}`} />
+          </button>
+          <span className={`text-sm font-semibold ${isLive ? 'text-emerald-700' : 'text-slate-400'}`}>Live</span>
+          {gateway.activating && <Loader2 className="animate-spin text-slate-400" size={16} />}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 /* ─── one row of the "saved credentials" overview: Key ID is plain (not a
    secret), Key/Webhook Secret are masked with their own independent
    per-mode reveal toggle ─── */
@@ -329,6 +387,8 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
             <p className={`mt-1 text-sm ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>{connected ? 'Online fee payments are available to students and parents.' : 'Students cannot pay fees online until credentials are saved and a mode is activated.'}</p>
           </div>
         </motion.div>
+
+        <ModeToggleSwitch gateway={gateway} />
 
         <SavedCredentialsOverview gateway={gateway} />
 

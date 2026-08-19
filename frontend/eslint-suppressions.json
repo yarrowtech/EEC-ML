@@ -650,10 +650,10 @@
       "count": 2
     },
     "react/prop-types": {
-      "count": 37
+      "count": 50
     },
     "react/react-in-jsx-scope": {
-      "count": 137
+      "count": 149
     }
   },
   "src/admin/pages/ReportCardManagement.jsx": {
