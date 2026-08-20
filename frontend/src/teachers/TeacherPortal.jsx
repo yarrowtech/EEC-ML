@@ -1212,58 +1212,57 @@ const TeacherPortalShell = () => {
         }}
       >
         {/* ── Sidebar Header ── */}
-        <div className="relative shrink-0 overflow-hidden border-b border-[#f0f2f5]">
-          {/* Expanded header */}
-          <div className={`transition-all duration-400 ease-in-out ${!sidebarCollapsed
-              ? 'opacity-100 transform translate-x-0'
-              : 'opacity-0 transform -translate-x-4 pointer-events-none absolute inset-0'
-            }`}>
-            <div className="relative px-6 pb-6 pt-7">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <div className="truncate text-[1.3rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">Teacher Portal</div>
-                  <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Academic Workspace</div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                    onClick={() => setSidebarCollapsed(true)}
-                    aria-label="Collapse sidebar"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                  <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
-                    aria-label="Close sidebar"
-                  >
-                    <X size={17} />
-                  </button>
-                  </div>
+        <div className="shrink-0 border-b border-[#f0f2f5]">
+          {sidebarCollapsed ? (
+            <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
+              <div
+                data-testid="teacher-sidebar-logo"
+                aria-label="EEC Teacher Portal logo"
+                className="flex size-12 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
+              >
+                <img src="/logo_new.png" alt="EEC" className="h-full w-full object-contain" />
               </div>
+              <button
+                type="button"
+                className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
+                onClick={() => setSidebarCollapsed(false)}
+                aria-label="Expand sidebar"
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
-          </div>
-
-          {/* Collapsed header */}
-          <div className={`transition-all duration-400 ease-in-out ${sidebarCollapsed
-              ? 'opacity-100 transform translate-x-0'
-              : 'opacity-0 transform translate-x-4 pointer-events-none absolute inset-0'
-            }`}>
-            <div className="px-2 py-5">
-              <div className="flex flex-col items-center space-y-3">
-                <div className="flex size-10 items-center justify-center rounded-xl border border-[#ede9fe] bg-[#f5f3ff] text-[#6d28d9]">
-                  <GraduationCap size={18} />
-                </div>
+          ) : (
+            <Motion.div
+              key="expanded-brand"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2 }}
+              className="flex items-center justify-between px-6 pb-6 pt-7"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-[1.3rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">Teacher Portal</div>
+                <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Academic Workspace</div>
+              </div>
+              <div className="flex items-center gap-1">
                 <button
+                  type="button"
                   className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                  onClick={() => setSidebarCollapsed(false)}
-                  aria-label="Expand sidebar"
+                  onClick={() => setSidebarCollapsed(true)}
+                  aria-label="Collapse sidebar"
                 >
                   <ChevronRight size={16} className="rotate-180" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
+                  aria-label="Close sidebar"
+                >
+                  <X size={17} />
+                </button>
               </div>
-            </div>
-          </div>
+            </Motion.div>
+          )}
         </div>
 
         {/* ── Navigation ── */}
@@ -1304,15 +1303,20 @@ const TeacherPortalShell = () => {
         </nav>
 
         {/* ── Bottom: Logout ── */}
-        <div className={`shrink-0 border-t border-[#f0f2f5] ${sidebarCollapsed ? 'p-2' : 'px-2.5 pb-5 pt-4'}`}>
+        <div className={`mt-auto shrink-0 border-t border-[#f0f2f5] bg-white ${sidebarCollapsed ? 'p-2.5' : 'px-3 py-3.5'}`}>
           <div>
             {sidebarCollapsed ? (
               <button
+                type="button"
                 onClick={handleLogout}
                 aria-label="Logout"
-                className="group relative flex h-11 w-full items-center justify-center rounded-[0.6rem] text-[#4a5668] transition-colors hover:bg-[#fef2f2] hover:text-[#b33a3a] active:scale-[0.98]"
+                data-testid="collapsed-sidebar-logout"
+                className="group relative flex h-11 w-full items-center justify-center overflow-visible rounded-[0.6rem] text-[#536179] transition-all duration-200 hover:bg-[#f5f3ff] hover:text-[#6d28d9] active:scale-95"
               >
-                <LogOut size={17} strokeWidth={1.8} />
+                <span aria-hidden="true" className="absolute inset-1 scale-75 rounded-lg bg-gradient-to-br from-violet-100 via-purple-50 to-amber-50 opacity-0 transition-all duration-200 group-hover:scale-100 group-hover:opacity-100" />
+                <span className="relative flex size-8 items-center justify-center">
+                  <LogOut size={18} strokeWidth={1.9} className="block shrink-0 text-current" />
+                </span>
                 <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
                   <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
                     <div className="text-sm font-semibold">Logout</div>
@@ -1324,14 +1328,41 @@ const TeacherPortalShell = () => {
                 </div>
               </button>
             ) : (
-              <button
+              <Motion.button
+                type="button"
                 onClick={handleLogout}
-                className="group flex w-full items-center gap-2.5 rounded-[0.6rem] border border-transparent px-3 py-2.5 text-left text-[0.82rem] font-medium text-[#4a5668] transition-colors hover:border-[#fecaca] hover:bg-[#fef2f2] hover:text-[#b33a3a] active:scale-[0.98]"
+                initial="rest"
+                whileHover="hover"
+                whileTap={{ scale: 0.98 }}
+                variants={{
+                  rest: { color: '#4a5668', borderColor: 'rgba(255,255,255,0)' },
+                  hover: { color: '#6d28d9', borderColor: '#ddd6fe' },
+                }}
+                transition={{ duration: 0.2 }}
+                className="group relative flex h-11 w-full items-center gap-2.5 overflow-hidden rounded-[0.6rem] border px-3 text-left text-[0.84rem] font-medium"
               >
-                <LogOut size={17} strokeWidth={1.8} className="shrink-0" />
-                <span>Logout</span>
-                <span className="ml-auto text-[0.65rem] font-normal tracking-[0.02em] text-[#8e9aaf] transition-colors group-hover:text-[#b33a3a]">Sign out securely</span>
-              </button>
+                <Motion.span
+                  aria-hidden="true"
+                  variants={{ rest: { scaleX: 0 }, hover: { scaleX: 1 } }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                  className="absolute inset-0 origin-left bg-gradient-to-r from-violet-100/90 via-purple-50 to-amber-50/80"
+                />
+                <Motion.span
+                  aria-hidden="true"
+                  variants={{ rest: { x: -45, opacity: 0 }, hover: { x: 235, opacity: [0, 0.75, 0] } }}
+                  transition={{ duration: 0.85, ease: 'easeInOut' }}
+                  className="absolute -top-3 size-14 rounded-full bg-amber-200/70 blur-xl"
+                />
+                <Motion.span
+                  variants={{ rest: { x: 0, rotate: 0 }, hover: { x: 4, rotate: -8 } }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+                  className="relative flex shrink-0 items-center justify-center"
+                >
+                  <LogOut size={17} strokeWidth={1.8} />
+                </Motion.span>
+                <Motion.span variants={{ rest: { x: 0 }, hover: { x: 2 } }} transition={{ type: 'spring', stiffness: 420, damping: 24 }} className="relative whitespace-nowrap">Logout</Motion.span>
+                <Motion.span variants={{ rest: { x: 0, color: '#8e9aaf' }, hover: { x: -2, color: '#7c3aed' } }} transition={{ duration: 0.25 }} className="relative ml-auto whitespace-nowrap text-[0.64rem] font-normal tracking-[0.02em]">Sign out securely</Motion.span>
+              </Motion.button>
             )}
           </div>
         </div>

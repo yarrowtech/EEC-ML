@@ -90,6 +90,16 @@ describe('TeacherPortal', () => {
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('!bg-[#f5f3ff]');
   });
 
+  test('keeps a visible brand mark when the sidebar is collapsed', async () => {
+    renderPortal('/teacher/dashboard');
+
+    await userEvent.click(screen.getByRole('button', { name: /Collapse sidebar/i }));
+
+    expect(screen.getByTestId('teacher-sidebar-logo')).toContainElement(screen.getByAltText('EEC'));
+    expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeInTheDocument();
+    expect(screen.getByTestId('collapsed-sidebar-logout').querySelector('svg')).toBeInTheDocument();
+  });
+
   test('opens student section and navigates to analytics page', async () => {
     renderPortal('/teacher/classes/current/students');
 

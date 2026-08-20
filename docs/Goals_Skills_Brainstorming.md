@@ -686,4 +686,59 @@ The `StudentDevelopmentProfile` is kept as a **stored model** (not computed on t
 
 ---
 
+## Session 10 — 2026-08-20: Visual Explain Shows Real Diagrams
+
+### Problem
+`visual_explain` mode retrieved visual facts from Qdrant (via llava:13b extraction at ingestion time) but the response was pure text. The `ExplainUI` component rendered it as structured text cards — no actual diagram.
+
+### Solution
+Split `visual_explain` into two layers:
+1. **Mermaid diagram at top** — LLM generates a diagram of the concept from retrieved material
+2. **Text explanation below** — walks the student through what the diagram shows
+
+### How it works now
+```
+Student asks: "Explain photosynthesis visually"
+  → Qdrant retrieves textbook chunks (+ llava-extracted diagram facts)
+    → LLM generates response in structured format:
+        DIAGRAM:
+        ```mermaid
+        flowchart TD
+          Sun --> Light
+          Light --> Chlorophyll
+          ...
+        ```
+        EXPLANATION:
+        <paragraph explaining the diagram>
+    → parseVisualExplain() splits the response
+    → VisualExplainUI renders diagram via mermaid.render()
+    → ExplainUI renders explanation below
+```
+
+### Response format (from LLM)
+```
+DIAGRAM:
+```mermaid
+<valid Mermaid.js — max 12 nodes, flowchart TD / graph LR / graph TD / sequenceDiagram>
+```
+
+EXPLANATION:
+<2-4 paragraphs referencing the diagram, age-appropriate language>
+```
+
+If not enough info for a diagram, LLM writes `DIAGRAM: none` and explanation only is shown.
+
+### Files changed
+| File | Change |
+|---|---|
+| `ai-service/app/modules/chat/service.py` | Updated `visual_explain` MODE_INSTRUCTION — now returns structured DIAGRAM + EXPLANATION format |
+| `frontend/src/components/AITutorHomeScreen.jsx` | Added `parseVisualExplain()` helper; added `VisualExplainUI` component; updated dispatcher so `visual_explain` → `VisualExplainUI`, `explain` → `ExplainUI` (split from the old combined route) |
+
+### Fallback behaviour
+- If LLM returns `DIAGRAM: none` → shows only text explanation via `ExplainUI`
+- If Mermaid render fails → shows error message, explanation still shown below
+- If response has no DIAGRAM/EXPLANATION markers → `VisualExplainUI` falls back to `ExplainUI` with full text
+
+---
+
 _Last updated: 2026-08-20_
