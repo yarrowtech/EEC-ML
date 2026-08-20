@@ -2175,12 +2175,90 @@ function HingeQuestionUI({ text }) {
 // Response dispatcher — picks the right UI for each mode
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// VisualExplainUI — Mermaid diagram + text explanation
+// ---------------------------------------------------------------------------
+
+function parseVisualExplain(raw) {
+  const text = raw || '';
+  const diagramMatch = text.match(/DIAGRAM:\s*\n```mermaid\n([\s\S]*?)```/i);
+  const noneMatch    = /DIAGRAM:\s*none/i.test(text);
+  const explainMatch = text.match(/EXPLANATION:\s*\n([\s\S]*?)(?:$)/i);
+
+  return {
+    mermaidCode: diagramMatch ? diagramMatch[1].trim() : null,
+    noDiagram:   noneMatch,
+    explanation: explainMatch ? explainMatch[1].trim() : text,
+  };
+}
+
+function VisualExplainUI({ text }) {
+  const { mermaidCode, noDiagram, explanation } = useMemo(() => parseVisualExplain(text), [text]);
+  const [svgContent, setSvgContent] = useState('');
+  const [diagramError, setDiagramError] = useState('');
+
+  useEffect(() => {
+    if (!mermaidCode || noDiagram) return;
+    ensureMermaid();
+    const id = `ve-mermaid-${Date.now()}`;
+    mermaid.render(id, mermaidCode)
+      .then(({ svg }) => { setSvgContent(svg); setDiagramError(''); })
+      .catch(() => setDiagramError('Diagram could not be rendered — showing explanation only.'));
+  }, [mermaidCode, noDiagram]);
+
+  if (noDiagram || (!mermaidCode && !svgContent)) {
+    return <ExplainUI text={explanation || text} />;
+  }
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Diagram card */}
+      <Motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden"
+      >
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-indigo-500">
+          <div className="w-5 h-5 rounded-md bg-white/20 flex items-center justify-center">
+            <Network size={12} className="text-white" />
+          </div>
+          <span className="text-xs font-bold text-white tracking-wide uppercase">Visual Diagram</span>
+        </div>
+        <div className="p-4 min-h-[160px] flex items-center justify-center overflow-x-auto">
+          {diagramError ? (
+            <p className="text-sm text-red-400 font-medium text-center">{diagramError}</p>
+          ) : svgContent ? (
+            <div className="w-full" dangerouslySetInnerHTML={{ __html: svgContent }} />
+          ) : (
+            <div className="flex items-center gap-2 text-violet-400 text-sm">
+              <div className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />
+              Rendering diagram…
+            </div>
+          )}
+        </div>
+      </Motion.div>
+
+      {/* Explanation below */}
+      {explanation && (
+        <Motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <ExplainUI text={explanation} />
+        </Motion.div>
+      )}
+    </div>
+  );
+}
+
 function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic }) {
   if (['quiz', 'visual_quiz'].includes(mode)) return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} subject={subject} topic={topic} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} subject={subject} topic={topic} />;
-  if (['explain', 'visual_explain'].includes(mode)) return <ExplainUI text={text} />;
+  if (mode === 'visual_explain') return <VisualExplainUI text={text} />;
+  if (mode === 'explain') return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
   if (mode === 'worksheet') return <WorksheetUI text={text} />;
   if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;

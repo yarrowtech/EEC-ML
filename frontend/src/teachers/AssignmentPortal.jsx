@@ -9,16 +9,63 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { useNavigate, useParams } from 'react-router-dom';
+import PracticeQuestions from './PracticeQuestions';
+import TryoutManagement from '../components/TryoutManagement';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
-const AssignmentPortal = () => {
-  const activeTab = 'evaluate';
+const toEntityId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'object') return String(value._id || value.id || '');
+  return String(value);
+};
+
+const getLessonPlanChapters = (plan) => {
+  const planned = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
+  const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+  const source = planned.length > 0 ? planned : raw;
+
+  return source.map((chapter, index) => ({
+    id: toEntityId(chapter?.id || chapter?._id) || `chapter-${index + 1}`,
+    title: String(typeof chapter === 'string' ? chapter : chapter?.title || '').trim(),
+  })).filter((chapter) => chapter.title);
+};
+
+const getScopedLessonPlans = ({ plans, classId, sectionId, subject, classSections }) => {
+  if (!classId || !sectionId || !subject) return [];
+  const selectedClassSection = (classSections || []).find(
+    (item) => String(item.classId) === String(classId) && String(item.sectionId) === String(sectionId)
+  );
+  const selectedSubject = (selectedClassSection?.subjects || []).find(
+    (item) => String(item?.name || '').trim().toLowerCase() === String(subject).trim().toLowerCase()
+  );
+  const selectedSubjectId = toEntityId(selectedSubject?.id || selectedSubject?._id);
+
+  return (plans || []).filter((plan) => {
+    const planSubjectId = toEntityId(plan?.subjectId);
+    const subjectMatches = selectedSubjectId && planSubjectId
+      ? selectedSubjectId === planSubjectId
+      : String(plan?.subject || '').trim().toLowerCase() === String(subject).trim().toLowerCase();
+    return toEntityId(plan?.classId) === String(classId)
+      && toEntityId(plan?.sectionId) === String(sectionId)
+      && subjectMatches
+      && plan?.status === 'published'
+      && plan?.isDraft !== true;
+  }).sort((left, right) => String(left?.title || '').localeCompare(String(right?.title || '')));
+};
+
+const AssignmentPortal = ({ view = 'manage' }) => {
+  const navigate = useNavigate();
+  const { classId = 'current' } = useParams();
+  const activeTab = view === 'evaluate' ? 'evaluate' : 'manage';
+  const assignmentBasePath = `/teacher/classes/${encodeURIComponent(classId)}/assignments`;
 
   // ─────────────────────────────────────────────────────────────────────────
   // ASSIGNMENT MANAGEMENT STATE
   // ─────────────────────────────────────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
+  const [activityEditor, setActivityEditor] = useState(null);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailEditMode, setDetailEditMode] = useState(false);
@@ -35,7 +82,12 @@ const AssignmentPortal = () => {
     status: 'draft',
     submissionFormat: 'text',
     type: 'Assignment',
-    difficulty: 'Medium'
+    difficulty: 'Medium',
+    sourceLessonPlanId: '',
+    chapterId: '',
+    chapterTitle: '',
+    topicTitle: '',
+    subTopicTitle: ''
   });
   const [viewMode, setViewMode] = useState('grid');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -45,6 +97,8 @@ const AssignmentPortal = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [myClasses, setMyClasses] = useState([]);
+  const [lessonPlans, setLessonPlans] = useState([]);
+  const [lessonPlanError, setLessonPlanError] = useState('');
   const [newAssignment, setNewAssignment] = useState({
     title: "",
     subject: "",
@@ -58,7 +112,16 @@ const AssignmentPortal = () => {
     marks: 100,
     status: "draft",
     submissionFormat: "text",
-    attachments: []
+    type: "Assignment",
+    difficulty: "Medium",
+    isEssay: false,
+    rubric: "",
+    attachments: [],
+    sourceLessonPlanId: "",
+    chapterId: "",
+    chapterTitle: "",
+    topicTitle: "",
+    subTopicTitle: ""
   });
   const [, setPdfFile] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -84,11 +147,14 @@ const AssignmentPortal = () => {
   const [saveError, setSaveError] = useState('');
   const [assignmentFilter, setAssignmentFilter] = useState('all');
   const [classFilter, setClassFilter] = useState('all');
-  const [evaluationMode, setEvaluationMode] = useState('single');
+  const evaluationMode = 'single';
   const [bulkDraft, setBulkDraft] = useState({});
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [bulkSuccess, setBulkSuccess] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [publishSuccess, setPublishSuccess] = useState('');
 
   // ─── Tryout submissions state ───────────────────────────────────────────────
   const [tryoutSubmissions, setTryoutSubmissions] = useState([]);
@@ -157,6 +223,22 @@ const AssignmentPortal = () => {
     return [];
   }, [classSectionOptions, newAssignment.classId, newAssignment.sectionId, newAssignment.academicYearId]);
 
+  const availableLessonPlans = useMemo(() => getScopedLessonPlans({
+    plans: lessonPlans,
+    classId: newAssignment.classId,
+    sectionId: newAssignment.sectionId,
+    subject: newAssignment.subject,
+    classSections: myClasses,
+  }), [lessonPlans, myClasses, newAssignment.classId, newAssignment.sectionId, newAssignment.subject]);
+
+  const selectedLessonPlan = availableLessonPlans.find(
+    (plan) => toEntityId(plan?._id) === String(newAssignment.sourceLessonPlanId || '')
+  );
+  const availableLessonPlanChapters = useMemo(
+    () => getLessonPlanChapters(selectedLessonPlan),
+    [selectedLessonPlan]
+  );
+
   const subjects = [...new Set(assignments.map(a => a.subject).filter(Boolean))];
   const topics = [...new Set(assignments.map(a => a.topic).filter(Boolean))];
   const totalAssignments = assignments.length;
@@ -209,6 +291,20 @@ const AssignmentPortal = () => {
       setError('Failed to load assignments');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLessonPlans = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/lesson-plans/teacher/my`, {
+        headers: { Authorization: `Bearer ${token()}` }
+      });
+      setLessonPlans(Array.isArray(response.data) ? response.data : []);
+      setLessonPlanError('');
+    } catch (err) {
+      console.error('Error fetching lesson plans:', err);
+      setLessonPlans([]);
+      setLessonPlanError(err.response?.data?.error || 'Failed to load lesson plans');
     }
   };
 
@@ -268,6 +364,7 @@ const AssignmentPortal = () => {
     fetchActiveSession();
     fetchMyClasses();
     fetchAssignments();
+    fetchLessonPlans();
     fetchSubmissions();
     fetchTryoutSubmissions();
   }, []);
@@ -389,7 +486,12 @@ const AssignmentPortal = () => {
       status: assignment?.status || 'draft',
       submissionFormat: assignment?.submissionFormat === 'pdf' ? 'pdf' : 'text',
       type: assignment?.type || 'Assignment',
-      difficulty: assignment?.difficulty || 'Medium'
+      difficulty: assignment?.difficulty || 'Medium',
+      sourceLessonPlanId: resolveIdValue(assignment?.sourceLessonPlanId),
+      chapterId: assignment?.chapterId || '',
+      chapterTitle: assignment?.chapterTitle || '',
+      topicTitle: assignment?.topicTitle || '',
+      subTopicTitle: assignment?.subTopicTitle || ''
     });
     setDetailEditMode(false);
     setShowDetailModal(true);
@@ -415,7 +517,12 @@ const AssignmentPortal = () => {
         status: detailDraft.status,
         submissionFormat: detailDraft.submissionFormat,
         type: detailDraft.type,
-        difficulty: detailDraft.difficulty
+        difficulty: detailDraft.difficulty,
+        sourceLessonPlanId: detailDraft.sourceLessonPlanId,
+        chapterId: detailDraft.chapterId,
+        chapterTitle: detailDraft.chapterTitle,
+        topicTitle: detailDraft.topic || detailDraft.topicTitle,
+        subTopicTitle: detailDraft.subTopicTitle
       };
       const response = await axios.put(
         `${API_BASE_URL}/api/assignment/teacher/update/${selectedAssignment._id}`,
@@ -436,7 +543,44 @@ const AssignmentPortal = () => {
   };
 
   const handleChange = (e) => {
-    setNewAssignment({ ...newAssignment, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setNewAssignment((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'subject'
+        ? { sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' }
+        : {}),
+      ...(name === 'topic' ? { topicTitle: value } : {}),
+      ...(name === 'submissionFormat' && value === 'pdf'
+        ? { isEssay: false, rubric: '' }
+        : {}),
+    }));
+  };
+
+  const openActivityCreator = (activityType) => {
+    if (activityType === 'mcq' || activityType === 'blank') {
+      setActivityEditor(activityType);
+      return;
+    }
+    if (activityType === 'tryout') {
+      setActivityEditor('tryout');
+      return;
+    }
+
+    const assignmentType = activityType === 'writing'
+      ? 'Essay'
+      : activityType === 'worksheet'
+        ? 'Worksheet'
+        : 'Assignment';
+    setNewAssignment((prev) => ({
+      ...prev,
+      type: assignmentType,
+      submissionFormat: 'text',
+      isEssay: false,
+      rubric: '',
+    }));
+    setActivityEditor(null);
+    setShowModal(true);
   };
 
   const handlePdfUpload = async (e) => {
@@ -527,7 +671,16 @@ const AssignmentPortal = () => {
           marks: 100,
           status: "draft",
           submissionFormat: "text",
-          attachments: []
+          type: "Assignment",
+          difficulty: "Medium",
+          isEssay: false,
+          rubric: "",
+          attachments: [],
+          sourceLessonPlanId: "",
+          chapterId: "",
+          chapterTitle: "",
+          topicTitle: "",
+          subTopicTitle: ""
         });
         setPdfFile(null);
         setCreateSuccessMessage('Assignment created successfully.');
@@ -572,11 +725,15 @@ const AssignmentPortal = () => {
     setMarks(sub.score !== null && sub.score !== undefined ? String(sub.score) : '');
     setFeedback(sub.feedback || '');
     setSaveError('');
+    setPublishError('');
+    setPublishSuccess('');
   };
 
   const closePanel = () => {
     setSelected(null);
     setSaveError('');
+    setPublishError('');
+    setPublishSuccess('');
   };
 
   const saveGrade = async () => {
@@ -605,11 +762,12 @@ const AssignmentPortal = () => {
       setSubmissions(prev =>
         prev.map(s =>
           s.submissionId === selected.submissionId
-            ? { ...s, score: numMarks, feedback, status: 'graded' }
+            ? { ...s, score: numMarks, feedback, status: 'graded', publishedByTeacher: false, publishedAt: null }
             : s
         )
       );
-      setSelected(prev => ({ ...prev, score: numMarks, feedback, status: 'graded' }));
+      setSelected(prev => ({ ...prev, score: numMarks, feedback, status: 'graded', publishedByTeacher: false, publishedAt: null }));
+      setPublishSuccess('');
     } catch (err) {
       setSaveError(err.response?.data?.error || 'Failed to save. Please try again.');
     } finally {
@@ -681,7 +839,9 @@ const AssignmentPortal = () => {
             ...sub,
             score: updated.score,
             feedback: updated.feedback,
-            status: 'graded'
+            status: 'graded',
+            publishedByTeacher: false,
+            publishedAt: null
           };
         })
       );
@@ -696,53 +856,41 @@ const AssignmentPortal = () => {
     }
   };
 
+  const publishSelectedGrade = async () => {
+    if (!selected?.studentId || !selected?.assignmentId || selected.score === null || selected.score === undefined) {
+      setPublishError('Save a grade before publishing it.');
+      return;
+    }
+
+    setPublishing(true);
+    setPublishError('');
+    setPublishSuccess('');
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/assignment/teacher/publish-grades`,
+        { assignmentId: selected.assignmentId, studentIds: [selected.studentId] },
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      const publishedAt = new Date().toISOString();
+      setSubmissions((prev) => prev.map((item) => (
+        item.submissionId === selected.submissionId
+          ? { ...item, publishedByTeacher: true, publishedAt }
+          : item
+      )));
+      setSelected((prev) => prev ? { ...prev, publishedByTeacher: true, publishedAt } : prev);
+      setPublishSuccess('Marks and feedback are now visible to the student.');
+    } catch (err) {
+      setPublishError(err.response?.data?.error || 'Failed to publish marks.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#f4f7fc] p-3 sm:p-5">
-      {/* Hero Header *
-      <section className={`relative mx-auto max-w-[1480px] overflow-hidden rounded-[2.5rem] ${activeTab === 'evaluate' ? 'bg-transparent text-[#0b1a33]' : 'bg-gradient-to-br from-purple-700 via-indigo-600 to-indigo-500 text-white'}`}>
-        <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(255,255,255,0.15) 0, transparent 55%)' }} />
-        <div className="relative px-4 md:px-6 pt-8 pb-6">
-          {activeTab !== 'evaluate' && (
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex size-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-                <GraduationCap className="size-7" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold md:text-4xl">Assignment Portal</h1>
-                <p className="mt-1 text-sm text-white/80">Manage assignments and evaluate student submissions</p>
-              </div>
-            </div>
-          )}
-
-          
-          <div className="flex gap-2 border-b border-white/20 pb-4">
-            <button
-              onClick={() => setActiveTab('manage')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl font-semibold text-sm transition-all ${activeTab === 'manage'
-                  ? 'bg-white text-purple-700 shadow-lg'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-            >
-              <Layers className="w-4 h-4" />
-              Manage Assignments
-            </button>
-            <button
-              onClick={() => setActiveTab('evaluate')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-t-xl font-semibold text-sm transition-all ${activeTab === 'evaluate'
-                  ? 'bg-white text-purple-700 shadow-lg'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-                }`}
-            >
-              <CheckCircle className="w-4 h-4" />
-              Evaluate Submissions
-            </button>
-          </div>
-        </div>
-      </section> */}
-
       {/* Content Area */}
       <div className="p-4 md:p-6 space-y-6">
         {/* Error Banner */}
@@ -758,6 +906,10 @@ const AssignmentPortal = () => {
 
         {activeTab === 'manage' ? (
           <ManageAssignments
+            onEvaluateSubmissions={() => navigate(`${assignmentBasePath}/evaluate`)}
+            openActivityCreator={openActivityCreator}
+            activityEditor={activityEditor}
+            closeActivityEditor={() => setActivityEditor(null)}
             loading={loading}
             assignments={assignments}
             filteredAssignments={filteredAssignments}
@@ -787,6 +939,7 @@ const AssignmentPortal = () => {
           />
         ) : (
           <EvaluateSubmissions
+            onManageAssignments={() => navigate(`${assignmentBasePath}/manage`)}
             loadingSubmissions={loadingSubmissions}
             submissions={submissions}
             filtered={filtered}
@@ -810,13 +963,16 @@ const AssignmentPortal = () => {
             closePanel={closePanel}
             saveGrade={saveGrade}
             evaluationMode={evaluationMode}
-            setEvaluationMode={setEvaluationMode}
             bulkDraft={bulkDraft}
             updateBulkDraft={updateBulkDraft}
             saveBulkGrades={saveBulkGrades}
             bulkSaving={bulkSaving}
             bulkError={bulkError}
             bulkSuccess={bulkSuccess}
+            publishing={publishing}
+            publishError={publishError}
+            publishSuccess={publishSuccess}
+            publishSelectedGrade={publishSelectedGrade}
             formatDate={formatDate}
             tryoutSubmissions={tryoutSubmissions}
             loadingTryouts={loadingTryouts}
@@ -923,6 +1079,9 @@ const AssignmentPortal = () => {
           loading={loading}
           error={error}
           activeSessionId={activeSessionId}
+          availableLessonPlans={availableLessonPlans}
+          availableLessonPlanChapters={availableLessonPlanChapters}
+          lessonPlanError={lessonPlanError}
         />
       )}
 
@@ -940,6 +1099,7 @@ const AssignmentPortal = () => {
           openAssignmentDetail={openAssignmentDetail}
           myClasses={myClasses}
           globalSubjectOptions={globalSubjectOptions}
+          lessonPlans={lessonPlans}
           getStatusColor={getStatusColor}
           getDifficultyColor={getDifficultyColor}
           formatDate={formatDate}
@@ -1113,30 +1273,104 @@ const TryoutSubmissionsPanel = ({ submissions, loading, grading, saving, saved, 
 };
 
 const ManageAssignments = ({
+  onEvaluateSubmissions, openActivityCreator, activityEditor, closeActivityEditor,
   loading, filteredAssignments, myClasses, subjects,
   activeAssignments, draftAssignments, totalAssignments,
   viewMode, setViewMode, filterStatus, setFilterStatus,
   filterSubject, setFilterSubject, filterTopic, setFilterTopic, topics,
   searchTerm, setSearchTerm,
   setShowModal, openAssignmentDetail, openDeleteModal,
-  getStatusColor, getAssignmentClassName, getAssignmentSectionName, getDaysUntilDue
+  getAssignmentClassName, getAssignmentSectionName, getDaysUntilDue
 }) => (
-  <div className="space-y-4 sm:space-y-5">
+  <div
+    className="relative mx-auto max-w-[1360px] space-y-5 overflow-hidden rounded-[2rem] border border-white/50 bg-white/75 p-5 text-[#0b0e1a] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.08),0_4px_20px_rgba(0,0,0,0.02),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-lg backdrop-saturate-[1.1] sm:p-8"
+  >
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.6rem]">
+          <GraduationCap className="size-6 text-[#4f6f8f]" /> Assignment Portal <span className="text-sm font-normal tracking-normal text-[#6f7a8c]">· v2</span>
+        </h1>
+        <p className="mt-1 text-sm text-[#6f7a8c]">Manage assignments and evaluate student submissions</p>
+      </div>
+      <div className="flex rounded-full border border-black/[0.03] bg-[#f0f2f6] p-1">
+        <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><Layers className="size-3.5" /> Manage Assignments</button>
+        <button type="button" onClick={onEvaluateSubmissions} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><CheckCircle className="size-3.5" /> Evaluate Submissions</button>
+      </div>
+    </header>
+
+    <section className="rounded-2xl border border-[#edf0f5] bg-[#fafbfc] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-[#1e2533]">Create learning activity</h2>
+          <p className="mt-0.5 text-[11px] text-[#6f7a8c]">Choose a format to open its dedicated editor.</p>
+        </div>
+        <span className="rounded-full border border-[#e6eaf0] bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]">6 formats</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+        {[
+          { key: 'assignment', label: 'Assignment', description: 'Text or PDF work', icon: FileText, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+          { key: 'worksheet', label: 'Worksheet', description: 'Structured practice', icon: BookOpen, tone: 'text-amber-700 bg-amber-50 border-amber-100' },
+          { key: 'writing', label: 'Writing', description: 'Essay response', icon: Edit3, tone: 'text-purple-700 bg-purple-50 border-purple-100' },
+          { key: 'mcq', label: 'MCQ', description: 'Multiple choice', icon: CheckCircle, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+          { key: 'blank', label: 'Fill in Blank', description: 'Answer completion', icon: ListChecks, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
+          { key: 'tryout', label: 'Tryout', description: 'Interactive activity', icon: Activity, tone: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
+        ].map((activityType) => (
+          <button
+            key={activityType.key}
+            type="button"
+            onClick={() => openActivityCreator(activityType.key)}
+            className="group rounded-xl border border-[#e6eaf0] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#c8d0dc] hover:shadow-[0_4px_14px_rgba(0,0,0,0.04)]"
+          >
+            <span className={`mb-2 flex size-8 items-center justify-center rounded-lg border ${activityType.tone}`}>
+              <activityType.icon className="size-4" />
+            </span>
+            <span className="block text-xs font-semibold text-[#1e2533]">{activityType.label}</span>
+            <span className="mt-0.5 block text-[10px] text-[#8e9aaf]">{activityType.description}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+
+    {activityEditor && (
+      <section className="overflow-hidden rounded-2xl border border-[#e2e8ee] bg-white shadow-[0_4px_20px_rgba(0,20,30,0.05)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8ee] bg-[#fafbfc] px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-[#1e2533]">
+              {activityEditor === 'mcq' ? 'MCQ Editor' : activityEditor === 'blank' ? 'Fill in the Blank Editor' : 'Tryout Builder'}
+            </p>
+            <p className="mt-0.5 text-[11px] text-[#6f7a8c]">Create and manage this activity without leaving Assignments.</p>
+          </div>
+          <button type="button" onClick={closeActivityEditor} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-4 py-2 text-xs font-medium text-[#2a3442] transition hover:bg-[#f0f4f8]">
+            <X className="size-3.5" /> Close editor
+          </button>
+        </div>
+        <div className="min-h-[560px] overflow-auto bg-white">
+          {activityEditor === 'tryout' ? (
+            <TryoutManagement />
+          ) : (
+            <PracticeQuestions key={activityEditor} initialType={activityEditor} />
+          )}
+        </div>
+      </section>
+    )}
+
+    {!activityEditor && (
+      <>
     {/* Stats Grid */}
-    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
       {[
-        { label: 'Active', value: activeAssignments, icon: CheckCircle, gradient: 'from-emerald-500 to-green-500' },
-        { label: 'Drafts', value: draftAssignments, icon: Edit3, gradient: 'from-amber-500 to-orange-500' },
-        { label: 'My Classes', value: myClasses.length, icon: Users, gradient: 'from-blue-500 to-indigo-500' },
+        { label: 'Active', value: activeAssignments, icon: CheckCircle, iconColor: 'text-emerald-600' },
+        { label: 'Drafts', value: draftAssignments, icon: Edit3, iconColor: 'text-amber-600' },
+        { label: 'My Classes', value: myClasses.length, icon: Users, iconColor: 'text-blue-600' },
       ].map((stat) => (
-        <div key={stat.label} className="bg-white rounded-2xl p-4 border-[2.5px] border-purple-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg`}>
-              <stat.icon size={18} className="text-white" />
-            </div>
+        <div key={stat.label} className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3.5 transition-colors hover:bg-[#f4f7fa] sm:p-4">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              <p className="text-xs text-gray-500">{stat.label}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-black/45 sm:text-xs">{stat.label}</p>
+              <p className="mt-1 text-2xl font-semibold leading-none text-black">{stat.value}</p>
+            </div>
+            <div className="flex size-9 items-center justify-center rounded-xl border border-[#e2e8ee] bg-white">
+              <stat.icon size={17} className={stat.iconColor} />
             </div>
           </div>
         </div>
@@ -1144,22 +1378,22 @@ const ManageAssignments = ({
     </div>
 
     {/* Controls */}
-    <div className="bg-white rounded-2xl p-3 sm:p-4 border-[2.5px] border-purple-300 space-y-3">
+    <div className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:p-4">
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="relative flex-1 min-w-[180px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/40" />
           <input
             type="text"
             placeholder="Search assignments..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+            className="w-full rounded-full border border-[#e2e8ee] bg-white py-2.5 pl-10 pr-4 text-sm text-black outline-none placeholder:text-black/35 transition-colors focus:border-[#b8c4d0]"
           />
         </div>
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
         >
           <option value="all">All Status</option>
           <option value="active">Active</option>
@@ -1169,7 +1403,7 @@ const ManageAssignments = ({
         <select
           value={filterSubject}
           onChange={(e) => setFilterSubject(e.target.value)}
-          className="px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
         >
           <option value="all">All Subjects</option>
           {subjects.map(subject => (
@@ -1179,7 +1413,7 @@ const ManageAssignments = ({
         <select
           value={filterTopic}
           onChange={(e) => setFilterTopic(e.target.value)}
-          className="px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
         >
           <option value="all">All Topics</option>
           {topics.map(topic => (
@@ -1187,10 +1421,10 @@ const ManageAssignments = ({
           ))}
         </select>
         <div className="flex items-center gap-2 ml-auto">
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+          <div className="flex items-center gap-1 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] p-1">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}
+              className={`rounded-full p-1.5 transition-all ${viewMode === 'grid' ? 'bg-white text-black shadow-sm' : 'text-black/35 hover:text-black/65'}`}
             >
               <div className="w-3.5 h-3.5 grid grid-cols-2 gap-0.5">
                 <div className="bg-current rounded-sm" />
@@ -1201,7 +1435,7 @@ const ManageAssignments = ({
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}
+              className={`rounded-full p-1.5 transition-all ${viewMode === 'list' ? 'bg-white text-black shadow-sm' : 'text-black/35 hover:text-black/65'}`}
             >
               <div className="w-3.5 h-3.5 flex flex-col justify-center gap-[3px]">
                 <div className="bg-current h-[2px] rounded" />
@@ -1212,7 +1446,7 @@ const ManageAssignments = ({
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg transition-all"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-[#e8eef4]"
           >
             <Plus size={14} />
             Create
@@ -1223,23 +1457,23 @@ const ManageAssignments = ({
 
     {/* Assignment List */}
     {loading ? (
-      <div className="bg-white rounded-2xl border-[2.5px] border-purple-300 p-12 text-center shadow-sm">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-50 mb-4">
-          <Clock className="w-6 h-6 text-indigo-500 animate-spin" />
+      <div className="rounded-2xl border border-dashed border-[#e2e8ee] bg-[#fafbfc] p-12 text-center">
+        <div className="mb-4 inline-flex size-12 items-center justify-center rounded-2xl border border-[#e2e8ee] bg-[#f0f4f8]">
+          <Clock className="size-6 animate-spin text-black/40" />
         </div>
-        <h3 className="text-base font-semibold text-gray-900 mb-1">Loading assignments...</h3>
-        <p className="text-sm text-gray-500">Fetching your assignment data</p>
+        <h3 className="mb-1 text-base font-semibold text-black">Loading assignments...</h3>
+        <p className="text-sm text-black/50">Fetching your assignment data</p>
       </div>
     ) : filteredAssignments.length === 0 ? (
-      <div className="bg-white rounded-2xl border-[2.5px] border-purple-300 p-12 text-center shadow-sm">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gray-100 mb-4">
-          <FileText className="w-6 h-6 text-gray-400" />
+      <div className="rounded-2xl border border-dashed border-[#e2e8ee] bg-[#fafbfc] px-5 py-14 text-center">
+        <div className="mb-4 inline-flex size-14 items-center justify-center rounded-2xl border border-[#e2e8ee] bg-[#f0f4f8]">
+          <FileText className="size-7 text-black/35" />
         </div>
-        <h3 className="text-base font-semibold text-gray-900 mb-1">No assignments found</h3>
-        <p className="text-sm text-gray-500 mb-4">Try adjusting your filters or create a new assignment</p>
+        <h3 className="mb-1 text-base font-semibold text-black">No assignments found</h3>
+        <p className="mb-5 text-sm text-black/45">Try adjusting your filters or create a new assignment</p>
         <button
           onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg transition-all"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-6 py-2.5 text-xs font-semibold text-black transition hover:bg-[#e8eef4]"
         >
           <Plus size={14} />
           Create First Assignment
@@ -1248,22 +1482,29 @@ const ManageAssignments = ({
     ) : (
       <div>
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-gray-500">
+          <p className="text-xs font-medium text-black/45">
             Showing {filteredAssignments.length} of {totalAssignments} assignments
           </p>
         </div>
         <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
           {filteredAssignments.map((assignment) => {
             const submissionFormat = assignment?.submissionFormat === 'pdf' ? 'pdf' : 'text';
-            const statusBorder = assignment.status === 'active' ? 'border-l-emerald-500' : assignment.status === 'draft' ? 'border-l-amber-500' : assignment.status === 'completed' ? 'border-l-blue-500' : 'border-l-red-500';
+            const statusBorder = assignment.status === 'active' ? 'border-l-emerald-400/70' : assignment.status === 'draft' ? 'border-l-amber-400/70' : assignment.status === 'completed' ? 'border-l-blue-400/70' : 'border-l-red-400/70';
+            const statusColor = assignment.status === 'active'
+              ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+              : assignment.status === 'draft'
+                ? 'border-amber-100 bg-amber-50 text-amber-700'
+                : assignment.status === 'completed'
+                  ? 'border-blue-100 bg-blue-50 text-blue-700'
+                  : 'border-red-100 bg-red-50 text-red-700';
             return (
               <div
                 key={assignment._id}
                 onClick={() => openAssignmentDetail(assignment)}
-                className={`bg-white rounded-2xl border-[2.5px] border-purple-300 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 border-l-4 ${statusBorder} ${viewMode === 'grid' ? 'p-5' : 'p-4'} cursor-pointer`}
+                className={`cursor-pointer rounded-2xl border border-[#e2e8ee] border-l-4 bg-[#fafbfc] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f4f7fa] hover:shadow-md ${statusBorder} ${viewMode === 'grid' ? 'p-5' : 'p-4'}`}
               >
                 <div className="flex items-start justify-between mb-3">
-                  <h3 className="font-semibold text-gray-900 text-sm leading-snug flex-1 mr-3">
+                  <h3 className="mr-3 flex-1 text-sm font-semibold leading-snug text-black">
                     {assignment.title}
                   </h3>
                   <div className="flex items-center gap-1 shrink-0">
@@ -1272,7 +1513,7 @@ const ManageAssignments = ({
                         e.stopPropagation();
                         openAssignmentDetail(assignment);
                       }}
-                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      className="rounded-lg p-1.5 text-black/35 transition-colors hover:bg-[#e8eef4] hover:text-black"
                     >
                       <Eye size={14} />
                     </button>
@@ -1281,7 +1522,7 @@ const ManageAssignments = ({
                         e.stopPropagation();
                         openDeleteModal(assignment);
                       }}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      className="rounded-lg p-1.5 text-black/35 transition-colors hover:bg-red-50 hover:text-red-600"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1289,44 +1530,49 @@ const ManageAssignments = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${getStatusColor(assignment.status)}`}>
+                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${statusColor}`}>
                     {assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
                   </span>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-50 text-purple-700 border-[2px] border-purple-200">
+                  <span className="inline-flex items-center rounded-md border border-[#d9dfe6] bg-white px-2 py-0.5 text-[11px] font-medium text-black/65">
                     {assignment.subject}
                   </span>
                   {assignment.topic && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-indigo-50 text-indigo-700 border-[2px] border-indigo-200">
+                    <span className="inline-flex items-center rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                       {assignment.topic}
                     </span>
                   )}
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-100 text-purple-700 border-[2px] border-purple-200">
+                  {assignment.chapterTitle && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+                      <BookOpen size={11} /> {assignment.chapterTitle}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center rounded-md border border-[#e2e8ee] bg-[#f0f4f8] px-2 py-0.5 text-[11px] font-medium text-black/60">
                     {`Class ${getAssignmentClassName(assignment) || 'N/A'}${getAssignmentSectionName(assignment) ? ` - ${getAssignmentSectionName(assignment)}` : ''}`}
                   </span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${submissionFormat === 'pdf' ? 'border-purple-100 bg-purple-50 text-purple-600' : 'border-emerald-100 bg-emerald-50 text-emerald-600'}`}>
+                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${submissionFormat === 'pdf' ? 'border-purple-100 bg-purple-50 text-purple-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'}`}>
                     {submissionFormat === 'pdf' ? 'PDF' : 'Text'}
                   </span>
                 </div>
 
-                <p className="text-gray-500 text-xs mb-3 line-clamp-2 leading-relaxed">
+                <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-black/50">
                   {assignment.description}
                 </p>
 
-                <div className="flex items-center gap-4 text-xs text-gray-500">
+                <div className="flex flex-wrap items-center gap-4 text-xs text-black/50">
                   <div className="flex items-center gap-1.5">
-                    <Calendar size={12} className="text-gray-400" />
+                    <Calendar size={12} className="text-black/35" />
                     <span>Due {new Date(assignment.dueDate).toLocaleDateString()}</span>
                     {getDaysUntilDue(assignment.dueDate) <= 3 && getDaysUntilDue(assignment.dueDate) > 0 && (
                       <AlertTriangle size={12} className="text-orange-500" />
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Award size={12} className="text-gray-400" />
+                    <Award size={12} className="text-black/35" />
                     <span>{assignment.marks} marks</span>
                   </div>
                   {assignment.attachments && assignment.attachments.length > 0 && (
                     <div className="flex items-center gap-1">
-                      <FileText size={12} className="text-gray-400" />
+                      <FileText size={12} className="text-black/35" />
                       <span>{assignment.attachments.length} files</span>
                     </div>
                   )}
@@ -1337,17 +1583,21 @@ const ManageAssignments = ({
         </div>
       </div>
     )}
+      </>
+    )}
   </div>
 );
 
 const EvaluateSubmissions = ({
+  onManageAssignments,
   loadingSubmissions, submissions, filtered, selected,
   marks, setMarks, feedback, setFeedback, saving, saveError,
   assignmentFilter, setAssignmentFilter,
   classFilter, setClassFilter, assignmentTitles, classOptions,
   pendingCount, gradedCount, openSubmission,
-  closePanel, saveGrade, evaluationMode, setEvaluationMode,
+  closePanel, saveGrade, evaluationMode,
   bulkDraft, updateBulkDraft, saveBulkGrades, bulkSaving, bulkError, bulkSuccess,
+  publishing, publishError, publishSuccess, publishSelectedGrade,
   formatDate,
   assignments = [],
   tryoutSubmissions = [], loadingTryouts = false,
@@ -1375,16 +1625,14 @@ const EvaluateSubmissions = ({
   const visibleSubmissions = typeFilter === 'all'
     ? filtered
     : filtered.filter((submission) => normalizeType(submission).includes(typeFilter));
-  const aiReviewedCount = submissions.filter((submission) => submission.aiReviewed || submission.status === 'ai-reviewed').length;
-  const aiEvaluatedCount = submissions.filter((submission) => submission.aiEvaluated || submission.aiReviewed).length;
-  const studentCount = new Set(submissions.map((submission) => submission.studentId || submission.studentName).filter(Boolean)).size;
+  const aiReviewedCount = submissions.filter((submission) => submission.aiGradingStatus === 'done').length;
+  const aiEvaluatedCount = aiReviewedCount;
   const dueThisWeek = assignments.filter((assignment) => {
     if (!assignment?.dueDate) return false;
     const days = (new Date(assignment.dueDate).getTime() - Date.now()) / 86400000;
     return days >= 0 && days <= 7;
   }).length;
   const evaluationSubmission = selected || highlightedSubmission;
-  const evaluationScore = evaluationSubmission?.score ?? 78;
   const renderStatus = (submission) => {
     const isGraded = submission.score !== null && submission.score !== undefined;
     const status = isGraded ? 'graded' : submission.status === 'late' ? 'pending' : (submission.status || 'submitted');
@@ -1404,41 +1652,36 @@ const EvaluateSubmissions = ({
       initial={{ opacity: 0, y: 18, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-auto max-w-[1480px] rounded-[2.5rem] border border-white/60 bg-white/70 p-5 text-[#0b1a33] shadow-[0_20px_48px_-12px_rgba(0,20,40,0.08)] backdrop-blur-md sm:p-8"
+      className="mx-auto max-w-[1360px] rounded-[2rem] border border-white/50 bg-white/75 p-5 text-[#0b0e1a] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.08),0_4px_20px_rgba(0,0,0,0.02),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-lg backdrop-saturate-[1.1] sm:p-8"
     >
-      <header className="mb-7 flex flex-wrap items-center justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Motion.h1 initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.9rem]">
-            <Sparkles className="size-7 text-blue-600" /> Evaluate The Assignemnts With AI 
+          <Motion.h1 initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.6rem]">
+            <Sparkles className="size-6 text-[#4f6f8f]" /> Evaluate The Assignments With AI <span className="text-sm font-normal tracking-normal text-[#6f7a8c]">· beta</span>
           </Motion.h1>
-          <p className="mt-1 text-sm text-[#4b5b73]">Multi-type assignments · detailed AI feedback for every format</p>
+          <p className="mt-1 text-sm text-[#6f7a8c]">Multi-type assignments · detailed AI feedback for every format</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#e4eaf2] bg-white px-4 py-2 text-xs font-medium shadow-sm"><GraduationCap className="size-3.5 text-blue-600" /> Class {classOptions.find((item) => item !== 'all') || '5-A'}</span>
-          <span className="inline-flex items-center gap-2 rounded-full border border-[#e4eaf2] bg-white px-4 py-2 text-xs font-medium shadow-sm"><Users className="size-3.5 text-blue-600" /> {studentCount || submissions.length} students</span>
-          <span className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-2 text-xs font-semibold text-green-700"><Sparkles className="size-3.5" /> AI Ready</span>
+        <div className="flex rounded-full border border-black/[0.03] bg-[#f0f2f6] p-1">
+          <button type="button" onClick={onManageAssignments} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><Layers className="size-3.5" /> Manage Assignments</button>
+          <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><CheckCircle className="size-3.5" /> Evaluate Submissions</button>
         </div>
       </header>
 
-      <div className="mb-7 flex flex-wrap items-center gap-4 rounded-full border border-[#e2eaf2] bg-white px-5 py-2.5 shadow-sm">
-        <label className="flex items-center gap-2 text-xs font-medium text-[#2c3f5c]"><Layers className="size-3.5 opacity-60" /> Class
-          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-full border border-[#dce3ec] bg-[#f9fcff] px-3 py-1.5 text-xs font-medium outline-none focus:border-blue-500">
+      <div className="mb-6 flex flex-wrap items-center gap-3 px-1 py-1">
+        <label className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><Layers className="size-3.5 opacity-60" /> Class
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-full border border-[#e6eaf0] bg-white px-4 py-2 text-xs font-medium normal-case tracking-normal text-[#1e2533] outline-none transition hover:border-[#c8d0dc] focus:border-[#a0abbc]">
             {classOptions.map((option) => <option key={option} value={option}>{option === 'all' ? 'All classes' : `Class ${option}`}</option>)}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-xs font-medium text-[#2c3f5c]"><BookOpen className="size-3.5 opacity-60" /> Subject
-          <select value={assignmentFilter} onChange={(event) => setAssignmentFilter(event.target.value)} className="max-w-[220px] rounded-full border border-[#dce3ec] bg-[#f9fcff] px-3 py-1.5 text-xs font-medium outline-none focus:border-blue-500">
+        <label className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><BookOpen className="size-3.5 opacity-60" /> Subject
+          <select value={assignmentFilter} onChange={(event) => setAssignmentFilter(event.target.value)} className="max-w-[220px] rounded-full border border-[#e6eaf0] bg-white px-4 py-2 text-xs font-medium normal-case tracking-normal text-[#1e2533] outline-none transition hover:border-[#c8d0dc] focus:border-[#a0abbc]">
             {assignmentTitles.map((option) => <option key={option} value={option}>{option === 'all' ? 'All assignments' : option}</option>)}
           </select>
         </label>
-        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[#eef4ff] px-4 py-1.5 text-xs font-medium text-blue-600"><FileText className="size-3.5" /> {visibleSubmissions.length} submissions</span>
-        <div className="inline-flex rounded-full border border-[#e2eaf2] bg-[#f8fbff] p-1">
-          <button type="button" onClick={() => setEvaluationMode('single')} className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${evaluationMode === 'single' ? 'bg-white text-blue-600 shadow-sm' : 'text-[#6b7f9b]'}`}>Single Entry</button>
-          <button type="button" onClick={() => setEvaluationMode('bulk')} className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${evaluationMode === 'bulk' ? 'bg-white text-blue-600 shadow-sm' : 'text-[#6b7f9b]'}`}>Bulk Entry</button>
-        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e6eaf0] bg-[#f0f2f6] px-4 py-2 text-xs font-medium text-[#2a3442]"><FileText className="size-3.5" /> <strong className="text-[#0b0e1a]">{visibleSubmissions.length}</strong> submissions</span>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="mb-5 flex flex-wrap gap-2.5">
         {[
           { label: 'Pending', value: pendingCount, icon: Clock, color: 'text-blue-600' },
           { label: 'Graded', value: gradedCount, icon: CheckCircle, color: 'text-blue-600' },
@@ -1446,23 +1689,23 @@ const EvaluateSubmissions = ({
           { label: 'AI Evaluated', value: aiEvaluatedCount, icon: Sparkles, color: 'text-green-500' },
           { label: 'Due This Week', value: dueThisWeek, icon: Calendar, color: 'text-blue-600' },
         ].map((stat, index) => (
-          <Motion.div key={stat.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="flex items-center gap-3 rounded-full border border-[#e8eef6] bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-            <stat.icon className={`size-5 ${stat.color} opacity-75`} />
-            <div><p className="text-xl font-bold leading-none">{stat.value}</p><p className="mt-1 text-[9px] uppercase tracking-[0.03em] text-[#5f738f]">{stat.label}</p></div>
+          <Motion.div key={stat.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="flex items-center gap-2 rounded-full border border-[#edf0f5] bg-[#f6f8fc] px-4 py-2 text-xs font-medium text-[#2a3442] transition hover:border-[#dce1e9] hover:bg-[#f0f3f9]">
+            <stat.icon className={`size-3.5 ${stat.color} opacity-70`} />
+            <strong className="text-sm text-[#0b0e1a]">{stat.value}</strong><span className="text-[10px] uppercase tracking-[0.03em]">{stat.label}</span>
           </Motion.div>
         ))}
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-5 flex flex-wrap gap-2 border-b border-[#edf0f5] pb-4">
         {typeDefinitions.map((type) => {
           const Icon = type.icon;
           const count = type.key === 'tryout'
             ? tryoutSubmissions.filter((s) => s.status !== 'graded').length
             : type.key === 'all' ? pendingCount : submissions.filter((submission) => normalizeType(submission).includes(type.key) && (submission.score === null || submission.score === undefined)).length;
           const isTryout = type.key === 'tryout';
-          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition ${typeFilter === type.key ? (isTryout ? 'border-pink-600 bg-pink-50 text-pink-600' : 'border-blue-600 bg-[#eef4ff] text-blue-600') : 'border-[#e2eaf2] bg-white text-[#4b5b73] hover:bg-[#f8fbff]'}`}><Icon className="size-3.5" /> {type.label}<span className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600"><Clock className="size-2.5" /> {count}</span></button>;
+          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition ${typeFilter === type.key ? (isTryout ? 'border-pink-200 bg-white text-pink-700 shadow-sm' : 'border-[#c8d0dc] bg-white text-[#0b0e1a] shadow-sm') : 'border-[#edf0f5] bg-[#f6f8fc] text-[#2a3442] hover:border-[#d0d7e2] hover:bg-[#edf1f8]'}`}><Icon className="size-3.5 opacity-60" /> {type.label}<span className="text-[10px] font-semibold text-[#6f7a8c]">{count}</span></button>;
         })}
-        <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-600"><AlertCircle className="size-3.5" /> Total Pending <span className="rounded-full bg-red-600 px-2 py-0.5 text-white">{pendingCount}</span></span>
+        <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-[#e6eaf0] bg-[#f0f2f6] px-4 py-1.5 text-xs font-semibold text-[#2a3442]"><AlertCircle className="size-3.5 opacity-50" /> Total Pending <strong className="text-[#0b0e1a]">{pendingCount}</strong></span>
       </div>
 
       {typeFilter === 'tryout' ? (
@@ -1477,9 +1720,9 @@ const EvaluateSubmissions = ({
         />
       ) : null}
 
-      <Motion.section layout className={`mb-7 overflow-x-auto rounded-[1.8rem] border border-[#eaf0f8] bg-white p-2 shadow-sm${typeFilter === 'tryout' ? ' hidden' : ''}`}>
+      <Motion.section layout className={`mb-7 overflow-x-auto rounded-[1.25rem] border border-[#edf0f5] bg-white p-1 shadow-[0_2px_12px_rgba(0,0,0,0.02)]${typeFilter === 'tryout' ? ' hidden' : ''}`}>
         <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead><tr className="border-b border-[#eef3fa] text-left text-[10px] uppercase tracking-[0.02em] text-[#2c405c]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
+          <thead><tr className="border-b border-[#edf0f5] bg-[#fafcff] text-left text-[10px] uppercase tracking-[0.04em] text-[#8e9aaf]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
           <tbody>
             {loadingSubmissions ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><Loader className="mx-auto mb-2 size-5 animate-spin text-blue-600" />Loading submissions...</td></tr> : visibleSubmissions.length === 0 ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><FileText className="mx-auto mb-2 size-8 opacity-30" />No submissions match the current filters.</td></tr> : visibleSubmissions.map((submission, index) => {
               const type = normalizeType(submission);
@@ -1498,38 +1741,76 @@ const EvaluateSubmissions = ({
       </Motion.section>
 
       {typeFilter !== 'tryout' && evaluationMode === 'bulk' ? (
-        <Motion.section layout className="mb-7 rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
+        <Motion.section layout className="mb-7 rounded-[1.25rem] border border-[#edf0f5] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.02)] sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Bulk evaluation</p><h2 className="text-lg font-semibold">Enter marks for multiple students</h2></div><button type="button" onClick={saveBulkGrades} disabled={bulkSaving || visibleSubmissions.length === 0} className="rounded-full bg-blue-600 px-5 py-2 text-xs font-semibold text-white disabled:opacity-50">{bulkSaving ? 'Uploading...' : 'Apply Bulk Marks'}</button></div>
           <div className="mt-4 overflow-x-auto rounded-2xl border border-[#e2eaf2] bg-white"><table className="w-full min-w-[700px] text-xs"><thead className="bg-[#f0f6ff]"><tr><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Assignment</th><th className="px-3 py-2 text-left">Marks</th><th className="px-3 py-2 text-left">Feedback</th></tr></thead><tbody>{visibleSubmissions.map((submission) => { const draft = bulkDraft[submission.submissionId] || {}; return <tr key={submission.submissionId} className="border-t border-[#eef3fa]"><td className="px-3 py-2 font-semibold">{submission.studentName}</td><td className="px-3 py-2">{submission.assignmentTitle}</td><td className="px-3 py-2"><input type="number" min="0" max={submission.totalMarks} value={draft.marks ?? submission.score ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'marks', event.target.value)} className="w-24 rounded-full border border-[#dce3ec] px-3 py-1.5" /></td><td className="px-3 py-2"><input value={draft.feedback ?? submission.feedback ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'feedback', event.target.value)} placeholder="Optional feedback" className="w-full min-w-[220px] rounded-full border border-[#dce3ec] px-3 py-1.5" /></td></tr>; })}</tbody></table></div>
           {bulkError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{bulkError}</p>}{bulkSuccess && <p className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-700">{bulkSuccess}</p>}
         </Motion.section>
       ) : typeFilter !== 'tryout' ? (
         <div className="mb-7 grid gap-6 lg:grid-cols-2">
-          <Motion.section layout className="rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
-            <h2 className="mb-5 flex items-center gap-2 text-base font-semibold text-[#2c405c]"><User className="size-4 text-blue-600" /> Teacher Evaluation</h2>
+          <Motion.section layout className="rounded-[1.25rem] border border-[#edf0f5] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.02)] sm:p-7">
+            <h2 className="mb-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><User className="size-4 text-[#4f6f8f]" /> Teacher Evaluation</h2>
             {evaluationSubmission ? <div className="space-y-3">
+              <div className="rounded-2xl border border-[#dce3ec] bg-white p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]">Student submission</p>
+                  {evaluationSubmission.publishedByTeacher && (
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Published</span>
+                  )}
+                </div>
+                {evaluationSubmission.submissionText ? (
+                  <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-[#1a304a]">{evaluationSubmission.submissionText}</p>
+                ) : evaluationSubmission.attachmentUrl ? (
+                  <a href={evaluationSubmission.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-100">
+                    <ExternalLink className="size-3.5" /> Open submitted PDF
+                  </a>
+                ) : (
+                  <p className="text-xs text-[#6b7f9b]">No submitted text or file is available.</p>
+                )}
+              </div>
               <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Student</span><select value={evaluationSubmission.submissionId} onChange={(event) => { const next = submissions.find((item) => item.submissionId === event.target.value); if (next) openSubmission(next); }} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm"><option value={evaluationSubmission.submissionId}>{evaluationSubmission.studentName}</option>{submissions.filter((item) => item.submissionId !== evaluationSubmission.submissionId).slice(0, 8).map((item) => <option key={item.submissionId} value={item.submissionId}>{item.studentName}</option>)}</select></label>
               <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Assignment</span><input value={evaluationSubmission.assignmentTitle || ''} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
               <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Type</span><input value={evaluationSubmission.type || evaluationSubmission.assignmentType || 'Assignment'} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
               <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Score</span><input type="number" min="0" max={evaluationSubmission.totalMarks} value={marks || (evaluationSubmission.score ?? '')} onChange={(event) => setMarks(event.target.value)} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
               <label className="flex items-start gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20 pt-2">Feedback</span><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Write your detailed feedback here..." rows="4" className="min-w-0 flex-1 resize-y rounded-2xl border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
               {saveError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
-              <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={saveGrade} disabled={saving || !selected || !marks} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/15 disabled:opacity-50">{saving ? <Loader className="size-3.5 animate-spin" /> : <CheckCircle className="size-3.5" />} Apply & Save</button><button type="button" onClick={closePanel} className="inline-flex items-center gap-2 rounded-full border border-[#dce3ec] bg-white px-5 py-2.5 text-xs font-semibold"><X className="size-3.5" /> Skip</button></div>
+              {publishError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{publishError}</p>}
+              {publishSuccess && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{publishSuccess}</p>}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="button" onClick={saveGrade} disabled={saving || !selected || marks === ''} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/15 disabled:opacity-50">{saving ? <Loader className="size-3.5 animate-spin" /> : <CheckCircle className="size-3.5" />} Apply & Save</button>
+                <button type="button" onClick={publishSelectedGrade} disabled={publishing || !selected || selected.score === null || selected.score === undefined || selected.publishedByTeacher} className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-600/15 disabled:opacity-50">{publishing ? <Loader className="size-3.5 animate-spin" /> : <Share2 className="size-3.5" />} {selected?.publishedByTeacher ? 'Published' : 'Publish Result'}</button>
+                <button type="button" onClick={closePanel} className="inline-flex items-center gap-2 rounded-full border border-[#dce3ec] bg-white px-5 py-2.5 text-xs font-semibold"><X className="size-3.5" /> Close</button>
+              </div>
             </div> : <div className="rounded-2xl border border-dashed border-[#dce3ec] bg-white p-8 text-center text-sm text-[#5f738f]">Select a submission above to evaluate it.</div>}
           </Motion.section>
 
-          <Motion.section layout className="rounded-[1.8rem] border border-[#e2eaf2] bg-[#f9fcff] p-5 sm:p-7">
-            <h2 className="mb-4 flex items-center gap-2 text-base font-semibold text-[#2c405c]"><Sparkles className="size-4 text-green-500" /> AI Suggested Feedback</h2>
-            <div className="rounded-[1.5rem] border border-green-200 bg-green-50 p-4 sm:p-5">
+          <Motion.section layout className="rounded-[1.25rem] border border-[#edf0f5] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.02)] sm:p-7">
+            <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><Sparkles className="size-4 text-[#4f6f8f]" /> AI Suggested Feedback</h2>
+            <div className="rounded-[1.1rem] border border-[#edf0f5] bg-[#fafcff] p-4 sm:p-5">
               <div className="mb-4 flex flex-wrap items-center gap-2"><Sparkles className="size-5 text-green-500" /><strong className="text-sm text-green-900">Detailed AI Analysis</strong><span className="ml-auto rounded-full border border-[#e2eaf2] bg-white px-3 py-1 text-[10px] text-[#6b7f9b]">{evaluationSubmission ? formatDate(evaluationSubmission.submittedAt) : 'Ready'}</span></div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><CheckCircle className="mr-1 inline size-3 text-green-600" /> Strengths</p><p className="text-xs leading-5 text-[#1a304a]">Clear attempt and good engagement with the assignment concepts.</p></div>
-                <div className="rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><AlertTriangle className="mr-1 inline size-3 text-amber-500" /> Areas for Improvement</p><p className="text-xs leading-5 text-[#1a304a]">Review the worked steps and add more explanation where reasoning is incomplete.</p></div>
-                <div className="sm:col-span-2 rounded-2xl border border-[#e8eef6] bg-white p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Target className="mr-1 inline size-3 text-blue-600" /> Detailed Suggestions</p><p className="text-xs leading-5 text-[#1a304a]">Add a concise explanation for each answer, verify calculations, and revisit the related lesson resources before resubmitting.</p></div>
-                <div className="sm:col-span-2 rounded-2xl border border-[#e8eef6] bg-[#f8fafc] p-3"><p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Award className="mr-1 inline size-3 text-amber-500" /> Suggested Score</p><span className="text-xl font-bold text-green-600">{evaluationScore}/{evaluationSubmission?.totalMarks || 100}</span><span className="ml-3 text-xs text-[#4b5b73]">AI confidence 92%</span></div>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-green-200 pt-3"><button type="button" className="rounded-full border border-green-200 bg-white px-4 py-1.5 text-xs font-medium text-green-700">Accept</button><button type="button" className="rounded-full border border-red-200 bg-red-50 px-4 py-1.5 text-xs font-medium text-red-600">Reject</button><button type="button" onClick={() => evaluationSubmission && openSubmission(evaluationSubmission)} className="rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white">Apply Feedback</button></div>
-              <p className="mt-3 text-[10px] text-[#6b7f9b]">AI processed for {evaluationSubmission?.assignmentTitle || 'the selected submission'} · AI assisted review</p>
+              {!evaluationSubmission ? (
+                <p className="text-xs leading-5 text-[#4b5b73]">Select a submission to see whether an AI rubric review is available.</p>
+              ) : evaluationSubmission.aiGradingStatus === 'done' ? (
+                <>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-[#e8eef6] bg-white p-3">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Target className="mr-1 inline size-3 text-blue-600" /> Rubric feedback</p>
+                      <p className="whitespace-pre-wrap text-xs leading-5 text-[#1a304a]">{evaluationSubmission.aiGradingFeedback || 'No written AI feedback was returned.'}</p>
+                    </div>
+                    <div className="rounded-2xl border border-[#e8eef6] bg-[#f8fafc] p-3">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Award className="mr-1 inline size-3 text-amber-500" /> Suggested score</p>
+                      <span className="text-xl font-bold text-green-600">{evaluationSubmission.aiScore}/{evaluationSubmission.totalMarks || 100}</span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setMarks(String(evaluationSubmission.aiScore ?? '')); setFeedback(evaluationSubmission.aiGradingFeedback || ''); }} className="mt-4 rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white">Apply AI suggestion</button>
+                </>
+              ) : evaluationSubmission.aiGradingStatus === 'pending' ? (
+                <p className="flex items-center gap-2 text-xs text-[#4b5b73]"><Loader className="size-4 animate-spin text-green-600" /> AI rubric review is still processing. Refresh submissions shortly.</p>
+              ) : evaluationSubmission.aiGradingStatus === 'failed' ? (
+                <p className="text-xs leading-5 text-red-700">AI rubric review failed. Grade this submission manually.</p>
+              ) : (
+                <p className="text-xs leading-5 text-[#4b5b73]">AI review was not requested for this assignment. Enable essay rubric review when creating a text assignment to receive a suggestion.</p>
+              )}
             </div>
           </Motion.section>
         </div>
@@ -1547,7 +1828,8 @@ const EvaluateSubmissions = ({
 const CreateAssignmentModal = ({
   setShowModal, newAssignment, handleChange, handleCreate,
   classSectionOptions, sessionOptions, subjectOptions, setNewAssignment, uploadingPdf, handlePdfUpload,
-  removePdfAttachment, loading, error, activeSessionId
+  removePdfAttachment, loading, error, activeSessionId,
+  availableLessonPlans, availableLessonPlanChapters, lessonPlanError
 }) => (
   <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
     <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto border-[2.5px] border-purple-300">
@@ -1579,8 +1861,9 @@ const CreateAssignmentModal = ({
         <form onSubmit={handleCreate} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-xs text-red-500">*</span></label>
+              <label htmlFor="assignment-session" className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-xs text-red-500">*</span></label>
               <select
+                id="assignment-session"
                 name="academicYearId"
                 value={newAssignment.academicYearId}
                 onChange={(e) => {
@@ -1592,7 +1875,12 @@ const CreateAssignmentModal = ({
                     sessionName: selectedSession?.name || '',
                     classId: '',
                     sectionId: '',
-                    subject: ''
+                    subject: '',
+                    sourceLessonPlanId: '',
+                    chapterId: '',
+                    chapterTitle: '',
+                    topicTitle: '',
+                    subTopicTitle: ''
                   }));
                 }}
                 className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
@@ -1623,17 +1911,38 @@ const CreateAssignmentModal = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Section <span className="text-xs text-red-500">*</span></label>
+              <label htmlFor="assignment-class-section" className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Section <span className="text-xs text-red-500">*</span></label>
               <select
+                id="assignment-class-section"
                 name="classSection"
                 value={newAssignment.classId && newAssignment.sectionId ? `${newAssignment.classId}-${newAssignment.sectionId}` : ''}
                 onChange={(e) => {
                   if (!e.target.value) {
-                    setNewAssignment(prev => ({ ...prev, classId: "", sectionId: "", subject: "" }));
+                    setNewAssignment(prev => ({
+                      ...prev,
+                      classId: "",
+                      sectionId: "",
+                      subject: "",
+                      sourceLessonPlanId: "",
+                      chapterId: "",
+                      chapterTitle: "",
+                      topicTitle: "",
+                      subTopicTitle: ""
+                    }));
                     return;
                   }
                   const [classId, sectionId] = e.target.value.split('-');
-                  setNewAssignment(prev => ({ ...prev, classId, sectionId, subject: "" }));
+                  setNewAssignment(prev => ({
+                    ...prev,
+                    classId,
+                    sectionId,
+                    subject: "",
+                    sourceLessonPlanId: "",
+                    chapterId: "",
+                    chapterTitle: "",
+                    topicTitle: "",
+                    subTopicTitle: ""
+                  }));
                 }}
                 disabled={!newAssignment.academicYearId}
                 className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
@@ -1650,8 +1959,9 @@ const CreateAssignmentModal = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-xs text-red-500">*</span></label>
+              <label htmlFor="assignment-subject" className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-xs text-red-500">*</span></label>
               <select
+                id="assignment-subject"
                 name="subject"
                 value={newAssignment.subject}
                 onChange={handleChange}
@@ -1676,6 +1986,64 @@ const CreateAssignmentModal = ({
             </div>
 
             <div>
+              <label htmlFor="assignment-lesson-plan" className="block text-xs font-semibold text-gray-600 mb-1.5">Lesson Plan</label>
+              <select
+                id="assignment-lesson-plan"
+                value={newAssignment.sourceLessonPlanId}
+                onChange={(event) => setNewAssignment((prev) => ({
+                  ...prev,
+                  sourceLessonPlanId: event.target.value,
+                  chapterId: '',
+                  chapterTitle: '',
+                  subTopicTitle: ''
+                }))}
+                disabled={!newAssignment.subject || availableLessonPlans.length === 0}
+                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                <option value="">
+                  {!newAssignment.subject
+                    ? 'Select Subject First'
+                    : availableLessonPlans.length === 0
+                      ? 'No Published Lesson Plans Found'
+                      : 'Select Lesson Plan (Optional)'}
+                </option>
+                {availableLessonPlans.map((plan) => (
+                  <option key={toEntityId(plan._id)} value={toEntityId(plan._id)}>{plan.title}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-400">Tags this activity to a published lesson plan</p>
+            </div>
+
+            <div>
+              <label htmlFor="assignment-chapter" className="block text-xs font-semibold text-gray-600 mb-1.5">
+                Chapter {newAssignment.sourceLessonPlanId && <span className="text-xs text-red-500">*</span>}
+              </label>
+              <select
+                id="assignment-chapter"
+                value={newAssignment.chapterId}
+                onChange={(event) => {
+                  const chapter = availableLessonPlanChapters.find((item) => item.id === event.target.value);
+                  setNewAssignment((prev) => ({
+                    ...prev,
+                    chapterId: chapter?.id || '',
+                    chapterTitle: chapter?.title || ''
+                  }));
+                }}
+                disabled={!newAssignment.sourceLessonPlanId}
+                required={Boolean(newAssignment.sourceLessonPlanId)}
+                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                <option value="">{newAssignment.sourceLessonPlanId ? 'Select Chapter' : 'Select Lesson Plan First'}</option>
+                {availableLessonPlanChapters.map((chapter) => (
+                  <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
+                ))}
+              </select>
+              <p className={`mt-1 text-[11px] ${lessonPlanError ? 'text-red-500' : 'text-gray-400'}`}>
+                {lessonPlanError || 'Students can see which chapter this activity belongs to'}
+              </p>
+            </div>
+
+            <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Topic</label>
               <input
                 name="topic"
@@ -1688,8 +2056,23 @@ const CreateAssignmentModal = ({
               <p className="mt-1 text-[11px] text-gray-400">Specific topic covered</p>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Activity Type</label>
+              <select name="type" value={newAssignment.type} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors">
+                <option value="Assignment">Assignment</option>
+                <option value="Worksheet">Worksheet</option>
+                <option value="Essay">Essay</option>
+              </select>
+            </div>
 
-
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Difficulty</label>
+              <select name="difficulty" value={newAssignment.difficulty} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors">
+                <option value="Easy">Easy</option>
+                <option value="Medium">Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Due Date <span className="text-xs text-red-500">*</span></label>
               <input
@@ -1754,6 +2137,41 @@ const CreateAssignmentModal = ({
                 placeholder="Provide detailed instructions for the assignment..."
                 className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors resize-none"
               />
+            </div>
+
+            <div className="md:col-span-2 rounded-xl border-[2px] border-purple-200 bg-purple-50/50 p-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={newAssignment.isEssay}
+                  disabled={newAssignment.submissionFormat !== 'text'}
+                  onChange={(event) => setNewAssignment((prev) => ({
+                    ...prev,
+                    isEssay: event.target.checked,
+                    type: event.target.checked ? 'Essay' : prev.type,
+                    rubric: event.target.checked ? prev.rubric : '',
+                  }))}
+                  className="mt-0.5 size-4 rounded border-purple-300 text-indigo-600"
+                />
+                <span>
+                  <span className="block text-xs font-semibold text-gray-700">Enable AI-assisted essay rubric review</span>
+                  <span className="mt-1 block text-[11px] text-gray-500">Ollama creates a private suggestion for teacher review. Students never receive an AI score directly.</span>
+                </span>
+              </label>
+              {newAssignment.isEssay && (
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Rubric criteria <span className="text-red-500">*</span></label>
+                  <textarea
+                    name="rubric"
+                    value={newAssignment.rubric}
+                    onChange={handleChange}
+                    rows="4"
+                    required
+                    placeholder={'Accuracy and understanding\nUse of evidence\nClarity and organisation'}
+                    className="w-full resize-y rounded-xl border-[2px] border-purple-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-2">
@@ -1846,7 +2264,7 @@ const AssignmentDetailModal = ({
   selectedAssignment, setShowDetailModal,
   detailEditMode, setDetailEditMode, detailDraft, handleDetailDraftChange,
   handleUpdateAssignment, detailSaving, openAssignmentDetail,
-  myClasses, globalSubjectOptions, getStatusColor, getDifficultyColor,
+  myClasses, globalSubjectOptions, lessonPlans, getStatusColor, getDifficultyColor,
   formatDate, getAssignmentClassName, getAssignmentSectionName, getSubmissionPercentage
 }) => {
   const detailClass = getAssignmentClassName(selectedAssignment) || 'N/A';
@@ -1870,6 +2288,18 @@ const AssignmentDetailModal = ({
     );
     return matched?.subjects?.length ? matched.subjects : globalSubjectOptions;
   })();
+  const detailLessonPlans = getScopedLessonPlans({
+    plans: lessonPlans,
+    classId: detailDraft.classId,
+    sectionId: detailDraft.sectionId,
+    subject: detailDraft.subject,
+    classSections: myClasses,
+  });
+  const detailSelectedLessonPlan = detailLessonPlans.find(
+    (plan) => toEntityId(plan?._id) === String(detailDraft.sourceLessonPlanId || '')
+  );
+  const detailLessonPlanChapters = getLessonPlanChapters(detailSelectedLessonPlan);
+  const selectedLessonPlanTitle = selectedAssignment?.sourceLessonPlanId?.title || '';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1953,6 +2383,9 @@ const AssignmentDetailModal = ({
                           handleDetailDraftChange('classId', classId || '');
                           handleDetailDraftChange('sectionId', sectionId || '');
                           handleDetailDraftChange('subject', '');
+                          handleDetailDraftChange('sourceLessonPlanId', '');
+                          handleDetailDraftChange('chapterId', '');
+                          handleDetailDraftChange('chapterTitle', '');
                         }}
                         className="w-full rounded-lg border-[2px] border-purple-300 px-3 py-2 text-sm text-gray-700"
                       >
@@ -1965,7 +2398,12 @@ const AssignmentDetailModal = ({
                       </select>
                       <select
                         value={detailDraft.subject}
-                        onChange={(e) => handleDetailDraftChange('subject', e.target.value)}
+                        onChange={(e) => {
+                          handleDetailDraftChange('subject', e.target.value);
+                          handleDetailDraftChange('sourceLessonPlanId', '');
+                          handleDetailDraftChange('chapterId', '');
+                          handleDetailDraftChange('chapterTitle', '');
+                        }}
                         className="w-full rounded-lg border-[2px] border-purple-300 px-3 py-2 text-sm text-gray-700"
                       >
                         <option value="">Select Subject</option>
@@ -1973,6 +2411,40 @@ const AssignmentDetailModal = ({
                           <option key={String(sub.id || sub._id || sub.name)} value={sub.name}>
                             {sub.name}
                           </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <select
+                        aria-label="Lesson Plan"
+                        value={detailDraft.sourceLessonPlanId}
+                        onChange={(event) => {
+                          handleDetailDraftChange('sourceLessonPlanId', event.target.value);
+                          handleDetailDraftChange('chapterId', '');
+                          handleDetailDraftChange('chapterTitle', '');
+                        }}
+                        disabled={!detailDraft.subject || detailLessonPlans.length === 0}
+                        className="w-full rounded-lg border-[2px] border-purple-300 px-3 py-2 text-sm text-gray-700 disabled:bg-gray-100"
+                      >
+                        <option value="">{detailLessonPlans.length ? 'Select Lesson Plan (Optional)' : 'No Published Lesson Plans Found'}</option>
+                        {detailLessonPlans.map((plan) => (
+                          <option key={toEntityId(plan._id)} value={toEntityId(plan._id)}>{plan.title}</option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Chapter"
+                        value={detailDraft.chapterId}
+                        onChange={(event) => {
+                          const chapter = detailLessonPlanChapters.find((item) => item.id === event.target.value);
+                          handleDetailDraftChange('chapterId', chapter?.id || '');
+                          handleDetailDraftChange('chapterTitle', chapter?.title || '');
+                        }}
+                        disabled={!detailDraft.sourceLessonPlanId}
+                        className="w-full rounded-lg border-[2px] border-purple-300 px-3 py-2 text-sm text-gray-700 disabled:bg-gray-100"
+                      >
+                        <option value="">Select Chapter</option>
+                        {detailLessonPlanChapters.map((chapter) => (
+                          <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
                         ))}
                       </select>
                     </div>
@@ -2011,7 +2483,17 @@ const AssignmentDetailModal = ({
                     />
                   </div>
                 ) : (
-                  <p className="text-gray-700 leading-relaxed">{selectedAssignment.description}</p>
+                  <div className="space-y-3">
+                    <p className="text-gray-700 leading-relaxed">{selectedAssignment.description}</p>
+                    {selectedAssignment.chapterTitle && (
+                      <div className="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-500">Learning alignment</p>
+                        <p className="mt-1 text-sm font-semibold text-violet-800">
+                          {selectedLessonPlanTitle ? `${selectedLessonPlanTitle} · ` : ''}{selectedAssignment.chapterTitle}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

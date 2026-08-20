@@ -350,9 +350,23 @@ MODE_INSTRUCTIONS: dict[str, str] = {
     ),
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
     "visual_explain": (
-        "Explain the requested concept through retrieved visual evidence. Guide the student through what to look at, "
-        "what to notice, and how the visible relationship supports the concept. If no relevant visual page is "
-        "available, say so and provide a concise material-grounded text explanation instead."
+        "Explain the requested concept visually. You MUST return BOTH a diagram AND an explanation.\n\n"
+        "Use EXACTLY this format — no deviations:\n\n"
+        "DIAGRAM:\n"
+        "```mermaid\n"
+        "<valid Mermaid.js syntax — choose the best type for this concept:\n"
+        "  flowchart TD for processes/cycles, graph LR for comparisons,\n"
+        "  graph TD for hierarchies, sequenceDiagram for step sequences>\n"
+        "Maximum 12 nodes. Short labels (2-5 words). Use arrow labels to show relationships.\n"
+        "Base ONLY on retrieved material — never invent nodes.\n"
+        "```\n\n"
+        "EXPLANATION:\n"
+        "<2-4 short paragraphs explaining the concept using the diagram above as reference.\n"
+        "Guide the student: what to look at in the diagram, what each part means,\n"
+        "and how the parts connect. Use simple age-appropriate language.\n"
+        "If retrieved visual evidence mentions specific page numbers, reference them.>\n\n"
+        "If the retrieved material does not have enough information to build a diagram, "
+        "write 'DIAGRAM: none' and provide only the EXPLANATION section."
     ),
     "summarize": (
         "Summarize the material into concise revision notes with bullet points covering only the key ideas. "

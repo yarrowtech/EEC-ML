@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Trash2, Edit3, Loader2, X, Plus, CheckCircle, HelpCircle, Sparkles, Brain } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -10,10 +11,12 @@ const QUESTION_TYPES = [
 
 const emptyOptions = ['', '', '', ''];
 
-const PracticeQuestions = () => {
+const PracticeQuestions = ({ initialType = '' }) => {
+  const [searchParams] = useSearchParams();
+  const requestedType = initialType || searchParams.get('type');
   const [allocations, setAllocations] = useState([]);
   const [selectedAllocationId, setSelectedAllocationId] = useState('');
-  const [questionType, setQuestionType] = useState('mcq');
+  const [questionType, setQuestionType] = useState(requestedType === 'blank' ? 'blank' : 'mcq');
   const [questionText, setQuestionText] = useState('');
   const [options, setOptions] = useState(emptyOptions);
   const [correctAnswer, setCorrectAnswer] = useState('');

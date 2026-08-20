@@ -20,8 +20,7 @@ const submissionSchema = new mongoose.Schema({
   },
   score: {
     type: Number,
-    min: 0,
-    max: 100
+    min: 0
   },
   feedback: String,
   status: {

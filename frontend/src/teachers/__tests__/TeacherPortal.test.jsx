@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TeacherPortal from '../TeacherPortal';
 
+jest.mock('../SmartTeachingLessonPlanner', () => ({ __esModule: true, default: () => null }));
+jest.mock('../AIPoweredTeaching', () => ({ __esModule: true, default: () => null }));
+jest.mock('../StudentAnalyticsPortal', () => ({ __esModule: true, default: () => <div>Student Analytics</div> }));
+
 const mockCreateComponent = (label) => {
   const Component = () => <div data-testid={`${label.replace(/\s+/g, '-')}-page`}>{label}</div>;
   return { __esModule: true, default: Component };
@@ -80,6 +84,10 @@ describe('TeacherPortal', () => {
     expect(priyaMentions.length).toBeGreaterThan(0);
     expect(screen.getAllByText('PS')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('teacher-sidebar')).toHaveStyle({
+      fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+    });
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('!bg-[#f5f3ff]');
   });
 
   test('opens student section and navigates to analytics page', async () => {

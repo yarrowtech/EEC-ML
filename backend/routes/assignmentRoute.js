@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 const router = express.Router();
 const crypto = require('crypto');
@@ -13,6 +14,7 @@ const Timetable = require('../models/Timetable');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
+const LessonPlan = require('../models/LessonPlan');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -31,6 +33,132 @@ const normalizeSubmissionFormat = (value = 'text') => (value === 'pdf' ? 'pdf' :
 const normalizeDifficulty = (value = 'Medium') => {
     const allowed = new Set(['Easy', 'Medium', 'Hard']);
     return allowed.has(value) ? value : 'Medium';
+};
+
+const getPlanChapters = (plan) => {
+    const planned = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
+    const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+    return planned.length > 0 ? planned : raw;
+};
+
+const resolveLessonPlanAlignment = async ({
+    sourceLessonPlanId,
+    chapterId,
+    chapterTitle,
+    topicTitle,
+    subTopicTitle,
+    schoolId,
+    campusId,
+    teacherId,
+    classId,
+    sectionId,
+    subject,
+}) => {
+    if (!sourceLessonPlanId) return null;
+    if (!mongoose.isValidObjectId(sourceLessonPlanId)) {
+        const error = new Error('Invalid lesson plan selection.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const filter = { _id: sourceLessonPlanId, schoolId, teacherId };
+    if (campusId) filter.campusId = campusId;
+    const plan = await LessonPlan.findOne(filter).lean();
+    if (!plan) {
+        const error = new Error('Lesson plan not found or unauthorized.');
+        error.statusCode = 404;
+        throw error;
+    }
+    if (plan.status !== 'published' || plan.isDraft === true) {
+        const error = new Error('Only published lesson plans can be linked to assignments.');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (plan.classId && String(plan.classId) !== String(classId)) {
+        const error = new Error('The lesson plan does not belong to the selected class.');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (plan.sectionId && String(plan.sectionId) !== String(sectionId)) {
+        const error = new Error('The lesson plan does not belong to the selected section.');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (plan.subject && String(plan.subject).trim().toLowerCase() !== String(subject || '').trim().toLowerCase()) {
+        const error = new Error('The lesson plan does not belong to the selected subject.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const chapters = getPlanChapters(plan);
+    const selectedChapter = chapters.find((chapter) => (
+        (chapterId && String(chapter?.id || chapter?._id || '') === String(chapterId))
+        || (chapterTitle && String(chapter?.title || '').trim().toLowerCase() === String(chapterTitle).trim().toLowerCase())
+    )) || (chapters.length === 1 ? chapters[0] : null);
+    if (!selectedChapter) {
+        const error = new Error('Select a valid chapter from the lesson plan.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return {
+        sourceLessonPlanId: plan._id,
+        chapterId: String(selectedChapter?.id || selectedChapter?._id || chapterId || ''),
+        chapterTitle: String(selectedChapter?.title || chapterTitle || '').trim(),
+        topicTitle: String(topicTitle || '').trim(),
+        subTopicTitle: String(subTopicTitle || '').trim(),
+    };
+};
+
+const normalizeName = (value = '') => String(value || '').trim().toLowerCase();
+
+const assignmentMatchesStudentPlacement = ({ assignment, student, classDoc, sectionDoc }) => {
+    if (assignment.classId) {
+        if (!classDoc?._id || String(assignment.classId) !== String(classDoc._id)) return false;
+    } else if (assignment.class && normalizeName(assignment.class) !== normalizeName(student.grade)) {
+        return false;
+    }
+
+    if (assignment.sectionId) {
+        if (!sectionDoc?._id || String(assignment.sectionId) !== String(sectionDoc._id)) return false;
+    } else if (assignment.section && normalizeName(assignment.section) !== normalizeName(student.section)) {
+        return false;
+    }
+
+    return true;
+};
+
+const resolveStudentPlacement = async ({ studentId, schoolId, campusId }) => {
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+        .select('grade section campusId');
+    if (!student) return { student: null, classDoc: null, sectionDoc: null };
+
+    const resolvedCampusId = campusId || student.campusId || null;
+    const campusScope = buildCampusFilter(resolvedCampusId);
+    const gradeValue = String(student.grade || '').trim();
+    const sectionValue = String(student.section || '').trim();
+
+    let classDoc = null;
+    if (gradeValue) {
+        classDoc = await Class.findOne({
+            schoolId,
+            name: { $regex: `^${escapeRegex(gradeValue)}$`, $options: 'i' },
+            ...campusScope,
+        });
+    }
+
+    let sectionDoc = null;
+    if (sectionValue) {
+        const sectionQuery = {
+            schoolId,
+            name: { $regex: `^${escapeRegex(sectionValue)}$`, $options: 'i' },
+            ...campusScope,
+        };
+        if (classDoc?._id) sectionQuery.classId = classDoc._id;
+        sectionDoc = await Section.findOne(sectionQuery);
+    }
+
+    return { student, classDoc, sectionDoc, campusId: resolvedCampusId };
 };
 
 const resolveSchoolId = (req, res) => {
@@ -246,7 +374,15 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             submissionFormat,
             type,
             difficulty,
-            academicYearId
+            topic,
+            isEssay,
+            rubric,
+            academicYearId,
+            sourceLessonPlanId,
+            chapterId,
+            chapterTitle,
+            topicTitle,
+            subTopicTitle
         } = req.body || {};
         const schoolId = req.schoolId || req.teacher?.schoolId || null;
         if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
@@ -273,6 +409,20 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             return res.status(404).json({ error: 'Section not found or does not belong to this class' });
         }
 
+        const lessonPlanAlignment = await resolveLessonPlanAlignment({
+            sourceLessonPlanId,
+            chapterId,
+            chapterTitle,
+            topicTitle: topicTitle || topic,
+            subTopicTitle,
+            schoolId,
+            campusId: req.campusId || null,
+            teacherId,
+            classId,
+            sectionId,
+            subject,
+        });
+
         const assignment = new Assignment({
             schoolId,
             campusId: req.campusId || null,
@@ -280,6 +430,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             title,
             description: description || '',
             subject,
+            topic: topic || '',
             type: type || 'Assignment',
             difficulty: normalizeDifficulty(difficulty),
             class: classDoc.name || '',
@@ -291,8 +442,11 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             marks: marks || 100,
             attachments: attachments || [],
             submissionFormat: normalizeSubmissionFormat(submissionFormat),
+            isEssay: Boolean(isEssay),
+            rubric: Boolean(isEssay) ? String(rubric || '').trim() : '',
             status: status || 'draft',
-            dueDate
+            dueDate,
+            ...(lessonPlanAlignment || {})
         });
 
         await assignment.save();
@@ -314,7 +468,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
         res.status(201).json({ message: "Assignment created successfully", assignment });
     } catch (err) {
         logger.error('Create assignment error:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.statusCode || 500).json({ error: err.message });
     }
 });
 
@@ -345,6 +499,7 @@ router.get("/teacher/my-assignments", authTeacher, async (req, res) => {
             .populate('classId', 'name')
             .populate('sectionId', 'name')
             .populate('academicYearId', 'name')
+            .populate('sourceLessonPlanId', 'title status')
             .sort({ createdAt: -1 });
 
         const assignmentIds = assignments.map((assignment) => assignment._id);
@@ -422,12 +577,18 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         if (activeYear?._id && assignment.academicYearId && String(assignment.academicYearId) !== String(activeYear._id)) {
             return res.status(400).json({ error: 'Only assignments from the active academic session can be updated.' });
         }
+        const wasActive = assignment.status === 'active';
 
-        const { title, description, subject, marks, dueDate, status, attachments, submissionFormat, classId, sectionId, type, difficulty } = req.body;
+        const {
+            title, description, subject, topic, marks, dueDate, status, attachments,
+            submissionFormat, classId, sectionId, type, difficulty, isEssay, rubric,
+            sourceLessonPlanId, chapterId, chapterTitle, topicTitle, subTopicTitle
+        } = req.body;
 
         if (title) assignment.title = title;
         if (description !== undefined) assignment.description = description;
         if (subject) assignment.subject = subject;
+        if (topic !== undefined) assignment.topic = topic || '';
         if (type !== undefined) assignment.type = type || 'Assignment';
         if (difficulty !== undefined) assignment.difficulty = normalizeDifficulty(difficulty);
         if (marks !== undefined) assignment.marks = marks;
@@ -435,6 +596,8 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         if (status) assignment.status = status;
         if (submissionFormat) assignment.submissionFormat = normalizeSubmissionFormat(submissionFormat);
         if (attachments !== undefined) assignment.attachments = attachments;
+        if (isEssay !== undefined) assignment.isEssay = Boolean(isEssay);
+        if (rubric !== undefined) assignment.rubric = assignment.isEssay ? String(rubric || '').trim() : '';
 
         if (classId || sectionId) {
             const nextClassId = classId || assignment.classId;
@@ -456,11 +619,51 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
             assignment.section = sectionDoc.name || assignment.section;
         }
 
+        if (sourceLessonPlanId !== undefined) {
+            if (!sourceLessonPlanId) {
+                assignment.sourceLessonPlanId = null;
+                assignment.chapterId = '';
+                assignment.chapterTitle = '';
+                assignment.topicTitle = '';
+                assignment.subTopicTitle = '';
+            } else {
+                const lessonPlanAlignment = await resolveLessonPlanAlignment({
+                    sourceLessonPlanId,
+                    chapterId,
+                    chapterTitle,
+                    topicTitle: topicTitle || topic || assignment.topic,
+                    subTopicTitle,
+                    schoolId,
+                    campusId: req.campusId || null,
+                    teacherId,
+                    classId: assignment.classId,
+                    sectionId: assignment.sectionId,
+                    subject: assignment.subject,
+                });
+                Object.assign(assignment, lessonPlanAlignment);
+            }
+        } else if (topic !== undefined && assignment.sourceLessonPlanId) {
+            assignment.topicTitle = topic || '';
+        }
+
         await assignment.save();
+
+        if (!wasActive && assignment.status === 'active') {
+            try {
+                await NotificationService.notifyAssignmentCreated({
+                    schoolId,
+                    campusId: req.campusId || null,
+                    assignment,
+                    createdBy: teacherId,
+                });
+            } catch (notifErr) {
+                logger.error('Failed to create assignment activation notification:', notifErr);
+            }
+        }
 
         res.json({ message: "Assignment updated successfully", assignment });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.statusCode || 500).json({ error: err.message });
     }
 });
 
@@ -508,6 +711,11 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
             return res.status(404).json({ error: 'Assignment not found or unauthorized' });
         }
 
+        const numericScore = Number(score);
+        if (!Number.isFinite(numericScore) || numericScore < 0 || numericScore > Number(assignment.marks || 0)) {
+            return res.status(400).json({ error: `score must be between 0 and ${assignment.marks}` });
+        }
+
         // schoolId guard: student must belong to the same school
         const progress = await StudentProgress.findOne({ studentId, schoolId });
         if (!progress) {
@@ -522,10 +730,11 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
             return res.status(404).json({ error: 'Submission not found' });
         }
 
-        progress.submissions[submissionIndex].score = score;
+        progress.submissions[submissionIndex].score = numericScore;
         progress.submissions[submissionIndex].feedback = feedback || '';
         progress.submissions[submissionIndex].status = 'graded';
-        // publishedByTeacher stays false until teacher explicitly publishes
+        progress.submissions[submissionIndex].publishedByTeacher = false;
+        progress.submissions[submissionIndex].publishedAt = null;
         progress.lastUpdated = new Date();
 
         await progress.save();
@@ -684,7 +893,8 @@ router.post("/teacher/grade-bulk", authTeacher, async (req, res) => {
             progress.submissions[submissionIndex].score = score;
             progress.submissions[submissionIndex].feedback = feedback;
             progress.submissions[submissionIndex].status = 'graded';
-            // publishedByTeacher stays false until teacher explicitly publishes
+            progress.submissions[submissionIndex].publishedByTeacher = false;
+            progress.submissions[submissionIndex].publishedAt = null;
             progress.lastUpdated = new Date();
 
             touchedProgress.set(studentId, progress);
@@ -720,54 +930,21 @@ router.get("/student/assignments", authStudent, async (req, res) => {
         const studentId = req.student?.id || req.user?.id;
         if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
-        // Get student details
-        const student = await StudentUser.findById(studentId)
-            .select('grade section campusId');
+        // Resolve the authenticated student's class/section inside the current school.
+        const placement = await resolveStudentPlacement({
+            studentId,
+            schoolId,
+            campusId: req.campusId || null,
+        });
+        const { student, classDoc, sectionDoc } = placement;
         if (!student) {
             return res.status(404).json({ error: 'Student not found' });
         }
 
-        const campusId = req.campusId || student.campusId || null;
+        const campusId = placement.campusId;
         const campusScope = buildCampusFilter(campusId);
         const gradeValue = String(student.grade || '').trim();
         const sectionValue = String(student.section || '').trim();
-
-        // Find class by grade if available
-        let classDoc = null;
-        if (gradeValue) {
-            const classQuery = {
-                schoolId,
-                name: gradeValue,
-                ...campusScope
-            };
-            classDoc = await Class.findOne(classQuery);
-            if (!classDoc) {
-                classDoc = await Class.findOne({
-                    ...classQuery,
-                    name: { $regex: `^${escapeRegex(gradeValue)}$`, $options: 'i' }
-                });
-            }
-        }
-
-        // Find section by name and classId if available
-        let sectionDoc = null;
-        if (sectionValue) {
-            const sectionQuery = {
-                schoolId,
-                name: sectionValue,
-                ...campusScope
-            };
-            if (classDoc?._id) {
-                sectionQuery.classId = classDoc._id;
-            }
-            sectionDoc = await Section.findOne(sectionQuery);
-            if (!sectionDoc) {
-                sectionDoc = await Section.findOne({
-                    ...sectionQuery,
-                    name: { $regex: `^${escapeRegex(sectionValue)}$`, $options: 'i' }
-                });
-            }
-        }
 
         if (!classDoc && !gradeValue) {
             return res.json([]);
@@ -823,14 +1000,22 @@ router.get("/student/assignments", authStudent, async (req, res) => {
             const submission = submissions.find(
                 sub => sub.assignmentId.toString() === assignment._id.toString()
             );
+            const published = submission?.publishedByTeacher === true;
+            const submittedLate = submission?.submittedAt && assignment.dueDate
+                ? new Date(submission.submittedAt) > new Date(assignment.dueDate)
+                : false;
+            const visibleStatus = submission?.status === 'graded' && !published
+                ? (submittedLate ? 'late' : 'submitted')
+                : (submission?.status || 'not_submitted');
             return {
                 ...assignment.toObject(),
-                submissionStatus: submission?.status || 'not_submitted',
+                submissionStatus: visibleStatus,
                 submittedAt: submission?.submittedAt,
                 submissionText: submission?.submissionText || '',
                 attachmentUrl: submission?.attachmentUrl || '',
-                score: submission?.score,
-                feedback: submission?.feedback,
+                score: published ? submission?.score : undefined,
+                feedback: published ? submission?.feedback : undefined,
+                publishedByTeacher: published,
                 submissionFormat: assignment.submissionFormat || 'text'
             };
         });
@@ -876,6 +1061,16 @@ router.post("/submit", authStudent, async (req, res) => {
         }
         if (assignment.status !== 'active') {
             return res.status(400).json({ error: 'This assignment is not accepting submissions right now.' });
+        }
+
+        const placement = await resolveStudentPlacement({
+            studentId: req.user.id,
+            schoolId,
+            campusId: req.campusId || null,
+        });
+        if (!placement.student) return res.status(404).json({ error: 'Student not found' });
+        if (!assignmentMatchesStudentPlacement({ assignment, ...placement })) {
+            return res.status(403).json({ error: 'This assignment is not assigned to your class and section.' });
         }
 
         const requiredFormat = assignment.submissionFormat || 'text';
@@ -926,6 +1121,9 @@ router.post("/submit", authStudent, async (req, res) => {
             attachmentUrl: attachmentUrl || '',
             submissionHash,
             similarSubmissions: similarStudentIds,
+            aiGradingStatus: assignment.isEssay && assignment.rubric && submissionText?.trim()
+                ? 'pending'
+                : 'skipped',
         };
 
         progress.submissions.push({
@@ -963,29 +1161,32 @@ router.post("/submit", authStudent, async (req, res) => {
                             }`,
                         }),
                     });
-                    if (aiRes.ok) {
-                        const aiData = await aiRes.json();
-                        const content = aiData?.content || '';
-                        const jsonMatch = content.match(/\{[\s\S]*\}/);
-                        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-                        const totalScore = parsed?.totalScore ?? parsed?.total_score ?? null;
-                        const gradingFeedback = parsed?.overallFeedback || parsed?.feedback || content;
-                        const criteriaBreakdown = parsed?.criteria || [];
-                        if (submissionIdx >= 0 && totalScore !== null) {
-                            const freshProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
-                            const idx = freshProgress?.submissions?.findIndex(
-                                (s) => String(s.assignmentId) === String(assignmentId)
-                            );
-                            if (freshProgress && idx >= 0) {
-                                freshProgress.submissions[idx].aiScore = Math.min(Number(totalScore), assignment.marks);
-                                freshProgress.submissions[idx].aiGradingFeedback = String(gradingFeedback).slice(0, 1000);
-                                freshProgress.submissions[idx].aiGradingStatus = 'done';
-                                // Store per-criterion breakdown for teacher review UI
-                                if (criteriaBreakdown.length) {
-                                    freshProgress.submissions[idx].aiCriteriaBreakdown = criteriaBreakdown;
-                                }
-                                await freshProgress.save();
+                    if (!aiRes.ok) {
+                        throw new Error(`AI rubric review returned HTTP ${aiRes.status}`);
+                    }
+                    const aiData = await aiRes.json();
+                    const content = aiData?.content || '';
+                    const jsonMatch = content.match(/\{[\s\S]*\}/);
+                    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+                    const totalScore = Number(parsed?.totalScore ?? parsed?.total_score);
+                    if (!Number.isFinite(totalScore)) {
+                        throw new Error('AI rubric review did not return a numeric total score');
+                    }
+                    const gradingFeedback = parsed?.overallFeedback || parsed?.feedback || content;
+                    const criteriaBreakdown = Array.isArray(parsed?.criteria) ? parsed.criteria : [];
+                    if (submissionIdx >= 0) {
+                        const freshProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
+                        const idx = freshProgress?.submissions?.findIndex(
+                            (s) => String(s.assignmentId) === String(assignmentId)
+                        );
+                        if (freshProgress && idx >= 0) {
+                            freshProgress.submissions[idx].aiScore = Math.max(0, Math.min(totalScore, assignment.marks));
+                            freshProgress.submissions[idx].aiGradingFeedback = String(gradingFeedback).slice(0, 1000);
+                            freshProgress.submissions[idx].aiGradingStatus = 'done';
+                            if (criteriaBreakdown.length) {
+                                freshProgress.submissions[idx].aiCriteriaBreakdown = criteriaBreakdown;
                             }
+                            await freshProgress.save();
                         }
                     }
                 } catch (aiErr) {
@@ -1088,6 +1289,8 @@ router.get("/teacher/submissions", authTeacher, async (req, res) => {
                     assignmentId: assignment._id,
                     assignmentTitle: assignment.title,
                     subject: assignment.subject,
+                    type: assignment.type || 'Assignment',
+                    difficulty: assignment.difficulty || 'Medium',
                     totalMarks: assignment.marks,
                     className: assignment.classId?.name || assignment.class,
                     sectionName: assignment.sectionId?.name,
@@ -1097,6 +1300,12 @@ router.get("/teacher/submissions", authTeacher, async (req, res) => {
                     status: sub.status,          // submitted | graded | late
                     score: sub.score ?? null,
                     feedback: sub.feedback || '',
+                    publishedByTeacher: sub.publishedByTeacher === true,
+                    publishedAt: sub.publishedAt || null,
+                    aiScore: sub.aiScore ?? null,
+                    aiGradingFeedback: sub.aiGradingFeedback || '',
+                    aiGradingStatus: sub.aiGradingStatus || 'skipped',
+                    aiCriteriaBreakdown: sub.aiCriteriaBreakdown || null,
                     dueDate: assignment.dueDate
                 });
             });

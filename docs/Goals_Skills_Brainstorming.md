@@ -422,12 +422,15 @@ FlashcardResult (DB)
 
 ## Session 9 — 2026-08-20: Visual Generation in AI Tutor (Type 1 + Type 2)
 
+### Hardware
+RTX 5080 16GB VRAM — llava:13b fits comfortably with headroom.
+
 ### Visual Strategy (3 types decided)
 
 | Type | Approach | Status |
 |---|---|---|
-| **Type 1 — Diagrams & Charts** | LLM generates Mermaid.js code → browser renders | ✅ Built today |
-| **Type 2 — Image Understanding** | llava:7b reads teacher-uploaded PDF diagrams | ✅ Config updated |
+| **Type 1 — Diagrams & Charts** | LLM generates Mermaid.js code → browser renders | ✅ Built |
+| **Type 2 — Image Understanding** | llava:13b reads teacher-uploaded PDF diagrams | ✅ Built & wired |
 | **Type 3 — Image Generation** | Stable Diffusion (too heavy, not curriculum-accurate) | ❌ Skipped |
 
 ---
@@ -435,73 +438,102 @@ FlashcardResult (DB)
 ### Type 1 — Mermaid Diagram Mode
 
 The LLM chooses the best diagram type based on content:
-- Process/cycle → flowchart TD
-- Hierarchy/classification → graph TD
-- Timeline → timeline
-- Comparison → graph LR with parallel branches
-- Cause and effect → graph TD with labelled arrows
+- Process / cycle → `flowchart TD`
+- Hierarchy / classification → `graph TD`
+- Timeline → `timeline`
+- Comparison → `graph LR` with parallel branches
+- Cause and effect → `graph TD` with labelled arrows
 
-**What was built:**
+**Files changed:**
 | File | Change |
 |---|---|
 | `frontend/package.json` | Added `mermaid@^11.17.0` |
-| `frontend/src/components/AITutorHomeScreen.jsx` | Added `DiagramUI` component + mermaid import + mode dispatcher |
+| `frontend/src/components/AITutorHomeScreen.jsx` | Added `DiagramUI` component + mermaid import + chip mode + meta + dispatcher |
 | `backend/routes/aiTutorRoutes.js` | Added `diagram` to ALLOWED_MODES |
 | `ai-service/app/modules/chat/service.py` | Added `diagram` MODE_INSTRUCTION |
 
 **DiagramUI flow:**
 ```
-LLM generates:
-  TITLE: The Water Cycle
-  TYPE: flowchart
-  ```mermaid
-  graph TD
-    A[Sunlight] --> B[Evaporation]
-    B --> C[Water Vapour]
-    C --> D[Condensation]
-    D --> E[Precipitation]
-    E --> F[Runoff] --> A
-  ```
-  DESCRIPTION: This diagram shows how water moves...
-
-Frontend:
-  parseDiagramResponse() extracts title, code, description
-  mermaid.render() converts code → SVG
-  SVG displayed in white card with violet border
-  Copy code button for students who want to save it
+Student clicks "Diagram" in AI tutor
+  → LLM generates Mermaid syntax from textbook chunks
+  → parseDiagramResponse() extracts title, code, description
+  → mermaid.render() converts code to SVG
+  → SVG displayed in white card with violet border
+  → Copy code button included for students
 ```
 
 ---
 
-### Type 2 — llava:7b for Image Understanding
+### Type 2 — llava:13b for Image Understanding
 
-**How it works:**
-- Teacher uploads PDF containing diagrams, charts, labelled images
-- During ingestion: vision model reads each page image, extracts structured facts
-- Facts stored in Qdrant alongside text chunks
-- When student asks `visual_explain`: retrieved visual facts sent to LLM as text context
-- LLM explains the diagram to the student
+**Why 13b over 7b (RTX 5080 16GB):**
+- Better at dense scientific diagrams, small text labels, complex relationships
+- 16GB VRAM fits it perfectly (~10GB used)
+- Runs at ingestion time only — speed is not critical
 
-**Model updated:**
+**Two modes built:**
+
+**Mode A — Ingestion time (reads teacher PDFs):**
 ```
-ai-service/app/core/config.py:
-  ollama_vision_model = "llava:7b"
-  # Fallback: moondream (1.8B, CPU-friendly)
+Teacher uploads PDF
+  → llava:13b reads each page image (up to 12 pages)
+    → Extracts: visible_text, formulas, units, diagram_labels, chart_labels, description
+      → Stored in Qdrant alongside text chunks
+        → Used automatically when student asks visual_explain
 ```
 
-**To pull the model locally:**
+**Mode B — Live explain (new endpoint):**
+```
+POST /vision/explain-image
+  { image: base64, question: "...", grade_level, subject }
+  → llava:13b reads image directly
+    → Returns plain-language explanation
+      → No Qdrant needed — direct vision response
+```
+
+**Files changed:**
+| File | Change |
+|---|---|
+| `ai-service/app/core/config.py` | Vision model → `llava:13b`; num_ctx → 32768; max_pages → 12; max_dimension → 2048 |
+| `ai-service/app/modules/vision/client.py` | Fixed `think` param (only for thinking models); richer prompt; num_predict → 2000 |
+| `ai-service/app/modules/vision/router.py` | New — `POST /vision/explain-image` live explain endpoint |
+| `ai-service/app/main.py` | Registered vision router; health shows vision model |
+
+**Key fix — think parameter:**
+- `"think": False` was incorrectly sent to llava (only valid for qwen3, deepseek-r1 etc.)
+- Now conditionally added only for thinking models via `_supports_thinking(model_name)`
+
+**Config settings (RTX 5080 16GB optimised):**
+```
+ollama_vision_model           = llava:13b
+ollama_vision_num_ctx         = 32768   (was 16384)
+ollama_vision_max_pages       = 12      (was 6)
+ollama_vision_max_image_dimension = 2048 (was 1600)
+ollama_vision_num_predict     = 2000    (was 1200)
+```
+
+**To pull:**
 ```bash
-ollama pull llava:7b        # 4.7GB — needs 8GB VRAM
-# OR lightweight alternative:
-ollama pull moondream       # 1.6GB — runs on CPU
+ollama pull llava:13b
 ```
 
 **Override in .env:**
 ```
-OLLAMA_VISION_MODEL=llava:7b
-# or
-OLLAMA_VISION_MODEL=moondream
+OLLAMA_VISION_MODEL=llava:13b   # default (RTX 5080 16GB)
+OLLAMA_VISION_MODEL=llava:7b    # fallback (8GB VRAM)
+OLLAMA_VISION_MODEL=moondream   # fallback (CPU only)
 ```
+
+**Full model stack on RTX 5080 16GB:**
+| Model | Role | VRAM |
+|---|---|---|
+| `llama3.2:3b` | AI tutor chat | ~2GB |
+| `nomic-embed-text` | Embeddings | ~0.5GB |
+| `llava:13b` | PDF diagram understanding | ~10GB |
+| `qwen2.5:14b` | Lesson summaries | ~10GB |
+| `qwen3:8b` | Reading/writing assessment | ~6GB |
+
+Models load on demand and unload when idle — 16GB handles all one at a time.
 
 ---
 

@@ -475,6 +475,36 @@ npm run test:coverage
 
 ---
 
+## Teacher assignment workflow checklist
+
+Route checks:
+
+- Manage and create assignments: `/teacher/classes/:classId/assignments/manage`
+- Evaluate submissions: `/teacher/classes/:classId/assignments/evaluate`
+- The legacy `/teacher/classes/:classId/assignments` route must redirect to the Manage route.
+
+1. Sign in as a teacher and open **Assignments → Manage Assignments**. Confirm the URL ends in `/assignments/manage`, then create an active text assignment for one allocated class, section, subject, and active academic session. Select a published **Lesson Plan** and one of its **Chapters**; confirm plans from other classes, sections, subjects, or teachers are unavailable and that the saved assignment card/details show the chapter tag.
+2. Sign in as a student in that class and section. Confirm the assignment appears, submit a written response, and confirm it becomes locked against editing or resubmission.
+3. Sign in as a student in another class or section. Confirm the assignment is absent. Attempting to submit directly with the other assignment ID must return `403`.
+4. Return as the teacher, open **Evaluate Submissions**, confirm the URL ends in `/assignments/evaluate`, select the submission, and confirm the complete submitted text is visible before marking. Refresh this URL and confirm the evaluation view remains selected. Repeat with a PDF-format assignment and confirm **Open submitted PDF** works.
+5. Enter valid marks and feedback. Confirm marks above the assignment total are rejected and that a score of zero can be saved.
+6. Before selecting **Publish Result**, return to the student portal and confirm the score and feedback remain hidden and the assignment says it is waiting for teacher review.
+7. Select **Publish Result** as the teacher. Confirm the student receives a notification and can now see the score and feedback.
+8. Change a published grade. Confirm it becomes unpublished and must be explicitly published again before the revised result appears to the student.
+9. Create a text essay with **Enable AI-assisted essay rubric review** and rubric criteria. Submit it as a student, then confirm the teacher sees the real persisted Ollama suggestion or a pending/failed status—never placeholder feedback or a fabricated confidence score.
+
+Focused automated checks:
+
+```bash
+cd backend
+npm test -- --runInBand --testPathPatterns=assignmentRoute.test.js
+
+cd ../frontend
+npm test -- --runInBand --runTestsByPath src/teachers/__tests__/AssignmentPortal.test.jsx
+```
+
+---
+
 ## Summary
 
 **Most Important Commands:**

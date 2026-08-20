@@ -75,7 +75,7 @@ import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const MotionNavLink = Motion(NavLink);
+const MotionNavLink = Motion.create(NavLink);
 
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
@@ -643,14 +643,14 @@ const CW_TABS = [
       rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
       rel.startsWith('students/achievements') ||
-      rel === 'assignments' ||
+      rel.startsWith('assignments') ||
       rel === 'reports' ||
       rel.startsWith('assessments'),
     firstPath: 'students/health-records',
     subTabs: [
       { label: 'Student Health Records', path: 'students/health-records' },
       { label: 'Attendance',             path: 'students/attendance' },
-      { label: 'Assignments',            path: 'assignments' },
+      { label: 'Assignments',            path: 'assignments/manage' },
       { label: 'Achievements',           path: 'students/achievements' },
       { label: 'Exam',                   path: 'assessments/exam' },
     ],
@@ -1160,7 +1160,7 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-    <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-slate-100">
+    <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-[#fafafa]">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -1199,50 +1199,47 @@ const TeacherPortalShell = () => {
       )}
 
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-x-hidden bg-white shadow-2xl border-r border-gray-200 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-72'
+        data-testid="teacher-sidebar"
+        aria-label="Teacher portal navigation"
+        className={`fixed left-0 top-0 z-40 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
           } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         style={{
+          fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
           transitionProperty: 'width, transform, box-shadow',
-          transitionDuration: '0.4s',
+          transitionDuration: '0.3s',
           transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         {/* ── Sidebar Header ── */}
-        <div className="relative shrink-0 overflow-hidden">
+        <div className="relative shrink-0 overflow-hidden border-b border-[#f0f2f5]">
           {/* Expanded header */}
           <div className={`transition-all duration-400 ease-in-out ${!sidebarCollapsed
               ? 'opacity-100 transform translate-x-0'
               : 'opacity-0 transform -translate-x-4 pointer-events-none absolute inset-0'
             }`}>
-            <div className="absolute inset-0 bg-yellow-400 via-yellow-450 opacity-100" />
-            <div className="relative p-2.5">
+            <div className="relative px-6 pb-6 pt-7">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2.5">
-                  <div className="relative">
-                    <div className="w-9 h-9 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
-                      <Users size={17} className="text-black" />
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white animate-pulse" />
-                  </div>
-                  <div className="text-white">
-                    <div className="font-bold text-black text-base leading-tight">Teacher Portal</div>
-                    <div className="text-black/80 text-[11px]">Academic Workspace</div>
-                  </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[1.3rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">Teacher Portal</div>
+                  <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Academic Workspace</div>
                 </div>
-                <button
-                  className="hidden lg:inline-flex rounded-lg p-1.5 text-white/90 hover:bg-white/20 transition-colors"
-                  onClick={() => setSidebarCollapsed(true)}
-                  aria-label="Collapse sidebar"
-                >
-                  <ChevronRight size={16} />
-                </button>
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="lg:hidden p-1.5 rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
-                >
-                  <X size={17} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
+                    onClick={() => setSidebarCollapsed(true)}
+                    aria-label="Collapse sidebar"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
+                    aria-label="Close sidebar"
+                  >
+                    <X size={17} />
+                  </button>
+                  </div>
               </div>
             </div>
           </div>
@@ -1252,17 +1249,13 @@ const TeacherPortalShell = () => {
               ? 'opacity-100 transform translate-x-0'
               : 'opacity-0 transform translate-x-4 pointer-events-none absolute inset-0'
             }`}>
-            <div className="p-2 border-b border-gray-200">
-              <div className="flex flex-col items-center space-y-2.5">
-                <div className="relative">
-                  <div className="w-9 h-9 bg-linear-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-md">
-                    <Users size={16} className="text-white" />
-                  </div>
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white" />
+            <div className="px-2 py-5">
+              <div className="flex flex-col items-center space-y-3">
+                <div className="flex size-10 items-center justify-center rounded-xl border border-[#ede9fe] bg-[#f5f3ff] text-[#6d28d9]">
+                  <GraduationCap size={18} />
                 </div>
-                <div className="w-8 h-px bg-gray-300" />
                 <button
-                  className="hidden lg:inline-flex rounded-lg p-1.5 text-gray-600 hover:bg-gray-100"
+                  className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
                   onClick={() => setSidebarCollapsed(false)}
                   aria-label="Expand sidebar"
                 >
@@ -1274,8 +1267,8 @@ const TeacherPortalShell = () => {
         </div>
 
         {/* ── Navigation ── */}
-        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-3 py-4' : 'px-1 py-2'}`}>
-          <div className={`${!sidebarCollapsed ? 'space-y-1' : 'space-y-1'}`}>
+        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
+          <div className="space-y-0.5">
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
               const Icon = item.icon;
@@ -1284,23 +1277,23 @@ const TeacherPortalShell = () => {
                   key={item.path}
                   asChild
                   variant="ghost"
-                  className={`group relative !h-auto !w-full !justify-start !rounded-xl !px-3 !py-2.5 !text-xs !font-semibold ${sidebarCollapsed ? '!justify-center' : 'space-x-2.5'} ${
+                  className={`group relative !h-auto !w-full !justify-start !rounded-[0.6rem] !border-l-[3px] !px-3 !py-2.5 !text-[0.82rem] !font-medium ${sidebarCollapsed ? '!justify-center !px-2' : 'space-x-2.5'} ${
                     active
-                      ? 'bg-linear-to-r from-amber-100 via-yellow-50 to-violet-50 text-amber-950 shadow-sm shadow-amber-100 ring-1 ring-amber-200/80'
-                      : 'text-slate-600 hover:bg-linear-to-r hover:from-amber-50 hover:via-yellow-50 hover:to-violet-50 hover:text-amber-950 hover:ring-1 hover:ring-amber-200/70'
+                      ? '!border-l-[#8b5cf6] !bg-[#f5f3ff] !font-semibold !text-[#5b21b6] hover:!bg-[#ede9fe]'
+                      : '!border-l-transparent !bg-transparent !text-[#4a5668] hover:!bg-[#fffbeb] hover:!text-[#0b0e1a]'
                   }`}
                 >
                   <MotionNavLink
                     to={item.path}
                     title={sidebarCollapsed ? item.label : undefined}
-                    whileHover={{ x: sidebarCollapsed ? 0 : 3, scale: 1.01 }}
+                    aria-label={item.label}
+                    whileHover={{ x: sidebarCollapsed ? 0 : 4, scale: 1.01 }}
                     whileTap={{ scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-                    className="flex w-full items-center"
+                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                    className="relative flex w-full items-center"
                   >
-                    <span className="relative flex shrink-0 items-center justify-center">
-                      <span className="absolute inset-0 rounded-lg bg-violet-200/0 transition-colors duration-200 group-hover:bg-violet-200/50" />
-                      <Icon size={17} className="relative shrink-0 transition-transform duration-200 group-hover:scale-105" />
+                    <span className="flex size-5 shrink-0 items-center justify-center">
+                      <Icon size={16} strokeWidth={1.9} className="shrink-0" />
                     </span>
                     {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
                   </MotionNavLink>
@@ -1311,39 +1304,33 @@ const TeacherPortalShell = () => {
         </nav>
 
         {/* ── Bottom: Logout ── */}
-        <div className={`shrink-0 border-t border-gray-200 ${sidebarCollapsed ? 'p-2' : 'p-3'}`}>
-          <div className={`${!sidebarCollapsed ? 'space-y-2' : 'space-y-1'}`}>
+        <div className={`shrink-0 border-t border-[#f0f2f5] ${sidebarCollapsed ? 'p-2' : 'px-2.5 pb-5 pt-4'}`}>
+          <div>
             {sidebarCollapsed ? (
               <button
                 onClick={handleLogout}
-                className="group relative w-full h-11 flex items-center justify-center rounded-xl text-red-500 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:scale-105 hover:shadow-md hover:text-red-600 transition-all duration-300 ease-out transform active:scale-95"
+                aria-label="Logout"
+                className="group relative flex h-11 w-full items-center justify-center rounded-[0.6rem] text-[#4a5668] transition-colors hover:bg-[#fef2f2] hover:text-[#b33a3a] active:scale-[0.98]"
               >
-                <div className="relative flex items-center justify-center w-5.5 h-5.5 transition-all duration-300 text-red-500 group-hover:text-red-600 group-hover:scale-110">
-                  <LogOut size={16} strokeWidth={1.8} className="shrink-0 transition-all duration-300" />
-                </div>
-                <div className="absolute left-full ml-3 opacity-0 group-hover:opacity-100 transition-all duration-300 ease-out transform translate-x-2 group-hover:translate-x-0 pointer-events-none z-50">
-                  <div className="bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-gray-700 min-w-max">
-                    <div className="font-semibold text-sm">Logout</div>
-                    <div className="text-xs text-gray-300 mt-1">Sign out securely</div>
-                    <div className="absolute left-0 top-1/2 transform -translate-x-1 -translate-y-1/2">
-                      <div className="w-2 h-2 bg-gray-900 border-l border-t border-gray-700 rotate-45" />
+                <LogOut size={17} strokeWidth={1.8} />
+                <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
+                  <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
+                    <div className="text-sm font-semibold">Logout</div>
+                    <div className="mt-1 text-xs text-gray-300">Sign out securely</div>
+                    <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2">
+                      <div className="size-2 rotate-45 border-l border-t border-gray-700 bg-gray-900" />
                     </div>
                   </div>
                 </div>
-                <div className="absolute inset-0 rounded-xl ring-1 ring-transparent group-hover:ring-red-300/30 transition-all duration-300" />
               </button>
             ) : (
               <button
                 onClick={handleLogout}
-                className="group relative w-full flex items-center px-3 py-2.5 rounded-xl text-red-600 hover:bg-linear-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 transition-all duration-300 ease-out transform active:scale-95"
+                className="group flex w-full items-center gap-2.5 rounded-[0.6rem] border border-transparent px-3 py-2.5 text-left text-[0.82rem] font-medium text-[#4a5668] transition-colors hover:border-[#fecaca] hover:bg-[#fef2f2] hover:text-[#b33a3a] active:scale-[0.98]"
               >
-                <div className="flex items-center justify-center w-[34px] h-[34px] rounded-lg bg-red-100 text-red-600 group-hover:bg-red-200 group-hover:scale-110 transition-all duration-300">
-                  <LogOut size={17} className="shrink-0 transition-all duration-300" />
-                </div>
-                <div className="ml-3">
-                  <div className="font-medium text-xs transition-all duration-300">Logout</div>
-                  <div className="text-[11px] text-red-500 group-hover:text-red-600 transition-all duration-300">Sign out securely</div>
-                </div>
+                <LogOut size={17} strokeWidth={1.8} className="shrink-0" />
+                <span>Logout</span>
+                <span className="ml-auto text-[0.65rem] font-normal tracking-[0.02em] text-[#8e9aaf] transition-colors group-hover:text-[#b33a3a]">Sign out securely</span>
               </button>
             )}
           </div>
@@ -1580,7 +1567,9 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
                 <Route path="teaching/study-materials" element={<TeacherAlcove />} />
                 <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
-                <Route path="assignments" element={<AssignmentPortal />} />
+                <Route path="assignments" element={<Navigate to="manage" replace />} />
+                <Route path="assignments/manage" element={<AssignmentPortal view="manage" />} />
+                <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" />} />
                 <Route
                   path="assessments"
                   element={
@@ -1647,8 +1636,8 @@ const TeacherPortalShell = () => {
               <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
               <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
               <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
-              <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
-              <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments')} replace />} />
+              <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />
+              <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments/evaluate')} replace />} />
               <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
               <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
               <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
