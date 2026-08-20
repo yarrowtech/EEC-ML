@@ -24,6 +24,7 @@ from app.modules.language_memory.router import router as memory_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.speech.router import router as speech_router
 from app.modules.summaries.router import router as summaries_router
+from app.modules.vision.router import router as vision_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ app.include_router(speech_router)
 app.include_router(assessment_router)
 app.include_router(evaluator_router)
 app.include_router(memory_router)
+app.include_router(vision_router)
 
 
 @app.get("/health")
@@ -82,4 +84,6 @@ async def health() -> dict:
         "ollama_url": settings.ollama_url,
         "ollama_model": settings.ollama_model,
         "embed_model": settings.ollama_embed_model,
+        "vision_model": settings.ollama_vision_model,
+        "vision_enabled": settings.ollama_vision_enabled,
     }

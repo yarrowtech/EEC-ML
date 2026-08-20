@@ -1,7 +1,8 @@
-"""Small Ollama client for extracting evidence from a single image.
+"""Ollama vision client for extracting structured evidence from educational images.
 
-This module is intentionally not connected to document ingestion. It establishes
-the structured extraction contract used by the vision smoke test.
+Uses llava:13b (or configured vision model) to read teacher-uploaded PDF pages,
+diagrams, charts, and labelled illustrations. Runs at ingestion time only —
+not during live student sessions.
 """
 
 import base64
@@ -13,17 +14,35 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.modules.vision.schemas import VisualExtraction
 
+# Models that support Ollama's "think" parameter (extended reasoning mode).
+# All others should omit it to avoid API rejection.
+_THINKING_MODELS = {"qwen3", "qwq", "deepseek-r1", "phi4-reasoning"}
 
-VISION_EXTRACTION_PROMPT = """You extract evidence from one teacher-published educational page image.
-Return only facts visibly supported by the image. Never solve exercises, answer questions,
-complete missing text, or use outside knowledge. Preserve formula symbols, subscripts,
-superscripts, numbers, and units as accurately as possible. Put unreadable, cropped,
-ambiguous, or low-confidence details in uncertainties instead of guessing. Use empty
-arrays when a category is absent. Transcribe visible text in reading order and describe
-only visible educational relationships. Return one JSON data object containing values for
-visible_text, formulas, units, diagram_labels, chart_labels, description, and uncertainties.
-Do not return a JSON Schema and do not include keys such as properties, required, type, or
-additionalProperties.
+
+def _supports_thinking(model_name: str) -> bool:
+    name = model_name.lower()
+    return any(m in name for m in _THINKING_MODELS)
+
+
+VISION_EXTRACTION_PROMPT = """You are an expert at reading educational materials.
+Carefully examine this teacher-published page image and extract ALL visible content.
+
+Your job:
+1. Transcribe ALL visible text in reading order (headings, body text, captions, labels)
+2. Capture every formula, equation, or mathematical expression exactly as shown
+3. List every label attached to diagrams, arrows, components, or figures
+4. List every chart title, axis label, legend entry, and data label
+5. Write a clear factual description of what the image shows and what relationships are visible
+6. Note anything unreadable, cropped, or ambiguous in uncertainties
+
+Rules:
+- Return ONLY facts visibly present in the image — no outside knowledge
+- Never solve exercises, fill blanks, or answer questions shown in the image
+- Preserve subscripts, superscripts, units, symbols exactly as they appear
+- If a section is absent (no formulas, no charts etc.) return an empty array for it
+- Return one JSON object with keys: visible_text, formulas, units, diagram_labels,
+  chart_labels, description, uncertainties
+- Do NOT return a JSON Schema — return data values only
 """
 
 
@@ -80,7 +99,6 @@ def extract_visual_content(
     schema = VisualExtraction.model_json_schema()
     payload = {
         "model": settings.ollama_vision_model,
-        "think": False,
         "messages": [
             {
                 "role": "user",
@@ -93,9 +111,13 @@ def extract_visual_content(
         "options": {
             "temperature": 0,
             "num_ctx": settings.ollama_vision_num_ctx,
-            "num_predict": 1200,
+            "num_predict": 2000,  # 13b can produce richer extractions
         },
     }
+    # Only add "think: false" for models that support thinking mode —
+    # llava and other vision models do not and will reject the parameter.
+    if _supports_thinking(settings.ollama_vision_model):
+        payload["think"] = False
 
     owns_client = client is None
     http_client = client or httpx.Client()

@@ -9,6 +9,7 @@ const ExamResult = require('../models/ExamResult');
 const Exam = require('../models/Exam');
 const StudentObservation = require('../models/StudentObservation');
 const ParentDashboardReport = require('../models/ParentDashboardReport');
+const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -396,11 +397,12 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
     }
     const sid = req.params.studentId;
 
-    const [masteryScores, examResults, student, observations] = await Promise.all([
+    const [masteryScores, examResults, student, observations, devProfile] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
       StudentUser.findById(sid).select('name grade section attendance').lean(),
       StudentObservation.find({ studentId: sid, schoolId: req.schoolId }).sort({ recordedAt: -1 }).limit(40).lean(),
+      StudentDevelopmentProfile.findOne({ studentId: sid, schoolId: req.schoolId }).lean(),
     ]);
 
     const masteryAvg = masteryScores.length
@@ -429,12 +431,52 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
     };
     const clamp = (v, off) => (v != null ? Math.max(0, Math.min(100, v + off)) : null);
 
-    const cognitive       = masteryAvg;
-    const thinkingSkills  = blend(masteryAvg, examAvg, 0.55);
-    const languageComm    = masteryAvg;
-    const attentionMotiv  = blend(attendancePct, moodScore, 0.6);
-    const socialEmotional = blend(moodScore, positiveRatio, 0.5);
-    const physicalMental  = blend(cognitive, attentionMotiv, 0.5);
+    // Use real development profile scores when available, fall back to heuristics
+    const realCognitive       = devProfile?.cognitive?.score ?? null;
+    const realMemory          = devProfile?.memory?.score ?? null;
+    const realCreative        = devProfile?.creative?.score ?? null;
+    const realLanguage        = devProfile?.language?.score ?? null;
+    const realSocialEmotional = devProfile?.socialEmotional?.score ?? null;
+    const realPhysical        = devProfile?.physical?.score ?? null;
+
+    const cognitive       = realCognitive       ?? masteryAvg;
+    const thinkingSkills  = realCognitive       ?? blend(masteryAvg, examAvg, 0.55);
+    const languageComm    = realLanguage        ?? masteryAvg;
+    const attentionMotiv  = realMemory          ?? blend(attendancePct, moodScore, 0.6);
+    const socialEmotional = realSocialEmotional ?? blend(moodScore, positiveRatio, 0.5);
+    const physicalMental  = realPhysical        ?? blend(cognitive, attentionMotiv, 0.5);
+
+    // 3-section summary for parent view
+    const academicGrowthScore = [realCognitive, realMemory, realCreative, realLanguage]
+      .filter((s) => s != null);
+    const academicGrowth = academicGrowthScore.length
+      ? Math.round(academicGrowthScore.reduce((a, b) => a + b, 0) / academicGrowthScore.length)
+      : blend(masteryAvg, examAvg, 0.6);
+
+    const wellbeingScores = [realSocialEmotional, realPhysical].filter((s) => s != null);
+    const emotionalWellbeing = wellbeingScores.length
+      ? Math.round(wellbeingScores.reduce((a, b) => a + b, 0) / wellbeingScores.length)
+      : blend(moodScore, positiveRatio, 0.5);
+
+    const holistic = {
+      academicGrowth: {
+        score: academicGrowth,
+        breakdown: {
+          cognitive:  { score: realCognitive,  trend: devProfile?.cognitive?.trend  ?? 'unknown' },
+          memory:     { score: realMemory,      trend: devProfile?.memory?.trend      ?? 'unknown' },
+          creative:   { score: realCreative,    trend: devProfile?.creative?.trend    ?? 'unknown' },
+          language:   { score: realLanguage,    trend: devProfile?.language?.trend    ?? 'unknown' },
+        },
+      },
+      emotionalWellbeing: {
+        score: emotionalWellbeing,
+        breakdown: {
+          socialEmotional: { score: realSocialEmotional, trend: devProfile?.socialEmotional?.trend ?? 'unknown' },
+          physical:        { score: realPhysical,         trend: devProfile?.physical?.trend         ?? 'unknown' },
+        },
+      },
+      hasRealData: !!devProfile,
+    };
 
     const domains = [
       {
@@ -514,6 +556,7 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
         overallSkillScore,
         totalSkills: 22,
         dataPoints: { masteryAvg, examAvg, attendancePct, moodScore, positiveRatio },
+        holistic,
       },
     });
   } catch (err) {

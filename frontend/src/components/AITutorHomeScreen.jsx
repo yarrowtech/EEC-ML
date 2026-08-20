@@ -88,6 +88,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import mermaid from 'mermaid';
 import { fetchCachedJson } from '@/utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { saveLearningActivity } from '../utils/learningContinuity';
@@ -125,6 +126,7 @@ const CHIP_MODES = {
   'Worksheet':            'worksheet',
   'Differentiated':       'differentiated_plan',
   'Hinge Questions':      'hinge_question',
+  'Diagram':              'diagram',
 };
 
 const STREAM_TOKEN_DELAY_MS = 18;
@@ -150,6 +152,7 @@ const GENERATED_MODE_META = {
   practice_advanced:       { label: 'Advanced Practice',       icon: BookOpen             },
   engagement_swap:         { label: 'Re-Engage',               icon: Sparkles             },
   worksheet:               { label: 'Worksheet',                icon: FileText             },
+  diagram:                 { label: 'Diagram',                  icon: Network              },
   differentiated_plan:     { label: 'Differentiated',           icon: Layers3              },
   hinge_question:          { label: 'Hinge Questions',          icon: Target               },
 };
@@ -1061,6 +1064,99 @@ function MindMapUI({ text }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Diagram UI (Mermaid.js renderer)
+// ---------------------------------------------------------------------------
+
+let _mermaidInitialised = false;
+function ensureMermaid() {
+  if (_mermaidInitialised) return;
+  mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', fontFamily: 'Nunito, sans-serif' });
+  _mermaidInitialised = true;
+}
+
+function parseDiagramResponse(text) {
+  const titleMatch = text.match(/TITLE:\s*(.+)/i);
+  const descMatch  = text.match(/DESCRIPTION:\s*([\s\S]+?)(?:```|$)/i);
+  const codeMatch  = text.match(/```mermaid\s*([\s\S]+?)```/i);
+  return {
+    title:       titleMatch?.[1]?.trim() || 'Diagram',
+    description: descMatch?.[1]?.trim()  || '',
+    code:        codeMatch?.[1]?.trim()  || '',
+  };
+}
+
+function DiagramUI({ text }) {
+  const { title, description, code } = useMemo(() => parseDiagramResponse(text), [text]);
+  const containerRef = useRef(null);
+  const [svgContent, setSvgContent]   = useState('');
+  const [error, setError]             = useState('');
+  const [copied, setCopied]           = useState(false);
+
+  useEffect(() => {
+    if (!code) { setError('No diagram code found in response.'); return; }
+    ensureMermaid();
+    const id = `mermaid-${Date.now()}`;
+    mermaid.render(id, code)
+      .then(({ svg }) => { setSvgContent(svg); setError(''); })
+      .catch(() => setError('Could not render diagram — the AI may have generated invalid syntax. Try again.'));
+  }, [code]);
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  if (!code && !error) return <TutorMessageContent text={text} />;
+
+  return (
+    <div className="w-full space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-violet-500 flex items-center justify-center">
+            <Network size={14} className="text-white" />
+          </div>
+          <span className="text-sm font-black text-[#26332E]">{title}</span>
+        </div>
+        <button
+          onClick={copyCode}
+          className="flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 hover:bg-violet-100 transition-colors"
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          {copied ? 'Copied' : 'Copy code'}
+        </button>
+      </div>
+
+      {/* Diagram render area */}
+      <div
+        ref={containerRef}
+        className="w-full rounded-2xl border border-violet-100 bg-white p-4 overflow-x-auto shadow-sm min-h-[180px] flex items-center justify-center"
+      >
+        {error ? (
+          <div className="text-center text-sm text-red-400 font-medium">{error}</div>
+        ) : svgContent ? (
+          <div
+            className="w-full"
+            dangerouslySetInnerHTML={{ __html: svgContent }}
+          />
+        ) : (
+          <div className="flex items-center gap-2 text-violet-400 text-sm">
+            <div className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />
+            Rendering diagram…
+          </div>
+        )}
+      </div>
+
+      {/* Description */}
+      {description && (
+        <div className="rounded-xl bg-violet-50 border border-violet-100 px-4 py-2.5">
+          <p className="text-xs text-violet-700 font-medium leading-relaxed">{description}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -2089,6 +2185,7 @@ function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, su
   if (mode === 'worksheet') return <WorksheetUI text={text} />;
   if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;
   if (mode === 'hinge_question') return <HingeQuestionUI text={text} />;
+  if (mode === 'diagram') return <DiagramUI text={text} />;
   return <TutorMessageContent text={text} />;
 }
 

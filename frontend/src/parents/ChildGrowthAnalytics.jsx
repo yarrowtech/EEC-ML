@@ -817,6 +817,7 @@ const ChildGrowthAnalytics = () => {
   const subjectCount = academicData?.subjectBreakdown?.length || 0;
   const examCount = academicData?.examTrend?.length || 0;
   const overallSkillScore = skillsData?.overallSkillScore;
+  const holistic = skillsData?.holistic || null;
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 relative">
@@ -893,6 +894,135 @@ const ChildGrowthAnalytics = () => {
           );
         })}
       </div>
+
+      {/* Holistic Development Summary — 3 sections */}
+      {!loadingSkills && (
+        <div className="mb-6">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Holistic Development Overview</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+            {/* Section 1 — Academic Growth */}
+            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500 flex items-center justify-center">
+                  <Brain size={15} className="text-white" />
+                </div>
+                <p className="text-xs font-black text-indigo-700 uppercase tracking-wide">Academic Growth</p>
+              </div>
+              <p className="text-3xl font-black text-indigo-700 mb-1">
+                {holistic?.academicGrowth?.score != null ? `${holistic.academicGrowth.score}%` : '–'}
+              </p>
+              <p className="text-[10px] text-indigo-400 font-semibold mb-3">Cognitive · Memory · Creative · Language</p>
+              <div className="space-y-1.5">
+                {[
+                  { label: 'Cognitive', key: 'cognitive', color: 'bg-indigo-400' },
+                  { label: 'Memory', key: 'memory', color: 'bg-violet-400' },
+                  { label: 'Creative', key: 'creative', color: 'bg-purple-400' },
+                  { label: 'Language', key: 'language', color: 'bg-blue-400' },
+                ].map(({ label, key, color }) => {
+                  const cat = holistic?.academicGrowth?.breakdown?.[key];
+                  const score = cat?.score;
+                  const trend = cat?.trend;
+                  return (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500 w-16 font-semibold">{label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: score != null ? `${score}%` : '0%' }} />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-500 w-7 text-right">{score != null ? `${score}%` : '–'}</span>
+                      {trend === 'improving' && <ArrowUp size={10} className="text-emerald-500" />}
+                      {trend === 'declining' && <ArrowDown size={10} className="text-red-500" />}
+                      {trend === 'stable' && <Minus size={10} className="text-slate-400" />}
+                    </div>
+                  );
+                })}
+              </div>
+              {!holistic?.hasRealData && (
+                <p className="text-[9px] text-indigo-300 mt-2 italic">Estimated from academic data</p>
+              )}
+            </div>
+
+            {/* Section 2 — Emotional Wellbeing */}
+            <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-rose-500 flex items-center justify-center">
+                  <Heart size={15} className="text-white" />
+                </div>
+                <p className="text-xs font-black text-rose-700 uppercase tracking-wide">Emotional Wellbeing</p>
+              </div>
+              <p className="text-3xl font-black text-rose-700 mb-1">
+                {holistic?.emotionalWellbeing?.score != null ? `${holistic.emotionalWellbeing.score}%` : '–'}
+              </p>
+              <p className="text-[10px] text-rose-400 font-semibold mb-3">Social-Emotional · Physical Development</p>
+              <div className="space-y-1.5">
+                {[
+                  { label: 'Social', key: 'socialEmotional', color: 'bg-rose-400' },
+                  { label: 'Physical', key: 'physical', color: 'bg-pink-400' },
+                ].map(({ label, key, color }) => {
+                  const cat = holistic?.emotionalWellbeing?.breakdown?.[key];
+                  const score = cat?.score;
+                  const trend = cat?.trend;
+                  return (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-500 w-16 font-semibold">{label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: score != null ? `${score}%` : '0%' }} />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-500 w-7 text-right">{score != null ? `${score}%` : '–'}</span>
+                      {trend === 'improving' && <ArrowUp size={10} className="text-emerald-500" />}
+                      {trend === 'declining' && <ArrowDown size={10} className="text-red-500" />}
+                      {trend === 'stable' && <Minus size={10} className="text-slate-400" />}
+                    </div>
+                  );
+                })}
+              </div>
+              {!holistic?.hasRealData && (
+                <p className="text-[9px] text-rose-300 mt-2 italic">Estimated from wellbeing data</p>
+              )}
+            </div>
+
+            {/* Section 3 — Overall Mastery Score */}
+            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 flex flex-col items-center justify-center text-center">
+              <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center mb-3">
+                <Sparkles size={15} className="text-white" />
+              </div>
+              <p className="text-xs font-black text-amber-700 uppercase tracking-wide mb-2">Overall Mastery</p>
+              {overallSkillScore != null ? (
+                <>
+                  <div className="relative w-28 h-28 mb-3">
+                    <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#fde68a" strokeWidth="10" />
+                      <circle
+                        cx="50" cy="50" r="40" fill="none"
+                        stroke="#f59e0b" strokeWidth="10"
+                        strokeDasharray={`${2 * Math.PI * 40}`}
+                        strokeDashoffset={`${2 * Math.PI * 40 * (1 - overallSkillScore / 100)}`}
+                        strokeLinecap="round"
+                        className="transition-all duration-700"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-2xl font-black text-amber-700">{overallSkillScore}%</span>
+                      <span className="text-[9px] font-bold text-amber-400 uppercase">of 22 goals</span>
+                    </div>
+                  </div>
+                  <p className="text-xs font-bold text-amber-600">
+                    {overallSkillScore >= 85 ? 'Excellent holistic growth' :
+                     overallSkillScore >= 65 ? 'Good overall development' :
+                     overallSkillScore >= 45 ? 'Progressing steadily' : 'Needs more support'}
+                  </p>
+                </>
+              ) : (
+                <div className="text-amber-300 py-4">
+                  <Sparkles size={28} className="mx-auto mb-2 opacity-40" />
+                  <p className="text-xs font-bold">No data yet</p>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Three main analytics cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">

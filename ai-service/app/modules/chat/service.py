@@ -430,6 +430,28 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "Turn the material into exactly 6 flashcards. Return them as a numbered list, "
         "each formatted as 'Q: <question>' followed by 'A: <answer>'."
     ),
+    "diagram": (
+        "You are an educational diagram generator. Convert the retrieved material into a clear, "
+        "accurate Mermaid.js diagram that visually represents the key concept, process, or structure.\n\n"
+        "Rules:\n"
+        "1. Choose the most appropriate diagram type based on the content:\n"
+        "   - Process/cycle (water cycle, photosynthesis) → flowchart TD or graph LR\n"
+        "   - Hierarchy/classification → graph TD\n"
+        "   - Timeline/sequence of events → timeline or sequenceDiagram\n"
+        "   - Comparison → graph LR with parallel branches\n"
+        "   - Cause and effect → graph TD with labelled arrows\n"
+        "2. Return EXACTLY this format — nothing before or after:\n"
+        "   TITLE: <short descriptive title>\n"
+        "   TYPE: <flowchart|sequence|timeline|classDiagram>\n"
+        "   ```mermaid\n"
+        "   <valid mermaid syntax here>\n"
+        "   ```\n"
+        "   DESCRIPTION: <1-2 sentences explaining what the diagram shows and how to read it>\n"
+        "3. Use ONLY concepts visible in the retrieved material — never invent nodes.\n"
+        "4. Keep node labels short (2-5 words). Use arrow labels to show relationships.\n"
+        "5. Maximum 12 nodes — keep it readable for a school student.\n"
+        "6. Ensure syntax is valid Mermaid.js — no special characters in node IDs."
+    ),
     "practice_basic": (
         "You are generating FOUNDATION-level practice for a student who is still learning this topic.\n"
         "Create 5 very simple questions that test basic recall and recognition.\n"
@@ -1064,6 +1086,18 @@ def build_prompt(
     # Inject student learning profile into system prompt for personalised responses.
     # This is placed after the base rules so the LLM applies it as a behavioural lens.
     if req.studentContext:
+        # Extract Bloom's instruction from the context block if present
+        bloom_instruction = ""
+        if "BLOOM'S TAXONOMY TARGET" in req.studentContext:
+            import re as _re
+            bloom_match = _re.search(
+                r"Instruction:\s*(.+?)(?:\n── END BLOOM TARGET ──|$)",
+                req.studentContext,
+                _re.DOTALL,
+            )
+            if bloom_match:
+                bloom_instruction = bloom_match.group(1).strip()
+
         base_system = (
             base_system
             + f"\n\n{req.studentContext}\n\n"
@@ -1071,6 +1105,19 @@ def build_prompt(
             "Match complexity, vocabulary, and depth to the student's current TIER. "
             "Do not mention the profile or scores to the student — just let it shape how you explain."
         )
+
+        # Apply Bloom's level instruction for content-generating modes
+        if bloom_instruction and req.mode in {
+            "quiz", "visual_quiz", "explain", "visual_explain",
+            "flashcards", "notes", "real_world", "practice_basic",
+            "practice_intermediate", "practice_advanced",
+        }:
+            base_system = (
+                base_system
+                + f"\n\nBLOOM'S TEACHING METHOD FOR THIS STUDENT: {bloom_instruction} "
+                "Apply this Bloom's level to every question, prompt, and explanation you generate. "
+                "This is the student's current developmental need — honour it without mentioning it."
+            )
 
     # Reinforce Socratic constraint at system level for homework_help so the LLM cannot ignore it.
     if req.mode == "homework_help":

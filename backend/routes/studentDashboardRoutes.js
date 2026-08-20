@@ -8,6 +8,7 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const PracticeAttempt = require('../models/PracticeAttempt');
 const ExamResult = require('../models/ExamResult');
 const FlashcardResult = require('../models/FlashcardResult');
+const { updateDevelopmentProfile } = require('../services/developmentProfileService');
 
 // GET /api/student-dashboard/mastery-topics
 router.get('/mastery-topics', authStudent, async (req, res) => {
@@ -108,6 +109,8 @@ router.post('/flashcard-result', authStudent, async (req, res) => {
     const { topicId, topicTitle, subject, result } = req.body || {};
     if (!topicId || !result) return res.status(400).json({ error: 'topicId and result are required' });
     await FlashcardResult.create({ studentId, schoolId, topicId, topicTitle: topicTitle || '', subject: subject || '', result });
+    // Fire-and-forget: recompute development profile after flashcard practice
+    updateDevelopmentProfile(studentId, schoolId).catch(() => {});
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -139,6 +142,32 @@ router.get('/flashcard-stats', authStudent, async (req, res) => {
     const overallRate = results.length > 0 ? Math.round((totalGot / results.length) * 100) : 0;
 
     return res.json({ success: true, data: { overallRate, totalAttempts: results.length, byTopic } });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/student-dashboard/sync-development-profile
+// Call this after any learning activity to recompute the 6-category profile.
+router.post('/sync-development-profile', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const schoolId = req.schoolId;
+    const profile = await updateDevelopmentProfile(studentId, schoolId);
+    return res.json({ success: true, data: profile });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/student-dashboard/development-profile
+router.get('/development-profile', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const schoolId = req.schoolId;
+    const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
+    const profile = await StudentDevelopmentProfile.findOne({ studentId, schoolId }).lean();
+    return res.json({ success: true, data: profile || null });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

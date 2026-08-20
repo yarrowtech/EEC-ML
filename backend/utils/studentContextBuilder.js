@@ -17,7 +17,9 @@ const MasteryScore = require('../models/MasteryScore');
 const StudentProgress = require('../models/StudentProgress');
 const StudentMemorySummary = require('../models/StudentMemorySummary');
 const TutorConversation = require('../models/TutorConversation');
+const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
 const { computeAtRisk, computeLearningPace, detectLearningGaps } = require('../services/mlEngine');
+const { formatProfileForLLM, getBloomRecommendation } = require('../services/developmentProfileService');
 
 const TIER_LABELS = {
   basic_lesson: 'FOUNDATION — needs basics, use simplest language and short analogies',
@@ -68,7 +70,7 @@ async function getRecentConversationTurns(studentId, schoolId, maxTurns = 3) {
  * @returns {{ contextBlock: string, conversationHistory: Array<{role,text}> }}
  */
 async function buildStudentContext({ studentId, schoolId, subject, topicId, gradeLevel }) {
-  const [masteryScores, atRisk, pace, gapData, progress, memory, conversationHistory] =
+  const [masteryScores, atRisk, pace, gapData, progress, memory, conversationHistory, devProfile] =
     await Promise.allSettled([
       MasteryScore.find({ studentId, schoolId, subject }).sort({ score: 1 }).lean(),
       computeAtRisk({ studentId, schoolId }),
@@ -79,6 +81,7 @@ async function buildStudentContext({ studentId, schoolId, subject, topicId, grad
         .lean(),
       StudentMemorySummary.findOne({ studentId, schoolId }).lean(),
       getRecentConversationTurns(studentId, schoolId, 3),
+      StudentDevelopmentProfile.findOne({ studentId, schoolId }).lean(),
     ]);
 
   const mastery = masteryScores.status === 'fulfilled' ? masteryScores.value : [];
@@ -88,6 +91,7 @@ async function buildStudentContext({ studentId, schoolId, subject, topicId, grad
   const prog = progress.status === 'fulfilled' ? progress.value : null;
   const mem = memory.status === 'fulfilled' ? memory.value : null;
   const history = conversationHistory.status === 'fulfilled' ? conversationHistory.value : [];
+  const developmentProfile = devProfile.status === 'fulfilled' ? devProfile.value : null;
 
   const lines = ['── STUDENT LEARNING PROFILE (for AI personalisation) ──'];
 
@@ -165,12 +169,26 @@ async function buildStudentContext({ studentId, schoolId, subject, topicId, grad
     lines.push(`Key learning insights: ${mem.keyInsights.slice(0, 3).join(' | ')}`);
   }
 
+  // 6-category holistic development profile
+  const devProfileBlock = formatProfileForLLM(developmentProfile);
+  if (devProfileBlock) lines.push(devProfileBlock);
+
+  // Bloom's taxonomy recommendation based on weakest category
+  const bloom = getBloomRecommendation(developmentProfile);
+  lines.push(
+    `── BLOOM'S TAXONOMY TARGET ──`,
+    `Target levels: ${bloom.targetLevels.join(' → ')} (Reason: ${bloom.reason})`,
+    `Instruction: ${bloom.instruction}`,
+    `── END BLOOM TARGET ──`
+  );
+
   lines.push(
     '── END PROFILE ──',
     'Adapt your language, depth, and difficulty to match this student\'s tier above.',
     'For FOUNDATION tier: use simple words, short sentences, concrete analogies.',
     'For MASTERY tier: use precise vocabulary, push analysis and synthesis.',
-    'If student is AT-RISK: be extra encouraging, celebrate small wins, avoid discouraging phrasing.'
+    'If student is AT-RISK: be extra encouraging, celebrate small wins, avoid discouraging phrasing.',
+    'Use the HOLISTIC DEVELOPMENT PROFILE above to further personalise — if Memory is weak, add mnemonics; if Language is weak, simplify vocabulary; if Social-Emotional is weak, add encouragement and collaborative framing.'
   );
 
   return {
