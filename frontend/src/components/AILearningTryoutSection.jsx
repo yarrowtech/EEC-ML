@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Upload } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -253,13 +254,13 @@ const TryoutQuestion = ({ question, index, onAnswer }) => {
   );
 };
 
-const AILearningTryoutSection = () => {
+const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName = '', onBack }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
-  const subjectSlug = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'subject';
-  const topicSlug = topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic';
+  const subjectSlug = assignedSubjectName || (subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'subject');
+  const topicSlug = assignedTopicName || (topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [subjects, setSubjects] = useState([]);
@@ -314,6 +315,14 @@ const AILearningTryoutSection = () => {
     }
     return '';
   }, [subjects, subjectSlug, topicSlug]);
+
+  const returnToPreviousView = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectSlug)}/topic/${slugifyForUrl(topicSlug)}`);
+  };
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -375,10 +384,10 @@ const AILearningTryoutSection = () => {
 
             <button
               type="button"
-              onClick={() => navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectSlug)}/topic/${slugifyForUrl(topicSlug)}`)}
+              onClick={returnToPreviousView}
               className="mt-6 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100"
             >
-              <ArrowLeft size={16} /> Back to Topic
+              <ArrowLeft size={16} /> {onBack ? 'Back to Activities' : 'Back to Topic'}
             </button>
           </div>
         </div>
@@ -391,11 +400,11 @@ const AILearningTryoutSection = () => {
       <div className="mx-auto w-full max-w-[950px]">
         <button
           type="button"
-          onClick={() => navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectSlug)}/topic/${slugifyForUrl(topicSlug)}`)}
+          onClick={returnToPreviousView}
           className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           <ArrowLeft size={16} />
-          Back to Topic
+          {onBack ? 'Back to Activities' : 'Back to Topic'}
         </button>
 
         <section className="mb-5 rounded-xl border border-slate-200 bg-white p-5">

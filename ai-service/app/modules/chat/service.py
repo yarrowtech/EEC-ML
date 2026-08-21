@@ -139,7 +139,11 @@ def _visual_grounding_instruction(context: str, mode: str) -> str | None:
         "select its answer, calculate its requested distances/results, or reveal its solution, even when the student "
         "asks for an explanation. Teach the method without completing the printed task. "
     )
-    if mode in {"explain", "visual_explain"}:
+    if mode == "visual_explain":
+        # visual_explain has its own structured format (DIAGRAM + EXPLANATION sections).
+        # Only add the shared evidence rules — no Look-Notice-Connect override.
+        return shared
+    if mode == "explain":
         return shared + (
             "Include a short 'Visual walkthrough' section using this sequence: Look (where to focus on the cited page), "
             "Notice (the important visible labels or relationship), and Connect (how that visual supports the concept). "
@@ -179,6 +183,29 @@ def _visual_explanation_reveals_exercise_answer(context: str, content: str) -> b
         r"\b\d[\d,]*\s+(?:units?|jumps?)\s+(?:away|from|to)\b",
     )
     return any(re.search(pattern, content, re.IGNORECASE) for pattern in answer_patterns)
+
+
+def _reveals_balance_exercise_answer(context: str, content: str) -> bool:
+    """Detect when the LLM has solved a balance/swap exercise it should not reveal.
+
+    Balance exercises ask students to swap numbers between two groups to equalise sums.
+    The LLM must explain the METHOD, never perform the swap or state the equalised totals.
+    """
+    balance_markers = ("swap", "group 1", "group 2", "make.*equal", "least.*move", "sums equal")
+    if not any(re.search(m, context, re.IGNORECASE) for m in balance_markers):
+        return False
+    # Patterns that indicate the solution was revealed
+    solution_patterns = (
+        r"swap\s+\d+\s+from\s+group",          # "swap 5 from Group 1 to Group 2"
+        r"group\s+[12]\s*[=:]\s*\d+",           # "Group 1 = 26"
+        r"both\s+sums?\s+are\s+(?:now\s+)?equal",
+        r"✅",
+        r"answer\s*:\s*swap",
+        r"move\s+\d+\s+from\s+group",
+        r"required\s+(?:net\s+)?transfer\s*[=:]\s*\d",
+        r"minimum\s+moves?\s*[=:]\s*\d",
+    )
+    return any(re.search(p, content, re.IGNORECASE) for p in solution_patterns)
 
 
 def _safe_visual_explanation(req: TutorGenerateRequest, context: str) -> str:
@@ -350,23 +377,40 @@ MODE_INSTRUCTIONS: dict[str, str] = {
     ),
     "explain": "Explain the topic clearly, step by step, using simple language and a short example.",
     "visual_explain": (
-        "Explain the requested concept visually. You MUST return BOTH a diagram AND an explanation.\n\n"
+        "Explain the student's specific question visually using retrieved material. "
+        "You MUST return BOTH a Mermaid diagram AND a structured explanation.\n\n"
+        "CRITICAL — READ THE STUDENT'S QUESTION FIRST:\n"
+        "The diagram must directly answer what the student asked. "
+        "If they ask about 'real life examples', diagram real objects from the material (fan, clock, door). "
+        "If they ask 'how does X work', diagram the process. "
+        "If they ask about a comparison, diagram the comparison. "
+        "NEVER default to a generic concept diagram when the student asked a specific question.\n\n"
         "Use EXACTLY this format — no deviations:\n\n"
         "DIAGRAM:\n"
         "```mermaid\n"
-        "<valid Mermaid.js syntax — choose the best type for this concept:\n"
-        "  flowchart TD for processes/cycles, graph LR for comparisons,\n"
-        "  graph TD for hierarchies, sequenceDiagram for step sequences>\n"
-        "Maximum 12 nodes. Short labels (2-5 words). Use arrow labels to show relationships.\n"
-        "Base ONLY on retrieved material — never invent nodes.\n"
+        "<valid Mermaid.js syntax tailored to the student's question:\n"
+        "  flowchart TD for processes/cycles/how-it-works\n"
+        "  graph LR for comparisons or side-by-side relationships\n"
+        "  graph TD for hierarchies or classifications\n"
+        "  sequenceDiagram for step-by-step sequences>\n"
+        "Max 12 nodes. Labels 2–5 words. Arrow labels show relationships.\n"
+        "Use only objects, labels, and values from the retrieved material.\n"
         "```\n\n"
         "EXPLANATION:\n"
-        "<2-4 short paragraphs explaining the concept using the diagram above as reference.\n"
-        "Guide the student: what to look at in the diagram, what each part means,\n"
-        "and how the parts connect. Use simple age-appropriate language.\n"
-        "If retrieved visual evidence mentions specific page numbers, reference them.>\n\n"
+        "<Use EXACTLY these headings, each in bold with a colon, each on its own line:\n\n"
+        "**Overview:**\n"
+        "One sentence answering the student's question directly. Reference the diagram.\n\n"
+        "**How It Works:**\n"
+        "3–5 numbered points walking through the diagram node by node. Simple, age-appropriate language.\n\n"
+        "**Key Words:**\n"
+        "3–5 terms from the material: Term — plain-English definition.\n\n"
+        "**Why It Matters:**\n"
+        "2–3 sentences connecting this to real life or to why students need to know this.\n\n"
+        "**Quick Question:**\n"
+        "One short question for the student to think about.\n"
+        "Answer: <one-sentence answer>>\n\n"
         "If the retrieved material does not have enough information to build a diagram, "
-        "write 'DIAGRAM: none' and provide only the EXPLANATION section."
+        "write 'DIAGRAM: none' and still provide the full EXPLANATION section."
     ),
     "summarize": (
         "Summarize the material into concise revision notes with bullet points covering only the key ideas. "
@@ -996,7 +1040,12 @@ def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[
 
 def _quiz_instruction_for_type(question_type: str, default: str, count: int | None = None) -> str:
     type_labels = {
-        "mcq": "Write multiple-choice questions with 4 options labeled A-D and the correct answer marked as 'Answer: <letter>'.",
+        "mcq": (
+            "Return ONLY a valid JSON array with no markdown or commentary. Each item must have "
+            "questionText, options, explanation, and difficulty. The options value must be an array of exactly "
+            "four objects shaped as {\"text\": \"option text\", \"isCorrect\": false}, with exactly one "
+            "isCorrect value set to true. Do not prefix option text with A, B, C, or D."
+        ),
         "cloze_dropdown": (
             "Write fill-in-the-blank questions with one blank per item. "
             "Provide a dropdown list of answer choices for each blank and mark the correct dropdown option."
@@ -1065,13 +1114,10 @@ def build_prompt(
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {req.mode}")
 
     if req.mode == "visual_explain":
-        depth = (req.responseDepth or "detailed").strip().lower()
-        goal = (req.learningGoal or "understand").strip().lower()
-        instruction = " ".join(filter(None, [
-            instruction,
-            _VISUAL_DEPTH_INSTRUCTIONS.get(depth, _VISUAL_DEPTH_INSTRUCTIONS["detailed"]),
-            _LEARNING_GOAL_INSTRUCTIONS.get(goal, _LEARNING_GOAL_INSTRUCTIONS["understand"]),
-        ]))
+        # visual_explain has its own DIAGRAM + EXPLANATION structure in MODE_INSTRUCTIONS.
+        # _VISUAL_DEPTH_INSTRUCTIONS and _LEARNING_GOAL_INSTRUCTIONS use the old Look-Notice-Connect
+        # format which conflicts with the new structured format — do not append them.
+        pass
 
     grade = req.gradeLevel or "school"
     age_style = _age_adaptive_style(grade)
@@ -1249,6 +1295,16 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     system, user_prompt = build_prompt(req, context, verification_context, visuals)
     system = _SAFETY_PREFIX + system
 
+    # If prior assistant turns exist, extract question stems to avoid exact repetition.
+    prior_questions: list[str] = []
+    if req.conversationHistory:
+        for turn in req.conversationHistory:
+            if turn.role == "assistant":
+                # Grab the first line of each assistant response as a proxy for the question/title
+                first = turn.text.strip().splitlines()[0][:120] if turn.text.strip() else ""
+                if first:
+                    prior_questions.append(first)
+
     messages: list = [SystemMessage(content=system)]
     if req.conversationHistory:
         for turn in req.conversationHistory:
@@ -1256,14 +1312,41 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
                 messages.append(AIMessage(content=turn.text))
             else:
                 messages.append(HumanMessage(content=turn.text))
+
+    # Anti-repetition: warn LLM when it has already generated content this session
+    if prior_questions and req.mode in {"quiz", "visual_quiz", "flashcards", "notes", "explain", "visual_explain"}:
+        diversity_note = (
+            f"IMPORTANT: You have already provided responses in this session (e.g. starting with: "
+            f"{'; '.join(prior_questions[-3:])}). "
+            "Generate COMPLETELY DIFFERENT content this time — new questions, new angles, new examples. "
+            "Do NOT repeat questions, vocabulary items, or explanations already given above."
+        )
+        user_prompt = f"{diversity_note}\n\n{user_prompt}"
+
     messages.append(HumanMessage(content=user_prompt))
 
     chain = create_chain(mode=req.mode)
     try:
         content = chain.invoke(messages)
-        if req.mode in {"explain", "visual_explain"} and _visual_explanation_reveals_exercise_answer(context, content):
+
+        # Balance/swap exercise lock — applies to ALL modes including custom.
+        # The LLM must teach the method, never perform the swap or state equalised totals.
+        if _reveals_balance_exercise_answer(context, content):
+            balance_revision = HumanMessage(content=(
+                "The draft solved the balance exercise — it revealed which specific numbers to swap "
+                "and stated the equalised totals. Rewrite it without solving the exercise. "
+                "Explain only the METHOD: (1) find the difference between the two group sums, "
+                "(2) divide by 2 to get the target transfer amount, (3) look for a pair of numbers "
+                "whose difference equals that target. Do NOT name the specific numbers to swap, "
+                "do NOT show the equalised sums, do NOT use ✅ or 'Answer: swap X'. "
+                "End with one guiding question: 'Can you find a pair of numbers with that difference?' "
+                "Return only the corrected response."
+            ))
+            content = chain.invoke(messages + [AIMessage(content=content), balance_revision])
+
+        if req.mode in {"explain", "visual_explain", "custom"} and _visual_explanation_reveals_exercise_answer(context, content):
             revision = HumanMessage(content=(
-                "Rewrite the draft as a concise Look–Notice–Connect visual explanation. The draft revealed answers "
+                "Rewrite the draft as a concise visual explanation. The draft revealed answers "
                 "to a printed student exercise. Remove every calculated distance, rounded result, selected endpoint, "
                 "and filled blank. Preserve only the general method and exact visible labels. Refer to the source as "
                 "'page N'. Return only the corrected explanation."
@@ -1287,16 +1370,12 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
             content = chain.invoke(messages + [AIMessage(content=content), HumanMessage(content=(
                 "Correct the draft while preserving its useful structure and level of detail. Remove these precision "
                 f"violations: {'; '.join(precision_issues)}. Use only degree values and relationships explicitly present "
-                "in the retrieved material or generated visual specification. Leave all self-check and practice "
-                "questions unsolved. Return only the corrected lesson."
+                "in the retrieved material or generated visual specification. Do NOT mention grid labels (Grid A/B/C) "
+                "with dimensions, do NOT describe blank activity grids as shaded, do NOT introduce pizza or ribbon "
+                "examples. Leave all self-check and practice questions unsolved. Return only the corrected lesson."
             ))])
-            remaining_issues = _generated_visual_precision_issues(visuals, full_visual_context, content)
-            fraction_visual = next((visual for visual in visuals if visual.get("type") == "fraction_wholes"), None)
-            if remaining_issues and fraction_visual:
-                content = _safe_fraction_visual_explanation(fraction_visual)
-        balance_visual = next((visual for visual in visuals if visual.get("type") == "balance_swaps"), None)
-        if balance_visual:
-            content = _safe_balance_visual_explanation(balance_visual)
+            # Use the LLM revision even if minor issues remain — static fallbacks cause identical
+            # output on every request which is worse than a slightly imperfect but varied response.
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 

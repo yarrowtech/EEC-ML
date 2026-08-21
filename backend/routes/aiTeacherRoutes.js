@@ -6,6 +6,8 @@ const StudentUser = require('../models/StudentUser');
 const ExamResult = require('../models/ExamResult');
 const MasteryScore = require('../models/MasteryScore');
 const ClassModel = require('../models/Class');
+const Section = require('../models/Section');
+const Subject = require('../models/Subject');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -23,6 +25,134 @@ const callTeacherRagAI = (payload) =>
     payload,
     { timeout: TIMEOUT }
   );
+
+const extractJsonObject = (value) => {
+  const text = String(value || '').trim();
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch (_) {
+    return null;
+  }
+};
+
+const extractJsonArray = (value) => {
+  const text = String(value || '').replace(/```(?:json)?/gi, '').trim();
+  const start = text.indexOf('[');
+  if (start === -1) return null;
+  let depth = 0;
+  let insideString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (insideString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') insideString = false;
+      continue;
+    }
+    if (character === '"') insideString = true;
+    else if (character === '[') depth += 1;
+    else if (character === ']') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return null;
+};
+
+const cleanOptionText = (value) => String(value || '')
+  .replace(/^\s*\(?[A-D]\)?[.):\-]\s*/i, '')
+  .trim();
+
+const normalizeMcqQuestion = (item) => {
+  if (!item || typeof item !== 'object') return null;
+  const questionText = String(item.questionText || item.question || item.stem || item.text || '').trim();
+  const rawOptions = Array.isArray(item.options) ? item.options : [];
+  const options = rawOptions.slice(0, 4).map((option) => ({
+    text: cleanOptionText(typeof option === 'string' ? option : option?.text || option?.choice || option?.label),
+    isCorrect: Boolean(option && typeof option === 'object'
+      && (option.isCorrect === true || option.correct === true || option.is_answer === true)),
+  })).filter((option) => option.text);
+  if (!questionText || options.length !== 4 || new Set(options.map((option) => option.text.toLowerCase())).size !== 4) {
+    return null;
+  }
+
+  let correctIndex = options.findIndex((option) => option.isCorrect);
+  const explicitIndex = Number(item.correctAnswerIndex ?? item.answerIndex);
+  if (correctIndex < 0 && Number.isInteger(explicitIndex) && explicitIndex >= 0 && explicitIndex < options.length) {
+    correctIndex = explicitIndex;
+  }
+  const explicitAnswer = String(item.correctAnswer ?? item.answer ?? item.correctOption ?? '').trim();
+  if (correctIndex < 0 && /^[A-D]$/i.test(explicitAnswer)) {
+    correctIndex = explicitAnswer.toUpperCase().charCodeAt(0) - 65;
+  }
+  if (correctIndex < 0 && explicitAnswer) {
+    const cleanedAnswer = cleanOptionText(explicitAnswer).toLowerCase();
+    correctIndex = options.findIndex((option) => option.text.toLowerCase() === cleanedAnswer);
+  }
+  if (correctIndex < 0 || correctIndex >= options.length) return null;
+
+  return {
+    questionText,
+    options: options.map((option, index) => ({ ...option, isCorrect: index === correctIndex })),
+    correctAnswer: options[correctIndex].text,
+    explanation: String(item.explanation || item.reason || item.rationale || '').trim(),
+    difficulty: String(item.difficulty || '').trim(),
+  };
+};
+
+const parsePlainMcqQuestions = (value) => {
+  const text = String(value || '').replace(/```(?:json)?/gi, '').trim();
+  const blocks = text.split(/\n(?=\s*(?:Question\s*)?\d+\s*[.):\-]\s*)/i).filter(Boolean);
+  return blocks.map((block) => {
+    const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const questionLineIndex = lines.findIndex((line) => /^(?:Question\s*)?\d+\s*[.):\-]\s*/i.test(line));
+    if (questionLineIndex < 0) return null;
+    const questionText = lines[questionLineIndex]
+      .replace(/^(?:Question\s*)?\d+\s*[.):\-]\s*/i, '')
+      .trim();
+    const options = [];
+    let answer = '';
+    let explanation = '';
+    lines.slice(questionLineIndex + 1).forEach((line) => {
+      const optionMatch = line.match(/^\(?([A-D])\)?[.):\-]\s*(.+)$/i);
+      if (optionMatch) {
+        options.push({ text: optionMatch[2].trim(), isCorrect: false });
+        return;
+      }
+      const answerMatch = line.match(/^(?:Correct\s+Answer|Answer|Key)\s*[:\-]\s*(.+)$/i);
+      if (answerMatch) {
+        answer = answerMatch[1].trim();
+        return;
+      }
+      const explanationMatch = line.match(/^(?:Explanation|Reason|Why)\s*[:\-]\s*(.+)$/i);
+      if (explanationMatch) explanation = explanationMatch[1].trim();
+    });
+    return normalizeMcqQuestion({ questionText, options, correctAnswer: answer, explanation });
+  }).filter(Boolean);
+};
+
+const parseQuizQuestions = (raw, requestedType = 'mcq') => {
+  const cleaned = String(raw || '').replace(/```(?:json)?/gi, '').trim();
+  let parsed = null;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (_) {
+    const arrayText = extractJsonArray(cleaned);
+    if (arrayText) {
+      try { parsed = JSON.parse(arrayText); } catch (_) { parsed = null; }
+    }
+  }
+  const items = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.questions) ? parsed.questions : Array.isArray(parsed?.items) ? parsed.items : [];
+  if (requestedType !== 'mcq') return items;
+  const normalized = items.map(normalizeMcqQuestion).filter(Boolean);
+  return normalized.length ? normalized : parsePlainMcqQuestions(cleaned);
+};
 
 // ── POST /api/ai-teacher/ingest-file ─────────────────────────────────────────
 // Immediately ingest an uploaded Cloudinary file into the AI vector store so
@@ -380,6 +510,108 @@ router.post('/generate-content', authTeacher, async (req, res) => {
   }
 });
 
+// ── POST /api/ai-teacher/assignment-draft ───────────────────────────────────
+// Produces a structured, editable assignment grounded in the material indexed
+// for the selected class, section, subject, and chapter.
+router.post('/assignment-draft', authTeacher, async (req, res) => {
+  try {
+    const {
+      subject, topic, chapterTitle, gradeLevel, classId, sectionId, subjectId,
+      difficulty = 'Medium', activityType = 'Assignment', marks = 20,
+    } = req.body || {};
+    const schoolId = String(req.schoolId || '');
+    const normalizedTopic = String(topic || chapterTitle || '').trim();
+
+    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!subject || !normalizedTopic || !classId || !sectionId) {
+      return res.status(400).json({ error: 'classId, sectionId, subject, and topic or chapterTitle are required' });
+    }
+
+    const [classDoc, sectionDoc, subjectDoc] = await Promise.all([
+      ClassModel.findOne({ _id: classId, schoolId }).select('name').lean(),
+      Section.findOne({ _id: sectionId, classId, schoolId }).select('name').lean(),
+      subjectId ? Subject.findOne({ _id: subjectId, schoolId }).select('name').lean() : Promise.resolve(null),
+    ]);
+    if (!classDoc || !sectionDoc) return res.status(404).json({ error: 'Selected class or section was not found' });
+    if (subjectId && !subjectDoc) return res.status(404).json({ error: 'Selected subject was not found' });
+    if (subjectDoc && String(subjectDoc.name || '').trim().toLowerCase() !== String(subject).trim().toLowerCase()) {
+      return res.status(400).json({ error: 'Selected subject does not match subjectId' });
+    }
+
+    const requestedMarks = Math.min(500, Math.max(1, Number(marks) || 20));
+    const question = [
+      'Create one classroom assignment using ONLY the retrieved school material.',
+      'Return one valid JSON object and no markdown or commentary.',
+      'Use exactly these keys:',
+      '{"title":"concise title","description":"clear numbered student instructions and tasks","marks":20,"difficulty":"Medium","activityType":"Assignment","submissionFormat":"text","isEssay":false,"rubric":""}',
+      `Target total marks: ${requestedMarks}. Requested difficulty: ${difficulty}. Requested activity type: ${activityType}.`,
+      'The description must contain enough concrete questions or tasks for a student to complete independently.',
+      'For an Essay activity, set isEssay to true and provide 3 to 5 newline-separated rubric criteria. Otherwise use an empty rubric.',
+    ].join('\n');
+
+    const aiRes = await callTeacherRagAI({
+      mode: 'custom',
+      subject,
+      topic: normalizedTopic,
+      gradeLevel: gradeLevel || classDoc.name || null,
+      question,
+      candidates: [],
+      schoolId,
+      classId: String(classId),
+      sectionId: String(sectionId),
+      subjectId: subjectId ? String(subjectId) : null,
+      chapterTitle: chapterTitle || normalizedTopic,
+      subTopic: null,
+      difficulty: String(difficulty || 'Medium').toLowerCase(),
+      studentContext: null,
+      conversationHistory: null,
+    });
+
+    if (aiRes.data?.noMaterialFound || !aiRes.data?.groundedInMaterial) {
+      return res.status(404).json({
+        error: 'No indexed material matched this class, section, subject, and chapter. Upload or re-index the lesson material, then try again.',
+      });
+    }
+
+    const raw = String(aiRes.data?.content || '').trim();
+    const parsed = extractJsonObject(raw);
+    if (!parsed) return res.status(502).json({ error: 'AI returned an invalid assignment format. Please try again.' });
+
+    const normalizedDifficulty = ['Easy', 'Medium', 'Hard'].includes(parsed.difficulty)
+      ? parsed.difficulty
+      : ['Easy', 'Medium', 'Hard'].includes(difficulty) ? difficulty : 'Medium';
+    const normalizedType = ['Assignment', 'Worksheet', 'Essay'].includes(parsed.activityType)
+      ? parsed.activityType
+      : ['Assignment', 'Worksheet', 'Essay'].includes(activityType) ? activityType : 'Assignment';
+    const isEssay = normalizedType === 'Essay' || Boolean(parsed.isEssay);
+    const draft = {
+      title: String(parsed.title || `${subject}: ${normalizedTopic}`).trim().slice(0, 180),
+      description: String(parsed.description || '').trim().slice(0, 12000),
+      marks: Math.min(500, Math.max(1, Number(parsed.marks) || requestedMarks)),
+      difficulty: normalizedDifficulty,
+      type: normalizedType,
+      submissionFormat: parsed.submissionFormat === 'pdf' ? 'pdf' : 'text',
+      isEssay,
+      rubric: isEssay ? String(parsed.rubric || '').trim().slice(0, 4000) : '',
+    };
+    if (!draft.title || !draft.description) {
+      return res.status(502).json({ error: 'AI response did not contain a usable title and description.' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        draft,
+        groundedInMaterial: true,
+        citations: Array.isArray(aiRes.data?.citations) ? aiRes.data.citations : [],
+      },
+    });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/ai-teacher/idoweedo ─────────────────────────────────────────────
 // Uses RAG so the I Do / We Do / You Do phases are grounded in the teacher's
 // uploaded materials rather than generic knowledge.
@@ -417,15 +649,30 @@ router.post('/idoweedo', authTeacher, async (req, res) => {
 // ── POST /api/ai-teacher/quiz-generate ────────────────────────────────────────
 router.post('/quiz-generate', authTeacher, async (req, res) => {
   try {
-    const { subject, topic, gradeLevel, difficulty, count, questionType, chapterTitle, topicTitle } = req.body || {};
+    const {
+      subject, topic, gradeLevel, difficulty, count, questionType, chapterTitle, topicTitle,
+      classId, sectionId, subjectId, academicYearId,
+    } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
     const chapter = chapterTitle || topicTitle || null;
-    const questionTypeText = questionType ? `questions in the ${questionType} format` : 'multiple-choice questions';
+    const requestedType = questionType || 'mcq';
+    const safeCount = Math.min(20, Math.max(1, Number(count) || 5));
+    const questionTypeText = requestedType === 'mcq'
+      ? 'multiple-choice questions'
+      : `questions in the ${requestedType} format`;
     const question = [
       difficulty ? `Difficulty level: ${difficulty}` : null,
-      count ? `Generate exactly ${count} ${questionTypeText}` : 'Generate exactly 5 multiple-choice questions',
-      questionType ? `Create questions in the ${questionType} format.` : 'Create questions in multiple-choice format.',
+      `Generate exactly ${safeCount} ${questionTypeText}.`,
       'Base all questions only on the uploaded course material for this topic.',
+      requestedType === 'mcq'
+        ? [
+          'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+          'Each array item must use this exact shape:',
+          '{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium"}',
+          'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
+          'Do not add A, B, C, or D prefixes inside option text.',
+        ].join(' ')
+        : `Create questions in the ${requestedType} format and return a valid JSON array with no markdown.`,
     ].filter(Boolean).join(' ');
 
     const payload = {
@@ -433,12 +680,14 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       subject,
       topic,
       gradeLevel: gradeLevel || null,
-      questionType: questionType || null,
+      questionType: requestedType,
       question,
       candidates: [],
       schoolId: String(req.schoolId),
-      classId: req.user?.classId ? String(req.user.classId) : null,
-      sectionId: req.user?.sectionId ? String(req.user.sectionId) : null,
+      classId: classId ? String(classId) : null,
+      sectionId: sectionId ? String(sectionId) : null,
+      academicYearId: academicYearId ? String(academicYearId) : null,
+      subjectId: subjectId ? String(subjectId) : null,
       chapterTitle: chapter,
       subTopic: null,
       difficulty: difficulty || null,
@@ -448,16 +697,18 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
 
     const aiRes = await callTeacherRagAI(payload);
     const raw = (aiRes.data?.content || '').trim();
-
-    let questions = [];
-    try {
-      const start = raw.indexOf('[');
-      const end = raw.lastIndexOf(']');
-      if (start !== -1 && end > start) {
-        questions = JSON.parse(raw.slice(start, end + 1));
-      }
-    } catch (_) {
-      // Return raw content if JSON parse fails — frontend can show it
+    if (aiRes.data?.noMaterialFound || !aiRes.data?.groundedInMaterial) {
+      return res.status(404).json({
+        error: 'No indexed material matched the selected class, section, subject, and topic.',
+      });
+    }
+    const questions = parseQuizQuestions(raw, requestedType);
+    if (!questions.length) {
+      return res.status(502).json({
+        error: requestedType === 'mcq'
+          ? 'AI could not produce a complete MCQ with four options and one correct answer. Please try again.'
+          : 'AI returned questions in an unsupported format. Please try again.',
+      });
     }
 
     return res.json({
@@ -467,6 +718,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
         raw,
         groundedInMaterial: aiRes.data?.groundedInMaterial || false,
         noMaterialFound: aiRes.data?.noMaterialFound || false,
+        citations: Array.isArray(aiRes.data?.citations) ? aiRes.data.citations : [],
       },
     });
   } catch (err) {

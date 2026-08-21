@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, Search, Loader, Play, NotebookPen,
   CheckCircle, Clock, Award, Zap, FileText, Home, ArrowUpRight,
-  Mic, PenLine,
+  Mic, PenLine, ListChecks, Puzzle, GraduationCap, ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import PracticeTestInterface from './PracticeTestInterface';
 import { saveLearningActivity } from '../utils/learningContinuity';
 import ReadingPracticePage from './ReadingPracticePage';
 import WritingPracticePage from './WritingPracticePage';
+import QuickPracticeRunner from './QuickPracticeRunner';
+import AILearningTryoutSection from './AILearningTryoutSection';
 
 // Joins subject → chapter → topic into a single meta line, skipping blanks.
 const paperContextLine = (item) => {
@@ -40,7 +42,7 @@ const ContextBadges = ({ item }) => {
 };
 
 const SUB_TABS = [
-  { key: 'papers', label: 'Practice Papers', icon: Zap, hint: 'MCQ tests & class work' },
+  { key: 'papers', label: 'Teacher Activities', icon: Zap, hint: 'Papers, MCQs & tryouts' },
   { key: 'reading', label: 'Reading Practice', icon: Mic, hint: 'Read aloud & get scored' },
   { key: 'writing', label: 'Writing Practice', icon: PenLine, hint: 'Write & get evaluated' },
 ];
@@ -60,8 +62,16 @@ const PracticePapersPortal = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const [activityFilter, setActivityFilter] = useState('all');
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [takingTest, setTakingTest] = useState(false);
+  const [openingPaperId, setOpeningPaperId] = useState('');
+  const [quickPractice, setQuickPractice] = useState(null);
+  const [selectedTryout, setSelectedTryout] = useState(null);
+  const [practiceActivities, setPracticeActivities] = useState([]);
+  const [tryoutActivities, setTryoutActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [activitiesError, setActivitiesError] = useState('');
 
   const authHeaders = useMemo(() => ({
     'Authorization': `Bearer ${token}`,
@@ -118,31 +128,139 @@ const PracticePapersPortal = () => {
     return () => clearTimeout(debounceTimer);
   }, [API_BASE, authHeaders, searchQuery]);
 
+  // Teacher question-bank activities (MCQ and fill-in-the-blank) are stored
+  // separately from full practice papers. Load their counts here so students
+  // can discover and launch them from one portal.
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchTeacherActivities = async () => {
+      setActivitiesLoading(true);
+      setActivitiesError('');
+      try {
+        const [metaResponse, mapResponse] = await Promise.all([
+          fetch(`${API_BASE}/api/practice/student/meta`, { headers: authHeaders, signal: controller.signal }),
+          fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-map`, { headers: authHeaders, signal: controller.signal }),
+        ]);
+        const metaData = await metaResponse.json().catch(() => ({}));
+        const mapData = await mapResponse.json().catch(() => ({}));
+        if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
+
+        const subjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
+        const questionRequests = subjects.flatMap((subject) => ['mcq', 'blank'].map(async (type) => {
+          const params = new URLSearchParams({ subjectId: String(subject.id), type });
+          const response = await fetch(`${API_BASE}/api/practice/student/questions?${params}`, {
+            headers: authHeaders,
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) return null;
+          const count = Array.isArray(data?.questions) ? data.questions.length : 0;
+          return count > 0 ? { ...subject, type, count } : null;
+        }));
+        const questionGroups = await Promise.all(questionRequests);
+        setPracticeActivities(questionGroups.filter(Boolean));
+
+        if (mapResponse.ok) {
+          const tryoutMap = new Map();
+          (Array.isArray(mapData?.subjects) ? mapData.subjects : []).forEach((subject) => {
+            (Array.isArray(subject?.topics) ? subject.topics : []).forEach((topic) => {
+              const questions = Array.isArray(topic?.tryoutSections) ? topic.tryoutSections : [];
+              if (!questions.length) return;
+              const subjectName = subject.title || subject.key || 'Subject';
+              const topicName = topic.title || 'Topic';
+              const key = `${subjectName.toLowerCase()}::${topicName.toLowerCase()}`;
+              tryoutMap.set(key, {
+                id: key,
+                subjectName,
+                topicName,
+                count: questions.length,
+              });
+            });
+          });
+          setTryoutActivities(Array.from(tryoutMap.values()));
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') setActivitiesError(err.message || 'Unable to load teacher activities');
+      } finally {
+        if (!controller.signal.aborted) setActivitiesLoading(false);
+      }
+    };
+    fetchTeacherActivities();
+    return () => controller.abort();
+  }, [API_BASE, authHeaders]);
+
   // Filter class work by difficulty + search; homework by search only
   const filteredPapers = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'paper') return [];
+    const query = searchQuery.trim().toLowerCase();
     return papers.filter(p => {
       if (difficultyFilter !== 'all' && p.difficulty !== difficultyFilter) return false;
-      return true;
+      return !query || [p.title, p.subjectName, p.chapterTitle, p.topicTitle, p.paperType]
+        .some((value) => String(value || '').toLowerCase().includes(query));
     });
-  }, [papers, difficultyFilter]);
+  }, [activityFilter, papers, difficultyFilter, searchQuery]);
 
   const filteredHomework = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'homework') return [];
     const q = searchQuery.trim().toLowerCase();
     if (!q) return homework;
     return homework.filter((hw) =>
       [hw.title, hw.subject, hw.chapterTitle, hw.topicTitle, hw.topic]
         .some((v) => String(v || '').toLowerCase().includes(q))
     );
-  }, [homework, searchQuery]);
+  }, [activityFilter, homework, searchQuery]);
 
-  const openPaper = (paper) => {
-    setSelectedPaper(paper);
-    saveLearningActivity({
-      path: '/student/practice-papers',
-      label: 'Class Work',
-      detail: paper.title,
+  const filteredPracticeActivities = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return practiceActivities.filter((activity) => {
+      if (activityFilter !== 'all' && activityFilter !== activity.type) return false;
+      return !query || String(activity.name || '').toLowerCase().includes(query);
     });
+  }, [activityFilter, practiceActivities, searchQuery]);
+
+  const filteredTryoutActivities = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'tryout') return [];
+    const query = searchQuery.trim().toLowerCase();
+    return tryoutActivities.filter((activity) => (
+      !query || `${activity.subjectName} ${activity.topicName}`.toLowerCase().includes(query)
+    ));
+  }, [activityFilter, searchQuery, tryoutActivities]);
+
+  const openPaper = async (paper) => {
+    if (!paper?._id || openingPaperId) return;
+    setOpeningPaperId(String(paper._id));
+    try {
+      const response = await fetch(`${API_BASE}/api/practice-papers/student/papers/${paper._id}`, {
+        headers: authHeaders,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.message || 'Unable to open practice paper');
+      setSelectedPaper(data.paper);
+      saveLearningActivity({
+        path: '/student/practice-papers',
+        label: 'Class Work',
+        detail: paper.title,
+      });
+    } catch (err) {
+      toast.error(err.message || 'Unable to open practice paper');
+    } finally {
+      setOpeningPaperId('');
+    }
   };
+
+  if (quickPractice) {
+    return <QuickPracticeRunner subject={quickPractice} initialType={quickPractice.type} onBack={() => setQuickPractice(null)} />;
+  }
+
+  if (selectedTryout) {
+    return (
+      <AILearningTryoutSection
+        assignedSubjectName={selectedTryout.subjectName}
+        assignedTopicName={selectedTryout.topicName}
+        onBack={() => setSelectedTryout(null)}
+      />
+    );
+  }
 
   // If taking test
   if (takingTest && selectedPaper) {
@@ -352,17 +470,34 @@ const PracticePapersPortal = () => {
         {activeSubTab === 'papers' && (<>
 
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2 flex items-center gap-3">
-            <Zap className="w-8 h-8" />
-            Practice
-          </h1>
-          <p className="text-gray-600">Class work from today's lessons, and homework to solve at home</p>
-        </div>
+        <section className="relative mb-6 overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_24px_70px_-34px_rgba(79,70,229,0.38)] backdrop-blur-xl sm:p-7">
+          <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-indigo-200/40 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-20 left-1/3 size-48 rounded-full bg-violet-200/35 blur-3xl" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-200"><GraduationCap size={21} /></div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-500">Assigned by your teachers</p>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Practice & Activities</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-500">Find practice papers, MCQs, fill-in-the-blanks, topic tryouts, and homework in one place.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:min-w-[330px]">
+              {[
+                { label: 'Papers', value: papers.length, tone: 'text-blue-700 bg-blue-50' },
+                { label: 'Quick sets', value: practiceActivities.length, tone: 'text-emerald-700 bg-emerald-50' },
+                { label: 'Tryouts', value: tryoutActivities.length, tone: 'text-violet-700 bg-violet-50' },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-2xl border border-white/80 bg-white/75 p-3 text-center shadow-sm">
+                  <p className={`mx-auto w-fit rounded-lg px-2 py-0.5 text-lg font-bold ${stat.tone}`}>{stat.value}</p>
+                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
         {/* Filters */}
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="mb-6 rounded-2xl border border-white/80 bg-white/70 p-4 shadow-sm backdrop-blur-xl sm:p-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
@@ -387,10 +522,80 @@ const PracticePapersPortal = () => {
               <option value="hard">Hard</option>
             </select>
           </div>
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+            {[
+              { key: 'all', label: 'All activities' },
+              { key: 'paper', label: 'Practice papers' },
+              { key: 'mcq', label: 'MCQ' },
+              { key: 'blank', label: 'Fill blanks' },
+              { key: 'tryout', label: 'Tryouts' },
+              { key: 'homework', label: 'Homework' },
+            ].map((filter) => (
+              <button key={filter.key} type="button" onClick={() => setActivityFilter(filter.key)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${activityFilter === filter.key ? 'border-indigo-500 bg-indigo-500 text-white shadow-md shadow-indigo-100' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-700'}`}>
+                {filter.label}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* ── Quick teacher activities ── */}
+        {(activityFilter === 'all' || activityFilter === 'mcq' || activityFilter === 'blank') && (
+          <section className="mb-10">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-600 text-white"><ListChecks size={17} /></div>
+              <div>
+                <h2 className="text-xl font-bold leading-tight text-gray-900">Quick Activities</h2>
+                <p className="text-xs text-gray-500">MCQs and fill-in-the-blanks published for your class</p>
+              </div>
+              {!activitiesLoading && <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{filteredPracticeActivities.length}</span>}
+            </div>
+            {activitiesLoading ? (
+              <div className="flex justify-center rounded-2xl border border-white/80 bg-white/60 py-12"><Loader className="size-7 animate-spin text-emerald-600" /></div>
+            ) : activitiesError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-700">{activitiesError}</div>
+            ) : filteredPracticeActivities.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/65 p-9 text-center"><ListChecks className="mx-auto mb-3 text-slate-300" size={34} /><p className="font-medium text-slate-600">No matching quick activities</p><p className="mt-1 text-sm text-slate-400">Teacher-created MCQs and fill-in-the-blanks will appear here.</p></div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredPracticeActivities.map((activity) => (
+                  <button key={`${activity.id}-${activity.type}`} type="button" onClick={() => setQuickPractice(activity)} className="group rounded-2xl border border-white/90 bg-white/75 p-5 text-left shadow-[0_12px_36px_-28px_rgba(15,23,42,0.3)] backdrop-blur-xl transition hover:-translate-y-1 hover:border-emerald-200 hover:shadow-lg">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className={`flex size-10 items-center justify-center rounded-xl ${activity.type === 'mcq' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{activity.type === 'mcq' ? <CheckCircle size={19} /> : <PenLine size={18} />}</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase text-slate-500">{activity.count} questions</span>
+                    </div>
+                    <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{activity.type === 'mcq' ? 'Multiple choice' : 'Fill in blanks'}</p>
+                    <h3 className="mt-1 text-base font-bold text-slate-900">{activity.name}</h3>
+                    <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">Start activity <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-1" /></span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Lesson-plan tryouts ── */}
+        {(activityFilter === 'all' || activityFilter === 'tryout') && !activitiesLoading && filteredTryoutActivities.length > 0 && (
+          <section className="mb-10">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-violet-600 text-white"><Puzzle size={17} /></div>
+              <div><h2 className="text-xl font-bold leading-tight text-gray-900">Assigned Tryouts</h2><p className="text-xs text-gray-500">Interactive topic activities from your lesson plan</p></div>
+              <span className="ml-auto rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">{filteredTryoutActivities.length}</span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredTryoutActivities.map((activity) => (
+                <button key={activity.id} type="button" onClick={() => setSelectedTryout(activity)} className="group rounded-2xl border border-white/90 bg-white/75 p-5 text-left shadow-[0_12px_36px_-28px_rgba(15,23,42,0.3)] backdrop-blur-xl transition hover:-translate-y-1 hover:border-violet-200 hover:shadow-lg">
+                  <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Puzzle size={19} /></span><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold uppercase text-violet-700">{activity.count} prompts</span></div>
+                  <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.15em] text-violet-500">{activity.subjectName}</p>
+                  <h3 className="mt-1 text-base font-bold text-slate-900">{activity.topicName}</h3>
+                  <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-violet-700">Open tryout <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-1" /></span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* ── Class Work ── */}
-        <section className="mb-10">
+        {(activityFilter === 'all' || activityFilter === 'paper') && <section className="mb-10">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
               <NotebookPen className="w-4.5 h-4.5 text-white" />
@@ -415,7 +620,7 @@ const PracticePapersPortal = () => {
               <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-600 font-medium">No class work yet</p>
               <p className="text-sm text-gray-500 mt-1">
-                Papers appear here after your teacher publishes the day's lesson.
+                Papers appear here after your teacher publishes the day&apos;s lesson.
               </p>
             </div>
           ) : (
@@ -485,17 +690,17 @@ const PracticePapersPortal = () => {
                       className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1"
                     >
                       <Play className="w-3 h-3" />
-                      Start
+                      {openingPaperId === String(paper._id) ? 'Opening…' : 'Start'}
                     </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </section>
+        </section>}
 
         {/* ── Home Work ── */}
-        <section>
+        {(activityFilter === 'all' || activityFilter === 'homework') && <section>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center">
               <Home className="w-4.5 h-4.5 text-white" />
@@ -585,7 +790,7 @@ const PracticePapersPortal = () => {
               })}
             </div>
           )}
-        </section>
+        </section>}
         </>)}
       </div>
     </div>

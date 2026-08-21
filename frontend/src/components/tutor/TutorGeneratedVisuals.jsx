@@ -118,7 +118,9 @@ const FractionWholesVisual = ({ visual }) => (
     </div>
     <div className="mt-3 grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
       <div className="rounded-xl bg-slate-900 px-4 py-3 text-center text-lg font-black text-white">
-        2 blocks <span className="px-2 text-amber-300">&lt;</span> 3 blocks
+        {visual.items[0]?.highlighted_blocks} blocks{' '}
+        <span className="px-2 text-amber-300">&lt;</span>{' '}
+        {visual.items[1]?.highlighted_blocks} blocks
       </div>
       <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold leading-relaxed text-emerald-900">
         {visual.comparison}
@@ -163,11 +165,8 @@ const BalanceSwapsVisual = ({ visual }) => (
     <div className="mt-3 grid gap-3 lg:grid-cols-2">
       {visual.problems.map((problem) => (
         <article key={problem.label} className="rounded-2xl border border-white bg-white/70 p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <h4 className="text-sm font-black text-slate-900">Problem ({problem.label})</h4>
-            <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-[11px] font-bold text-cyan-800">
-              Minimum {problem.minimum_moves} {problem.minimum_moves === 1 ? 'move' : 'moves'}
-            </span>
           </div>
           <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <NumberGroup title="Left group" numbers={problem.left} total={problem.left_total} tone="left" />
@@ -177,13 +176,7 @@ const BalanceSwapsVisual = ({ visual }) => (
             </div>
             <NumberGroup title="Right group" numbers={problem.right} total={problem.right_total} tone="right" />
           </div>
-          <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-950">
-            <p><span className="font-bold">Gap:</span> {problem.right_total} − {problem.left_total} = {problem.gap}</p>
-            <p><span className="font-bold">Required transfer per completed solution:</span> {problem.gap} ÷ 2 = {problem.required_transfer}</p>
-            <p className="mt-1 font-bold">
-              Verified example: {problem.example_swaps.map(([left, right]) => `${left} ↔ ${right}`).join(', then ')}
-            </p>
-          </div>
+          <p className="mt-2 text-[11px] text-slate-400 text-center">Find the swap that makes both totals equal.</p>
         </article>
       ))}
     </div>

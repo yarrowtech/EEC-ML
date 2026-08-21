@@ -778,11 +778,6 @@
       "count": 8
     }
   },
-  "src/components/AILearningTryoutSection.jsx": {
-    "react/prop-types": {
-      "count": 25
-    }
-  },
   "src/components/AITutorHomeScreen.jsx": {
     "no-unused-vars": {
       "count": 22
@@ -1037,12 +1032,6 @@
     }
   },
   "src/components/PracticePapersPortal.jsx": {
-    "no-unused-vars": {
-      "count": 1
-    },
-    "react/no-unescaped-entities": {
-      "count": 2
-    },
     "react/prop-types": {
       "count": 1
     }
@@ -1952,9 +1941,6 @@
     }
   },
   "src/teachers/TeacherPortal.jsx": {
-    "no-unused-vars": {
-      "count": 2
-    },
     "react/prop-types": {
       "count": 12
     }

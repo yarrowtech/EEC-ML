@@ -1075,7 +1075,7 @@ function MindMapUI({ text }) {
 let _mermaidInitialised = false;
 function ensureMermaid() {
   if (_mermaidInitialised) return;
-  mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', fontFamily: 'Nunito, sans-serif' });
+  mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'antiscript', fontFamily: 'Nunito, sans-serif' });
   _mermaidInitialised = true;
 }
 
@@ -1761,10 +1761,10 @@ function HomeworkHelpUI({ text }) {
 // ---------------------------------------------------------------------------
 
 const EXPLAIN_SECTION_RULES = [
-  { type: 'vocab',    re: /new words|vocab|glossary|word meaning|meanings/i },
+  { type: 'vocab',    re: /new words|vocab|glossary|word meaning|meanings|key words|key terms/i },
   { type: 'exercise', re: /complete the|fill in|blank|exercise|activity|practice|match the|let'?s do|let us do/i },
-  { type: 'qa',       re: /question|answer|comprehension|let'?s think|let us think/i },
-  { type: 'steps',    re: /step|explanation|how it|why|summary|recap|story|overview|what happen/i },
+  { type: 'qa',       re: /question|answer|comprehension|let'?s think|let us think|quick question/i },
+  { type: 'steps',    re: /step|explanation|how it|why|summary|recap|story|overview|what happen|works/i },
 ];
 
 function classifyExplainSection(title) {
@@ -1931,12 +1931,19 @@ function ExplainQABody({ body, accent = 'emerald', label = 'Show answer' }) {
   for (const l of body) {
     const t = l.trim();
     if (!t) continue;
-    const q = t.match(/^\d+[.)]\s*(.+)$/);
-    if (q) {
+    const numbered = t.match(/^\d+[.)]\s*(.+)$/);
+    // Also treat a line starting with "Answer:" as the answer to the previous question
+    const isAnswer = /^answer:\s*/i.test(t);
+    if (numbered) {
       if (cur) pairs.push(cur);
-      cur = { q: q[1].trim(), a: [] };
-    } else if (cur) {
+      cur = { q: numbered[1].trim(), a: [] };
+    } else if (isAnswer && cur) {
       cur.a.push(t.replace(/^answer:\s*/i, ''));
+    } else if (cur) {
+      cur.a.push(t);
+    } else {
+      // Unnumbered first line (e.g. Quick Question body) — treat as question
+      cur = { q: t, a: [] };
     }
   }
   if (cur) pairs.push(cur);
@@ -3865,7 +3872,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -3894,7 +3901,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
@@ -3930,7 +3937,16 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                               msg.role === 'assistant' ? (
                                 <>
                                   {msg.streaming
-                                    ? <TutorMessageContent text={msg.text} />
+                                    ? (['visual_explain', 'diagram'].includes(msg.mode)
+                                        ? (
+                                          <div className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-white px-4 py-3 shadow-sm">
+                                            <div className="w-5 h-5 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin shrink-0" />
+                                            <span className="text-sm text-violet-500 font-medium">
+                                              {msg.mode === 'diagram' ? 'Building diagram…' : 'Building visual explanation…'}
+                                            </span>
+                                          </div>
+                                        )
+                                        : <TutorMessageContent text={msg.text} />)
                                     : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} />
                                   }
                                   {!msg.streaming && <TutorGeneratedVisuals visuals={msg.visuals} />}

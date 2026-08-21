@@ -197,6 +197,45 @@ describe('assignment workflow boundaries', () => {
     expect(Assignment).not.toHaveBeenCalled();
   });
 
+  test('publishes a completed assignment draft to the student portal', async () => {
+    const draft = {
+      _id: 'assignment-draft-1',
+      schoolId: 'school-1',
+      teacherId: 'teacher-1',
+      academicYearId: 'year-1',
+      title: 'Equivalent fractions',
+      subject: 'Mathematics',
+      classId: 'class-1',
+      sectionId: 'section-1',
+      dueDate: new Date('2026-09-01T00:00:00.000Z'),
+      marks: 20,
+      status: 'draft',
+      publishedForStudentPortal: false,
+      save: jest.fn(() => Promise.resolve()),
+    };
+    Assignment.findOne.mockResolvedValue(draft);
+    const NotificationService = require('../utils/notificationService');
+
+    const response = await request(app)
+      .patch('/api/assignment/teacher/publish/assignment-draft-1')
+      .send({});
+
+    expect(response.status).toBe(200);
+    expect(draft.status).toBe('active');
+    expect(draft.publishedForStudentPortal).toBe(true);
+    expect(draft.save).toHaveBeenCalledTimes(1);
+    expect(Assignment.findOne).toHaveBeenCalledWith({
+      _id: 'assignment-draft-1',
+      schoolId: 'school-1',
+      teacherId: 'teacher-1',
+    });
+    expect(NotificationService.notifyAssignmentCreated).toHaveBeenCalledWith(expect.objectContaining({
+      schoolId: 'school-1',
+      assignment: draft,
+      createdBy: 'teacher-1',
+    }));
+  });
+
   test('rejects submission to another class assignment', async () => {
     Assignment.findOne.mockReturnValue({
       lean: jest.fn(() => Promise.resolve({

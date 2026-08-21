@@ -171,7 +171,7 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{'} blank {'}'}'} for blanks)</span></label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{blank}}'} for blanks)</span></label>
         <Textarea value={text} onChange={(e) => { setText(e.target.value); handleUpdate({ text: e.target.value }); }} placeholder="There are several ${{blank}} types of drums..." rows={4} />
       </div>
       <div>
@@ -208,7 +208,7 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{'} input {'}'}'} for dropdowns)</span></label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{input}}'} for dropdowns)</span></label>
         <Textarea value={text} onChange={(e) => { setText(e.target.value); handleUpdate({ text: e.target.value }); }} placeholder="Yesterday, we ${{input}} to the store..." rows={4} />
       </div>
       <div>
@@ -252,7 +252,7 @@ const ClozeTextCreator = ({ question, onChange }) => {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{'} input {'}'}'} for blanks)</span></label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Question Text <span className="text-xs text-slate-500 ml-1">(Use {'${{input}}'} for blanks)</span></label>
         <Textarea value={text} onChange={(e) => { setText(e.target.value); handleUpdate({ text: e.target.value }); }} placeholder="We the ${{input}} of the United States..." rows={4} />
       </div>
       {blankCount > 0 && (

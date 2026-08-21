@@ -6,10 +6,9 @@
 
 import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
-import { motion as Motion } from 'framer-motion';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   Users,
-  Calendar,
   Bell,
   FileText,
   ClipboardCheck,
@@ -29,10 +28,8 @@ import {
   ThumbsUp,
   ChevronDown,
   ChevronRight,
-  User,
   CalendarDays,
   GraduationCap,
-  Award,
   Library,
   Settings,
   RefreshCw,
@@ -71,6 +68,7 @@ import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
+import NotificationPopover from '../components/NotificationPopover';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 
 const PORTAL_BASE = '/teacher';
@@ -420,11 +418,28 @@ const ClassesHub = () => {
       setLoading(true);
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        const data = await res.json().catch(() => []);
-        setAllocations(Array.isArray(data) ? data : []);
+        const [allocRes, yearRes] = await Promise.all([
+          fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+            headers: { authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/api/academic/active-year`, {
+            headers: { authorization: `Bearer ${token}` },
+          }),
+        ]);
+        const allocRaw = await allocRes.json().catch(() => []);
+        const all = Array.isArray(allocRaw) ? allocRaw : [];
+        const yearData = yearRes.ok ? await yearRes.json().catch(() => null) : null;
+        const activeYearId = yearData?._id ? String(yearData._id) : '';
+
+        // Restrict to the active academic year so old allocations don't appear.
+        // Fall back to all allocations if there's no active year or nothing matched.
+        const filtered = activeYearId
+          ? all.filter((a) => {
+              const ayId = String(a?.classId?.academicYearId?._id || a?.classId?.academicYearId || '');
+              return ayId === activeYearId;
+            })
+          : all;
+        setAllocations(filtered.length > 0 ? filtered : all);
       } catch {
         setAllocations([]);
       } finally {
@@ -1118,6 +1133,23 @@ const TeacherPortalShell = () => {
     }
   }, [fetchNotifs, navigate]);
 
+  const dismissHeaderNotification = useCallback(async (id) => {
+    if (!id) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setNotifications((previous) => previous.filter((item) => String(item?._id || item?.id || '') !== String(id)));
+    try {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/${id}/dismiss`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      }, navigate);
+      if (!response.ok) throw new Error('Failed to dismiss notification');
+    } catch (err) {
+      setNotifError(err.message || 'Failed to dismiss notification');
+      await fetchNotifs();
+    }
+  }, [fetchNotifs, navigate]);
+
   const handleToggleNotifications = useCallback(async () => {
     const nextOpen = !showNotifications;
     if (nextOpen && unreadCount > 0) {
@@ -1404,144 +1436,129 @@ const TeacherPortalShell = () => {
                     )}
                   </button>
 
-                  {showNotifications && (
-                    <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
-                      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                        <div className="flex items-center gap-2">
-                          <Bell size={14} className="text-indigo-500" />
-                          <span className="text-sm font-bold text-gray-900">Notifications</span>
-                          {unreadCount > 0 && (
-                            <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
-                          )}
-                        </div>
-                        {notifications.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={markAllRead}
-                            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
-                          >
-                            <CheckCheck size={12} />
-                            Mark all read
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
-                        {notifLoading && (
-                          <div className="px-4 py-6 text-sm text-gray-400 text-center">Loading...</div>
-                        )}
-                        {!notifLoading && notifError && (
-                          <div className="px-4 py-4 text-sm text-red-600">{notifError}</div>
-                        )}
-                        {!notifLoading && !notifError && notifications.length === 0 && (
-                          <div className="px-4 py-8 text-sm text-gray-400 text-center">
-                            <Bell size={24} className="mx-auto text-gray-200 mb-2" />
-                            No notifications yet
-                          </div>
-                        )}
-                        {!notifLoading && !notifError && notifications.map((n) => {
-                          const id = String(n?._id || n?.id || '');
-                          const isRead = Boolean(n?.isRead);
-                          return (
-                            <button
-                              key={id || n?.title}
-                              type="button"
-                              onClick={async () => {
-                                await markRead(id);
-                                setShowNotifications(false);
-                                navigate(resolveNotifPath(n));
-                              }}
-                              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${isRead ? '' : 'bg-indigo-50/50'}`}
-                            >
-                              <div className="flex items-start gap-2">
-                                {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
-                                <div className={!isRead ? '' : 'ml-3.5'}>
-                                  <p className="text-sm font-medium text-gray-800 line-clamp-1">{n?.title || 'Notification'}</p>
-                                  {n?.message && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>}
-                                  <p className="text-[11px] text-gray-400 mt-1">
-                                    <span>{timeAgo(n?.createdAt)}</span>
-                                  </p>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {showNotifications && (
+                      <NotificationPopover
+                        notifications={notifications}
+                        unreadCount={unreadCount}
+                        loading={notifLoading}
+                        error={notifError}
+                        onMarkAllRead={markAllRead}
+                        onDismissNotification={dismissHeaderNotification}
+                        formatTime={timeAgo}
+                        onOpenNotification={async (notification) => {
+                          const id = String(notification?._id || notification?.id || '');
+                          if (!notification?.isRead) await markRead(id);
+                          setShowNotifications(false);
+                          navigate(resolveNotifPath(notification));
+                        }}
+                      />
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 <div className="relative" ref={profileRef}>
-                  <button
-                    className="flex items-center gap-2 rounded-xl p-1.5 hover:bg-gray-100 active:scale-95 transition-all"
+                  <Motion.button
+                    type="button"
+                    whileHover={{ y: -1, scale: 1.01 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 450, damping: 26 }}
+                    className={`flex items-center gap-2 rounded-xl border bg-white px-1.5 py-1 transition-colors ${profileOpen
+                      ? 'border-violet-200 shadow-[0_8px_20px_-10px_rgba(109,40,217,0.22)]'
+                      : 'border-slate-100 shadow-sm hover:border-slate-200 hover:bg-slate-50'
+                    }`}
                     onClick={() => {
                       setShowNotifications(false);
                       toggleProfile();
                     }}
                     aria-label="Profile menu"
+                    aria-haspopup="menu"
+                    aria-expanded={profileOpen}
                   >
                     {hasProfileImage ? (
                       <img
                         src={teacherProfile.profilePic}
-                        alt=""
-                        className="w-8 h-8 rounded-full border border-gray-200 object-cover"
+                        alt={teacherProfile.name || 'Teacher'}
+                        className="size-8 rounded-full border border-slate-100 object-cover shadow-sm"
                         onError={(e) => {
                           e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'%3E%3C/path%3E%3Ccircle cx='12' cy='7' r='4'%3E%3C/circle%3E%3C/svg%3E";
                         }}
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                      <div className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-300 to-pink-300 text-[11px] font-semibold text-white shadow-sm">
                         {initialsLabel}
                       </div>
                     )}
                     <div className="hidden md:block text-left">
-                      <p className="text-xs font-semibold text-gray-800 leading-tight">
+                      <p className="max-w-24 truncate text-[11px] font-semibold leading-tight text-slate-800">
                         {hasProfileImage ? teacherFirstName : teacherFirstLastName}
                       </p>
-                      <p className="text-[10px] text-gray-400">Teacher</p>
+                      <p className="mt-0.5 max-w-24 truncate text-[9px] text-slate-400">{teacherProfile.department || 'Teacher'}</p>
                     </div>
-                    <ChevronDown size={14} className={`hidden md:block text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
-                  </button>
+                    <ChevronDown size={14} className={`hidden text-slate-400 transition-transform duration-200 md:block ${profileOpen ? 'rotate-180 text-violet-500' : ''}`} />
+                  </Motion.button>
 
-                  {profileOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
-                      {/* Profile card */}
-                      <div className="px-4 py-3 bg-linear-to-br from-blue-50 to-indigo-50 border-b border-gray-100">
-                        <div className="flex items-center gap-3">
+                  <AnimatePresence>
+                    {profileOpen && (
+                    <Motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                      data-testid="teacher-profile-glass-card"
+                      role="menu"
+                      className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2),0_4px_12px_rgba(15,23,42,0.05)]"
+                    >
+                      <div className="flex items-center gap-3 pb-3.5">
                           {hasProfileImage ? (
-                            <img src={teacherProfile.profilePic} alt="" className="w-10 h-10 rounded-lg border-2 border-white object-cover shadow-sm" onError={(e) => { e.target.style.display = 'none'; }} />
+                            <img
+                              src={teacherProfile.profilePic}
+                              alt={teacherProfile.name || 'Teacher'}
+                              className="size-12 shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
+                              onError={(e) => {
+                                e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='%239475c4' stroke-width='1.5'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E";
+                              }}
+                            />
                           ) : (
-                            <div className="w-10 h-10 rounded-lg bg-linear-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                            <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-300 to-pink-300 text-base font-semibold text-white shadow-sm">
                               {initialsLabel}
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="text-sm font-bold text-gray-900 truncate">{teacherProfile.name || 'Teacher'}</p>
-                            <p className="text-[11px] text-gray-500">{teacherProfile.department || 'Educator'}</p>
+                            <p className="truncate text-sm font-semibold tracking-tight text-slate-900">{teacherProfile.name || 'Teacher'}</p>
+                            <p className="mt-0.5 truncate text-xs text-slate-500">{teacherProfile.department || 'Educator'}</p>
                           </div>
-                        </div>
                       </div>
 
-                      <div className="py-1">
-                        <button
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                          onClick={() => { setProfileOpen(false); navigate('/teacher/my-work-portal'); }}
+                      <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                        <Motion.button
+                          type="button"
+                          role="menuitem"
+                          whileHover={{ y: -2 }}
+                          whileTap={{ scale: 0.97 }}
+                          className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                          onClick={() => { setProfileOpen(false); navigate('/teacher/settings'); }}
                         >
-                          <User size={15} className="text-gray-400" />
                           My Profile
-                        </button>
-                      </div>
-                      <div className="border-t border-gray-100 py-1">
-                        <button
-                          onClick={handleLogout}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        </Motion.button>
+                        <Motion.button
+                          type="button"
+                          role="menuitem"
+                          whileHover={{ y: -2, x: 1 }}
+                          whileTap={{ scale: 0.97 }}
+                          onClick={() => {
+                            setProfileOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
                         >
-                          <LogOut size={15} className="text-red-400" />
+                          <LogOut size={15} strokeWidth={1.8} />
                           Sign out
-                        </button>
+                        </Motion.button>
                       </div>
-                    </div>
-                  )}
+                    </Motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
           </div>

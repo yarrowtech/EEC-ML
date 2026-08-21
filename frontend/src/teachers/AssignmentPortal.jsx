@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import PracticeQuestions from './PracticeQuestions';
 import TryoutManagement from '../components/TryoutManagement';
 
@@ -55,8 +55,13 @@ const getScopedLessonPlans = ({ plans, classId, sectionId, subject, classSection
   }).sort((left, right) => String(left?.title || '').localeCompare(String(right?.title || '')));
 };
 
+const makeClassSlug = (className, sectionName) =>
+  `${String(className || '').trim()}-${String(sectionName || '').trim()}`
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 const AssignmentPortal = ({ view = 'manage' }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { classId = 'current' } = useParams();
   const activeTab = view === 'evaluate' ? 'evaluate' : 'manage';
   const assignmentBasePath = `/teacher/classes/${encodeURIComponent(classId)}/assignments`;
@@ -133,6 +138,11 @@ const AssignmentPortal = ({ view = 'manage' }) => {
   const [filteredAssignments, setFilteredAssignments] = useState([]);
   const [activeSessionName, setActiveSessionName] = useState('');
   const [activeSessionId, setActiveSessionId] = useState('');
+  const [aiGeneratingAssignment, setAiGeneratingAssignment] = useState(false);
+  const [aiAssignmentError, setAiAssignmentError] = useState('');
+  const [aiAssignmentGrounded, setAiAssignmentGrounded] = useState(false);
+  const [publishingAssignments, setPublishingAssignments] = useState({});
+  const [assignmentPublishMessage, setAssignmentPublishMessage] = useState('');
 
   // ─────────────────────────────────────────────────────────────────────────
   // ASSIGNMENT EVALUATION STATE
@@ -257,20 +267,45 @@ const AssignmentPortal = ({ view = 'manage' }) => {
 
   const fetchMyClasses = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/assignment/teacher/my-classes`, {
+      const response = await axios.get(`${API_BASE_URL}/api/teacher/dashboard/allocations`, {
         headers: { Authorization: `Bearer ${token()}` }
       });
-      const normalizedClasses = Array.isArray(response.data)
-        ? response.data.map(item => ({
-          ...item,
-          academicYearId: String(item?.academicYearId || ''),
-          sessionName: String(item?.sessionName || ''),
-          subjects: Array.isArray(item.subjects) ? item.subjects.filter(sub => sub && sub.name) : []
-        }))
-        : [];
+      const items = Array.isArray(response.data) ? response.data : [];
+
+      // Group allocation items by class-section, collecting all assigned subjects
+      const map = new Map();
+      items.forEach(item => {
+        if (!item.classId || !item.sectionId) return;
+        const classId = item.classId?._id || item.classId;
+        const sectionId = item.sectionId?._id || item.sectionId;
+        const key = `${classId}-${sectionId}`;
+        if (!map.has(key)) {
+          const academicYearId = item.classId?.academicYearId?._id || item.classId?.academicYearId || null;
+          map.set(key, {
+            classId: String(classId),
+            className: String(item.classId?.name || ''),
+            sectionId: String(sectionId),
+            sectionName: String(item.sectionId?.name || ''),
+            academicYearId: String(academicYearId || ''),
+            sessionName: String(item.classId?.academicYearId?.name || ''),
+            subjects: []
+          });
+        }
+        const entry = map.get(key);
+        const subjectId = item.subjectId?._id;
+        const subjectName = item.subjectId?.name || item.subjectName;
+        if (subjectName) {
+          const subjectKey = String(subjectId || subjectName);
+          if (!entry.subjects.find(s => String(s.id) === subjectKey)) {
+            entry.subjects.push({ id: subjectId || subjectName, name: subjectName });
+          }
+        }
+      });
+
+      const normalizedClasses = Array.from(map.values());
       setMyClasses(normalizedClasses);
-      if (response.data.length === 0) {
-        setError('No classes assigned. You need to be assigned to classes in the timetable first.');
+      if (normalizedClasses.length === 0) {
+        setError('No classes assigned. Ask your admin to assign you to classes first.');
       }
     } catch (err) {
       console.error('Error fetching classes:', err);
@@ -368,6 +403,27 @@ const AssignmentPortal = ({ view = 'manage' }) => {
     fetchSubmissions();
     fetchTryoutSubmissions();
   }, []);
+
+  // Pre-populate class/section from the URL slug (e.g. "5-a") once classes load
+  useEffect(() => {
+    if (!myClasses.length || !classId || classId === 'current') return;
+    // Avoid overwriting a class the user has already manually selected
+    if (newAssignment.classId) return;
+
+    const classMongoId = location.state?.classMongoId;
+    const matched = myClasses.find(cs => {
+      if (classMongoId) return String(cs.classId) === String(classMongoId);
+      return makeClassSlug(cs.className, cs.sectionName) === classId;
+    });
+    if (!matched) return;
+
+    setNewAssignment(prev => ({
+      ...prev,
+      classId: String(matched.classId),
+      sectionId: String(matched.sectionId),
+      ...(matched.subjects.length === 1 ? { subject: matched.subjects[0].name } : {}),
+    }));
+  }, [myClasses, classId, location.state?.classMongoId]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // FILTER ASSIGNMENTS
@@ -557,6 +613,67 @@ const AssignmentPortal = ({ view = 'manage' }) => {
     }));
   };
 
+  const openAIAssignmentCreator = () => {
+    setAiAssignmentError('');
+    setAiAssignmentGrounded(false);
+    setShowModal(true);
+  };
+
+  const handleGenerateAssignmentDraft = async () => {
+    const selectedSubject = subjectOptions.find(
+      (subject) => String(subject.name || '').trim().toLowerCase() === String(newAssignment.subject || '').trim().toLowerCase()
+    );
+    const selectedClassSection = classSectionOptions.find(
+      (item) => String(item.classId) === String(newAssignment.classId)
+        && String(item.sectionId) === String(newAssignment.sectionId)
+    );
+    const generationTopic = String(newAssignment.topic || newAssignment.chapterTitle || '').trim();
+    if (!newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !generationTopic) {
+      setAiAssignmentError('Select the class, subject, and chapter or topic before generating.');
+      return;
+    }
+
+    setAiGeneratingAssignment(true);
+    setAiAssignmentError('');
+    setAiAssignmentGrounded(false);
+    try {
+      const { data } = await axios.post(
+        `${API_BASE_URL}/api/ai-teacher/assignment-draft`,
+        {
+          classId: newAssignment.classId,
+          sectionId: newAssignment.sectionId,
+          subjectId: selectedSubject?.id || null,
+          subject: newAssignment.subject,
+          topic: generationTopic,
+          chapterTitle: newAssignment.chapterTitle || generationTopic,
+          gradeLevel: selectedClassSection?.className || '',
+          difficulty: newAssignment.difficulty,
+          activityType: newAssignment.type,
+          marks: Number(newAssignment.marks) || 20,
+        },
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      const draft = data?.data?.draft;
+      if (!draft) throw new Error('AI response did not include an assignment draft');
+      setNewAssignment((previous) => ({
+        ...previous,
+        title: draft.title || previous.title,
+        description: draft.description || previous.description,
+        marks: draft.marks || previous.marks,
+        difficulty: draft.difficulty || previous.difficulty,
+        type: draft.type || previous.type,
+        submissionFormat: draft.submissionFormat || previous.submissionFormat,
+        isEssay: Boolean(draft.isEssay),
+        rubric: draft.isEssay ? draft.rubric || '' : '',
+      }));
+      setAiAssignmentGrounded(Boolean(data?.data?.groundedInMaterial));
+    } catch (err) {
+      setAiAssignmentError(err.response?.data?.error || err.message || 'Failed to generate assignment');
+    } finally {
+      setAiGeneratingAssignment(false);
+    }
+  };
+
   const openActivityCreator = (activityType) => {
     if (activityType === 'mcq' || activityType === 'blank') {
       setActivityEditor(activityType);
@@ -576,11 +693,10 @@ const AssignmentPortal = ({ view = 'manage' }) => {
       ...prev,
       type: assignmentType,
       submissionFormat: 'text',
-      isEssay: false,
+      isEssay: activityType === 'writing',
       rubric: '',
     }));
-    setActivityEditor(null);
-    setShowModal(true);
+    setActivityEditor(activityType);
   };
 
   const handlePdfUpload = async (e) => {
@@ -658,6 +774,7 @@ const AssignmentPortal = ({ view = 'manage' }) => {
       if (response.data) {
         await fetchAssignments();
         setShowModal(false);
+        setActivityEditor(null);
         setNewAssignment({
           title: "",
           subject: "",
@@ -683,7 +800,11 @@ const AssignmentPortal = ({ view = 'manage' }) => {
           subTopicTitle: ""
         });
         setPdfFile(null);
-        setCreateSuccessMessage('Assignment created successfully.');
+        setAiAssignmentError('');
+        setAiAssignmentGrounded(false);
+        setCreateSuccessMessage(payload.status === 'active'
+          ? 'Assignment created, published, and sent to the selected class.'
+          : 'Assignment draft created successfully. Publish it when it is ready.');
         setShowCreateSuccessModal(true);
       }
     } catch (err) {
@@ -714,6 +835,27 @@ const AssignmentPortal = ({ view = 'manage' }) => {
       setError(err.response?.data?.error || 'Failed to delete assignment');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePublishAssignment = async (assignment) => {
+    const id = String(assignment?._id || '');
+    if (!id || publishingAssignments[id]) return;
+    setPublishingAssignments((previous) => ({ ...previous, [id]: true }));
+    setAssignmentPublishMessage('');
+    setError('');
+    try {
+      await axios.patch(
+        `${API_BASE_URL}/api/assignment/teacher/publish/${id}`,
+        {},
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      await fetchAssignments();
+      setAssignmentPublishMessage(`“${assignment.title}” is now published to students.`);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to publish assignment');
+    } finally {
+      setPublishingAssignments((previous) => ({ ...previous, [id]: false }));
     }
   };
 
@@ -930,12 +1072,25 @@ const AssignmentPortal = ({ view = 'manage' }) => {
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
             setShowModal={setShowModal}
+            openAIAssignmentCreator={openAIAssignmentCreator}
             openAssignmentDetail={openAssignmentDetail}
             openDeleteModal={openDeleteModal}
+            onPublishAssignment={handlePublishAssignment}
+            publishingAssignments={publishingAssignments}
+            assignmentPublishMessage={assignmentPublishMessage}
             getStatusColor={getStatusColor}
             getAssignmentClassName={getAssignmentClassName}
             getAssignmentSectionName={getAssignmentSectionName}
             getDaysUntilDue={getDaysUntilDue}
+            createFormProps={{
+              newAssignment, handleChange, handleCreate,
+              classSectionOptions, sessionOptions, subjectOptions, setNewAssignment,
+              uploadingPdf, handlePdfUpload, removePdfAttachment,
+              loading, error, activeSessionId,
+              availableLessonPlans, availableLessonPlanChapters, lessonPlanError,
+              aiGeneratingAssignment, aiAssignmentError, aiAssignmentGrounded,
+              handleGenerateAssignmentDraft,
+            }}
           />
         ) : (
           <EvaluateSubmissions
@@ -1064,8 +1219,7 @@ const AssignmentPortal = ({ view = 'manage' }) => {
 
       {showModal && (
         <CreateAssignmentModal
-          showModal={showModal}
-          setShowModal={setShowModal}
+          onClose={() => setShowModal(false)}
           newAssignment={newAssignment}
           handleChange={handleChange}
           handleCreate={handleCreate}
@@ -1082,6 +1236,10 @@ const AssignmentPortal = ({ view = 'manage' }) => {
           availableLessonPlans={availableLessonPlans}
           availableLessonPlanChapters={availableLessonPlanChapters}
           lessonPlanError={lessonPlanError}
+          aiGeneratingAssignment={aiGeneratingAssignment}
+          aiAssignmentError={aiAssignmentError}
+          aiAssignmentGrounded={aiAssignmentGrounded}
+          handleGenerateAssignmentDraft={handleGenerateAssignmentDraft}
         />
       )}
 
@@ -1279,8 +1437,10 @@ const ManageAssignments = ({
   viewMode, setViewMode, filterStatus, setFilterStatus,
   filterSubject, setFilterSubject, filterTopic, setFilterTopic, topics,
   searchTerm, setSearchTerm,
-  setShowModal, openAssignmentDetail, openDeleteModal,
-  getAssignmentClassName, getAssignmentSectionName, getDaysUntilDue
+  setShowModal, openAIAssignmentCreator, openAssignmentDetail, openDeleteModal,
+  onPublishAssignment, publishingAssignments, assignmentPublishMessage,
+  getAssignmentClassName, getAssignmentSectionName, getDaysUntilDue,
+  createFormProps
 }) => (
   <div
     className="relative mx-auto max-w-[1360px] space-y-5 overflow-hidden rounded-[2rem] border border-white/50 bg-white/75 p-5 text-[#0b0e1a] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.08),0_4px_20px_rgba(0,0,0,0.02),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-lg backdrop-saturate-[1.1] sm:p-8"
@@ -1336,7 +1496,12 @@ const ManageAssignments = ({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8ee] bg-[#fafbfc] px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-[#1e2533]">
-              {activityEditor === 'mcq' ? 'MCQ Editor' : activityEditor === 'blank' ? 'Fill in the Blank Editor' : 'Tryout Builder'}
+              {activityEditor === 'mcq' ? 'MCQ Editor'
+                : activityEditor === 'blank' ? 'Fill in the Blank Editor'
+                : activityEditor === 'tryout' ? 'Tryout Builder'
+                : activityEditor === 'assignment' ? 'New Assignment'
+                : activityEditor === 'worksheet' ? 'New Worksheet'
+                : 'New Writing Task'}
             </p>
             <p className="mt-0.5 text-[11px] text-[#6f7a8c]">Create and manage this activity without leaving Assignments.</p>
           </div>
@@ -1344,11 +1509,17 @@ const ManageAssignments = ({
             <X className="size-3.5" /> Close editor
           </button>
         </div>
-        <div className="min-h-[560px] overflow-auto bg-white">
+        <div className={`overflow-auto bg-white ${activityEditor === 'assignment' || activityEditor === 'worksheet' || activityEditor === 'writing' ? '' : 'min-h-[560px]'}`}>
           {activityEditor === 'tryout' ? (
             <TryoutManagement />
-          ) : (
+          ) : activityEditor === 'mcq' || activityEditor === 'blank' ? (
             <PracticeQuestions key={activityEditor} initialType={activityEditor} />
+          ) : activityEditor === 'worksheet' ? (
+            <CreateWorksheetForm onClose={closeActivityEditor} {...createFormProps} />
+          ) : activityEditor === 'writing' ? (
+            <CreateWritingForm onClose={closeActivityEditor} {...createFormProps} />
+          ) : (
+            <CreateAssignmentModal inline onClose={closeActivityEditor} {...createFormProps} />
           )}
         </div>
       </section>
@@ -1356,6 +1527,11 @@ const ManageAssignments = ({
 
     {!activityEditor && (
       <>
+    {assignmentPublishMessage && (
+      <div role="status" className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
+        <CheckCircle className="size-4" /> {assignmentPublishMessage}
+      </div>
+    )}
     {/* Stats Grid */}
     <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
       {[
@@ -1445,6 +1621,14 @@ const ManageAssignments = ({
             </button>
           </div>
           <button
+            type="button"
+            onClick={openAIAssignmentCreator}
+            className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-semibold text-violet-700 transition hover:-translate-y-0.5 hover:bg-violet-100 hover:shadow-sm"
+          >
+            <Sparkles size={14} />
+            AI Generate
+          </button>
+          <button
             onClick={() => setShowModal(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-[#e8eef4]"
           >
@@ -1508,6 +1692,20 @@ const ManageAssignments = ({
                     {assignment.title}
                   </h3>
                   <div className="flex items-center gap-1 shrink-0">
+                    {assignment.status === 'draft' && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onPublishAssignment(assignment);
+                        }}
+                        disabled={Boolean(publishingAssignments[String(assignment._id)])}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {publishingAssignments[String(assignment._id)] ? <Loader className="size-3 animate-spin" /> : <Share2 className="size-3" />}
+                        {publishingAssignments[String(assignment._id)] ? 'Publishing' : 'Publish'}
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1826,13 +2024,16 @@ const EvaluateSubmissions = ({
 
 // Create Assignment Modal Component
 const CreateAssignmentModal = ({
-  setShowModal, newAssignment, handleChange, handleCreate,
+  onClose, setShowModal, inline = false,
+  newAssignment, handleChange, handleCreate,
   classSectionOptions, sessionOptions, subjectOptions, setNewAssignment, uploadingPdf, handlePdfUpload,
   removePdfAttachment, loading, error, activeSessionId,
-  availableLessonPlans, availableLessonPlanChapters, lessonPlanError
-}) => (
-  <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
-    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto border-[2.5px] border-purple-300">
+  availableLessonPlans, availableLessonPlanChapters, lessonPlanError,
+  aiGeneratingAssignment, aiAssignmentError, aiAssignmentGrounded, handleGenerateAssignmentDraft
+}) => {
+  const handleClose = onClose ?? (() => setShowModal?.(false));
+  const inner = (
+    <div className={inline ? 'bg-white w-full' : 'bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto border-[2.5px] border-purple-300'}>
       <div className="px-5 py-4 border-b border-purple-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -1844,7 +2045,7 @@ const CreateAssignmentModal = ({
           </div>
         </div>
         <button
-          onClick={() => setShowModal(false)}
+          onClick={handleClose}
           className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <X size={16} />
@@ -1859,6 +2060,28 @@ const CreateAssignmentModal = ({
           </div>
         )}
         <form onSubmit={handleCreate} className="space-y-4">
+          <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm"><Sparkles size={17} /></span>
+                <div>
+                  <p className="text-xs font-bold text-violet-900">Generate from lesson material</p>
+                  <p className="mt-0.5 text-[11px] leading-5 text-violet-700/75">Select class, subject, and chapter or topic. AI will fill an editable title, instructions, marks, difficulty, and rubric.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleGenerateAssignmentDraft}
+                disabled={aiGeneratingAssignment || !newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !(newAssignment.topic || newAssignment.chapterTitle)}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-violet-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {aiGeneratingAssignment ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                {aiGeneratingAssignment ? 'Generating…' : 'Generate draft'}
+              </button>
+            </div>
+            {aiAssignmentError && <p className="mt-3 rounded-xl border border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-rose-600">{aiAssignmentError}</p>}
+            {aiAssignmentGrounded && <p role="status" className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle className="size-3.5" /> Draft generated from indexed class material. Review before publishing.</p>}
+          </section>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
               <label htmlFor="assignment-session" className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-xs text-red-500">*</span></label>
@@ -2123,7 +2346,7 @@ const CreateAssignmentModal = ({
                 className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
               >
                 <option value="draft">Draft</option>
-                <option value="active">Active</option>
+                <option value="active">Publish now</option>
               </select>
             </div>
 
@@ -2239,7 +2462,7 @@ const CreateAssignmentModal = ({
           <div className="flex justify-end gap-2 pt-4 border-t border-purple-100">
             <button
               type="button"
-              onClick={() => setShowModal(false)}
+              onClick={handleClose}
               className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border-[2px] border-purple-200 rounded-xl hover:bg-gray-100 transition-colors"
               disabled={loading}
             >
@@ -2250,12 +2473,241 @@ const CreateAssignmentModal = ({
               className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
               disabled={loading || !activeSessionId}
             >
-              {loading ? 'Creating...' : 'Create Assignment'}
+              {loading ? 'Creating...' : newAssignment.status === 'active' ? 'Create & Publish' : 'Save Draft'}
             </button>
           </div>
         </form>
       </div>
     </div>
+  );
+  if (inline) return inner;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
+      {inner}
+    </div>
+  );
+};
+
+// ─── Shared class/subject/lesson pickers used by worksheet & writing forms ────
+const ClassSubjectPickers = ({ newAssignment, setNewAssignment, sessionOptions, classSectionOptions, subjectOptions, availableLessonPlans, availableLessonPlanChapters, lessonPlanError, activeSessionId, accent }) => {
+  const border = `border-${accent}-200`;
+  const focus = `focus:ring-${accent}-400/20 focus:border-${accent}-400`;
+  const cls = `w-full px-3 py-2 text-sm bg-gray-50 border-[2px] ${border} rounded-xl ${focus} transition-colors`;
+  const disabledCls = `${cls} disabled:bg-gray-100 disabled:text-gray-400`;
+  return (
+    <>
+      <div className="md:col-span-2">
+        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-red-500">*</span></label>
+        <select name="academicYearId" value={newAssignment.academicYearId} onChange={e => { const s = sessionOptions.find(o => o.id === e.target.value); setNewAssignment(p => ({ ...p, academicYearId: e.target.value, sessionName: s?.name || '', classId: '', sectionId: '', subject: '', sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' })); }} className={cls} required>
+          <option value="">Select Session</option>
+          {sessionOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        {!activeSessionId && <p className="mt-1 text-[11px] text-red-500">Ask school admin to activate a session first.</p>}
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Section <span className="text-red-500">*</span></label>
+        <select name="classSection" value={newAssignment.classId && newAssignment.sectionId ? `${newAssignment.classId}-${newAssignment.sectionId}` : ''} onChange={e => { if (!e.target.value) { setNewAssignment(p => ({ ...p, classId: '', sectionId: '', subject: '', sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' })); return; } const [cId, sId] = e.target.value.split('-'); setNewAssignment(p => ({ ...p, classId: cId, sectionId: sId, subject: '', sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' })); }} disabled={!newAssignment.academicYearId} className={disabledCls} required>
+          <option value="">{newAssignment.academicYearId ? 'Select Class & Section' : 'Select Session First'}</option>
+          {classSectionOptions.map(cs => <option key={`${cs.classId}-${cs.sectionId}`} value={`${cs.classId}-${cs.sectionId}`}>Class {cs.className} - Section {cs.sectionName}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-red-500">*</span></label>
+        <select name="subject" value={newAssignment.subject} onChange={e => setNewAssignment(p => ({ ...p, subject: e.target.value, sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' }))} disabled={!newAssignment.classId || subjectOptions.length === 0} className={disabledCls} required>
+          <option value="">{!newAssignment.classId ? 'Select Class First' : subjectOptions.length === 0 ? 'No Subjects Found' : 'Select Subject'}</option>
+          {subjectOptions.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Lesson Plan</label>
+        <select value={newAssignment.sourceLessonPlanId} onChange={e => setNewAssignment(p => ({ ...p, sourceLessonPlanId: e.target.value, chapterId: '', chapterTitle: '', subTopicTitle: '' }))} disabled={!newAssignment.subject || availableLessonPlans.length === 0} className={disabledCls}>
+          <option value="">{!newAssignment.subject ? 'Select Subject First' : availableLessonPlans.length === 0 ? 'No Published Plans' : 'Select Lesson Plan (optional)'}</option>
+          {availableLessonPlans.map(p => <option key={String(p._id)} value={String(p._id)}>{p.title}</option>)}
+        </select>
+        {lessonPlanError && <p className="mt-1 text-[11px] text-red-500">{lessonPlanError}</p>}
+      </div>
+      {newAssignment.sourceLessonPlanId && (
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Chapter</label>
+          <select value={newAssignment.chapterId || ''} onChange={e => { const ch = availableLessonPlanChapters.find(c => c.id === e.target.value); setNewAssignment(p => ({ ...p, chapterId: e.target.value, chapterTitle: ch?.title || '', topicTitle: ch?.title || '', subTopicTitle: '' })); }} disabled={availableLessonPlanChapters.length === 0} className={disabledCls}>
+            <option value="">Select Chapter (optional)</option>
+            {availableLessonPlanChapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+          </select>
+        </div>
+      )}
+    </>
+  );
+};
+
+// Worksheet Form Component
+const CreateWorksheetForm = ({
+  onClose, newAssignment, handleChange, handleCreate, setNewAssignment,
+  classSectionOptions, sessionOptions, subjectOptions,
+  loading, error, activeSessionId,
+  availableLessonPlans, availableLessonPlanChapters, lessonPlanError,
+  aiGeneratingAssignment, aiAssignmentError, aiAssignmentGrounded, handleGenerateAssignmentDraft
+}) => (
+  <div className="px-5 py-5">
+    {error && (
+      <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
+        <div className="size-1.5 shrink-0 rounded-full bg-red-500" />
+        <p className="text-xs font-medium text-red-600 flex-1">{error}</p>
+      </div>
+    )}
+    <form onSubmit={handleCreate} className="space-y-4">
+      {/* AI banner */}
+      <section className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-yellow-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm"><Sparkles size={17} /></span>
+            <div>
+              <p className="text-xs font-bold text-amber-900">Generate worksheet from lesson material</p>
+              <p className="mt-0.5 text-[11px] leading-5 text-amber-700/75">Select class, subject &amp; chapter — AI will draft structured practice questions and instructions.</p>
+            </div>
+          </div>
+          <button type="button" onClick={handleGenerateAssignmentDraft} disabled={aiGeneratingAssignment || !newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !(newAssignment.topic || newAssignment.chapterTitle)} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-amber-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0">
+            {aiGeneratingAssignment ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            {aiGeneratingAssignment ? 'Generating…' : 'Generate draft'}
+          </button>
+        </div>
+        {aiAssignmentError && <p className="mt-3 rounded-xl border border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-rose-600">{aiAssignmentError}</p>}
+        {aiAssignmentGrounded && <p role="status" className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle className="size-3.5" /> Draft generated from indexed class material.</p>}
+      </section>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <ClassSubjectPickers newAssignment={newAssignment} setNewAssignment={setNewAssignment} sessionOptions={sessionOptions} classSectionOptions={classSectionOptions} subjectOptions={subjectOptions} availableLessonPlans={availableLessonPlans} availableLessonPlanChapters={availableLessonPlanChapters} lessonPlanError={lessonPlanError} activeSessionId={activeSessionId} accent="amber" />
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Worksheet Title <span className="text-red-500">*</span></label>
+          <input name="title" value={newAssignment.title} onChange={handleChange} type="text" placeholder="e.g., Water Cycle Practice Worksheet" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors" required />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Instructions</label>
+          <textarea name="description" value={newAssignment.description} onChange={handleChange} rows={4} placeholder="Describe what students need to complete in this worksheet — questions, tasks, or exercises…" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors resize-none" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Difficulty</label>
+          <select name="difficulty" value={newAssignment.difficulty} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors">
+            <option value="Easy">Easy</option>
+            <option value="Medium">Medium</option>
+            <option value="Hard">Hard</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Total Marks</label>
+          <input name="marks" value={newAssignment.marks} onChange={handleChange} type="number" min="1" max="200" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Due Date</label>
+          <input name="dueDate" value={newAssignment.dueDate} onChange={handleChange} type="date" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
+          <select name="status" value={newAssignment.status} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-amber-200 rounded-xl focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 transition-colors">
+            <option value="draft">Save as Draft</option>
+            <option value="active">Publish Immediately</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-4 border-t border-amber-100">
+        <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border-[2px] border-amber-200 rounded-xl hover:bg-gray-100 transition-colors">Cancel</button>
+        <button type="submit" disabled={loading || !activeSessionId} className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-amber-500 to-yellow-500 rounded-xl shadow-md shadow-amber-200 hover:shadow-lg disabled:opacity-50 transition-all">
+          {loading ? 'Creating…' : newAssignment.status === 'active' ? 'Create & Publish' : 'Save Draft'}
+        </button>
+      </div>
+    </form>
+  </div>
+);
+
+// Writing / Essay Form Component
+const CreateWritingForm = ({
+  onClose, newAssignment, handleChange, handleCreate, setNewAssignment,
+  classSectionOptions, sessionOptions, subjectOptions,
+  loading, error, activeSessionId,
+  availableLessonPlans, availableLessonPlanChapters, lessonPlanError,
+  aiGeneratingAssignment, aiAssignmentError, aiAssignmentGrounded, handleGenerateAssignmentDraft
+}) => (
+  <div className="px-5 py-5">
+    {error && (
+      <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2">
+        <div className="size-1.5 shrink-0 rounded-full bg-red-500" />
+        <p className="text-xs font-medium text-red-600 flex-1">{error}</p>
+      </div>
+    )}
+    <form onSubmit={handleCreate} className="space-y-4">
+      {/* AI banner */}
+      <section className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-fuchsia-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-purple-600 shadow-sm"><Sparkles size={17} /></span>
+            <div>
+              <p className="text-xs font-bold text-purple-900">Generate writing task from lesson material</p>
+              <p className="mt-0.5 text-[11px] leading-5 text-purple-700/75">Select class, subject &amp; chapter — AI will draft a writing prompt and grading rubric.</p>
+            </div>
+          </div>
+          <button type="button" onClick={handleGenerateAssignmentDraft} disabled={aiGeneratingAssignment || !newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !(newAssignment.topic || newAssignment.chapterTitle)} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-purple-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0">
+            {aiGeneratingAssignment ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            {aiGeneratingAssignment ? 'Generating…' : 'Generate draft'}
+          </button>
+        </div>
+        {aiAssignmentError && <p className="mt-3 rounded-xl border border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-rose-600">{aiAssignmentError}</p>}
+        {aiAssignmentGrounded && <p role="status" className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle className="size-3.5" /> Draft generated from indexed class material.</p>}
+      </section>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <ClassSubjectPickers newAssignment={newAssignment} setNewAssignment={setNewAssignment} sessionOptions={sessionOptions} classSectionOptions={classSectionOptions} subjectOptions={subjectOptions} availableLessonPlans={availableLessonPlans} availableLessonPlanChapters={availableLessonPlanChapters} lessonPlanError={lessonPlanError} activeSessionId={activeSessionId} accent="purple" />
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Writing Task Title <span className="text-red-500">*</span></label>
+          <input name="title" value={newAssignment.title} onChange={handleChange} type="text" placeholder="e.g., Descriptive Essay — My Favourite Place" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors" required />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Writing Prompt <span className="text-red-500">*</span></label>
+          <textarea name="description" value={newAssignment.description} onChange={handleChange} rows={5} placeholder="Write the exact prompt students will respond to. Be specific — e.g., 'Describe a place that is special to you. Use at least three sensory details.'" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors resize-none" required />
+          <p className="mt-1 text-[11px] text-gray-400">Students will see this prompt exactly as written.</p>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+            Grading Rubric <span className="ml-1 text-[11px] font-normal text-purple-600">(recommended)</span>
+          </label>
+          <textarea name="rubric" value={newAssignment.rubric} onChange={handleChange} rows={4} placeholder="e.g., Content &amp; Ideas — 30% | Structure &amp; Organisation — 25% | Vocabulary &amp; Language — 25% | Grammar &amp; Spelling — 20%" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors resize-none" />
+          <p className="mt-1 text-[11px] text-gray-400">Visible to students before submission and used for AI-assisted grading.</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Total Marks</label>
+          <input name="marks" value={newAssignment.marks} onChange={handleChange} type="number" min="1" max="200" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Due Date</label>
+          <input name="dueDate" value={newAssignment.dueDate} onChange={handleChange} type="date" className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors" />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
+          <select name="status" value={newAssignment.status} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-400/20 focus:border-purple-400 transition-colors">
+            <option value="draft">Save as Draft</option>
+            <option value="active">Publish Immediately</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-4 border-t border-purple-100">
+        <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border-[2px] border-purple-200 rounded-xl hover:bg-gray-100 transition-colors">Cancel</button>
+        <button type="submit" disabled={loading || !activeSessionId} className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-fuchsia-600 rounded-xl shadow-md shadow-purple-200 hover:shadow-lg disabled:opacity-50 transition-all">
+          {loading ? 'Creating…' : newAssignment.status === 'active' ? 'Create & Publish' : 'Save Draft'}
+        </button>
+      </div>
+    </form>
   </div>
 );
 

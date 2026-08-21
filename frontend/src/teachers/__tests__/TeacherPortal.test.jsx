@@ -117,6 +117,7 @@ describe('TeacherPortal', () => {
     await userEvent.click(profileButton);
 
     expect(screen.getByText(/My Profile/i)).toBeInTheDocument();
+    expect(screen.getByTestId('teacher-profile-glass-card')).toHaveClass('bg-white', 'p-4');
     const signOutNodes = screen.getAllByText(/Sign out/i).map((node) => node.textContent?.trim());
     expect(signOutNodes).toContain('Sign out');
   });

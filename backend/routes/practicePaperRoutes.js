@@ -416,14 +416,16 @@ router.get('/student/papers/:id', authStudent, async (req, res, next) => {
       });
     }
 
+    const classAccessFilter = buildStudentPaperAccess(student);
+    if (!classAccessFilter) {
+      return res.status(404).json({ success: false, message: 'Practice paper not found' });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
       status: 'published',
-      $or: [
-        { classId: student.classId, sectionId: student.sectionId },
-        { className: student.className, sectionName: student.sectionName }
-      ]
+      ...classAccessFilter
     });
 
     if (!paper) {
@@ -485,14 +487,16 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
       });
     }
 
+    const classAccessFilter = buildStudentPaperAccess(student);
+    if (!classAccessFilter) {
+      return res.status(404).json({ success: false, message: 'Practice paper not found' });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
       status: 'published',
-      $or: [
-        { classId: student.classId, sectionId: student.sectionId },
-        { className: student.className, sectionName: student.sectionName }
-      ]
+      ...classAccessFilter
     });
 
     if (!paper) {
@@ -679,14 +683,16 @@ router.get('/student/papers/:id/attempts', authStudent, async (req, res, next) =
       });
     }
 
+    const classAccessFilter = buildStudentPaperAccess(student);
+    if (!classAccessFilter) {
+      return res.status(404).json({ success: false, message: 'Practice paper not found' });
+    }
+
     const paper = await PracticePaper.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
       status: 'published',
-      $or: [
-        { classId: student.classId, sectionId: student.sectionId },
-        { className: student.className, sectionName: student.sectionName }
-      ]
+      ...classAccessFilter
     }).lean();
 
     if (!paper) {

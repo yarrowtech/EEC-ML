@@ -8,14 +8,15 @@ import {
   ChevronDown,
   User,
   LogOut,
-  CheckCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import { useTypewriterPlaceholder } from '../hooks/useTypewriterPlaceholder';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
+import NotificationPopover from './NotificationPopover';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 // Rotating typewriter examples shown in the search placeholder while it's
@@ -64,7 +65,9 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     notifications: allNotifications,
     unreadCount,
     loading: notificationsLoading,
+    error: notificationsError,
     markAsRead,
+    dismissNotification,
     markAllAsRead
   } = useNotifications();
   const resolveNotifPath = useCallback((notification) => {
@@ -398,77 +401,25 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                 )}
               </button>
 
-              {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                    <div className="flex items-center gap-2">
-                      <Bell size={14} className="text-indigo-500" />
-                      <span className="text-sm font-bold text-gray-900">Notifications</span>
-                      {unreadCount > 0 && (
-                        <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
-                      )}
-                    </div>
-                    {allNotifications.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={markAllAsRead}
-                        className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
-                      >
-                        <CheckCheck size={12} />
-                        Mark all read
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
-                    {notificationsLoading && (
-                      <div className="px-4 py-6 text-sm text-gray-400 text-center">Loading...</div>
-                    )}
-                    {!notificationsLoading && allNotifications.length === 0 && (
-                      <div className="px-4 py-8 text-sm text-gray-400 text-center">
-                        <Bell size={24} className="mx-auto text-gray-200 mb-2" />
-                        No notifications yet
-                      </div>
-                    )}
-                    {!notificationsLoading && allNotifications.map((n) => {
-                      const id = String(n?._id || n?.id || '');
-                      const isRead = Boolean(n?.isRead);
-                      return (
-                        <button
-                          key={id || n?.title}
-                          type="button"
-                          onClick={() => handleNotificationClick(n)}
-                          className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${isRead ? '' : 'bg-indigo-50/50'}`}
-                        >
-                          <div className="flex items-start gap-2">
-                            {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
-                            <div className={!isRead ? '' : 'ml-3.5'}>
-                              <p className="text-sm font-medium text-gray-800 line-clamp-1">{n?.title || 'Notification'}</p>
-                              {n?.message && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>}
-                              <p className="text-[11px] text-gray-400 mt-1">
-                                <span>{formatTimeAgo(n?.createdAt)}</span>
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="border-t border-gray-50 px-4 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowNotifications(false);
-                        navigate('/student/notifications');
-                      }}
-                      className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-semibold text-center py-1"
-                    >
-                      View all notifications →
-                    </button>
-                  </div>
-                </div>
-              )}
+              <AnimatePresence>
+                {showNotifications && (
+                  <NotificationPopover
+                    notifications={allNotifications}
+                    unreadCount={unreadCount}
+                    loading={notificationsLoading}
+                    error={notificationsError}
+                    onMarkAllRead={markAllAsRead}
+                    onOpenNotification={handleNotificationClick}
+                    onDismissNotification={dismissNotification}
+                    formatTime={formatTimeAgo}
+                    footerLabel="View all notifications →"
+                    onFooterClick={() => {
+                      setShowNotifications(false);
+                      navigate('/student/notifications');
+                    }}
+                  />
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Divider */}

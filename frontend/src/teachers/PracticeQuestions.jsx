@@ -172,6 +172,11 @@ const PracticeQuestions = ({ initialType = '' }) => {
           topic: selectedAllocation.subjectId?.name || '',
           gradeLevel: selectedAllocation.classId?.name || '',
           count: 1,
+          questionType: 'mcq',
+          classId: selectedAllocation.classId?._id || '',
+          sectionId: selectedAllocation.sectionId?._id || '',
+          subjectId: selectedAllocation.subjectId?._id || '',
+          academicYearId: selectedAllocation.academicYearId?._id || selectedAllocation.academicYearId || '',
         }),
       });
       const data = await res.json();
@@ -183,11 +188,14 @@ const PracticeQuestions = ({ initialType = '' }) => {
         const opts = (first.options || []).map((o) => (typeof o === 'string' ? o : o.text || ''));
         setOptions([...opts, '', '', '', ''].slice(0, 4));
         const correctOpt = (first.options || []).find((o) => o.isCorrect);
-        setCorrectAnswer(typeof correctOpt === 'string' ? correctOpt : correctOpt?.text || '');
+        setCorrectAnswer(
+          (typeof correctOpt === 'string' ? correctOpt : correctOpt?.text)
+          || first.correctAnswer
+          || ''
+        );
         setExplanation(first.explanation || '');
-      } else if (data?.data?.raw) {
-        setAiError('AI returned unstructured text — try again or edit below.');
-        setQuestionText(data.data.raw.slice(0, 300));
+      } else {
+        setAiError('AI could not create a complete question. Please try again.');
       }
     } catch (err) {
       setAiError(err.message || 'Failed to generate question');
@@ -294,8 +302,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
           <div className="p-4 sm:p-5 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Subject</label>
+                <label htmlFor="practice-allocation" className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Subject</label>
                 <select
+                  id="practice-allocation"
                   value={selectedAllocationId}
                   onChange={(e) => setSelectedAllocationId(e.target.value)}
                   className={inputClass}
@@ -313,8 +322,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Question Type</label>
+                <label htmlFor="practice-question-type" className="block text-xs font-semibold text-gray-600 mb-1.5">Question Type</label>
                 <select
+                  id="practice-question-type"
                   value={questionType}
                   onChange={(e) => setQuestionType(e.target.value)}
                   className={inputClass}
@@ -329,8 +339,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Question</label>
+              <label htmlFor="practice-question-text" className="block text-xs font-semibold text-gray-600 mb-1.5">Question</label>
               <textarea
+                id="practice-question-text"
                 value={questionText}
                 onChange={(e) => setQuestionText(e.target.value)}
                 rows={3}
@@ -349,6 +360,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
                         {String.fromCharCode(65 + idx)}.
                       </span>
                       <input
+                        aria-label={`Option ${String.fromCharCode(65 + idx)}`}
                         value={opt}
                         onChange={(e) => {
                           const next = [...options];
@@ -362,8 +374,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
                   ))}
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Correct Answer</label>
+                  <label htmlFor="practice-correct-answer" className="block text-[11px] font-semibold text-gray-500 mb-1">Correct Answer</label>
                   <select
+                    id="practice-correct-answer"
                     value={correctAnswer}
                     onChange={(e) => setCorrectAnswer(e.target.value)}
                     className={inputClass}
@@ -384,8 +397,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
 
             {questionType === 'blank' && (
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Correct Answer</label>
+                <label htmlFor="practice-blank-answer" className="block text-xs font-semibold text-gray-600 mb-1.5">Correct Answer</label>
                 <input
+                  id="practice-blank-answer"
                   value={correctAnswer}
                   onChange={(e) => setCorrectAnswer(e.target.value)}
                   placeholder="Exact answer"
@@ -395,8 +409,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Explanation (optional)</label>
+              <label htmlFor="practice-explanation" className="block text-xs font-semibold text-gray-600 mb-1.5">Explanation (optional)</label>
               <textarea
+                id="practice-explanation"
                 value={explanation}
                 onChange={(e) => setExplanation(e.target.value)}
                 rows={2}

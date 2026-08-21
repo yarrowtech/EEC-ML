@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Send, Clock, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,10 +18,10 @@ const PracticeTestInterface = ({ paperId, paperTitle, onBack }) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [startTime, setStartTime] = useState(null);
 
-  const authHeaders = {
+  const authHeaders = useMemo(() => ({
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json'
-  };
+  }), [token]);
 
   // Fetch paper details
   useEffect(() => {

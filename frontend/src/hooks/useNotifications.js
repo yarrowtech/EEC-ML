@@ -82,6 +82,15 @@ export const useNotifications = () => {
   }, []);
 
   const dismissNotification = useCallback(async (notificationId) => {
+    const dismissedNotification = notifications.find(n => n._id === notificationId);
+
+    // Remove immediately so the swipe gesture feels direct; refresh from the
+    // server if persistence fails.
+    setNotifications(prev => prev.filter(n => n._id !== notificationId));
+    if (dismissedNotification && !dismissedNotification.isRead) {
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+
     try {
       const token = localStorage.getItem('token');
 
@@ -100,19 +109,13 @@ export const useNotifications = () => {
         throw new Error('Failed to dismiss notification');
       }
 
-      // Remove from local state
-      setNotifications(prev => prev.filter(n => n._id !== notificationId));
-      setUnreadCount(prev => {
-        const notification = notifications.find(n => n._id === notificationId);
-        return notification && !notification.isRead ? Math.max(0, prev - 1) : prev;
-      });
-
       return true;
     } catch (err) {
       console.error('Failed to dismiss notification:', err);
+      await fetchNotifications();
       return false;
     }
-  }, [notifications]);
+  }, [fetchNotifications, notifications]);
 
   const markAllAsRead = useCallback(async () => {
     const previousNotifications = notifications;

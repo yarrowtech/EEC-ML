@@ -445,6 +445,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             isEssay: Boolean(isEssay),
             rubric: Boolean(isEssay) ? String(rubric || '').trim() : '',
             status: status || 'draft',
+            publishedForStudentPortal: status === 'active',
             dueDate,
             ...(lessonPlanAlignment || {})
         });
@@ -593,7 +594,10 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         if (difficulty !== undefined) assignment.difficulty = normalizeDifficulty(difficulty);
         if (marks !== undefined) assignment.marks = marks;
         if (dueDate) assignment.dueDate = dueDate;
-        if (status) assignment.status = status;
+        if (status) {
+            assignment.status = status;
+            assignment.publishedForStudentPortal = status === 'active';
+        }
         if (submissionFormat) assignment.submissionFormat = normalizeSubmissionFormat(submissionFormat);
         if (attachments !== undefined) assignment.attachments = attachments;
         if (isEssay !== undefined) assignment.isEssay = Boolean(isEssay);
@@ -664,6 +668,52 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         res.json({ message: "Assignment updated successfully", assignment });
     } catch (err) {
         res.status(err.statusCode || 500).json({ error: err.message });
+    }
+});
+
+// Teachers publish a completed draft to the assigned class and section.
+router.patch('/teacher/publish/:id', authTeacher, async (req, res) => {
+    try {
+        const schoolId = req.schoolId || req.teacher?.schoolId || null;
+        const teacherId = req.teacher?.id || req.user?.id;
+        if (!schoolId || !teacherId) return res.status(400).json({ error: 'schoolId and teacherId are required' });
+
+        const assignment = await Assignment.findOne({ _id: req.params.id, schoolId, teacherId });
+        if (!assignment) return res.status(404).json({ error: 'Assignment not found or unauthorized' });
+
+        const activeYear = await getActiveAcademicYear(schoolId);
+        if (!activeYear?._id || String(assignment.academicYearId || '') !== String(activeYear._id)) {
+            return res.status(400).json({ error: 'Only assignments in the active academic session can be published.' });
+        }
+        if (!assignment.title || !assignment.subject || !assignment.classId || !assignment.sectionId || !assignment.dueDate) {
+            return res.status(400).json({ error: 'Complete the title, subject, class, section, and due date before publishing.' });
+        }
+        if (!Number.isFinite(Number(assignment.marks)) || Number(assignment.marks) <= 0) {
+            return res.status(400).json({ error: 'Assignment marks must be greater than zero before publishing.' });
+        }
+
+        const wasPublished = assignment.status === 'active' && assignment.publishedForStudentPortal;
+        assignment.status = 'active';
+        assignment.publishedForStudentPortal = true;
+        await assignment.save();
+
+        if (!wasPublished) {
+            try {
+                await NotificationService.notifyAssignmentCreated({
+                    schoolId,
+                    campusId: req.campusId || null,
+                    assignment,
+                    createdBy: teacherId,
+                });
+            } catch (notifErr) {
+                logger.error('Failed to create assignment publication notification:', notifErr);
+            }
+        }
+
+        return res.json({ message: 'Assignment published successfully', assignment });
+    } catch (err) {
+        logger.error('Publish assignment error:', err);
+        return res.status(500).json({ error: err.message });
     }
 });
 

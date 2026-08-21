@@ -3,6 +3,7 @@
 # or duplication is prohibited without prior written permission.
 
 import logging
+import random
 import re
 
 from app.core.config import settings
@@ -325,7 +326,14 @@ def retrieve_from_qdrant(
             subject,
             [round(h.get("score", 0), 3) for h in relevant],
         )
-        return [h["text"] for h in relevant][: settings.max_context_chunks]
+        # Keep the top chunk as the anchor; shuffle the rest so the LLM sees
+        # a different ordering each call and generates varied content.
+        pool = relevant[: settings.max_context_chunks]
+        if len(pool) > 2:
+            top, rest = pool[:1], pool[1:]
+            random.shuffle(rest)
+            pool = top + rest
+        return [h["text"] for h in pool]
 
     logger.info(
         "Qdrant RAG found no chunks above threshold=%.2f school=%s subject=%r chapter=%r",
@@ -396,7 +404,12 @@ def retrieve_from_qdrant_with_meta(
     relevant = _select_hybrid_hits(query_text, hits)
 
     if relevant:
-        return [h["text"] for h in relevant], _dedupe_citations(relevant)
+        pool = relevant[: settings.max_context_chunks]
+        if len(pool) > 2:
+            top, rest = pool[:1], pool[1:]
+            random.shuffle(rest)
+            pool = top + rest
+        return [h["text"] for h in pool], _dedupe_citations(pool)
 
     return [], []
 
