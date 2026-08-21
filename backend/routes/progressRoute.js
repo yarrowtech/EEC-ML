@@ -90,7 +90,7 @@ router.get('/students', adminAuth, async (req, res) => {
 });
 
 // Get detailed progress for a specific student
-router.get('/student/:studentId', adminAuth, async (req, res) => {
+router.get('/student/:studentId', teacherAuth, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
     const schoolId = resolveSchoolId(req, res);

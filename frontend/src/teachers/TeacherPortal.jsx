@@ -632,7 +632,7 @@ const ClassesHub = () => {
  *   Title  : "Class :5  Section : A"  — bold, large, centered
  *   Sub    : "Switch class"            — small oval pill, centered
  *   Tabs   : Overview | Students | Observations | AI  (4 tabs, pill bar, centered)
- *            Active = indigo fill (#4F46E5), inactive = dark text, no fill
+ *            Active = indigo border and text, inactive = dark text
  *   Caret  : small downward triangle below active tab, connecting to sub-bar
  *   Sub-bar: soft purple pill (#F5F5FF / #D7DCFF), 3 items with purple bullet dots
  *            Active sub-item = medium purple focus state inside
@@ -796,7 +796,7 @@ const ClassWorkspace = () => {
 
         {/* ── Tab bar — centered, pill ───────────────────────
             Ref: rx=24, fill=#F8FAFC, stroke=#E2E8F0, h=48
-            Active: fill=#4F46E5, rx=18.5, h=37
+            Active: indigo border with no fill or shadow, rx=18.5, h=37
         ──────────────────────────────────────────────────── */}
         <div className="flex justify-center px-6 pt-4 pb-0">
           <div className="inline-flex items-center gap-[5px] rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-[5.5px]">
@@ -812,7 +812,7 @@ const ClassWorkspace = () => {
                     'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
                     'h-[37px] whitespace-nowrap transition-all duration-150',
                     isActive
-                      ? 'bg-[#4F46E5] text-white shadow-sm'
+                      ? 'text-[#5363F5] ring-1 ring-[#B8C2F5]'
                       : 'text-[#475569] hover:text-[#1E293B]',
                   ].join(' ')}
                 >

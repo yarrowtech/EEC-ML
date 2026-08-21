@@ -90,7 +90,7 @@ const StudentAnalyticsPortal = () => {
   const [analytics, setAnalytics] = useState(null);
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
-  const [filters, setFilters] = useState({ grade: '', section: '', subject: '' });
+  const [filters, setFilters] = useState({ grade: ctxGrade, section: ctxSection, subject: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -135,7 +135,16 @@ const StudentAnalyticsPortal = () => {
           const fallbackData = await fallbackRes.json();
           setClassOptions((fallbackData.classes || []).map(c => typeof c === 'string' ? c : c.name));
           setSectionOptions((fallbackData.sections || []).map(s => typeof s === 'string' ? s : s.name));
-          setStudents((fallbackData.students || []).map(s => ({
+          const allStudents = fallbackData.students || [];
+          // Filter to the class/section from the URL slug so we only show relevant students
+          const scoped = allStudents.filter((s) => {
+            const sGrade = String(s.grade || s.className || '').trim();
+            const sSection = String(s.section || s.sectionName || '').trim().toUpperCase();
+            const gradeOk = !ctxGrade || sGrade === ctxGrade || sGrade === `Class ${ctxGrade}`;
+            const sectionOk = !ctxSection || sSection === ctxSection;
+            return gradeOk && sectionOk;
+          });
+          setStudents((scoped.length > 0 ? scoped : allStudents).map(s => ({
             _id: s._id,
             studentId: { name: s.name, grade: s.grade || s.className, section: s.section || s.sectionName, roll: s.rollNumber },
             progressMetrics: [],
@@ -338,7 +347,7 @@ const StudentAnalyticsPortal = () => {
   const analyzeStudentWeakness = async (studentId, subject) => {
     setAnalyzing(true);
     try {
-      const response = await fetch(`/api/ai-learning/analyze-weakness/${studentId}`, {
+      const response = await fetch(`${API_BASE}/api/ai-learning/analyze-weakness/${studentId}`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ subject })
@@ -364,7 +373,7 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const generateLearningPath = async (studentId, subject, weakAreas, currentLevel) => {
     try {
-      const response = await fetch(`/api/ai-learning/generate-learning-path/${studentId}`, {
+      const response = await fetch(`${API_BASE}/api/ai-learning/generate-learning-path/${studentId}`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ subject, weakAreas, currentLevel })

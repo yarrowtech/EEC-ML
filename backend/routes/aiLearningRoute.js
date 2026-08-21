@@ -3,6 +3,7 @@ const router = express.Router();
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
 const adminAuth = require('../middleware/adminAuth');
+const authTeacher = require('../middleware/authTeacher');
 
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
@@ -14,7 +15,7 @@ const resolveSchoolId = (req, res) => {
 };
 
 // Analyze student weakness and identify weak students
-router.post('/analyze-weakness/:studentId', adminAuth, async (req, res) => {
+router.post('/analyze-weakness/:studentId', authTeacher, async (req, res) => {
   // #swagger.tags = ['AI Learning']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -123,7 +124,7 @@ router.get('/weak-students', adminAuth, async (req, res) => {
 });
 
 // Generate AI learning path for a student
-router.post('/generate-learning-path/:studentId', adminAuth, async (req, res) => {
+router.post('/generate-learning-path/:studentId', authTeacher, async (req, res) => {
   // #swagger.tags = ['AI Learning']
   try {
     const schoolId = resolveSchoolId(req, res);
