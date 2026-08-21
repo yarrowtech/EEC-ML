@@ -18,6 +18,9 @@ const Assignment = require('../models/Assignment');
 const TeacherUser = require('../models/TeacherUser');
 const TeacherFeedback = require('../models/TeacherFeedback');
 const School = require('../models/School');
+const SupportRequest = require('../models/SupportRequest');
+const StudentObservation = require('../models/StudentObservation');
+const Wellbeing = require('../models/Wellbeing');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminAuth = require('../middleware/adminAuth');
@@ -58,6 +61,46 @@ const resolveProfilePhoto = (studentDoc) => {
   const direct = resolvePhotoValue(studentDoc?.profilePic);
   if (direct) return direct;
   return null;
+};
+
+const formatStudentComplaint = (complaint) => ({
+  id: complaint?._id,
+  ticketNumber: complaint?.ticketNumber || '',
+  title: complaint?.subject || 'Complaint',
+  description: complaint?.message || '',
+  category: complaint?.category || 'General',
+  priority: complaint?.priority || 'medium',
+  status: complaint?.status || 'open',
+  owner: complaint?.owner || 'School Admin',
+  resolutionNotes: complaint?.resolutionNotes || '',
+  createdAt: complaint?.createdAt || null,
+  updatedAt: complaint?.updatedAt || null,
+});
+
+const findStudentClassTeacher = async (student) => {
+  if (!student?.schoolId || !student?.grade) return null;
+  const classFilter = { schoolId: student.schoolId, name: student.grade };
+  if (student.campusId) classFilter.campusId = student.campusId;
+  const classDoc = await Class.findOne(classFilter).lean();
+  if (!classDoc) return null;
+
+  const sectionDoc = student.section
+    ? await Section.findOne({
+        schoolId: student.schoolId,
+        classId: classDoc._id,
+        name: student.section,
+        ...(student.campusId ? { campusId: student.campusId } : {}),
+      }).lean()
+    : null;
+  const allocation = await TeacherAllocation.findOne({
+    schoolId: student.schoolId,
+    classId: classDoc._id,
+    ...(sectionDoc ? { sectionId: sectionDoc._id } : {}),
+    isClassTeacher: true,
+  })
+    .populate('teacherId', 'name email phone')
+    .lean();
+  return allocation?.teacherId || null;
 };
 
 const resolveAdmissionYear = (value) => {
@@ -865,6 +908,141 @@ router.get('/achievements', authStudent, async (req, res) => {
   }
 });
 
+// Student-safe health profile and teacher observations explicitly shared with family.
+router.get('/health', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user.schoolId;
+    const student = await StudentUser.findOne({ _id: req.user.id, schoolId })
+      .select('name grade section dob bloodGroup knownHealthIssues allergies immunizationStatus')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const observations = await StudentObservation.find({
+      schoolId,
+      studentId: req.user.id,
+      source: 'teacher',
+      parentNotification: true,
+    })
+      .sort({ recordedAt: -1 })
+      .limit(30)
+      .populate('teacherId', 'name')
+      .lean();
+
+    return res.json({
+      profile: {
+        name: student.name || 'Student',
+        grade: student.grade || '',
+        section: student.section || '',
+        dob: student.dob || '',
+        bloodGroup: student.bloodGroup || '',
+        knownHealthIssues: student.knownHealthIssues || '',
+        allergies: student.allergies || '',
+        immunizationStatus: student.immunizationStatus || '',
+      },
+      observations: observations.map((item) => ({
+        id: item._id,
+        recordedAt: item.recordedAt,
+        healthObservations: item.healthObservations || {},
+        additionalNotes: item.additionalNotes || '',
+        urgencyLevel: item.urgencyLevel || 'normal',
+        followUpRequired: Boolean(item.followUpRequired),
+        teacherName: item.teacherId?.name || 'Teacher',
+      })),
+    });
+  } catch (err) {
+    (req.log || logger).error({ err }, 'Student health fetch error');
+    return res.status(500).json({ error: err.message || 'Unable to load health information' });
+  }
+});
+
+router.get('/wellbeing', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user.schoolId;
+    const assessment = await Wellbeing.findOne({
+      schoolId,
+      student: req.user.id,
+    }).lean();
+    return res.json({ assessment: assessment || null });
+  } catch (err) {
+    (req.log || logger).error({ err }, 'Student wellbeing fetch error');
+    return res.status(500).json({ error: err.message || 'Unable to load wellbeing information' });
+  }
+});
+
+router.get('/complaints', authStudent, async (req, res) => {
+  try {
+    const student = await StudentUser.findById(req.user.id).select('schoolId').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    const complaints = await SupportRequest.find({
+      schoolId: student.schoolId,
+      supportType: 'complaint',
+      createdByRole: 'student',
+      'requestDetails.studentId': String(req.user.id),
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    return res.json({ complaints: complaints.map(formatStudentComplaint) });
+  } catch (err) {
+    (req.log || logger).error({ err }, 'Student complaints fetch error');
+    return res.status(500).json({ error: err.message || 'Unable to load complaints' });
+  }
+});
+
+router.post('/complaints', authStudent, async (req, res) => {
+  try {
+    const { title, description, category, priority } = req.body || {};
+    if (!String(title || '').trim() || !String(description || '').trim()) {
+      return res.status(400).json({ error: 'Title and description are required' });
+    }
+    const student = await StudentUser.findById(req.user.id)
+      .select('name email mobile schoolId campusId grade section')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const priorityValue = String(priority || '').toLowerCase();
+    const normalizedPriority = ['low', 'medium', 'high', 'critical'].includes(priorityValue)
+      ? priorityValue
+      : 'medium';
+    const academic = String(category || '').toLowerCase().includes('academic');
+    const teacher = academic ? await findStudentClassTeacher(student) : null;
+    const ticket = await SupportRequest.create({
+      ticketNumber: `STU-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+      supportType: 'complaint',
+      category: String(category || 'General').trim(),
+      subject: String(title).trim(),
+      message: String(description).trim(),
+      priority: normalizedPriority,
+      status: 'open',
+      owner: teacher?.name || 'School Admin',
+      schoolId: student.schoolId,
+      targetRole: teacher ? 'teacher' : 'admin',
+      targetEmail: teacher?.email || undefined,
+      contactEmail: student.email || undefined,
+      contactPhone: student.mobile || undefined,
+      createdByName: student.name || 'Student',
+      createdByRole: 'student',
+      requestDetails: {
+        studentId: String(student._id),
+        studentName: student.name || '',
+        studentGrade: student.grade || '',
+        studentSection: student.section || '',
+        assignedTo: teacher ? 'Class Teacher' : 'School Admin',
+        teacherId: teacher?._id,
+        teacherName: teacher?.name || '',
+      },
+      auditTrail: [{
+        status: 'open',
+        note: 'Complaint submitted by student',
+        changedByName: student.name || 'Student',
+      }],
+    });
+    return res.status(201).json(formatStudentComplaint(ticket));
+  } catch (err) {
+    (req.log || logger).error({ err }, 'Student complaint creation error');
+    return res.status(500).json({ error: err.message || 'Unable to submit complaint' });
+  }
+});
+
 // Get class teacher for logged-in student
 router.get('/class-teacher', authStudent, async (req, res) => {
   // #swagger.tags = ['Students']
@@ -1666,7 +1844,10 @@ router.get('/results', authStudent, async (req, res) => {
     }).lean();
 
     const gradedSubmissions = (progress?.submissions || []).filter(
-      sub => sub.status === 'graded' && sub.score !== undefined && sub.score !== null
+      sub => sub.status === 'graded'
+        && sub.publishedByTeacher === true
+        && sub.score !== undefined
+        && sub.score !== null
     );
 
     let assignmentResults = [];

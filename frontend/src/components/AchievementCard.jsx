@@ -26,9 +26,9 @@ const categoryStyle = (cat) => CATEGORY_STYLES[cat] || CATEGORY_STYLES.Other;
 
 /* Rank badge for top-3 achievements — gold / silver / bronze medal styling */
 const RANK_STYLES = [
-  { gradient: 'from-amber-400 to-yellow-500', ring: 'ring-amber-200', shadow: 'shadow-amber-200/70', icon: Trophy, iconColor: 'text-white' },
-  { gradient: 'from-slate-300 to-slate-400',  ring: 'ring-slate-200', shadow: 'shadow-slate-200/70',  icon: Medal,  iconColor: 'text-white' },
-  { gradient: 'from-orange-400 to-amber-600', ring: 'ring-orange-200', shadow: 'shadow-orange-200/70', icon: Star,   iconColor: 'text-white' },
+  { gradient: 'from-amber-100 to-yellow-100', ring: 'ring-amber-200', shadow: 'shadow-amber-100/70', icon: Trophy, iconColor: 'text-amber-700' },
+  { gradient: 'from-slate-100 to-slate-200',  ring: 'ring-slate-200', shadow: 'shadow-slate-100/70',  icon: Medal,  iconColor: 'text-slate-600' },
+  { gradient: 'from-orange-100 to-amber-100', ring: 'ring-orange-200', shadow: 'shadow-orange-100/70', icon: Star,   iconColor: 'text-orange-700' },
 ];
 
 const RankBadge = ({ idx }) => {
@@ -82,18 +82,18 @@ const AchievementCard = () => {
     <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
 
       {/* ── Header ── */}
-      <div className="relative overflow-hidden bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 px-5 py-4">
+      <div className="relative overflow-hidden bg-linear-to-br from-amber-100 via-yellow-100 to-orange-100 px-5 py-4 border-b border-amber-200">
         <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-8 left-10 h-20 w-20 rounded-full bg-white/8" />
         <div className="relative z-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/25 border border-white/40 shadow-sm">
-              <Trophy size={16} className="text-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/70 border border-amber-200 shadow-sm">
+              <Trophy size={16} className="text-amber-700" />
             </div>
             <h2 className="text-sm font-black text-white">Achievements</h2>
           </div>
           {!loading && !error && achievements.length > 0 && (
-            <span className="rounded-full bg-white/25 border border-white/40 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+            <span className="rounded-full bg-white/70 border border-amber-200 px-2.5 py-1 text-[11px] font-bold text-amber-800 backdrop-blur-sm">
               {achievements.length} earned
             </span>
           )}

@@ -35,6 +35,25 @@ const assignedClass = {
   subjects: [{ id: 'subject1', name: 'Mathematics' }],
 };
 
+const allocationRecord = {
+  classId: {
+    _id: assignedClass.classId,
+    name: assignedClass.className,
+    academicYearId: {
+      _id: assignedClass.academicYearId,
+      name: assignedClass.sessionName,
+    },
+  },
+  sectionId: {
+    _id: assignedClass.sectionId,
+    name: assignedClass.sectionName,
+  },
+  subjectId: {
+    _id: assignedClass.subjects[0].id,
+    name: assignedClass.subjects[0].name,
+  },
+};
+
 const publishedLessonPlan = {
   _id: 'lessonplan1',
   title: 'Fractions Learning Plan',
@@ -98,7 +117,7 @@ describe('AssignmentPortal workflow', () => {
       if (url.includes('/api/academic/active-year')) {
         return Promise.resolve({ data: { _id: 'year-1', name: '2026-27' } });
       }
-      if (url.includes('/teacher/my-classes')) return Promise.resolve({ data: [assignedClass] });
+      if (url.includes('/api/teacher/dashboard/allocations')) return Promise.resolve({ data: [allocationRecord] });
       if (url.includes('/teacher/my-assignments')) return Promise.resolve({ data: [] });
       if (url.includes('/teacher/submissions')) return Promise.resolve({ data: [submission] });
       if (url.includes('/tryout-submissions')) return Promise.resolve({ data: { results: [] } });
@@ -221,7 +240,7 @@ describe('AssignmentPortal workflow', () => {
       if (url.includes('/api/academic/active-year')) {
         return Promise.resolve({ data: { _id: 'year-1', name: '2026-27' } });
       }
-      if (url.includes('/teacher/my-classes')) return Promise.resolve({ data: [assignedClass] });
+      if (url.includes('/api/teacher/dashboard/allocations')) return Promise.resolve({ data: [allocationRecord] });
       if (url.includes('/teacher/my-assignments')) return Promise.resolve({ data: [draftAssignment] });
       if (url.includes('/teacher/submissions')) return Promise.resolve({ data: [submission] });
       if (url.includes('/tryout-submissions')) return Promise.resolve({ data: { results: [] } });

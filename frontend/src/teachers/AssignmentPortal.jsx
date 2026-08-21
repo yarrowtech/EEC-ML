@@ -126,7 +126,12 @@ const AssignmentPortal = ({ view = 'manage' }) => {
     chapterId: "",
     chapterTitle: "",
     topicTitle: "",
-    subTopicTitle: ""
+    subTopicTitle: "",
+    timeLimit: "",
+    publishDate: "",
+    lateSubmissions: false,
+    lateSubmissionCutoff: "",
+    groups: ""
   });
   const [, setPdfFile] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
@@ -797,7 +802,12 @@ const AssignmentPortal = ({ view = 'manage' }) => {
           chapterId: "",
           chapterTitle: "",
           topicTitle: "",
-          subTopicTitle: ""
+          subTopicTitle: "",
+          timeLimit: "",
+          publishDate: "",
+          lateSubmissions: false,
+          lateSubmissionCutoff: "",
+          groups: ""
         });
         setPdfFile(null);
         setAiAssignmentError('');
@@ -2032,240 +2042,193 @@ const CreateAssignmentModal = ({
   aiGeneratingAssignment, aiAssignmentError, aiAssignmentGrounded, handleGenerateAssignmentDraft
 }) => {
   const handleClose = onClose ?? (() => setShowModal?.(false));
+  const statusBadge = {
+    draft: 'bg-amber-100 text-amber-700 border-amber-200',
+    active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  };
+
   const inner = (
-    <div className={inline ? 'bg-white w-full' : 'bg-white w-full max-w-2xl rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto border-[2.5px] border-purple-300'}>
-      <div className="px-5 py-4 border-b border-purple-100 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Plus size={18} className="text-white" />
+    <div className={inline ? 'bg-white w-full' : 'bg-white/95 backdrop-blur-xl w-full max-w-2xl rounded-3xl shadow-2xl shadow-blue-900/10 max-h-[90vh] overflow-y-auto border border-blue-100'}>
+      {/* Header */}
+      <div className="px-6 py-5 border-b border-blue-50">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Plus size={18} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Create New Assignment</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">Set up a new assignment for your students</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold text-gray-900">Create New Assignment</h2>
-            <p className="text-[11px] text-gray-400">Set up a new assignment for your students</p>
+          <div className="flex items-start gap-2 shrink-0">
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={handleGenerateAssignmentDraft}
+                disabled={aiGeneratingAssignment || !newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !(newAssignment.topic || newAssignment.chapterTitle)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold shadow shadow-blue-500/20 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              >
+                {aiGeneratingAssignment ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                {aiGeneratingAssignment ? 'Generating…' : 'Generate draft'}
+              </button>
+              <p className="hidden text-[10px] text-gray-400 mt-1 sm:block">Select class + subject + chapter first</p>
+            </div>
+            <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors mt-0.5">
+              <X size={16} />
+            </button>
           </div>
         </div>
-        <button
-          onClick={handleClose}
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <X size={16} />
-        </button>
+        {(aiAssignmentError || aiAssignmentGrounded) && (
+          <div className="mt-3">
+            {aiAssignmentError && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-600">{aiAssignmentError}</p>}
+            {aiAssignmentGrounded && <p role="status" className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 mt-1"><CheckCircle className="size-3.5" /> Draft generated from indexed class material. Review before publishing.</p>}
+          </div>
+        )}
       </div>
 
-      <div className="px-5 py-4">
+      <div className="px-6 py-5">
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100 mb-4">
             <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
             <p className="text-xs text-red-600 font-medium flex-1">{error}</p>
           </div>
         )}
-        <form onSubmit={handleCreate} className="space-y-4">
-          <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm"><Sparkles size={17} /></span>
-                <div>
-                  <p className="text-xs font-bold text-violet-900">Generate from lesson material</p>
-                  <p className="mt-0.5 text-[11px] leading-5 text-violet-700/75">Select class, subject, and chapter or topic. AI will fill an editable title, instructions, marks, difficulty, and rubric.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleGenerateAssignmentDraft}
-                disabled={aiGeneratingAssignment || !newAssignment.classId || !newAssignment.sectionId || !newAssignment.subject || !(newAssignment.topic || newAssignment.chapterTitle)}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-md shadow-violet-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-              >
-                {aiGeneratingAssignment ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                {aiGeneratingAssignment ? 'Generating…' : 'Generate draft'}
-              </button>
-            </div>
-            {aiAssignmentError && <p className="mt-3 rounded-xl border border-rose-200 bg-white/80 px-3 py-2 text-[11px] font-medium text-rose-600">{aiAssignmentError}</p>}
-            {aiAssignmentGrounded && <p role="status" className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700"><CheckCircle className="size-3.5" /> Draft generated from indexed class material. Review before publishing.</p>}
-          </section>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="md:col-span-2">
-              <label htmlFor="assignment-session" className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-xs text-red-500">*</span></label>
-              <select
-                id="assignment-session"
-                name="academicYearId"
-                value={newAssignment.academicYearId}
-                onChange={(e) => {
-                  const nextSessionId = e.target.value;
-                  const selectedSession = sessionOptions.find((option) => option.id === nextSessionId);
-                  setNewAssignment((prev) => ({
-                    ...prev,
-                    academicYearId: nextSessionId,
-                    sessionName: selectedSession?.name || '',
-                    classId: '',
-                    sectionId: '',
-                    subject: '',
-                    sourceLessonPlanId: '',
-                    chapterId: '',
-                    chapterTitle: '',
-                    topicTitle: '',
-                    subTopicTitle: ''
-                  }));
-                }}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-                required
-              >
-                <option value="">Select Session</option>
-                {sessionOptions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {session.name}
-                  </option>
-                ))}
-              </select>
-              {!activeSessionId && (
-                <p className="mt-1 text-[11px] text-red-500">Please ask school admin to activate a session before creating assignments.</p>
-              )}
-            </div>
+        <form onSubmit={handleCreate} className="space-y-5">
+          {/* Session */}
+          <div>
+            <label htmlFor="assignment-session" className="block text-xs font-semibold text-gray-600 mb-1.5">Session <span className="text-red-500">*</span></label>
+            <select
+              id="assignment-session"
+              name="academicYearId"
+              value={newAssignment.academicYearId}
+              onChange={(e) => {
+                const nextSessionId = e.target.value;
+                const sel = sessionOptions.find((o) => o.id === nextSessionId);
+                setNewAssignment((prev) => ({
+                  ...prev,
+                  academicYearId: nextSessionId,
+                  sessionName: sel?.name || '',
+                  classId: '', sectionId: '', subject: '',
+                  sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: ''
+                }));
+              }}
+              className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+              required
+            >
+              <option value="">Select Session</option>
+              {sessionOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            {!activeSessionId && <p className="mt-1 text-[11px] text-red-500">Please ask school admin to activate a session before creating assignments.</p>}
+          </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assignment Title <span className="text-xs text-red-500">*</span></label>
+          {/* 2-column grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Title */}
+            <div className="sm:col-span-2">
+              <label htmlFor="assignment-title" className="block text-xs font-semibold text-gray-600 mb-1.5">Assignment Title <span className="text-red-500">*</span></label>
               <input
+                id="assignment-title"
                 name="title"
                 value={newAssignment.title}
                 onChange={handleChange}
                 type="text"
                 placeholder="e.g., Quadratic Equations Problem Set"
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
                 required
               />
             </div>
+
+            {/* Class & Section */}
             <div>
-              <label htmlFor="assignment-class-section" className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Section <span className="text-xs text-red-500">*</span></label>
+              <label htmlFor="assignment-class-section" className="block text-xs font-semibold text-gray-600 mb-1.5">Class & Section <span className="text-red-500">*</span></label>
               <select
                 id="assignment-class-section"
                 name="classSection"
                 value={newAssignment.classId && newAssignment.sectionId ? `${newAssignment.classId}-${newAssignment.sectionId}` : ''}
                 onChange={(e) => {
                   if (!e.target.value) {
-                    setNewAssignment(prev => ({
-                      ...prev,
-                      classId: "",
-                      sectionId: "",
-                      subject: "",
-                      sourceLessonPlanId: "",
-                      chapterId: "",
-                      chapterTitle: "",
-                      topicTitle: "",
-                      subTopicTitle: ""
-                    }));
+                    setNewAssignment(prev => ({ ...prev, classId: '', sectionId: '', subject: '', sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' }));
                     return;
                   }
-                  const [classId, sectionId] = e.target.value.split('-');
-                  setNewAssignment(prev => ({
-                    ...prev,
-                    classId,
-                    sectionId,
-                    subject: "",
-                    sourceLessonPlanId: "",
-                    chapterId: "",
-                    chapterTitle: "",
-                    topicTitle: "",
-                    subTopicTitle: ""
-                  }));
+                  const [cId, sId] = e.target.value.split('-');
+                  setNewAssignment(prev => ({ ...prev, classId: cId, sectionId: sId, subject: '', sourceLessonPlanId: '', chapterId: '', chapterTitle: '', topicTitle: '', subTopicTitle: '' }));
                 }}
                 disabled={!newAssignment.academicYearId}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
                 required
               >
-                <option value="">
-                  {newAssignment.academicYearId ? 'Select Class & Section' : 'Select Session First'}
-                </option>
+                <option value="">{newAssignment.academicYearId ? 'Select Class & Section' : 'Select Session First'}</option>
                 {classSectionOptions.map((cs) => (
                   <option key={`${cs.classId}-${cs.sectionId}`} value={`${cs.classId}-${cs.sectionId}`}>
-                    Class {cs.className} - Section {cs.sectionName}
+                    Class {cs.className} – Section {cs.sectionName}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Subject */}
             <div>
-              <label htmlFor="assignment-subject" className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-xs text-red-500">*</span></label>
+              <label htmlFor="assignment-subject" className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-red-500">*</span></label>
               <select
                 id="assignment-subject"
                 name="subject"
                 value={newAssignment.subject}
                 onChange={handleChange}
                 disabled={!newAssignment.classId || !newAssignment.sectionId || subjectOptions.length === 0}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
                 required
               >
                 <option value="">
-                  {(!newAssignment.classId || !newAssignment.sectionId)
-                    ? 'Select Class & Section First'
-                    : subjectOptions.length === 0
-                      ? 'No Allocated Subject Found'
-                      : 'Select Subject'}
+                  {(!newAssignment.classId || !newAssignment.sectionId) ? 'Select Class First' : subjectOptions.length === 0 ? 'No Subjects Found' : 'Select Subject'}
                 </option>
-                {subjectOptions.map(subject => (
-                  <option key={subject.id} value={subject.name}>
-                    {subject.name}
-                  </option>
-                ))}
+                {subjectOptions.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
-              <p className="mt-1 text-[11px] text-gray-400">Only allocated subjects for the selected class-section</p>
+              <p className="mt-1 text-[10px] text-gray-400">Only allocated subjects shown</p>
             </div>
 
+            {/* Lesson Plan */}
             <div>
               <label htmlFor="assignment-lesson-plan" className="block text-xs font-semibold text-gray-600 mb-1.5">Lesson Plan</label>
               <select
                 id="assignment-lesson-plan"
                 value={newAssignment.sourceLessonPlanId}
-                onChange={(event) => setNewAssignment((prev) => ({
-                  ...prev,
-                  sourceLessonPlanId: event.target.value,
-                  chapterId: '',
-                  chapterTitle: '',
-                  subTopicTitle: ''
-                }))}
+                onChange={(e) => setNewAssignment(prev => ({ ...prev, sourceLessonPlanId: e.target.value, chapterId: '', chapterTitle: '', subTopicTitle: '' }))}
                 disabled={!newAssignment.subject || availableLessonPlans.length === 0}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
               >
-                <option value="">
-                  {!newAssignment.subject
-                    ? 'Select Subject First'
-                    : availableLessonPlans.length === 0
-                      ? 'No Published Lesson Plans Found'
-                      : 'Select Lesson Plan (Optional)'}
-                </option>
-                {availableLessonPlans.map((plan) => (
-                  <option key={toEntityId(plan._id)} value={toEntityId(plan._id)}>{plan.title}</option>
-                ))}
+                <option value="">{!newAssignment.subject ? 'Select Subject First' : availableLessonPlans.length === 0 ? 'No Lesson Plans Found' : 'Link Lesson Plan (optional)'}</option>
+                {availableLessonPlans.map(p => <option key={toEntityId(p._id)} value={toEntityId(p._id)}>{p.title}</option>)}
               </select>
-              <p className="mt-1 text-[11px] text-gray-400">Tags this activity to a published lesson plan</p>
+              <p className="mt-1 text-[10px] text-gray-400">Tags this activity to a published lesson plan</p>
             </div>
 
+            {/* Chapter */}
             <div>
               <label htmlFor="assignment-chapter" className="block text-xs font-semibold text-gray-600 mb-1.5">
-                Chapter {newAssignment.sourceLessonPlanId && <span className="text-xs text-red-500">*</span>}
+                Chapter {newAssignment.sourceLessonPlanId && <span className="text-red-500">*</span>}
               </label>
               <select
                 id="assignment-chapter"
                 value={newAssignment.chapterId}
-                onChange={(event) => {
-                  const chapter = availableLessonPlanChapters.find((item) => item.id === event.target.value);
-                  setNewAssignment((prev) => ({
-                    ...prev,
-                    chapterId: chapter?.id || '',
-                    chapterTitle: chapter?.title || ''
-                  }));
+                onChange={(e) => {
+                  const ch = availableLessonPlanChapters.find(c => c.id === e.target.value);
+                  setNewAssignment(prev => ({ ...prev, chapterId: ch?.id || '', chapterTitle: ch?.title || '' }));
                 }}
                 disabled={!newAssignment.sourceLessonPlanId}
                 required={Boolean(newAssignment.sourceLessonPlanId)}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors disabled:bg-gray-100 disabled:text-gray-400"
               >
                 <option value="">{newAssignment.sourceLessonPlanId ? 'Select Chapter' : 'Select Lesson Plan First'}</option>
-                {availableLessonPlanChapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
-                ))}
+                {availableLessonPlanChapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
               </select>
-              <p className={`mt-1 text-[11px] ${lessonPlanError ? 'text-red-500' : 'text-gray-400'}`}>
-                {lessonPlanError || 'Students can see which chapter this activity belongs to'}
-              </p>
+              {lessonPlanError
+                ? <p className="mt-1 text-[10px] text-red-500">{lessonPlanError}</p>
+                : <p className="mt-1 text-[10px] text-gray-400">Students can see which chapter this belongs to</p>
+              }
             </div>
 
+            {/* Topic */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Topic</label>
               <input
@@ -2274,111 +2237,194 @@ const CreateAssignmentModal = ({
                 onChange={handleChange}
                 type="text"
                 placeholder="e.g., Algebra, Polynomials"
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
               />
-              <p className="mt-1 text-[11px] text-gray-400">Specific topic covered</p>
             </div>
 
+            {/* Activity Type */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Activity Type</label>
-              <select name="type" value={newAssignment.type} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors">
+              <select name="type" value={newAssignment.type} onChange={handleChange}
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors">
                 <option value="Assignment">Assignment</option>
                 <option value="Worksheet">Worksheet</option>
                 <option value="Essay">Essay</option>
               </select>
             </div>
 
+            {/* Difficulty */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Difficulty</label>
-              <select name="difficulty" value={newAssignment.difficulty} onChange={handleChange} className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors">
+              <select name="difficulty" value={newAssignment.difficulty} onChange={handleChange}
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors">
                 <option value="Easy">Easy</option>
                 <option value="Medium">Medium</option>
                 <option value="Hard">Hard</option>
               </select>
             </div>
+
+            {/* Due Date */}
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Due Date <span className="text-xs text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Due Date <span className="text-red-500">*</span></label>
               <input
                 name="dueDate"
                 value={newAssignment.dueDate}
                 onChange={handleChange}
                 type="date"
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
                 required
               />
             </div>
 
+            {/* Publish Date */}
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Total Marks <span className="text-xs text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Publish Date</label>
+              <input
+                name="publishDate"
+                value={newAssignment.publishDate || ''}
+                onChange={handleChange}
+                type="date"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+              />
+              <p className="mt-1 text-[10px] text-gray-400">Leave blank to publish immediately on activation</p>
+            </div>
+
+            {/* Total Marks */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Total Marks <span className="text-red-500">*</span></label>
               <input
                 name="marks"
                 value={newAssignment.marks}
                 onChange={handleChange}
                 type="number"
                 min="1"
-                placeholder="e.g., 100"
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+                placeholder="100"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
                 required
               />
             </div>
 
+            {/* Time Limit */}
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Submission Format <span className="text-xs text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Time Limit (min)</label>
+              <input
+                name="timeLimit"
+                value={newAssignment.timeLimit || ''}
+                onChange={handleChange}
+                type="number"
+                min="1"
+                placeholder="e.g., 60"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+              />
+              <p className="mt-1 text-[10px] text-gray-400">Optional — leave blank for no time limit</p>
+            </div>
+
+            {/* Submission Format */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Submission Format <span className="text-red-500">*</span></label>
               <select
                 name="submissionFormat"
                 value={newAssignment.submissionFormat}
                 onChange={handleChange}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
                 required
               >
                 <option value="text">Text Only</option>
                 <option value="pdf">PDF Upload</option>
               </select>
-              <p className="mt-1 text-[11px] text-gray-400">How students submit this assignment</p>
             </div>
 
+            {/* Status + badge */}
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
-              <select
-                name="status"
-                value={newAssignment.status}
-                onChange={handleChange}
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors"
-              >
-                <option value="draft">Draft</option>
-                <option value="active">Publish now</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  name="status"
+                  value={newAssignment.status}
+                  onChange={handleChange}
+                  className="flex-1 px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="active">Publish now</option>
+                </select>
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border shrink-0 ${statusBadge[newAssignment.status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                  {newAssignment.status === 'active' ? 'Live' : 'Draft'}
+                </span>
+              </div>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
+            {/* Late Submissions */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-2">Late Submissions</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setNewAssignment(prev => ({ ...prev, lateSubmissions: !prev.lateSubmissions, lateSubmissionCutoff: '' }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${newAssignment.lateSubmissions ? 'bg-blue-600' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${newAssignment.lateSubmissions ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+                <span className="text-xs text-gray-600">{newAssignment.lateSubmissions ? 'Allowed' : 'Not allowed'}</span>
+                {newAssignment.lateSubmissions && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 whitespace-nowrap">Cutoff date:</label>
+                    <input
+                      name="lateSubmissionCutoff"
+                      value={newAssignment.lateSubmissionCutoff || ''}
+                      onChange={handleChange}
+                      type="date"
+                      className="px-2 py-1.5 text-xs bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Assign to Groups */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assign to Groups</label>
+              <input
+                name="groups"
+                value={newAssignment.groups || ''}
+                onChange={handleChange}
+                type="text"
+                placeholder="e.g., Group A, Group B  (leave blank for whole class)"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+              />
+              <p className="mt-1 text-[10px] text-gray-400">Comma-separated group names — leave blank to assign to all students</p>
+            </div>
+
+            {/* Description */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Instructions / Description</label>
               <textarea
                 name="description"
                 value={newAssignment.description}
                 onChange={handleChange}
                 rows="3"
                 placeholder="Provide detailed instructions for the assignment..."
-                className="w-full px-3 py-2 text-sm bg-gray-50 border-[2px] border-purple-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-colors resize-none"
+                className="w-full px-3 py-2 text-sm bg-blue-50/50 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors resize-none"
               />
             </div>
 
-            <div className="md:col-span-2 rounded-xl border-[2px] border-purple-200 bg-purple-50/50 p-4">
-              <label className="flex items-start gap-3">
+            {/* AI Essay Rubric */}
+            <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
+              <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={newAssignment.isEssay}
                   disabled={newAssignment.submissionFormat !== 'text'}
-                  onChange={(event) => setNewAssignment((prev) => ({
+                  onChange={(e) => setNewAssignment(prev => ({
                     ...prev,
-                    isEssay: event.target.checked,
-                    type: event.target.checked ? 'Essay' : prev.type,
-                    rubric: event.target.checked ? prev.rubric : '',
+                    isEssay: e.target.checked,
+                    type: e.target.checked ? 'Essay' : prev.type,
+                    rubric: e.target.checked ? prev.rubric : ''
                   }))}
-                  className="mt-0.5 size-4 rounded border-purple-300 text-indigo-600"
+                  className="mt-0.5 size-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span>
                   <span className="block text-xs font-semibold text-gray-700">Enable AI-assisted essay rubric review</span>
-                  <span className="mt-1 block text-[11px] text-gray-500">Ollama creates a private suggestion for teacher review. Students never receive an AI score directly.</span>
+                  <span className="mt-0.5 block text-[10px] text-gray-500">Ollama creates a private suggestion for teacher review. Students never receive an AI score directly.</span>
                 </span>
               </label>
               {newAssignment.isEssay && (
@@ -2388,68 +2434,49 @@ const CreateAssignmentModal = ({
                     name="rubric"
                     value={newAssignment.rubric}
                     onChange={handleChange}
-                    rows="4"
+                    rows="3"
                     required
                     placeholder={'Accuracy and understanding\nUse of evidence\nClarity and organisation'}
-                    className="w-full resize-y rounded-xl border-[2px] border-purple-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full resize-y rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
               )}
             </div>
 
-            <div className="md:col-span-2">
+            {/* File Upload */}
+            <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Attachment (PDF)</label>
-              <div className="border-2 border-dashed border-purple-300 rounded-xl p-5 hover:border-purple-400 hover:bg-purple-50 transition-colors">
+              <div className="border-2 border-dashed border-blue-200 rounded-2xl p-6 hover:border-blue-400 hover:bg-blue-50/30 transition-colors text-center">
                 {uploadingPdf ? (
-                  <div className="flex flex-col items-center justify-center">
-                    <Loader className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader className="w-7 h-7 text-blue-500 animate-spin" />
                     <p className="text-xs text-gray-500">Uploading PDF...</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center">
-                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center mb-2">
-                      <Upload size={18} className="text-gray-400" />
+                  <>
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mx-auto mb-3">
+                      <Upload size={20} className="text-blue-400" />
                     </div>
-                    <p className="text-xs text-gray-500 mb-2">
-                      Drag and drop a PDF file, or click to select
-                    </p>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      onChange={handlePdfUpload}
-                      className="hidden"
-                      id="pdf-upload"
-                    />
-                    <label
-                      htmlFor="pdf-upload"
-                      className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg cursor-pointer hover:bg-indigo-100 transition-colors text-xs font-semibold"
-                    >
-                      Select PDF
+                    <p className="text-xs text-gray-600 font-medium mb-1">Drag & drop a PDF here</p>
+                    <p className="text-[11px] text-gray-400 mb-3">or click below to browse</p>
+                    <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" id="pdf-upload" />
+                    <label htmlFor="pdf-upload" className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors text-xs font-semibold shadow-sm">
+                      <Upload size={12} /> Select PDF
                     </label>
-                    <p className="text-[11px] text-gray-400 mt-1.5">Maximum file size: 20MB</p>
-                  </div>
+                    <p className="text-[10px] text-gray-400 mt-2">Maximum file size: 20 MB</p>
+                  </>
                 )}
               </div>
-
               {newAssignment.attachments.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   <p className="text-xs font-semibold text-gray-600">Uploaded Files:</p>
-                  {newAssignment.attachments.map((attachment, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl"
-                    >
+                  {newAssignment.attachments.map((att, idx) => (
+                    <div key={idx} className="flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl">
                       <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-emerald-600" />
-                        <span className="text-xs text-emerald-700 font-medium truncate max-w-xs">
-                          {attachment.name}
-                        </span>
+                        <FileText size={13} className="text-emerald-600" />
+                        <span className="text-xs text-emerald-700 font-medium truncate max-w-xs">{att.name}</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => removePdfAttachment(index)}
-                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
+                      <button type="button" onClick={() => removePdfAttachment(idx)} className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                         <X size={12} />
                       </button>
                     </div>
@@ -2459,22 +2486,42 @@ const CreateAssignmentModal = ({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-purple-100">
+          {/* Review & Publish divider */}
+          <div className="relative py-1">
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-blue-100" /></div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-3 text-[11px] font-bold text-blue-400 uppercase tracking-widest">Review & Publish</span>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between gap-3 pt-1">
             <button
               type="button"
-              onClick={handleClose}
-              className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border-[2px] border-purple-200 rounded-xl hover:bg-gray-100 transition-colors"
+              onClick={() => setNewAssignment(prev => ({
+                ...prev,
+                title: '', topic: '', description: '', dueDate: '', marks: 100,
+                status: 'draft', timeLimit: '', publishDate: '',
+                lateSubmissions: false, lateSubmissionCutoff: '',
+                groups: '', rubric: '', isEssay: false, attachments: []
+              }))}
+              className="px-4 py-2.5 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-full hover:bg-gray-100 transition-colors"
               disabled={loading}
             >
-              Cancel
+              Reset
             </button>
-            <button
-              type="submit"
-              className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl shadow-md shadow-indigo-500/20 hover:shadow-lg disabled:opacity-50 transition-all"
-              disabled={loading || !activeSessionId}
-            >
-              {loading ? 'Creating...' : newAssignment.status === 'active' ? 'Create & Publish' : 'Save Draft'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={handleClose} className="px-4 py-2.5 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-full hover:bg-gray-100 transition-colors" disabled={loading}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full shadow-md shadow-blue-500/20 hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                disabled={loading || !activeSessionId}
+              >
+                {loading ? 'Creating...' : newAssignment.status === 'active' ? 'Create & Publish' : 'Save Draft'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

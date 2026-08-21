@@ -29,6 +29,10 @@ import StudentOnboarding from './StudentOnboarding';
 import LearningPathMapView from './LearningPathMapView';
 import MasteryView from './MasteryView';
 import ErrorAnalysisView from './ErrorAnalysisView';
+import StudentFees from './StudentFees';
+import StudentHealthReport from './StudentHealthReport';
+import StudentComplaints from './StudentComplaints';
+import StudentMeetings from './StudentMeetings';
 
 // All of these views render the same LearningHub component (it owns an
 // internal tab bar). Treat them as one logical page so switching tabs inside
@@ -158,6 +162,10 @@ const Dashboard = () => {
     'my-paths': LearningHub,
     courses: CoursesView,
     results: ResultsView,
+    fees: StudentFees,
+    health: StudentHealthReport,
+    complaints: StudentComplaints,
+    meetings: StudentMeetings,
     communication: StudentChat,
     noticeboard: NoticeBoard,
     teacherfeedback: TeacherFeedback,

@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
-  Heart, Star, Target, PanelLeft, Zap,
+  Heart, Star, Target, PanelLeft, Zap, Wallet, AlertOctagon, Video, Activity,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
@@ -37,6 +37,7 @@ const MENU_ITEMS = [
       { id: 'assignments-journal',          name: 'Journal',         icon: File      },
       { id: 'assignments-academic-alcove',  name: 'The Wall',        icon: Target    },
       { id: 'results',                      name: 'Results',         icon: BarChart3 },
+      { id: 'fees',                         name: 'Fees',            icon: Wallet    },
     ],
   },
   {
@@ -58,6 +59,8 @@ const MENU_ITEMS = [
       { id: 'teacherfeedback',name: 'Teacher Feedback',icon: Star          },
       { id: 'excuse-letter',  name: 'Excuse Letter',   icon: FileText      },
       { id: 'noticeboard',    name: 'Notice Board',    icon: Bell          },
+      { id: 'complaints',     name: 'Complaints',      icon: AlertOctagon  },
+      { id: 'meetings',       name: 'PTM Schedule',    icon: Video         },
     ],
   },
   {
@@ -65,6 +68,7 @@ const MENU_ITEMS = [
     iconColor: 'text-pink-600', iconBg: 'bg-pink-100',
     children: [
       { id: 'wellbeing',      name: 'Emotional Wellbeing', icon: Heart     },
+      { id: 'health',         name: 'Health Record',       icon: Activity  },
       { id: 'achievements',   name: 'Achievements',        icon: Trophy    },
       { id: 'mastery',        name: 'Mastery Progress',   icon: Zap       },
       { id: 'error-analysis', name: 'Error Analysis',     icon: BarChart3 },

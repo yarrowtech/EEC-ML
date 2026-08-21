@@ -3,6 +3,7 @@ const router = express.Router();
 const ParentMeeting = require('../models/ParentMeeting');
 const authTeacher = require('../middleware/authTeacher');
 const authParent = require('../middleware/authParent');
+const authStudent = require('../middleware/authStudent');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const AcademicYear = require('../models/AcademicYear');
@@ -317,6 +318,31 @@ router.delete('/teacher/delete/:id', authTeacher, async (req, res) => {
 });
 
 // ========== PARENT ROUTES ==========
+
+// Students can view meetings scheduled about them. Parent responses remain
+// protected by the parent-only endpoints below.
+router.get('/student/my-meetings', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const filter = { schoolId, studentId: req.user.id };
+    if (req.campusId) {
+      filter.$or = [
+        { campusId: req.campusId },
+        { campusId: { $exists: false } },
+        { campusId: null },
+      ];
+    }
+    const meetings = await ParentMeeting.find(filter)
+      .populate('teacherId', 'name email')
+      .sort({ meetingDate: -1, meetingTime: -1 })
+      .lean();
+    return res.json(meetings);
+  } catch (err) {
+    console.error('Error fetching student meetings:', err);
+    return res.status(500).json({ error: err.message || 'Unable to load meetings' });
+  }
+});
 
 // Parents get their meetings
 router.get('/parent/my-meetings', authParent, async (req, res) => {

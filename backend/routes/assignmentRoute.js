@@ -1002,7 +1002,11 @@ router.get("/student/assignments", authStudent, async (req, res) => {
 
         // Get assignments for this class and section
         const activeYear = await getActiveAcademicYear(schoolId);
-        const filter = { schoolId, status: 'active' };
+        const filter = {
+            schoolId,
+            status: 'active',
+            publishedForStudentPortal: true,
+        };
         const andConditions = [];
         if (campusScope.$or) {
             andConditions.push({ $or: campusScope.$or });
@@ -1111,6 +1115,9 @@ router.post("/submit", authStudent, async (req, res) => {
         }
         if (assignment.status !== 'active') {
             return res.status(400).json({ error: 'This assignment is not accepting submissions right now.' });
+        }
+        if (assignment.publishedForStudentPortal !== true) {
+            return res.status(400).json({ error: 'This assignment has not been published to the student portal.' });
         }
 
         const placement = await resolveStudentPlacement({

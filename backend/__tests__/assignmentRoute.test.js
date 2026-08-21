@@ -87,6 +87,7 @@ describe('assignment workflow boundaries', () => {
       classId: 'class-1',
       sectionId: 'section-1',
       status: 'active',
+      publishedForStudentPortal: true,
       academicYearId: 'year-1',
       marks: 20,
       dueDate: new Date(Date.now() + 86400000),
@@ -122,6 +123,11 @@ describe('assignment workflow boundaries', () => {
     }));
     expect(response.body[0]).not.toHaveProperty('score');
     expect(response.body[0]).not.toHaveProperty('feedback');
+    expect(Assignment.find).toHaveBeenCalledWith(expect.objectContaining({
+      schoolId: 'school-1',
+      status: 'active',
+      publishedForStudentPortal: true,
+    }));
   });
 
   test('creates an assignment linked to a published lesson plan chapter', async () => {
@@ -245,6 +251,7 @@ describe('assignment workflow boundaries', () => {
         sectionId: 'section-2',
         academicYearId: 'year-1',
         status: 'active',
+        publishedForStudentPortal: true,
         submissionFormat: 'text',
       })),
     });
@@ -255,6 +262,106 @@ describe('assignment workflow boundaries', () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toMatch(/not assigned to your class/i);
+    expect(StudentProgress.findOne).not.toHaveBeenCalled();
+  });
+
+  test('accepts a written submission for a published assignment in the student class', async () => {
+    Assignment.findOne.mockReturnValue({
+      lean: jest.fn(() => Promise.resolve({
+        _id: 'assignment-1',
+        schoolId: 'school-1',
+        classId: 'class-1',
+        sectionId: 'section-1',
+        academicYearId: 'year-1',
+        status: 'active',
+        publishedForStudentPortal: true,
+        submissionFormat: 'text',
+        dueDate: new Date(Date.now() + 86400000),
+      })),
+    });
+    const progress = {
+      submissions: [],
+      save: jest.fn(() => Promise.resolve()),
+    };
+    StudentProgress.findOne.mockResolvedValue(progress);
+    StudentProgress.find.mockReturnValue({
+      select: jest.fn(() => ({ lean: jest.fn(() => Promise.resolve([])) })),
+    });
+
+    const response = await request(app)
+      .post('/api/assignment/submit')
+      .send({ assignmentId: 'assignment-1', submissionText: 'My written answer' });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual(expect.objectContaining({
+      status: 'submitted',
+      submissionText: 'My written answer',
+    }));
+    expect(progress.submissions).toHaveLength(1);
+    expect(progress.submissions[0]).toEqual(expect.objectContaining({
+      assignmentId: 'assignment-1',
+      submissionText: 'My written answer',
+      status: 'submitted',
+    }));
+    expect(progress.save).toHaveBeenCalledTimes(1);
+  });
+
+  test('accepts a PDF attachment for a published PDF assignment', async () => {
+    Assignment.findOne.mockReturnValue({
+      lean: jest.fn(() => Promise.resolve({
+        _id: 'assignment-pdf',
+        schoolId: 'school-1',
+        classId: 'class-1',
+        sectionId: 'section-1',
+        academicYearId: 'year-1',
+        status: 'active',
+        publishedForStudentPortal: true,
+        submissionFormat: 'pdf',
+        dueDate: new Date(Date.now() + 86400000),
+      })),
+    });
+    const progress = {
+      submissions: [],
+      save: jest.fn(() => Promise.resolve()),
+    };
+    StudentProgress.findOne.mockResolvedValue(progress);
+
+    const response = await request(app)
+      .post('/api/assignment/submit')
+      .send({
+        assignmentId: 'assignment-pdf',
+        attachmentUrl: 'https://files.example.test/answer.pdf',
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.attachmentUrl).toBe('https://files.example.test/answer.pdf');
+    expect(progress.submissions[0]).toEqual(expect.objectContaining({
+      assignmentId: 'assignment-pdf',
+      attachmentUrl: 'https://files.example.test/answer.pdf',
+      status: 'submitted',
+    }));
+  });
+
+  test('rejects an active assignment that was not published to the student portal', async () => {
+    Assignment.findOne.mockReturnValue({
+      lean: jest.fn(() => Promise.resolve({
+        _id: 'assignment-private',
+        schoolId: 'school-1',
+        classId: 'class-1',
+        sectionId: 'section-1',
+        academicYearId: 'year-1',
+        status: 'active',
+        publishedForStudentPortal: false,
+        submissionFormat: 'text',
+      })),
+    });
+
+    const response = await request(app)
+      .post('/api/assignment/submit')
+      .send({ assignmentId: 'assignment-private', submissionText: 'Should not save' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/not been published/i);
     expect(StudentProgress.findOne).not.toHaveBeenCalled();
   });
 

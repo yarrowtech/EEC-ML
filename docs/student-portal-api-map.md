@@ -9,6 +9,10 @@ Core route host files:
 - `frontend/src/App.jsx`
 - `frontend/src/components/Dashboard.jsx`
 
+## Recently verified student surfaces
+
+The student portal now has documented, authenticated routes for assignments/results, fees, health, wellbeing, complaints, and student-specific PTM visibility. Sensitive records are scoped by the authenticated student and school/campus; parent-only meeting actions remain on parent routes.
+
 ---
 
 ## URL: http://localhost:5173/student (Home / Dashboard)
@@ -509,9 +513,48 @@ Mounted API used by this page:
 
 Endpoints directly connected:
 - `GET /api/fees/student/invoices`
+- `POST /api/fees/:id/pay`
+- `POST /api/fees/payments/razorpay/verify`
 
 Frontend file:
 - `frontend/src/components/StudentFees.jsx`
+
+---
+
+## URLs: student health, wellbeing, complaints, and meetings
+
+Frontend URLs:
+- `http://localhost:5173/student/health`
+- `http://localhost:5173/student/wellness`
+- `http://localhost:5173/student/wellbeing`
+- `http://localhost:5173/student/complaints`
+- `http://localhost:5173/student/meetings`
+
+Mounted APIs and handlers:
+- `/api/student/auth` -> `backend/routes/studentRoute.js`
+- `/api/meeting` -> `backend/routes/meetingRoute.js`
+
+All endpoints use `backend/middleware/authStudent.js` and scope reads to the authenticated student and school/campus:
+- `GET /api/student/auth/health`
+- `GET /api/student/auth/wellbeing`
+- `GET /api/student/auth/complaints`
+- `POST /api/student/auth/complaints`
+- `GET /api/meeting/student/my-meetings`
+
+Database models:
+- `backend/models/StudentUser.js`
+- `backend/models/StudentObservation.js`
+- `backend/models/Wellbeing.js`
+- `backend/models/SupportRequest.js`
+- `backend/models/ParentMeeting.js`
+
+Frontend files:
+- `frontend/src/components/StudentHealthReport.jsx`
+- `frontend/src/components/StudentWellbeing.jsx`
+- `frontend/src/components/StudentComplaints.jsx`
+- `frontend/src/components/StudentMeetings.jsx`
+
+Student meeting access is read-only. Parent confirmation remains on the parent-authenticated meeting endpoints.
 
 ---
 
@@ -708,13 +751,10 @@ Frontend file:
 ---
 
 ## Student routes with no direct API calls in current frontend implementation
-- `http://localhost:5173/student/wellness`
-- `http://localhost:5173/student/wellbeing`
 - `http://localhost:5173/student/achievements`
 - `http://localhost:5173/student/themecustomizer`
 
 Mapped frontend files:
-- `frontend/src/components/StudentWellbeing.jsx`
 - `frontend/src/components/AchievementsView.jsx`
 - `frontend/src/components/ThemeCustomizer.jsx`
 

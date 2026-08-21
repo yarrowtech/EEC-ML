@@ -104,7 +104,7 @@ const StreakTracker = () => {
     <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
       {/* Streak badge */}
       <div className="flex items-center gap-3">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md shadow-amber-200/60">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 border border-amber-200">
           <span className="text-2xl leading-none select-none">{streak >= 7 ? '🏆' : streak >= 3 ? '🔥' : '✨'}</span>
         </div>
         <div>
@@ -128,7 +128,7 @@ const StreakTracker = () => {
               title={`${new Date(record.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — ${record.status}`}
               className={`h-7 w-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
                 isPresent
-                  ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-200'
+                  ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
                   : isLeave
                   ? 'bg-blue-200 border-blue-300 text-blue-700'
                   : 'bg-white border-red-200 text-red-400'
@@ -148,7 +148,7 @@ const StreakTracker = () => {
   );
 };
 
-const tierColor = (score) => score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-400' : 'bg-red-400';
+const tierColor = (score) => score >= 80 ? 'bg-emerald-200' : score >= 60 ? 'bg-amber-200' : 'bg-red-200';
 const tierText = (score) => score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-red-600';
 
 const MasteryTopicsCard = () => {
@@ -194,7 +194,7 @@ const LearningStreakCard = () => {
   if (!data) return null;
   return (
     <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 px-4 py-3 shadow-sm flex items-center gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-500 shadow shadow-violet-200/60">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-100 to-indigo-100 border border-violet-200">
         <span className="text-lg leading-none">{data.streak >= 7 ? '🏆' : data.streak >= 3 ? '⚡' : '📖'}</span>
       </div>
       <div>
@@ -227,7 +227,7 @@ const TimeBySubjectCard = () => {
               <span className="text-gray-400">{d.totalMinutes}m</span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${(d.totalMinutes / max) * 100}%` }} />
+              <div className="h-full rounded-full bg-emerald-200" style={{ width: `${(d.totalMinutes / max) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -253,7 +253,7 @@ const FlashcardStatsCard = () => {
         <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{data.overallRate}% recall</span>
       </div>
       <div className="h-2 rounded-full bg-gray-100 overflow-hidden mb-3">
-        <div className="h-full rounded-full bg-amber-400" style={{ width: `${data.overallRate}%` }} />
+        <div className="h-full rounded-full bg-amber-200" style={{ width: `${data.overallRate}%` }} />
       </div>
       <div className="space-y-1.5">
         {data.byTopic.slice(0, 3).map((t) => (

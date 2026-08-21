@@ -14,6 +14,8 @@
     "payments:migrate:apply": "node scripts/migratePaymentGateways.js --apply",
     "payments:migrate-modes": "node scripts/migratePaymentGatewayModes.js",
     "payments:migrate-modes:apply": "node scripts/migratePaymentGatewayModes.js --apply",
+    "assignments:migrate-sessions": "node scripts/backfillAssignmentAcademicYears.js",
+    "assignments:migrate-sessions:apply": "node scripts/backfillAssignmentAcademicYears.js --apply",
     "push:keys": "node scripts/generateVapidKeys.js",
     "start": "node index.js",
     "dev": "nodemon index.js"

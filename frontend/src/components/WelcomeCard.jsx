@@ -182,8 +182,8 @@ const WelcomeCard = () => {
         )}
         {/* Online dot */}
         <span className="absolute bottom-1 right-1 flex h-4 w-4">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-emerald-400" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-200 opacity-60" />
+          <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-emerald-200" />
         </span>
       </Motion.div>
 

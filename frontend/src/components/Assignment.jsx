@@ -29,8 +29,7 @@ import { useLocation } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
 import WorksheetSubmitModal from './WorksheetSubmitModal';
-
-const labModelUrl = (file) => new URL(`../models/${file}`, import.meta.url).href;
+import { labModelUrl } from './assignmentLabModelUrl';
 
 const LAB_EXPERIMENTS = [
   {

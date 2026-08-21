@@ -65,29 +65,26 @@ describe('AssignmentView', () => {
     window.localStorage = storage;
   });
 
-  test('renders assignment tabs and switches assignment type', async () => {
+  test('renders the supported assignment tabs and switches to practice', async () => {
     const user = userEvent.setup();
     setup();
 
     expect(await screen.findByTestId('assignment-mock')).toHaveTextContent('school');
 
-    await user.click(screen.getByRole('button', { name: /Lab/i }));
-    expect(screen.getByTestId('assignment-mock')).toHaveTextContent('lab');
+    await user.click(screen.getByRole('button', { name: /Practice/i }));
+    expect(screen.getByTestId('assignment-mock')).toHaveTextContent('eec');
 
     expect(Assignment).toHaveBeenLastCalledWith(
-      expect.objectContaining({ assignmentType: 'lab' }),
+      expect.objectContaining({ assignmentType: 'eec' }),
       {}
     );
   });
 
-  test('navigates to tryout route when tryout tab is selected', async () => {
-    const user = userEvent.setup();
+  test('does not expose retired assignment tabs', async () => {
     setup();
 
-    await user.click(screen.getByRole('button', { name: /Tryout/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/student/tryouts');
-    // Assignment view should keep showing the previous type since we navigated away
-    expect(screen.getByTestId('assignment-mock')).toHaveTextContent('school');
+    expect(screen.queryByRole('button', { name: /Tryout/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Lab/i })).not.toBeInTheDocument();
   });
 
   test('renders journal layout when default type is journal', async () => {

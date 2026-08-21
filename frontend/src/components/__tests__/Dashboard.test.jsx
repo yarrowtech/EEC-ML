@@ -60,6 +60,26 @@ jest.mock('../ResultsView', () => {
   return () => React.createElement('div', { 'data-testid': 'results-view' });
 });
 
+jest.mock('../StudentFees', () => {
+  const React = require('react');
+  return () => React.createElement('div', { 'data-testid': 'student-fees-view' });
+});
+
+jest.mock('../StudentHealthReport', () => {
+  const React = require('react');
+  return () => React.createElement('div', { 'data-testid': 'student-health-view' });
+});
+
+jest.mock('../StudentComplaints', () => {
+  const React = require('react');
+  return () => React.createElement('div', { 'data-testid': 'student-complaints-view' });
+});
+
+jest.mock('../StudentMeetings', () => {
+  const React = require('react');
+  return () => React.createElement('div', { 'data-testid': 'student-meetings-view' });
+});
+
 jest.mock('../AchievementsView', () => {
   const React = require('react');
   return () => React.createElement('div', { 'data-testid': 'achievements-view' });
@@ -200,6 +220,25 @@ describe('Dashboard', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/student', { replace: true });
     });
     expect(screen.getByTestId('dashboard-home')).toBeInTheDocument();
+  });
+
+  test('renders the student fees view on the fees route', () => {
+    mockPathname = '/student/fees';
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId('student-fees-view')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-active-view', 'fees');
+  });
+
+  test.each([
+    ['/student/health', 'student-health-view'],
+    ['/student/complaints', 'student-complaints-view'],
+    ['/student/meetings', 'student-meetings-view'],
+  ])('renders the student service for %s', (path, testId) => {
+    mockPathname = path;
+    render(<Dashboard />);
+    expect(screen.getByTestId(testId)).toBeInTheDocument();
   });
 
   test('setActiveView navigates to the derived route', () => {

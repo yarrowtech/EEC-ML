@@ -679,7 +679,10 @@ router.get('/academics', authParent, async (req, res) => {
       }).lean();
 
       const gradedSubmissions = (progress?.submissions || []).filter(
-        (sub) => sub.status === 'graded' && sub.score !== undefined && sub.score !== null
+        (sub) => sub.status === 'graded'
+          && sub.publishedByTeacher === true
+          && sub.score !== undefined
+          && sub.score !== null
       );
 
       let assignmentRecords = [];

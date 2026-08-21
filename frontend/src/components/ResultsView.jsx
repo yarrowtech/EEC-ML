@@ -246,6 +246,7 @@ const ResultsView = () => {
   const [template, setTemplate] = useState(null);
   const [reportCard, setReportCard] = useState(null);
   const [publishedResults, setPublishedResults] = useState([]);
+  const [assignmentResults, setAssignmentResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sessionFilter, setSessionFilter] = useState('all');
@@ -267,6 +268,7 @@ const ResultsView = () => {
     try {
       const reportCardEndpoint = `${API_BASE}/api/reports/report-cards/me`;
       const resultsEndpoint = `${API_BASE}/api/exam/results/me`;
+      const assignmentResultsEndpoint = `${API_BASE}/api/student/auth/results`;
 
       const fetchJson = async (url) => {
         const response = await fetch(url, {
@@ -289,9 +291,10 @@ const ResultsView = () => {
         return response.json();
       };
 
-      const [reportCardResult, studentResultsResult] = await Promise.allSettled([
+      const [reportCardResult, studentResultsResult, assignmentResult] = await Promise.allSettled([
         fetchJson(reportCardEndpoint),
         fetchJson(resultsEndpoint),
+        fetchJson(assignmentResultsEndpoint),
       ]);
 
       // Template + academic-year badge only — the results list itself is driven
@@ -318,11 +321,27 @@ const ResultsView = () => {
         setPublishedResults([]);
       }
 
+      if (assignmentResult.status === 'fulfilled') {
+        const payload = assignmentResult.value;
+        const combinedResults = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.results)
+            ? payload.results
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : [];
+        setAssignmentResults(combinedResults.filter((result) => result?.resultType === 'assignment'));
+      } else {
+        console.warn('Assignment results fetch skipped', assignmentResult.reason);
+        setAssignmentResults([]);
+      }
+
     } catch (err) {
       console.error('Student results fetch error:', err);
       setError(err.message || 'Unable to load exam results');
       setReportCard(null);
       setPublishedResults([]);
+      setAssignmentResults([]);
     } finally {
       setLoading(false);
     }
@@ -557,6 +576,25 @@ const ResultsView = () => {
         />
       </div>
 
+      {assignmentResults.length > 0 && (
+        <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm md:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Published Assignment Results</h2>
+              <p className="mt-1 text-xs text-slate-500">Marks and feedback released by your teachers.</p>
+            </div>
+            <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+              {assignmentResults.length}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {assignmentResults.map((result) => (
+              <AssignmentResultCard key={result._id} result={result} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {effectiveExamGroups.length === 0 ? (
         <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
           <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
@@ -565,7 +603,7 @@ const ResultsView = () => {
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Awaiting Publication
               </div>
-              <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Results have not been published yet</h2>
+              <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Exam results have not been published yet</h2>
               <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600">
                 Your school has not released an exam result for this term yet. Once marks are published, this page will automatically show your overall percentage, subject breakdown, grade, and downloadable report card.
               </p>
@@ -703,6 +741,58 @@ const ResultsView = () => {
         </>
       )}
     </div>
+  );
+};
+
+const AssignmentResultCard = ({ result }) => {
+  const obtainedMarks = toNumber(result?.obtainedMarks, 0);
+  const totalMarks = toNumber(result?.totalMarks, 0);
+  const percentage = totalMarks > 0
+    ? Math.round((obtainedMarks / totalMarks) * 100)
+    : toNumber(result?.percentage, 0);
+  const tier = scoreTier(percentage);
+  const passed = String(result?.status || '').toLowerCase() === 'pass';
+
+  return (
+    <article className={`rounded-2xl border ${tier.border} bg-slate-50 p-4`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-700 shadow-sm">
+            {result?.subject || 'Assignment'}
+          </span>
+          <h3 className="mt-2 truncate text-sm font-bold text-slate-900">
+            {result?.examName || 'Assignment'}
+          </h3>
+          {result?.date && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+              <Calendar className="h-3.5 w-3.5" />
+              Submitted {formatDate(result.date)}
+            </p>
+          )}
+        </div>
+        <div className={`rounded-xl ${tier.soft} px-3 py-2 text-right`}>
+          <p className={`text-lg font-black ${tier.text}`}>{percentage}%</p>
+          {result?.grade && <p className={`text-xs font-bold ${tier.text}`}>Grade {result.grade}</p>}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+        <p className="text-sm text-slate-600">
+          <span className="font-bold text-slate-900">{obtainedMarks}</span> / {totalMarks} marks
+        </p>
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+          {passed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+          {passed ? 'Pass' : 'Needs work'}
+        </span>
+      </div>
+
+      {result?.remarks && (
+        <div className="mt-3 rounded-xl border border-indigo-100 bg-white p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">Teacher feedback</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">{result.remarks}</p>
+        </div>
+      )}
+    </article>
   );
 };
 

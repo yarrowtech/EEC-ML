@@ -4,6 +4,20 @@ This guide shows you all the commands you can use to manually test your applicat
 
 ---
 
+## Current student/parent parity status
+
+The following cross-portal workflows are implemented and covered by focused tests:
+
+- Teacher assignment publication → student visibility → written/PDF submission → teacher grading → published result.
+- Student Results shows only teacher-published assignment marks and feedback.
+- Student Fees shows student-scoped invoices, receipts, and online payment status.
+- Student Health Record and Emotional Wellbeing show persisted school data, with truthful empty states instead of mock records.
+- Students can submit and track complaints and view PTMs scheduled for them. PTM confirmation/rescheduling remains parent-only.
+
+Focused verification commands are listed in the assignment and parity checklists below. The production frontend build also completes successfully with `npm run build`.
+
+---
+
 ## Frontend Testing Commands
 
 ### 1. Basic Test Commands
@@ -489,7 +503,7 @@ Route checks:
 4. Return as the teacher, open **Evaluate Submissions**, confirm the URL ends in `/assignments/evaluate`, select the submission, and confirm the complete submitted text is visible before marking. Refresh this URL and confirm the evaluation view remains selected. Repeat with a PDF-format assignment and confirm **Open submitted PDF** works.
 5. Enter valid marks and feedback. Confirm marks above the assignment total are rejected and that a score of zero can be saved.
 6. Before selecting **Publish Result**, return to the student portal and confirm the score and feedback remain hidden and the assignment says it is waiting for teacher review.
-7. Select **Publish Result** as the teacher. Confirm the student receives a notification and can now see the score and feedback.
+7. Select **Publish Result** as the teacher. Confirm the student receives a notification and can now see the score and feedback both on the assignment and under **Academics → Results → Published Assignment Results**.
 8. Change a published grade. Confirm it becomes unpublished and must be explicitly published again before the revised result appears to the student.
 9. Create a text essay with **Enable AI-assisted essay rubric review** and rubric criteria. Submit it as a student, then confirm the teacher sees the real persisted Ollama suggestion or a pending/failed status—never placeholder feedback or a fabricated confidence score.
 
@@ -499,8 +513,33 @@ Focused automated checks:
 cd backend
 npm test -- --runInBand --testPathPatterns=assignmentRoute.test.js
 
+# Preview legacy active assignments missing an academic session; apply only after review.
+npm run assignments:migrate-sessions
+npm run assignments:migrate-sessions:apply
+
 cd ../frontend
-npm test -- --runInBand --runTestsByPath src/teachers/__tests__/AssignmentPortal.test.jsx
+npm test -- --runInBand --runTestsByPath src/teachers/__tests__/AssignmentPortal.test.jsx src/components/__tests__/Assignment.test.jsx src/components/__tests__/ResultsView.test.jsx
+```
+
+---
+
+## Student and parent portal parity checklist
+
+1. Sign in as a student and open **Academics → Fees**. Confirm only that student's invoices and recent receipts appear. In Razorpay test mode, pay a partial amount and confirm the paid amount, balance, invoice status, and receipt update exactly once.
+2. Open **Wellness → Health Record**. Confirm profile health fields come from the student's real record and that only teacher observations explicitly shared with the family are shown.
+3. Open **Wellness → Emotional Wellbeing**. Confirm the latest school assessment appears, or a truthful empty state appears when none has been recorded; no sample/mock history should be displayed.
+4. Open **Communication → Complaints**, submit a general complaint, and confirm it is assigned to School Admin. Submit an Academic complaint and confirm it is assigned to the class teacher when one is allocated.
+5. Open **Communication → PTM Schedule**. Confirm only meetings for the signed-in student appear. A video meeting may expose its join link, but student controls must not confirm, decline, or reschedule the parent's meeting.
+6. Sign in as a different student in the same school and verify they cannot see the first student's health record, wellbeing assessment, complaints, meetings, invoices, assignments, or results.
+
+Focused automated checks:
+
+```bash
+cd backend
+npm test -- --runInBand __tests__/studentPortalLogger.test.js __tests__/studentMeetingRoute.test.js __tests__/paymentLifecycleService.test.js
+
+cd ../frontend
+npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx src/components/__tests__/StudentFees.test.jsx src/components/__tests__/Dashboard.test.jsx
 ```
 
 ---

@@ -50,6 +50,16 @@ const mockTeacherAllocation = {
 const mockSection = {
   findOne: jest.fn(),
 };
+const mockSupportRequest = {
+  find: jest.fn(),
+  create: jest.fn(),
+};
+const mockStudentObservation = {
+  find: jest.fn(),
+};
+const mockWellbeing = {
+  findOne: jest.fn(),
+};
 
 const mockBcryptCompare = jest.fn();
 const mockJwtSign = jest.fn();
@@ -103,6 +113,9 @@ jest.mock('../models/TeacherUser', () => mockTeacherUser);
 jest.mock('../models/TeacherFeedback', () => mockTeacherFeedback);
 jest.mock('../models/TeacherAllocation', () => mockTeacherAllocation);
 jest.mock('../models/Section', () => mockSection);
+jest.mock('../models/SupportRequest', () => mockSupportRequest);
+jest.mock('../models/StudentObservation', () => mockStudentObservation);
+jest.mock('../models/Wellbeing', () => mockWellbeing);
 
 jest.mock('../models/Exam', () => ({}));
 jest.mock('../models/StudentJournalEntry', () => ({}));
@@ -140,6 +153,7 @@ const makeQuery = (value) => {
     select: jest.fn(() => query),
     populate: jest.fn(() => query),
     sort: jest.fn(() => query),
+    limit: jest.fn(() => query),
     lean: jest.fn().mockResolvedValue(value),
     then: (resolve, reject) => Promise.resolve(value).then(resolve, reject),
     catch: (reject) => Promise.resolve(value).catch(reject),
@@ -152,6 +166,7 @@ const makeRejectedQuery = (error) => {
     select: jest.fn(() => query),
     populate: jest.fn(() => query),
     sort: jest.fn(() => query),
+    limit: jest.fn(() => query),
     lean: jest.fn().mockRejectedValue(error),
     then: (resolve, reject) => Promise.reject(error).then(resolve, reject),
     catch: (reject) => Promise.reject(error).catch(reject),
@@ -186,6 +201,9 @@ describe('student portal logger coverage', () => {
     mockTeacherFeedback.find.mockReturnValue(makeQuery([]));
     mockTeacherAllocation.find.mockReturnValue(makeQuery([]));
     mockSection.findOne.mockReturnValue(makeQuery(null));
+    mockSupportRequest.find.mockReturnValue(makeQuery([]));
+    mockStudentObservation.find.mockReturnValue(makeQuery([]));
+    mockWellbeing.findOne.mockReturnValue(makeQuery(null));
     mockBcryptCompare.mockResolvedValue(true);
     mockJwtSign.mockReturnValue('jwt-token');
     mockIsStrongPassword.mockReturnValue(true);
@@ -401,6 +419,136 @@ describe('student portal logger coverage', () => {
       expect.objectContaining({ err: expect.any(Error), userId: 'student-1' }),
       'Get profile error'
     );
+  });
+
+  test('returns only assignment grades published by the teacher', async () => {
+    mockStudentUser.findById.mockReturnValue(makeQuery({
+      _id: 'student-1',
+      name: 'Ada',
+      grade: '10',
+      section: 'A',
+      schoolId: 'school-1',
+      campusId: 'campus-1',
+    }));
+    mockExamResult.find.mockReturnValue(makeQuery([]));
+    mockStudentProgress.findOne.mockReturnValue(makeQuery({
+      submissions: [
+        {
+          _id: 'submission-published',
+          assignmentId: 'assignment-published',
+          status: 'graded',
+          publishedByTeacher: true,
+          score: 18,
+          feedback: 'Clear working.',
+          submittedAt: '2026-08-20T00:00:00.000Z',
+        },
+        {
+          _id: 'submission-private',
+          assignmentId: 'assignment-private',
+          status: 'graded',
+          publishedByTeacher: false,
+          score: 20,
+          feedback: 'Not released yet.',
+        },
+      ],
+    }));
+    mockAssignment.find.mockReturnValue(makeQuery([{
+      _id: 'assignment-published',
+      title: 'Fractions homework',
+      subject: 'Mathematics',
+      marks: 20,
+    }]));
+
+    const response = await request(app).get('/student-route/results');
+
+    expect(response.status).toBe(200);
+    expect(response.body.results).toEqual([
+      expect.objectContaining({
+        _id: 'submission-published',
+        resultType: 'assignment',
+        examName: 'Fractions homework',
+        obtainedMarks: 18,
+        totalMarks: 20,
+        remarks: 'Clear working.',
+      }),
+    ]);
+    expect(mockAssignment.find).toHaveBeenCalledWith({
+      _id: { $in: ['assignment-published'] },
+    });
+  });
+
+  test('returns the student health profile and only shared teacher observations', async () => {
+    mockStudentUser.findOne.mockReturnValue(makeQuery({
+      _id: 'student-1',
+      name: 'Ada',
+      grade: '10',
+      section: 'A',
+      bloodGroup: 'O+',
+      allergies: 'Peanuts',
+    }));
+    mockStudentObservation.find.mockReturnValue(makeQuery([{
+      _id: 'observation-1',
+      recordedAt: '2026-08-20T00:00:00.000Z',
+      parentNotification: true,
+      teacherId: { name: 'Teacher One' },
+      healthObservations: { energy: 'Good' },
+    }]));
+
+    const response = await request(app).get('/student-route/health');
+
+    expect(response.status).toBe(200);
+    expect(response.body.profile).toEqual(expect.objectContaining({ bloodGroup: 'O+', allergies: 'Peanuts' }));
+    expect(response.body.observations).toEqual([
+      expect.objectContaining({ teacherName: 'Teacher One', healthObservations: { energy: 'Good' } }),
+    ]);
+    expect(mockStudentObservation.find).toHaveBeenCalledWith(expect.objectContaining({
+      studentId: 'student-1',
+      source: 'teacher',
+      parentNotification: true,
+    }));
+  });
+
+  test('returns only complaints created by the signed-in student', async () => {
+    mockStudentUser.findById.mockReturnValue(makeQuery({ _id: 'student-1', schoolId: 'school-1' }));
+    mockSupportRequest.find.mockReturnValue(makeQuery([{
+      _id: 'complaint-1',
+      ticketNumber: 'STU-100',
+      subject: 'Need help',
+      message: 'Assignment instructions are unclear.',
+      owner: 'Teacher One',
+      status: 'open',
+    }]));
+
+    const response = await request(app).get('/student-route/complaints');
+
+    expect(response.status).toBe(200);
+    expect(response.body.complaints).toEqual([
+      expect.objectContaining({ ticketNumber: 'STU-100', title: 'Need help' }),
+    ]);
+    expect(mockSupportRequest.find).toHaveBeenCalledWith({
+      schoolId: 'school-1',
+      supportType: 'complaint',
+      createdByRole: 'student',
+      'requestDetails.studentId': 'student-1',
+    });
+  });
+
+  test('returns only the signed-in student wellbeing assessment', async () => {
+    mockWellbeing.findOne.mockReturnValue(makeQuery({
+      student: 'student-1',
+      mood: 'good',
+      academicStress: 4,
+      socialEngagement: 8,
+    }));
+
+    const response = await request(app).get('/student-route/wellbeing');
+
+    expect(response.status).toBe(200);
+    expect(response.body.assessment).toEqual(expect.objectContaining({ mood: 'good' }));
+    expect(mockWellbeing.findOne).toHaveBeenCalledWith({
+      schoolId: 'school-1',
+      student: 'student-1',
+    });
   });
 
   test.each([

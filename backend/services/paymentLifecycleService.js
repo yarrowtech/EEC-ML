@@ -6,12 +6,12 @@ const { buildTransactionId } = require('../utils/paymentGatewayService');
 
 const sanitizeReason = (value) => String(value || '').trim().slice(0, 300);
 
-const syncInvoiceFromReceipts = async ({ organizationId, schoolId, feeId }) => {
+const syncInvoiceFromReceipts = async ({ schoolId, feeId }) => {
   const totals = await FeePayment.aggregate([
-    { $match: { organizationId, schoolId, invoiceId: feeId } },
+    { $match: { schoolId, invoiceId: feeId } },
     { $group: { _id: null, paidAmount: { $sum: '$amount' } } },
   ]);
-  const invoice = await FeeInvoice.findOne({ _id: feeId, organizationId, schoolId });
+  const invoice = await FeeInvoice.findOne({ _id: feeId, schoolId });
   if (!invoice) throw new Error('Fee invoice not found');
 
   const paidAmount = Number(totals[0]?.paidAmount || 0);
@@ -47,14 +47,12 @@ const capturePayment = async ({
   const captured = updated || await Payment.findOne({ _id: payment._id, organizationId });
 
   let receipt = await FeePayment.findOne({
-    organizationId,
     schoolId: captured.schoolId,
     gatewayOrderId: captured.providerOrderId,
   });
   if (!receipt) {
     try {
       receipt = await FeePayment.create({
-        organizationId,
         schoolId: captured.schoolId,
         invoiceId: captured.feeId,
         studentId: captured.studentId,
@@ -74,7 +72,10 @@ const capturePayment = async ({
       });
     } catch (error) {
       if (error?.code !== 11000) throw error;
-      receipt = await FeePayment.findOne({ organizationId, gatewayOrderId: captured.providerOrderId });
+      receipt = await FeePayment.findOne({
+        schoolId: captured.schoolId,
+        gatewayOrderId: captured.providerOrderId,
+      });
     }
   }
 

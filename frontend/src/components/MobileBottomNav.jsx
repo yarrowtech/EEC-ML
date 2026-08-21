@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
-  Brain, Save, LogOut,
+  Brain, Save, LogOut, Wallet,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
@@ -17,6 +17,7 @@ const subMenus = {
       { id: 'assignments-journal',         name: 'Journal',         icon: NotebookPen,   color: 'bg-green-500',  desc: 'My notes' },
       { id: 'assignments-academic-alcove', name: 'The Wall',        icon: Target,        color: 'bg-purple-500', desc: 'Deep focus' },
       { id: 'results',                     name: 'Results',         icon: BarChart3,     color: 'bg-indigo-500', desc: 'Grades' },
+      { id: 'fees',                        name: 'Fees',            icon: Wallet,        color: 'bg-amber-500',  desc: 'Bills & dues' },
     ],
   },
   schedule: {

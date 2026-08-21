@@ -21,7 +21,7 @@ const Ring = ({ pct = 0, size = 96, stroke = 9, color = '#10b981', bg = '#e5e7eb
   );
 };
 
-const attColor  = (pct) => pct >= 75 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+const attColor  = (pct) => pct >= 75 ? '#86efac' : pct >= 50 ? '#fcd34d' : '#fca5a5';
 const attLabel  = (pct) => pct >= 75 ? 'Great'   : pct >= 50 ? 'Okay'    : 'Low';
 const attBadge  = (pct) => pct >= 75
   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -29,18 +29,18 @@ const attBadge  = (pct) => pct >= 75
   ? 'bg-amber-50 text-amber-700 border-amber-200'
   : 'bg-red-50 text-red-600 border-red-200';
 
-const SnapItem = ({ icon, label, value, gradient }) => {
+const SnapItem = ({ icon, label, value, gradient, iconColor, labelColor, valueColor }) => {
   const Icon = icon;
   return (
     <div className={`relative overflow-hidden rounded-xl bg-linear-to-br ${gradient} p-3.5 shadow-sm`}>
-      <div className="pointer-events-none absolute -right-3 -top-3 h-14 w-14 rounded-full bg-white/10" />
+      <div className="pointer-events-none absolute -right-3 -top-3 h-14 w-14 rounded-full bg-white/50" />
       <div className="relative z-10 flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-          <Icon size={16} className="text-white" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm">
+          <Icon size={16} className={iconColor} />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/75">{label}</p>
-          <p className="text-lg font-black text-white leading-tight">{value}</p>
+          <p className={`text-[11px] font-semibold uppercase tracking-wide ${labelColor}`}>{label}</p>
+          <p className={`text-lg font-black leading-tight ${valueColor}`}>{value}</p>
         </div>
       </div>
     </div>
@@ -90,24 +90,24 @@ const CourseProgress = () => {
     <div className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
 
       {/* Header bar */}
-      <div className="relative overflow-hidden bg-linear-to-br from-emerald-500 via-emerald-600 to-teal-600 px-5 py-4">
+      <div className="relative overflow-hidden bg-linear-to-br from-emerald-100 via-emerald-100 to-teal-100 px-5 py-4">
         <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-8 left-10 h-20 w-20 rounded-full bg-white/8" />
         <div className="relative z-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/25 border border-white/40 shadow-sm">
-              <Activity size={16} className="text-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/70 border border-emerald-200 shadow-sm">
+              <Activity size={16} className="text-emerald-700" />
             </div>
-            <h2 className="text-sm font-black text-white">Attendance Snapshot</h2>
+            <h2 className="text-sm font-black text-emerald-900">Attendance Snapshot</h2>
           </div>
           <div className="flex items-center justify-center gap-1">
             {(displayClass || displaySection) && (
-              <span className="rounded-full bg-white/25 border border-white/40 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm text-center">
+              <span className="rounded-full bg-white/70 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 backdrop-blur-sm text-center">
                 {displayClass ? `Class ${displayClass}` : ''}{displaySection ? ` · ${displaySection}` : ''}
               </span>
             )}
             {displaySession && (
-              <span className="rounded-full bg-white/15 border border-white/30 px-2.5 py-0.5 text-[11px] font-semibold text-white/85 backdrop-blur-sm text-center">
+              <span className="rounded-full bg-white/60 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 backdrop-blur-sm text-center">
                 Session {displaySession}
               </span>
             )}
@@ -155,13 +155,13 @@ const CourseProgress = () => {
             icon={ClipboardList}
             label="Present Days"
             value={present !== null ? present : '—'}
-            gradient="from-emerald-500 to-teal-600"
+            gradient="from-emerald-50 to-teal-50" iconColor="text-emerald-600" labelColor="text-emerald-700/70" valueColor="text-emerald-900"
           />
           <SnapItem
             icon={CalendarX}
             label="Absent Days"
             value={absent !== null ? absent : '—'}
-            gradient="from-rose-500 to-red-600"
+            gradient="from-rose-50 to-red-50" iconColor="text-rose-600" labelColor="text-rose-700/70" valueColor="text-rose-900"
           />
         </div>
       </div>
