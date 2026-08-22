@@ -513,6 +513,44 @@ router.post('/generate-content', authTeacher, async (req, res) => {
 // ── POST /api/ai-teacher/assignment-draft ───────────────────────────────────
 // Produces a structured, editable assignment grounded in the material indexed
 // for the selected class, section, subject, and chapter.
+const VALID_ACTIVITY_TYPES = ['Assignment', 'Worksheet', 'Essay', 'Quiz', 'Exam', 'Project', 'Homework'];
+
+const ACTIVITY_TYPE_INSTRUCTIONS = {
+  Worksheet: [
+    'Create one structured WORKSHEET using ONLY the retrieved school material.',
+    'A worksheet should contain a mix of short-answer questions, fill-in-the-blank exercises, and labelling or matching tasks — NOT open-ended essay questions.',
+    'Number every question. Keep tasks concise so students can complete them on a single page.',
+  ].join(' '),
+  Quiz: [
+    'Create one short QUIZ using ONLY the retrieved school material.',
+    'A quiz should contain 5 to 10 focused questions: a mix of multiple-choice (with 4 options each) and short-answer questions.',
+    'Number every question. Mark the correct answers in parentheses after each MCQ option.',
+  ].join(' '),
+  Exam: [
+    'Create one comprehensive EXAM using ONLY the retrieved school material.',
+    'The exam should contain sections: Section A (MCQ, 5 questions), Section B (short answer, 3 questions), Section C (long answer / problem-solving, 2 questions).',
+    'Number every question. Indicate marks per question.',
+  ].join(' '),
+  Project: [
+    'Create one PROJECT brief using ONLY the retrieved school material.',
+    'The brief should describe the project goal, deliverables, step-by-step instructions, and evaluation criteria.',
+    'Use numbered steps. Make the deliverables concrete and measurable.',
+  ].join(' '),
+  Homework: [
+    'Create one HOMEWORK task using ONLY the retrieved school material.',
+    'Homework should be completable in 20–30 minutes: a few focused practice questions or a short reading-response task.',
+    'Number every question. Keep instructions clear and self-contained.',
+  ].join(' '),
+  Essay: [
+    'Create one ESSAY writing task using ONLY the retrieved school material.',
+    'Provide a clear writing prompt, word count target, and 3 to 5 grading rubric criteria (one per line).',
+  ].join(' '),
+  Assignment: [
+    'Create one classroom ASSIGNMENT using ONLY the retrieved school material.',
+    'The description must contain enough concrete questions or tasks for a student to complete independently.',
+  ].join(' '),
+};
+
 router.post('/assignment-draft', authTeacher, async (req, res) => {
   try {
     const {
@@ -521,10 +559,11 @@ router.post('/assignment-draft', authTeacher, async (req, res) => {
     } = req.body || {};
     const schoolId = String(req.schoolId || '');
     const normalizedTopic = String(topic || chapterTitle || '').trim();
+    const resolvedActivityType = VALID_ACTIVITY_TYPES.includes(activityType) ? activityType : 'Assignment';
 
     if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!subject || !normalizedTopic || !classId || !sectionId) {
-      return res.status(400).json({ error: 'classId, sectionId, subject, and topic or chapterTitle are required' });
+    if (!subject || !classId || !sectionId) {
+      return res.status(400).json({ error: 'classId, sectionId, and subject are required' });
     }
 
     const [classDoc, sectionDoc, subjectDoc] = await Promise.all([
@@ -539,20 +578,25 @@ router.post('/assignment-draft', authTeacher, async (req, res) => {
     }
 
     const requestedMarks = Math.min(500, Math.max(1, Number(marks) || 20));
+    const topicLine = normalizedTopic ? `Topic / Chapter: ${normalizedTopic}.` : `Subject: ${subject}.`;
+    const typeInstructions = ACTIVITY_TYPE_INSTRUCTIONS[resolvedActivityType] || ACTIVITY_TYPE_INSTRUCTIONS.Assignment;
+    const isEssayType = resolvedActivityType === 'Essay';
+
     const question = [
-      'Create one classroom assignment using ONLY the retrieved school material.',
-      'Return one valid JSON object and no markdown or commentary.',
+      typeInstructions,
+      'Return ONLY one valid JSON object with no markdown, no code fences, and no extra commentary.',
       'Use exactly these keys:',
-      '{"title":"concise title","description":"clear numbered student instructions and tasks","marks":20,"difficulty":"Medium","activityType":"Assignment","submissionFormat":"text","isEssay":false,"rubric":""}',
-      `Target total marks: ${requestedMarks}. Requested difficulty: ${difficulty}. Requested activity type: ${activityType}.`,
-      'The description must contain enough concrete questions or tasks for a student to complete independently.',
-      'For an Essay activity, set isEssay to true and provide 3 to 5 newline-separated rubric criteria. Otherwise use an empty rubric.',
+      '{"title":"concise title","description":"full student-facing instructions and tasks","marks":20,"difficulty":"Medium","activityType":"Assignment","submissionFormat":"text","isEssay":false,"rubric":""}',
+      `${topicLine} Target total marks: ${requestedMarks}. Requested difficulty: ${difficulty}. Set activityType to "${resolvedActivityType}" in the JSON.`,
+      isEssayType
+        ? 'Set isEssay to true and provide 3 to 5 newline-separated rubric criteria in the rubric field.'
+        : 'Set isEssay to false and leave rubric as an empty string.',
     ].join('\n');
 
     const aiRes = await callTeacherRagAI({
       mode: 'custom',
       subject,
-      topic: normalizedTopic,
+      topic: normalizedTopic || subject,
       gradeLevel: gradeLevel || classDoc.name || null,
       question,
       candidates: [],
@@ -560,7 +604,7 @@ router.post('/assignment-draft', authTeacher, async (req, res) => {
       classId: String(classId),
       sectionId: String(sectionId),
       subjectId: subjectId ? String(subjectId) : null,
-      chapterTitle: chapterTitle || normalizedTopic,
+      chapterTitle: chapterTitle || normalizedTopic || null,
       subTopic: null,
       difficulty: String(difficulty || 'Medium').toLowerCase(),
       studentContext: null,
@@ -569,23 +613,23 @@ router.post('/assignment-draft', authTeacher, async (req, res) => {
 
     if (aiRes.data?.noMaterialFound || !aiRes.data?.groundedInMaterial) {
       return res.status(404).json({
-        error: 'No indexed material matched this class, section, subject, and chapter. Upload or re-index the lesson material, then try again.',
+        error: 'No indexed material found for this class, section, and subject. Upload or re-index the lesson material first, then try again.',
       });
     }
 
     const raw = String(aiRes.data?.content || '').trim();
     const parsed = extractJsonObject(raw);
-    if (!parsed) return res.status(502).json({ error: 'AI returned an invalid assignment format. Please try again.' });
+    if (!parsed) return res.status(502).json({ error: 'AI returned an invalid format. Please try again.' });
 
     const normalizedDifficulty = ['Easy', 'Medium', 'Hard'].includes(parsed.difficulty)
       ? parsed.difficulty
       : ['Easy', 'Medium', 'Hard'].includes(difficulty) ? difficulty : 'Medium';
-    const normalizedType = ['Assignment', 'Worksheet', 'Essay'].includes(parsed.activityType)
+    const normalizedType = VALID_ACTIVITY_TYPES.includes(parsed.activityType)
       ? parsed.activityType
-      : ['Assignment', 'Worksheet', 'Essay'].includes(activityType) ? activityType : 'Assignment';
+      : resolvedActivityType;
     const isEssay = normalizedType === 'Essay' || Boolean(parsed.isEssay);
     const draft = {
-      title: String(parsed.title || `${subject}: ${normalizedTopic}`).trim().slice(0, 180),
+      title: String(parsed.title || `${subject}${normalizedTopic ? ': ' + normalizedTopic : ''}`).trim().slice(0, 180),
       description: String(parsed.description || '').trim().slice(0, 12000),
       marks: Math.min(500, Math.max(1, Number(parsed.marks) || requestedMarks)),
       difficulty: normalizedDifficulty,

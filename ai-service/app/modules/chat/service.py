@@ -537,6 +537,21 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "- Include the correct answer or a model answer for each.\n"
         "- Use precise academic language appropriate for this grade level."
     ),
+    "explain_back": (
+        "A student has typed their own explanation of a concept. Your job is to give warm, structured feedback on it.\n"
+        "The student's explanation is in the 'question' field of the request.\n"
+        "Use the retrieved material to judge accuracy — do not rely on general knowledge alone.\n\n"
+        "Return your response in EXACTLY this format with no extra text before or after:\n"
+        "CORRECT: <what the student got right — be specific and encouraging, 1-2 sentences>\n"
+        "MISSING: <an important concept or detail that is absent or incomplete, 1-2 sentences>\n"
+        "CORRECTION: <any factual error in their explanation — if none, write exactly 'None'>\n"
+        "NEXT STEP: <one concrete thing they can do to deepen their understanding, 1 sentence>\n\n"
+        "Rules:\n"
+        "1. Be warm — never use words like 'wrong', 'incorrect', 'mistake'. Say 'not quite' or 'to be more precise'.\n"
+        "2. CORRECT must acknowledge something genuine, even if the explanation was mostly incomplete.\n"
+        "3. CORRECTION must say exactly 'None' if there are no factual errors — do not omit the line.\n"
+        "4. NEXT STEP must be a single, actionable sentence starting with a verb (e.g. 'Try explaining...', 'Look at...', 'Compare...')."
+    ),
     "engagement_swap": (
         "The student seems disengaged with this topic. Your job is to re-spark their curiosity.\n"
         "Using ONLY the retrieved material:\n"

@@ -118,6 +118,7 @@ const CHIP_MODES = {
   'Mind Map':             'mind_map',
   Flashcards:             'flashcards',
   'Homework Help':        'homework_help',
+  'Explain Back':         'explain_back',
   'Real World':           'real_world',
   'Basic Practice':       'practice_basic',
   'Intermediate Practice':'practice_intermediate',
@@ -145,6 +146,7 @@ const GENERATED_MODE_META = {
   notes:                   { label: 'Notes',                   icon: NotebookPen          },
   explain:                 { label: 'Explanation',             icon: Lightbulb            },
   homework_help:           { label: 'Homework help',           icon: MessageCircleQuestion},
+  explain_back:            { label: 'Explain Back',            icon: RotateCw             },
   real_world:              { label: 'Real world',              icon: Globe2               },
   misconception:           { label: 'Misconception explainer', icon: BrainCircuit         },
   practice_basic:          { label: 'Basic Practice',          icon: BookOpen             },
@@ -424,12 +426,48 @@ const cardSlide = {
   exit: (dir) => ({ x: dir * -240, opacity: 0, rotate: dir * -3 }),
 };
 
+// djb2 hash — stable fingerprint for a card's question text
+const hashCard = (text) => {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h) ^ text.charCodeAt(i);
+  return (h >>> 0).toString(36);
+};
+
 function FlashcardUI({ text, subject, topic }) {
-  const cards = useMemo(() => parseFlashcards(text), [text]);
+  const freshCards = useMemo(() => parseFlashcards(text), [text]);
+  // dueCards are loaded from the backend when available
+  const [dueCards, setDueCards] = useState(null);   // null = not loaded yet
+  const [dueCount, setDueCount] = useState(0);
+  const [reviewingDue, setReviewingDue] = useState(false);
+
+  const cards = reviewingDue && dueCards ? dueCards : freshCards;
+
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [dir, setDir] = useState(0);
   const [known, setKnown] = useState({});
+  const [nextReviews, setNextReviews] = useState({}); // idx → nextReview date
+  const [sessionDone, setSessionDone] = useState(false);
+
+  // Fetch due count for this subject/topic on mount
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const params = new URLSearchParams();
+    if (subject) params.set('subject', subject);
+    if (topic) params.set('topic', topic);
+    fetch(`${API_BASE}/api/student-dashboard/spaced-repetition/due?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.data?.dueCount) {
+          setDueCount(d.data.dueCount);
+          setDueCards(d.data.cards.map((c) => ({ q: c.cardFront, a: c.cardBack })));
+        }
+      })
+      .catch(() => {});
+  }, [subject, topic]);
 
   const goTo = useCallback((next) => {
     setIdx((current) => {
@@ -445,7 +483,6 @@ function FlashcardUI({ text, subject, topic }) {
   useEffect(() => {
     if (!cards.length) return;
     const onKey = (e) => {
-      // Never hijack keys while the student is typing somewhere.
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
       if (e.key === 'ArrowRight') goTo(idx + 1);
@@ -460,19 +497,80 @@ function FlashcardUI({ text, subject, topic }) {
 
   const card = cards[idx];
   const knownCount = Object.values(known).filter(Boolean).length;
+
   const rateCard = (gotIt) => {
     setKnown((k) => ({ ...k, [idx]: gotIt }));
-    goTo(idx + 1);
-    // Persist result — fire-and-forget
+    if (idx === cards.length - 1) setSessionDone(true);
+    else goTo(idx + 1);
     const token = localStorage.getItem('token');
-    if (token && topic) {
+    if (!token) return;
+    const result = gotIt ? 'got_it' : 'still_learning';
+    // Legacy aggregate result
+    if (topic) {
       fetch(`${API_BASE}/api/student-dashboard/flashcard-result`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ topicId: topic, topicTitle: topic, subject: subject || '', result: gotIt ? 'got_it' : 'still_learning' }),
+        body: JSON.stringify({ topicId: topic, topicTitle: topic, subject: subject || '', result }),
       }).catch(() => {});
     }
+    // Spaced repetition per-card update
+    const ch = hashCard(card.q);
+    fetch(`${API_BASE}/api/student-dashboard/spaced-repetition/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        cardHash: ch, cardFront: card.q, cardBack: card.a,
+        subject: subject || '', topic: topic || '', result,
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.data?.nextReview) {
+          setNextReviews((prev) => ({ ...prev, [idx]: d.data.nextReview }));
+          // Remove from due count if this was a due-card review and got it
+          if (reviewingDue && gotIt) setDueCount((n) => Math.max(0, n - 1));
+        }
+      })
+      .catch(() => {});
   };
+
+  // Session-done screen
+  if (sessionDone) {
+    const gotCount = Object.values(known).filter(Boolean).length;
+    const startDueReview = () => {
+      setReviewingDue(true);
+      setSessionDone(false);
+      setIdx(0);
+      setFlipped(false);
+      setKnown({});
+      setNextReviews({});
+    };
+    return (
+      <div className="w-full rounded-2xl border border-[#E7E3D9] bg-white p-6 text-center shadow-[0_10px_30px_-18px_rgba(38,51,46,0.3)] space-y-4">
+        <div className="text-4xl">🎉</div>
+        <p className="font-[Nunito] text-lg font-bold text-[#26332E]">Session complete!</p>
+        <p className="text-sm text-[#78827B]">
+          You knew <span className="font-bold text-[#F59E0B]">{gotCount}</span> out of <span className="font-bold text-[#26332E]">{cards.length}</span> cards.
+        </p>
+        <div className="flex flex-col gap-2 pt-1">
+          <button
+            onClick={() => { setSessionDone(false); setIdx(0); setFlipped(false); setKnown({}); setNextReviews({}); }}
+            className="w-full rounded-xl border border-[#E7E3D9] bg-[#FEF3C7] py-2 text-xs font-bold text-[#B45309] hover:bg-[#FDE9BD] transition-colors"
+          >
+            ↺ Review this deck again
+          </button>
+          {!reviewingDue && dueCount > 0 && dueCards && (
+            <button
+              onClick={startDueReview}
+              className="w-full rounded-xl border border-blue-200 bg-blue-50 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
+            >
+              📅 Review {dueCount} card{dueCount !== 1 ? 's' : ''} due for spaced review
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full space-y-3">
@@ -480,6 +578,16 @@ function FlashcardUI({ text, subject, topic }) {
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-[#F59E0B]">Card {idx + 1} / {cards.length}</span>
         <div className="flex items-center gap-2">
+          {!reviewingDue && dueCount > 0 && (
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
+              📅 {dueCount} due
+            </span>
+          )}
+          {reviewingDue && (
+            <span className="rounded-full border border-blue-200 bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+              Spaced review
+            </span>
+          )}
           <span className="text-[11px] font-medium text-[#78827B]">
             <span className="font-bold text-[#F59E0B]">{knownCount}</span> / {cards.length} known
           </span>
@@ -622,6 +730,11 @@ function FlashcardUI({ text, subject, topic }) {
         </button>
       </div>
 
+      {nextReviews[idx] && (
+        <p className="text-center text-[10px] text-blue-500">
+          📅 Next review: {new Date(nextReviews[idx]).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </p>
+      )}
       <p className="text-center text-[10px] text-[#a3aaa2]">← → to navigate · Space or tap to flip · drag the card to swipe</p>
     </div>
   );
@@ -1757,6 +1870,117 @@ function HomeworkHelpUI({ text }) {
 }
 
 // ---------------------------------------------------------------------------
+// Explain Back UI — structured feedback on the student's self-explanation
+// ---------------------------------------------------------------------------
+
+function parseExplainBack(text) {
+  if (!text) return {};
+  const result = {};
+  const lines = text.split('\n');
+  let current = null;
+  for (const line of lines) {
+    const m = line.match(/^(CORRECT|MISSING|CORRECTION|NEXT\s+STEP)\s*[:：]/i);
+    if (m) {
+      current = m[1].toUpperCase().replace(/\s+/, '_');
+      result[current] = line.slice(m[0].length).trim();
+    } else if (current && line.trim()) {
+      result[current] = (result[current] ? result[current] + ' ' : '') + line.trim();
+    }
+  }
+  return result;
+}
+
+function ExplainBackUI({ text }) {
+  const { CORRECT, MISSING, CORRECTION, NEXT_STEP } = useMemo(() => parseExplainBack(text), [text]);
+
+  // If the AI didn't use the structured format, fall back to plain text
+  if (!CORRECT && !MISSING && !NEXT_STEP) return <TutorMessageContent text={text} />;
+
+  const showCorrection = CORRECTION && CORRECTION.toLowerCase() !== 'none';
+
+  const sections = [
+    {
+      key: 'correct',
+      icon: '✅',
+      label: 'What you got right',
+      text: CORRECT,
+      border: 'border-emerald-200',
+      bg: 'bg-emerald-50/60',
+      labelColor: 'text-emerald-700',
+      textColor: 'text-emerald-900',
+      strip: 'bg-emerald-100',
+    },
+    {
+      key: 'missing',
+      icon: '💡',
+      label: 'What to add',
+      text: MISSING,
+      border: 'border-amber-200',
+      bg: 'bg-amber-50/60',
+      labelColor: 'text-amber-700',
+      textColor: 'text-amber-900',
+      strip: 'bg-amber-100',
+    },
+    showCorrection && {
+      key: 'correction',
+      icon: '⚠️',
+      label: 'Small correction',
+      text: CORRECTION,
+      border: 'border-rose-200',
+      bg: 'bg-rose-50/60',
+      labelColor: 'text-rose-700',
+      textColor: 'text-rose-900',
+      strip: 'bg-rose-100',
+    },
+    {
+      key: 'next',
+      icon: '🎯',
+      label: 'Next step',
+      text: NEXT_STEP,
+      border: 'border-blue-200',
+      bg: 'bg-blue-50/60',
+      labelColor: 'text-blue-700',
+      textColor: 'text-blue-900',
+      strip: 'bg-blue-100',
+    },
+  ].filter(Boolean);
+
+  return (
+    <Motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="w-full overflow-hidden rounded-2xl rounded-bl-sm border border-slate-200 bg-white shadow-sm"
+    >
+      {/* Header strip */}
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2">
+        <span className="flex size-6 items-center justify-center rounded-lg bg-slate-200 text-[13px]">🪞</span>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Self-Check Feedback</p>
+        <p className="ml-auto hidden text-[11px] text-slate-400 sm:block">Check your understanding</p>
+      </div>
+
+      <div className="space-y-2.5 px-4 py-3.5">
+        {sections.map((s, i) => (
+          <Motion.div
+            key={s.key}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1, duration: 0.25 }}
+            className={`rounded-xl border ${s.border} ${s.bg} overflow-hidden`}
+          >
+            <div className={`flex items-center gap-1.5 ${s.strip} px-3 py-1.5`}>
+              <span className="text-[13px]">{s.icon}</span>
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${s.labelColor}`}>{s.label}</span>
+            </div>
+            <p className={`px-3 py-2.5 text-[13px] leading-relaxed ${s.textColor}`}>{s.text}</p>
+          </Motion.div>
+        ))}
+      </div>
+    </Motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Explain Like I'm 10 UI — a friendly, sectioned study guide
 // ---------------------------------------------------------------------------
 
@@ -2267,6 +2491,7 @@ function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, su
   if (mode === 'visual_explain') return <VisualExplainUI text={text} />;
   if (mode === 'explain') return <ExplainUI text={text} />;
   if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
+  if (mode === 'explain_back') return <ExplainBackUI text={text} />;
   if (mode === 'worksheet') return <WorksheetUI text={text} />;
   if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;
   if (mode === 'hinge_question') return <HingeQuestionUI text={text} />;
@@ -2474,6 +2699,7 @@ const COMPANION_CHIPS = [
   { label: 'Mind Map',              icon: Network              },
   { label: 'Flashcards',            icon: Layers3              },
   { label: 'Homework Help',         icon: MessageCircleQuestion},
+  { label: 'Explain Back',          icon: RotateCw             },
   { label: 'Real World',            icon: Globe2               },
   { label: 'Basic Practice',        icon: BookOpen             },
   { label: 'Intermediate Practice', icon: BookOpen             },
@@ -2495,6 +2721,7 @@ const COMPOSER_PLACEHOLDER_EXAMPLES = [
   'Summarize this chapter in 5 points…',
   'Make flashcards for the water cycle…',
   "What's the difference between mitosis and meiosis?",
+  'I think photosynthesis is when… — check my understanding',
 ];
 
 const TUTOR_PROGRESS_STAGES = [
@@ -2510,6 +2737,7 @@ const STARTER_PROMPTS = [
   { mode: 'Create Quiz', text: 'Make me a 5-question quiz', icon: Target },
   { mode: 'Flashcards', text: 'Turn this chapter into flashcards', icon: Layers3 },
   { mode: 'Homework Help', text: 'Help me solve this step by step', icon: MessageCircleQuestion },
+  { mode: 'Explain Back', text: 'Check if my understanding is correct', icon: RotateCw },
 ];
 
 // Contextual next-move suggestions shown under the tutor's latest reply.
@@ -3872,7 +4100,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram', 'explain_back'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -3901,7 +4129,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram', 'explain_back'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}

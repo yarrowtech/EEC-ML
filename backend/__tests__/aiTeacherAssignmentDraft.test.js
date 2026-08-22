@@ -102,7 +102,7 @@ describe('AI teacher assignment draft endpoint', () => {
       });
 
     expect(response.status).toBe(404);
-    expect(response.body.error).toMatch(/No indexed material matched/i);
+    expect(response.body.error).toMatch(/No indexed material found/i);
   });
 
   test('normalizes a plain Ollama MCQ into four options and a correct answer', async () => {

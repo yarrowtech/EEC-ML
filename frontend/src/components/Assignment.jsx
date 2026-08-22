@@ -361,6 +361,12 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           id: assignment._id,
           title: assignment.title,
           course: assignment.subject,
+          topic: assignment.topic || '',
+          chapterTitle: assignment.chapterTitle || '',
+          type: assignment.type || 'Assignment',
+          difficulty: assignment.difficulty || '',
+          isEssay: Boolean(assignment.isEssay),
+          rubric: assignment.rubric || '',
           dueDate: assignment.dueDate,
           status: state.bucket,
           statusLabel: state.label,
@@ -1300,11 +1306,16 @@ const closeDetail = () => {
                         </span>
                       </div>
 
-                      {/* Course + Teacher */}
+                      {/* Course + Teacher + Type */}
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mb-2.5">
                         {assignment.course && (
                           <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-full">
                             <Book className="w-3 h-3" />{assignment.course}
+                          </span>
+                        )}
+                        {assignment.type && assignment.type !== 'Assignment' && (
+                          <span className="inline-flex items-center gap-1 text-xs text-violet-700 font-semibold bg-violet-50 px-2 py-0.5 rounded-full border border-violet-100">
+                            {assignment.type}
                           </span>
                         )}
                         {assignment.teacherName && (
@@ -1483,6 +1494,20 @@ const closeDetail = () => {
                         <Star className="w-3 h-3" />{a.maxMarks} marks
                       </span>
                     )}
+                    {a.type && a.type !== 'Assignment' && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {a.type}
+                      </span>
+                    )}
+                    {a.difficulty && (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                        a.difficulty === 'Hard' ? 'bg-red-50 text-red-700 border-red-200' :
+                        a.difficulty === 'Easy' ? 'bg-green-50 text-green-700 border-green-200' :
+                        'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {a.difficulty}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1531,6 +1556,22 @@ const closeDetail = () => {
                     </div>
                   </div>
 
+                  {/* Topic / Chapter context */}
+                  {(a.chapterTitle || a.topic) && (
+                    <div className="flex flex-wrap gap-2">
+                      {a.chapterTitle && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                          <BookOpen className="w-3 h-3" /> Chapter: {a.chapterTitle}
+                        </span>
+                      )}
+                      {a.topic && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                          Topic: {a.topic}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Description */}
                   {a.description && (
                     <div>
@@ -1538,6 +1579,24 @@ const closeDetail = () => {
                       <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line bg-gray-50 rounded-xl p-4">
                         {a.description}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Essay rubric — shown when teacher has set essay mode */}
+                  {a.isEssay && a.rubric && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <h3 className="text-sm font-bold text-amber-800 mb-2 flex items-center gap-1.5">
+                        <Star className="w-4 h-4" /> Essay Grading Rubric
+                      </h3>
+                      <p className="text-xs text-amber-700 mb-2">Your submission will be evaluated against these criteria:</p>
+                      <ul className="space-y-1">
+                        {a.rubric.split('\n').filter(Boolean).map((line, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
+                            <span className="mt-0.5 shrink-0 w-4 h-4 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                            {line.trim()}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
 

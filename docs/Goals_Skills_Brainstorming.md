@@ -78,7 +78,7 @@ This is the north star. Every feature, every score, every AI generation should s
 | 14 | **Speaking, listening, reading, writing** | Language Practice module (Reading & Writing Assessment already built); add voice recording for speaking; text-to-speech for listening | ✅ Reading/Writing done; Speaking/Listening not built |
 | 15 | **Vocabulary** | Word of the Day widget; contextual vocabulary quizzes; highlight unknown words in AI tutor responses | Not built |
 | 16 | **Communication strategies** | Group chat (built); add structured debate feature; peer review on assignments | Partial (chat built) |
-| 18 | **Self-explanation** | "Explain back" mode in AI tutor — student types their understanding, AI gives feedback; reflection journal | Not built |
+| 18 | **Self-explanation** | "Explain back" mode in AI tutor — student types their understanding, AI gives feedback; reflection journal | ✅ Done (ExplainBackUI + explain_back mode — CORRECT / MISSING / CORRECTION / NEXT STEP format) |
 
 ---
 
@@ -86,7 +86,7 @@ This is the north star. Every feature, every score, every AI generation should s
 
 | # | Goal | How to Achieve in EEC | Status |
 |---|---|---|---|
-| 12 | **Memory** | Flashcards with spaced repetition (card UI built; add spaced repetition scheduling); memory match games | Partial (flashcard UI built) |
+| 12 | **Memory** | Flashcards with spaced repetition (card UI built; add spaced repetition scheduling); memory match games | ✅ Done (FlashcardUI + SM-2 spaced repetition scheduling fully built) |
 | 17 | **Visual goals** | Mind Map mode (built); add infographic-style notes; image-based questions; visual learning boards | ✅ Mind map done |
 
 ---
@@ -113,10 +113,10 @@ This is the north star. Every feature, every score, every AI generation should s
 
 ### High Priority (Many goals depend on these)
 1. **Gamification System** — badges, XP, streaks, leaderboards → covers goals 2, 11
-2. **Spaced Repetition for Flashcards** → covers goal 12
+2. ~~**Spaced Repetition for Flashcards**~~ → ✅ Done (SM-2 scheduling: 1→3→7→14→30 day intervals)
 3. **Voice / Speaking module** → covers goal 14
 4. **Vocabulary Builder** (Word of the Day + quizzes) → covers goal 15
-5. **"Explain Back" mode in AI Tutor** → covers goal 18
+5. ~~**"Explain Back" mode in AI Tutor**~~ → ✅ Done (ExplainBackUI, covers goal 18)
 
 ### Medium Priority
 6. **Open-ended / Divergent Question type** in assignments → covers goals 7, 9
@@ -741,4 +741,67 @@ If not enough info for a diagram, LLM writes `DIAGRAM: none` and explanation onl
 
 ---
 
-_Last updated: 2026-08-20_
+---
+
+## Session 11 — 2026-08-22: AI Feature Audit (Code vs. Doc)
+
+A full code audit was run against the student portal (`AITutorHomeScreen.jsx`, `aiTutorRoutes.js`, `ai-service/app/modules/chat/service.py`, `spacedRepetitionRoutes.js`, `studentContextBuilder.js`) to verify what is actually built vs. what the doc previously claimed.
+
+---
+
+### Status Corrections
+
+| Feature | Old Status | Corrected Status |
+|---|---|---|
+| **Spaced Repetition scheduling** (Goal 12) | Partial (UI only) | ✅ Done — SM-2 algorithm built in `spacedRepetitionRoutes.js` with stages: 1→3→7→14→30 days; `/schedule`, `/due`, `/all` endpoints mounted at `/api/spaced-repetition`; masteryEngine reads overdue items |
+| **Explain Back** (Goal 18) | Not built | ✅ Done — `explain_back` in `ALLOWED_MODES`; `ExplainBackUI` component renders CORRECT / MISSING / CORRECTION / NEXT STEP; chip in `COMPANION_CHIPS`; MODE_INSTRUCTION enforces warm, specific feedback |
+
+---
+
+### New Modes Built (Not Previously Documented)
+
+These modes exist in the codebase but were not in previous sessions — all wired end-to-end (backend ALLOWED_MODES + MODE_INSTRUCTION + frontend chip + UI renderer):
+
+| Mode | Chip Label | UI Component | Goals Covered |
+|---|---|---|---|
+| `real_world` | Real World | TutorMessageContent | Real-world connections, curiosity |
+| `practice_basic` | Basic Practice | TutorMessageContent | Goals 1, 6 (foundation recall) |
+| `practice_intermediate` | Intermediate Practice | TutorMessageContent | Goals 1, 6, 8 (apply + connect) |
+| `practice_advanced` | Advanced Practice | TutorMessageContent | Goals 7, 8, 13 (analysis, synthesis) |
+| `engagement_swap` | Re-Engage Me | TutorMessageContent | Goal 11 (interest), Goal 2 (motivation) |
+| `visual_quiz` | Visual Quiz | QuizUI | Goal 17 (visual), Goal 6 |
+| `hinge_question` | Hinge Questions | HingeQuestionUI | Goals 8, 13 (diagnostic MCQ with misconception analysis) |
+| `misconception` | (auto-triggered) | TutorMessageContent | Goal 8 (critical thinking) — fires when student answers quiz wrong |
+| `diagram` | Diagram | DiagramUI | Goal 17 (visual) — standalone Mermaid diagram from textbook material |
+| `worksheet` | Worksheet | WorksheetUI | Goals 14, 18 |
+| `differentiated_plan` | Differentiated | DifferentiatedUI | Goals 1, 7 (Foundation / Standard / Extension levels) |
+
+Teacher-facing modes also built (not student chips): `quiz_generate`, `short_answer`, `long_answer`, `bloom_question`, `at_risk_summary`, `assignment_feedback`, `exam_explanation`, `exam_feedback`, `lesson_content`, `hinge_question`, `class_performance_summary`, `parent_report`, `exit_ticket_grade`, `idoweedo`, `misconception_report`, `differentiated_plan`.
+
+---
+
+### Bug Found — Translate Chip Not Wired
+
+The `Translate` chip exists in `COMPANION_CHIPS` (`AITutorHomeScreen.jsx` line 2698) but is **missing from `CHIP_MODES`**. Clicking it sends `mode: undefined` to the backend → 400 error. Either add a `translate` mode to the backend + `CHIP_MODES`, or remove the chip until the mode is ready.
+
+---
+
+### What Is Still Not Built (Updated List)
+
+| Feature | Goals | Priority |
+|---|---|---|
+| Gamification — badges, XP, streaks, leaderboard | 2, 11 | High |
+| Voice / Speaking module | 14 (speaking + listening) | High |
+| Vocabulary Builder (Word of the Day + quizzes) | 15 | High |
+| Timed Quiz + Focus Mode | 4, 5 | Medium |
+| Logic & Pattern Puzzles | 10, 13, 21 | Medium |
+| Group Assignments / Collaborative Tasks | 19, 22 | Medium |
+| Emotional Check-in (daily mood prompt) | 22 | Medium |
+| Drag-and-drop exercises | 20 | Low |
+| Debate / Structured Discussion | 16 | Low |
+| Personalized Learning Path (interest-based) | 11 | Low |
+| Fix: `Translate` chip → wire or remove | — | Immediate |
+
+---
+
+_Last updated: 2026-08-22_

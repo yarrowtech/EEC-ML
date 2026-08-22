@@ -8,7 +8,30 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const PracticeAttempt = require('../models/PracticeAttempt');
 const ExamResult = require('../models/ExamResult');
 const FlashcardResult = require('../models/FlashcardResult');
+const SpacedRepetition = require('../models/SpacedRepetition');
 const { updateDevelopmentProfile } = require('../services/developmentProfileService');
+
+// SM-2 algorithm — updates interval/easeFactor/repetitions in place and returns nextReview Date.
+function applySpacedRepetition(record, gotIt) {
+  const q = gotIt ? 4 : 1;
+  if (q >= 3) {
+    if (record.repetitions === 0) record.interval = 1;
+    else if (record.repetitions === 1) record.interval = 6;
+    else record.interval = Math.round(record.interval * record.easeFactor);
+    record.easeFactor = Math.min(2.5, record.easeFactor + 0.1);
+    record.repetitions += 1;
+  } else {
+    record.interval = 1;
+    record.easeFactor = Math.max(1.3, record.easeFactor - 0.2);
+    record.repetitions = 0;
+  }
+  const next = new Date();
+  next.setDate(next.getDate() + record.interval);
+  next.setHours(0, 0, 0, 0);
+  record.nextReview = next;
+  record.lastReview = new Date();
+  return next;
+}
 
 // GET /api/student-dashboard/mastery-topics
 router.get('/mastery-topics', authStudent, async (req, res) => {
@@ -142,6 +165,55 @@ router.get('/flashcard-stats', authStudent, async (req, res) => {
     const overallRate = results.length > 0 ? Math.round((totalGot / results.length) * 100) : 0;
 
     return res.json({ success: true, data: { overallRate, totalAttempts: results.length, byTopic } });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/student-dashboard/spaced-repetition/review
+// Called after each card rating. Creates or updates the SM-2 record for the card.
+router.post('/spaced-repetition/review', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const schoolId = req.schoolId;
+    const { cardHash, cardFront, cardBack, subject, topic, result } = req.body || {};
+    if (!cardHash || !cardFront || !cardBack || !result) {
+      return res.status(400).json({ error: 'cardHash, cardFront, cardBack, and result are required' });
+    }
+    const gotIt = result === 'got_it';
+    let record = await SpacedRepetition.findOne({ studentId, cardHash });
+    if (!record) {
+      record = new SpacedRepetition({
+        studentId, schoolId,
+        subject: subject || '', topic: topic || '',
+        cardHash, cardFront, cardBack,
+        interval: 1, easeFactor: 2.5, repetitions: 0,
+      });
+    }
+    const nextReview = applySpacedRepetition(record, gotIt);
+    await record.save();
+    return res.json({ success: true, data: { nextReview, interval: record.interval, repetitions: record.repetitions } });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/student-dashboard/spaced-repetition/due
+// Returns cards due for review today (nextReview <= now).
+// Optional query params: subject, topic (to scope to current session's subject/topic).
+router.get('/spaced-repetition/due', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { subject, topic } = req.query;
+    const filter = { studentId, nextReview: { $lte: new Date() } };
+    if (subject) filter.subject = subject;
+    if (topic) filter.topic = topic;
+    const due = await SpacedRepetition.find(filter)
+      .sort({ nextReview: 1 })
+      .limit(20)
+      .select('cardFront cardBack nextReview interval repetitions subject topic')
+      .lean();
+    return res.json({ success: true, data: { dueCount: due.length, cards: due } });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
