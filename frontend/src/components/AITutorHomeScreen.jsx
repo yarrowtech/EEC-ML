@@ -3827,6 +3827,13 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
       label: 'AI Tutor',
       detail: [activeSubject?.title, topicTitle].filter(Boolean).join(' · ') || chipLabel,
     });
+    // Send the live chat history straight from state so the tutor has real conversational
+    // memory without depending on the save-to-Mongo / read-back round-trip.
+    const conversationHistory = messages
+      .filter((m) => !m.thinking && !m.error && String(m.text || '').trim())
+      .slice(-8)
+      .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', text: String(m.text).slice(0, 1400) }));
+
     const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const assistantId = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setMessages((prev) => [
@@ -3860,6 +3867,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
           responseDepth: mode === 'visual_explain' ? visualDepth : undefined,
           learningGoal: mode === 'visual_explain' ? visualGoal : undefined,
           wrongAnswer: opts?.wrongAnswer || undefined,
+          conversationHistory: conversationHistory.length ? conversationHistory : undefined,
         }),
       });
       const payload = await res.json();
@@ -4538,9 +4546,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               </Button>
             </Motion.div>
           </div>
-          <p className="mt-1.5 px-1 text-[11px] text-[#a3aaa2]">
-            Press <kbd className="rounded border border-[#E7E3D9] bg-white px-1 font-sans text-[10px] text-[#78827B]">Enter</kbd> to send · <kbd className="rounded border border-[#E7E3D9] bg-white px-1 font-sans text-[10px] text-[#78827B]">Shift + Enter</kbd> for a new line
-          </p>
         </div>
       </Panel>
     </Section>

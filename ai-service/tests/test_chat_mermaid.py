@@ -45,6 +45,43 @@ def test_sequence_diagram_header_accepted():
     assert validate_mermaid("sequenceDiagram\n  A->>B: hello") is None
 
 
+def test_fragmented_flowchart_is_rejected():
+    fragmented = (
+        "flowchart TD\n"
+        'A["Group 1"] --> B[2, 5, 8]\n'
+        'C["Group 2"] --> D[3, 4, 6]\n'
+        'E["Swap"] --> F[2, 3, 8]\n'
+        'G["Total"] --> H[13]\n'
+        'I["Difference"] --> J[2]\n'
+        'K["Moves"] --> L[1]\n'
+    )
+    reason = validate_mermaid(fragmented)
+    assert reason is not None and "fragmented" in reason
+
+
+def test_connected_flowchart_passes_structural_check():
+    connected = (
+        "flowchart TD\n"
+        'A["Start"] --> B["Step one"]\n'
+        'B --> C["Step two"]\n'
+        'C --> D["Step three"]\n'
+        'D --> E["Result"]\n'
+        'E --> F["Why it matters"]\n'
+    )
+    assert validate_mermaid(connected) is None
+
+
+def test_comparison_joined_to_shared_node_passes():
+    diagram = (
+        "flowchart LR\n"
+        'Q["Which is bigger?"] --> A["one half"]\n'
+        'Q --> B["one third"]\n'
+        'A --> C["one half wins"]\n'
+        "B --> C\n"
+    )
+    assert validate_mermaid(diagram) is None
+
+
 def test_replace_diagram_with_none_swaps_only_the_fence():
     text = f"DIAGRAM:\n```mermaid\n{VALID}\n```\n\nEXPLANATION:\n**Overview:** keep me"
     out = replace_diagram_with_none(text)

@@ -14,11 +14,24 @@ const studentMemorySummarySchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // Rolling LLM-generated summary of past learning sessions.
-    // Updated after each session that crosses the turn threshold.
+    // Legacy subject-agnostic rolling summary (kept for old rows / fallback).
     summary: { type: String, default: '' },
-    // Extracted bullet-point key facts about this student's learning patterns.
     keyInsights: [{ type: String }],
+    // Per-subject rolling memory, keyed by subject name. Nested in this one doc per student
+    // so the existing {studentId, schoolId} unique index needs no migration.
+    subjectSummaries: {
+      type: Map,
+      of: new mongoose.Schema(
+        {
+          summary: { type: String, default: '' },
+          keyInsights: [{ type: String }],
+          sessionCount: { type: Number, default: 0 },
+          lastSummarizedAt: { type: Date },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     // How many tutor sessions have been summarised so far.
     sessionCount: { type: Number, default: 0 },
     lastSummarizedAt: { type: Date },

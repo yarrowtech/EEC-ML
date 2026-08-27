@@ -112,6 +112,31 @@ def test_visual_explain_uses_structured_diagram_format(make_request):
     assert "exam-ready recap" not in user
 
 
+def test_understanding_layer_added_for_explain_and_custom(make_request):
+    for mode in ("explain", "custom", "visual_explain"):
+        _, user = service.build_prompt(make_request(mode=mode), "context")
+        assert "UNDERSTANDING LAYER" in user, mode
+        assert "Think of it like" in user, mode
+
+
+def test_understanding_layer_not_added_for_quiz_or_homework(make_request):
+    for mode in ("quiz", "homework_help", "notes"):
+        _, user = service.build_prompt(make_request(mode=mode), "context")
+        assert "UNDERSTANDING LAYER" not in user, mode
+
+
+def test_understanding_layer_scales_with_grade_and_depth(make_request):
+    young = service._understanding_layer_instruction(make_request(gradeLevel="class 2"))
+    older = service._understanding_layer_instruction(make_request(gradeLevel="class 10"))
+    simple = service._understanding_layer_instruction(
+        make_request(gradeLevel="class 10", responseDepth="simple")
+    )
+    assert "ONE example" in young and "TWO concrete examples" not in young
+    assert "TWO concrete examples" in older
+    assert "ONE example" in simple  # simple depth overrides grade
+    assert "money amounts, brands, religion" in young
+
+
 def test_text_only_prompt_does_not_claim_visual_evidence(make_request):
     system, _ = service.build_prompt(make_request(mode="explain"), "A plain text explanation.")
     assert "VISUAL EVIDENCE RULES" not in system

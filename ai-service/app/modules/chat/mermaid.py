@@ -9,7 +9,10 @@ student, with no server-side trace of why.
 These helpers catch the common, cheap-to-detect failures before the response
 leaves the service, so a single repair pass (or a clean text-only fallback) can
 run. They intentionally do NOT try to be a full Mermaid parser — just enough to
-distinguish "will almost certainly render" from "will almost certainly not".
+distinguish "will almost certainly render" from "will almost certainly not", plus
+one structural check: a flowchart that renders fine syntactically but is really a
+pile of disconnected node-pairs is a useless diagram for a student, so it is
+treated as invalid and sent back for a repair.
 """
 
 from __future__ import annotations
@@ -28,6 +31,60 @@ _VALID_HEADERS = (
 
 _OPEN_TO_CLOSE = {"[": "]", "(": ")", "{": "}"}
 _CLOSE_TO_OPEN = {v: k for k, v in _OPEN_TO_CLOSE.items()}
+
+# --- flowchart connectivity (best-effort structural check) --------------------
+_LABEL_STRIP_RE = re.compile(r'"[^"]*"|\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\|[^|]*\|')
+_ARROW_RE = re.compile(r"<?[-.=]{2,}[->xo]?|-{1,2}[xo]")
+_IDENT_RE = re.compile(r"[A-Za-z0-9_]+")
+_CONN_SKIP_PREFIXES = (
+    "subgraph", "end", "direction", "classdef", "class ", "style ",
+    "linkstyle", "%%", "click", "acctitle", "accdescr",
+)
+
+
+def _flowchart_fragmentation(code: str) -> tuple[int, int]:
+    """(node_count, connected_component_count) for a flowchart/graph body.
+
+    Best-effort: strips label text, treats any line with an arrow as connecting all
+    identifiers on it, and union-finds the result. Good enough to tell "one coherent
+    diagram" from "N disconnected pairs".
+    """
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a: str, b: str) -> None:
+        parent[find(a)] = find(b)
+
+    nodes: set[str] = set()
+    for raw in code.splitlines()[1:]:  # skip the header line
+        line = raw.strip()
+        if not line or line.lower().startswith(_CONN_SKIP_PREFIXES):
+            continue
+        stripped = _LABEL_STRIP_RE.sub(" ", line)
+        idents = [i for i in _IDENT_RE.findall(stripped) if i.lower() != "end"]
+        if not idents:
+            continue
+        if _ARROW_RE.search(stripped):
+            for ident in idents:
+                nodes.add(ident)
+                find(ident)
+            for a, b in zip(idents, idents[1:]):
+                union(a, b)
+        else:
+            nodes.add(idents[0])
+            find(idents[0])
+
+    if not nodes:
+        return (0, 0)
+    return (len(nodes), len({find(n) for n in nodes}))
 
 
 def extract_mermaid_block(text: str) -> str | None:
@@ -66,6 +123,16 @@ def validate_mermaid(code: str) -> str | None:
         return "unbalanced double-quote"
     if stack:
         return f"unclosed '{stack[-1]}'"
+
+    # Structural: a flowchart that fragments into many disconnected pieces is not a
+    # diagram a student can follow, even though it renders.
+    if header.startswith(("flowchart", "graph")):
+        node_count, components = _flowchart_fragmentation(code)
+        if node_count >= 6 and components >= 3:
+            return (
+                f"diagram is fragmented into {components} disconnected pieces — "
+                "it must be ONE connected flow"
+            )
 
     return None
 

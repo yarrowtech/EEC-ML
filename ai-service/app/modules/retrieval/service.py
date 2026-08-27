@@ -79,6 +79,43 @@ def _rank_visual_chunks(query_text: str, chunks: list[dict]) -> list[dict]:
     return [chunk for chunk in ranked if rank(chunk)[0] == best_overlap]
 
 
+# Modes that answer a specific question — worth focusing the chapter window on it.
+# (Whole-chapter modes like notes / mind_map / summarize keep the positional window.)
+_QUESTION_MODES = {"explain", "visual_explain", "custom"}
+
+
+def _select_relevant_chapter_window(query_text: str, ordered: list[dict], limit: int) -> list[dict]:
+    """Pick the `limit` chapter chunks most relevant to `query_text`, keeping reading order.
+
+    The chapter branch normally returns the first `limit` chunks (the chapter opening),
+    which makes every follow-up question see the same text. When the student asked a
+    specific question, score the chunks against it and take a focused slice instead.
+    Falls back to the positional window when nothing matches.
+    """
+    stop_words = {
+        "the", "and", "for", "with", "from", "this", "that", "show", "explain",
+        "how", "using", "use", "visual", "page", "example", "another", "more",
+        "give", "different", "chapter", "about",
+    }
+    tokens = {
+        token for token in re.findall(r"[a-z0-9]+", query_text.casefold())
+        if len(token) >= 3 and token not in stop_words
+    }
+    if not tokens:
+        return ordered[:limit]
+
+    def score(chunk: dict) -> int:
+        searchable = str(chunk.get("text", "")).casefold()
+        return sum(1 for token in tokens if token in searchable)
+
+    scored = [(score(chunk), idx, chunk) for idx, chunk in enumerate(ordered)]
+    if not any(s > 0 for s, _, _ in scored):
+        return ordered[:limit]
+
+    top = sorted(scored, key=lambda t: (-t[0], t[1]))[:limit]
+    return [chunk for _, _, chunk in sorted(top, key=lambda t: t[1])]
+
+
 def _reconstruct_from_offsets(chunks: list[dict]) -> str:
     """Reconstruct clean chapter text using stored start_char offsets.
 
@@ -264,13 +301,14 @@ def retrieve_from_qdrant(
     topic: str | None,
     sub_topic: str | None,
     question: str | None,
+    mode: str | None = None,
 ) -> list[str]:
     subject_norm = _normalize_subject(subject)
 
-    # Chapter-scoped path: scroll ALL chapter chunks in document order.
-    # Similarity ranking is deliberately skipped — narrative content (poems,
-    # story text) scores low against task-style queries ("simplify", "quiz")
-    # and would be dropped by query_points even with a large limit.
+    # Chapter-scoped path: scroll the chapter chunks in document order. Similarity ranking is
+    # deliberately skipped for whole-chapter modes (notes/quiz/summarize) — narrative content
+    # scores low against task-style queries. For question-answering modes with an actual
+    # question, focus the window on the question instead of always the chapter opening.
     if chapter_title:
         chunks = _get_chapter_chunks_with_legacy_subject_fallback(
             school_id=school_id,
@@ -288,7 +326,15 @@ def retrieve_from_qdrant(
                 text_chunks,
                 key=lambda h: h["start_char"] if h.get("start_char") is not None else h.get("chunk_index", 0),
             )
-            capped = ordered[: settings.max_chapter_context_chunks]
+            question_text = (question or "").strip()
+            if mode in _QUESTION_MODES and question_text and len(ordered) > settings.max_chapter_context_chunks:
+                capped = _select_relevant_chapter_window(
+                    " ".join(filter(None, [topic, sub_topic, question_text])),
+                    ordered,
+                    settings.max_chapter_context_chunks,
+                )
+            else:
+                capped = ordered[: settings.max_chapter_context_chunks]
             visual_query = " ".join(filter(None, [topic, sub_topic, question]))
             selected_visual = _rank_visual_chunks(visual_query, visual_chunks)[: settings.max_context_chunks]
             merged = _reconstruct_from_offsets(capped) if capped else ""
@@ -357,6 +403,7 @@ def retrieve_from_qdrant_with_meta(
     topic: str | None,
     sub_topic: str | None,
     question: str | None,
+    mode: str | None = None,
 ) -> tuple[list[str], list[dict]]:
     """Like retrieve_from_qdrant but also returns citation metadata per unique source."""
     subject_norm = _normalize_subject(subject)
@@ -378,7 +425,15 @@ def retrieve_from_qdrant_with_meta(
                 text_chunks,
                 key=lambda h: h["start_char"] if h.get("start_char") is not None else h.get("chunk_index", 0),
             )
-            capped = ordered[: settings.max_chapter_context_chunks]
+            question_text = (question or "").strip()
+            if mode in _QUESTION_MODES and question_text and len(ordered) > settings.max_chapter_context_chunks:
+                capped = _select_relevant_chapter_window(
+                    " ".join(filter(None, [topic, sub_topic, question_text])),
+                    ordered,
+                    settings.max_chapter_context_chunks,
+                )
+            else:
+                capped = ordered[: settings.max_chapter_context_chunks]
             visual_query = " ".join(filter(None, [topic, sub_topic, question]))
             selected_visual = _rank_visual_chunks(visual_query, visual_chunks)[: settings.max_context_chunks]
             merged = _reconstruct_from_offsets(capped) if capped else ""

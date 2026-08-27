@@ -362,7 +362,10 @@ const StudentMemorySummary = require('../models/StudentMemorySummary');
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SESSION_SUMMARISE_TURN_THRESHOLD = 6; // summarise after 6+ messages in a conversation
 
-async function triggerSessionSummarise(studentId, schoolId, messages) {
+// Map/field keys cannot contain '.' or start with '$'.
+const sanitizeSubjectKey = (s) => String(s || '').trim().replace(/[.$]/g, '_').slice(0, 60) || 'General';
+
+async function triggerSessionSummarise(studentId, schoolId, messages, subject = '') {
   try {
     if (!messages || messages.length < SESSION_SUMMARISE_TURN_THRESHOLD) return;
     const turns = messages.map((m) => `${m.role === 'assistant' ? 'Tutor' : 'Student'}: ${String(m.text || '').slice(0, 300)}`).join('\n');
@@ -373,12 +376,28 @@ async function triggerSessionSummarise(studentId, schoolId, messages) {
     );
     const { summary = '', keyInsights = [] } = resp.data || {};
     if (!summary) return;
+
+    const now = new Date();
+    const subjectKey = sanitizeSubjectKey(subject);
+    const insights = keyInsights.slice(0, 5);
     await StudentMemorySummary.findOneAndUpdate(
       { studentId, schoolId },
       {
-        $set: { summary, lastSummarizedAt: new Date() },
-        $addToSet: { keyInsights: { $each: keyInsights.slice(0, 5) } },
-        $inc: { sessionCount: 1 },
+        // Subject-scoped memory so a Physics session doesn't colour a Maths one.
+        $set: {
+          [`subjectSummaries.${subjectKey}.summary`]: summary,
+          [`subjectSummaries.${subjectKey}.lastSummarizedAt`]: now,
+          summary,                 // keep the legacy field roughly current too
+          lastSummarizedAt: now,
+        },
+        $addToSet: {
+          [`subjectSummaries.${subjectKey}.keyInsights`]: { $each: insights },
+          keyInsights: { $each: insights },
+        },
+        $inc: {
+          [`subjectSummaries.${subjectKey}.sessionCount`]: 1,
+          sessionCount: 1,
+        },
       },
       { upsert: true, setDefaultsOnInsert: true }
     );
@@ -1603,7 +1622,7 @@ router.put('/tutor-conversations/:clientId', authStudent, async (req, res) => {
     );
 
     // Fire-and-forget: summarise session into long-term memory when enough turns accumulate
-    triggerSessionSummarise(req.user.id, req.schoolId, cleanMessages).catch(() => {});
+    triggerSessionSummarise(req.user.id, req.schoolId, cleanMessages, subjectTitle).catch(() => {});
 
     res.json({ conversation });
     logStudentPortalEvent(req, {

@@ -68,3 +68,19 @@ def test_regular_chat_does_not_add_generated_visual():
 def test_visual_mode_does_not_invent_unsupported_topic_visual():
     req = TutorGenerateRequest(mode="visual_explain", subject="Biology", topic="Plants")
     assert build_tutor_visuals(req, "Plants need sunlight and water.") == []
+
+
+def test_balance_visual_not_shown_for_unrelated_question_on_same_page():
+    # The retrieved page prints the swap puzzles, but the student asked about fuel
+    # arithmetic — the balance visual must not surface.
+    req = TutorGenerateRequest(
+        mode="visual_explain",
+        subject="Mathematics",
+        topic="Mathematic Chapter 004",
+        question="can you give me more example?",
+    )
+    context = (
+        "Making sums equal. Interchange pairs of numbers using the least number of moves. "
+        "Totals 19 21 39 47 68 76 314 330. Also: a lorry starts with 28 litres and 75 more are added."
+    )
+    assert build_tutor_visuals(req, context) == []

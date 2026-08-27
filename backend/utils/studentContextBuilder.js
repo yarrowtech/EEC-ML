@@ -41,7 +41,7 @@ function scoreToTierKey(score) {
  * Returns the last `maxTurns` message pairs from the most recent tutor conversation.
  * Each pair = one student message + one tutor reply.
  */
-async function getRecentConversationTurns(studentId, schoolId, maxTurns = 3) {
+async function getRecentConversationTurns(studentId, schoolId, maxTurns = 5) {
   try {
     const recent = await TutorConversation.findOne(
       { studentId, schoolId },
@@ -80,7 +80,7 @@ async function buildStudentContext({ studentId, schoolId, subject, topicId, grad
         .select('overallGrade interventionLevel weaknessAnalysis')
         .lean(),
       StudentMemorySummary.findOne({ studentId, schoolId }).lean(),
-      getRecentConversationTurns(studentId, schoolId, 3),
+      getRecentConversationTurns(studentId, schoolId, 5),
       StudentDevelopmentProfile.findOne({ studentId, schoolId }).lean(),
     ]);
 
@@ -161,12 +161,19 @@ async function buildStudentContext({ studentId, schoolId, subject, topicId, grad
     );
   }
 
-  // Long-term memory summary from past sessions
-  if (mem?.summary) {
-    lines.push(`Past session memory: ${mem.summary.slice(0, 400)}`);
+  // Long-term memory — prefer the summary for THIS subject; fall back to the legacy
+  // subject-agnostic one for students whose memory predates per-subject scoping.
+  const subjectKey = String(subject || '').trim().replace(/[.$]/g, '_').slice(0, 60) || 'General';
+  const subjectMem = mem?.subjectSummaries
+    ? (mem.subjectSummaries.get ? mem.subjectSummaries.get(subjectKey) : mem.subjectSummaries[subjectKey])
+    : null;
+  const memSummary = subjectMem?.summary || mem?.summary;
+  const memInsights = subjectMem?.keyInsights?.length ? subjectMem.keyInsights : mem?.keyInsights;
+  if (memSummary) {
+    lines.push(`Past ${subject || 'session'} memory: ${memSummary.slice(0, 400)}`);
   }
-  if (mem?.keyInsights?.length) {
-    lines.push(`Key learning insights: ${mem.keyInsights.slice(0, 3).join(' | ')}`);
+  if (memInsights?.length) {
+    lines.push(`Key learning insights: ${memInsights.slice(0, 3).join(' | ')}`);
   }
 
   // 6-category holistic development profile

@@ -47,6 +47,27 @@ def test_chapter_scroll_returns_single_merged_string(monkeypatch):
     assert result[0].index("first part") < result[0].index("second part")
 
 
+def test_chapter_window_focuses_on_question_for_qa_modes(monkeypatch):
+    # A chapter with more chunks than the cap: a question-answering mode with an actual
+    # question should pull the relevant chunk into the window, not just the opening chunks.
+    cap = settings.max_chapter_context_chunks
+    filler = [_hit(f"intro paragraph {i}", 1.0, i) for i in range(cap)]
+    needle = _hit("subtraction with borrowing across three digit numbers", 1.0, cap + 5)
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [*filler, needle])
+
+    focused = _retrieve(mode="explain", question="show me subtraction with borrowing")
+    assert "subtraction with borrowing" in focused[0]
+
+    positional = _retrieve(mode="notes", question="show me subtraction with borrowing")
+    assert "subtraction with borrowing" not in positional[0]
+
+
+def test_select_relevant_chapter_window_falls_back_to_positional():
+    ordered = [{"text": f"chunk {i}"} for i in range(5)]
+    # nothing matches → first `limit` in order
+    assert service._select_relevant_chapter_window("xylophone quasar", ordered, 3) == ordered[:3]
+
+
 def test_chapter_scroll_never_calls_search_chunks(monkeypatch):
     monkeypatch.setattr(
         service, "get_chapter_chunks",

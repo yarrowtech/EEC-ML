@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
     ollama_summary_model: str = "qwen2.5:14b"
     ollama_clean_model: str = "llama3.2:3b"  # lightweight model for ingestion-time cleaning
+    # Rewrites a conversational follow-up ("give me another example") into a standalone
+    # retrieval query using the chat history. Small + fast — it is on every multi-turn
+    # request. Set to "" to disable follow-up query rewriting.
+    ollama_query_rewrite_model: str = "llama3.2:3b"
     # Structured Mermaid/diagram synthesis (visual_explain, diagram modes). Mermaid is code —
     # a code-tuned model produces far fewer un-renderable syntax errors than the general tutor
     # model. Stronger options: "qwen2.5-coder:14b" or "qwen2.5:14b" (slower, more VRAM).
@@ -35,7 +39,7 @@ class Settings(BaseSettings):
     rag_relevance_threshold: float = 0.55
     max_context_chunks: int = 4
     max_chapter_context_chunks: int = 20
-    ollama_num_ctx: int = 8192
+    ollama_num_ctx: int = 16384  # system prompt + retrieved chunks + diagram plan + conversation history + reply
     ollama_num_predict: int = 1500
     ollama_num_predict_extended: int = 3000  # for mind_map, notes, flashcards, summarize
     download_timeout: int = 30

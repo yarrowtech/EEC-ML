@@ -209,6 +209,16 @@ router.post('/generate', authStudent, async (req, res) => {
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
 
     const { subject, topic, subTopic, mode, question, chapterTitle, difficulty, responseDepth, learningGoal, wrongAnswer } = req.body || {};
+
+    // Conversation history sent straight from the client's chat state — avoids the
+    // save-to-Mongo / read-back race and the "newest conversation globally" ambiguity.
+    // Sanitised + capped; falls back to the stored read when the client omits it.
+    const clientHistory = Array.isArray(req.body?.conversationHistory)
+      ? req.body.conversationHistory
+          .filter((t) => t && (t.role === 'user' || t.role === 'assistant') && String(t.text || '').trim())
+          .map((t) => ({ role: t.role, text: String(t.text).slice(0, 1500) }))
+          .slice(-10)
+      : [];
     const normalizedMode = normalizeString(mode);
     if (!ALLOWED_MODES.includes(normalizedMode)) {
       return res.status(400).json({ error: `mode must be one of: ${ALLOWED_MODES.join(', ')}` });
@@ -281,7 +291,7 @@ router.post('/generate', authStudent, async (req, res) => {
 
     // Build student context for personalised LLM response — fire and forget on error
     let studentContext = '';
-    let conversationHistory = [];
+    let conversationHistory = clientHistory;
     let masteryBasedDifficulty = normalizeString(difficulty) || null;
     try {
       const ctx = await buildStudentContext({
@@ -292,7 +302,8 @@ router.post('/generate', authStudent, async (req, res) => {
         gradeLevel: student.grade ? `Grade ${student.grade}` : '',
       });
       studentContext = ctx.contextBlock;
-      conversationHistory = ctx.conversationHistory;
+      // Prefer the client's live history; only fall back to the stored read when absent.
+      if (!conversationHistory.length) conversationHistory = ctx.conversationHistory;
 
       // Adaptive difficulty: override difficulty from student's mastery when not explicitly set
       if (!difficulty && ['quiz', 'visual_quiz', 'practice_basic', 'practice_intermediate', 'practice_advanced'].includes(normalizedMode)) {

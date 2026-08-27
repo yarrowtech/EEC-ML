@@ -92,18 +92,42 @@ def _fraction_wholes_visual(searchable: str) -> dict | None:
     }
 
 
+# A deterministic visual is only offered when the student's *request* is about that
+# topic — not merely because the retrieved page happens to contain those problems.
+# (A fuel-arithmetic question on a page that also prints swap puzzles must not surface
+# the swap visual.) The retrieved context is still used to fill in the specifics.
+_BALANCE_INTENT = (
+    "making sums equal", "sums equal", "make the sums", "make both totals",
+    "interchange", "swap", "balance the group", "same total", "equal total",
+    "least number of moves",
+)
+_FRACTION_INTENT = (
+    "fraction", "numerator", "denominator", "equal parts", "of a whole",
+    "of the whole", "one-half", "one-third", "1/2", "1/3", "1/4",
+)
+_ANGLE_INTENT = ("angle", "turn", "degree", "rotation", "°")
+
+
 def build_tutor_visuals(req: TutorGenerateRequest, context: str) -> list[dict]:
     """Build safe code-rendered visual specs from retrieved curriculum evidence."""
 
     if req.mode not in {"visual_explain", "visual_quiz"}:
         return []
-    searchable = " ".join((req.topic or "", req.subTopic or "", req.question or "", context)).casefold()
-    balance_visual = _balance_sums_visual(searchable)
-    if balance_visual:
-        return [balance_visual]
-    fraction_visual = _fraction_wholes_visual(searchable)
-    if fraction_visual:
-        return [fraction_visual]
+    intent = " ".join(
+        (req.topic or "", req.subTopic or "", req.chapterTitle or "", req.question or "")
+    ).casefold()
+    searchable = " ".join((intent, context)).casefold()
+
+    if any(marker in intent for marker in _BALANCE_INTENT):
+        balance_visual = _balance_sums_visual(searchable)
+        if balance_visual:
+            return [balance_visual]
+    if any(marker in intent for marker in _FRACTION_INTENT):
+        fraction_visual = _fraction_wholes_visual(searchable)
+        if fraction_visual:
+            return [fraction_visual]
+    if not any(marker in intent for marker in _ANGLE_INTENT):
+        return []
     if "angle" not in searchable or not any(token in searchable for token in ("turn", "degree", "°")):
         return []
 

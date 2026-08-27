@@ -951,14 +951,63 @@ _LEARNING_GOAL_INSTRUCTIONS = {
 }
 
 
+def _grade_number(grade_level: str) -> int:
+    """First integer found in a grade string ('class 12' → 12); 0 when none."""
+    for token in (grade_level or "").lower().split():
+        stripped = token.strip(".-thstndrd")
+        if stripped.isdigit():
+            return int(stripped)
+    return 0
+
+
+# Domains every child anywhere already understands — the only source material for
+# analogies and everyday examples in the understanding layer.
+_CHILD_ANALOGY_DOMAINS = (
+    "home and kitchen, cooking and food, water and rain and weather, the sun moon and sky, "
+    "animals and pets, plants trees and gardens, playground games and sports, toys and building "
+    "blocks, the human body, the school bag classroom and books, family and friends, day and "
+    "night, roads bicycles and buses, clothes and shoes"
+)
+
+
+def _understanding_layer_instruction(req: TutorGenerateRequest) -> str:
+    """Everyday-analogy + concrete-example layer that makes an explanation land for a young
+    or struggling student.
+
+    An analogy is a familiar picture the student already holds, not a claim about the
+    material — so it is safe to add on top of the material-grounded facts, provided the two
+    are kept clearly separate and the analogy never changes what the material says.
+    """
+    grade_num = _grade_number(req.gradeLevel or "")
+    depth = (req.responseDepth or "").strip().lower()
+
+    if depth == "simple" or (grade_num and grade_num <= 4):
+        body = (
+            "Add ONE short everyday comparison in a sentence that starts 'Think of it like…', "
+            "then ONE example of something the student sees every single day."
+        )
+    else:
+        body = (
+            "Add ONE everyday comparison in a sentence that starts 'Think of it like…', and "
+            "TWO concrete examples from real situations a student this age actually meets."
+        )
+
+    return (
+        "UNDERSTANDING LAYER — after the material-grounded explanation, help the student "
+        f"picture the idea. {body} "
+        "If your answer uses section headings, put this in a section headed '**Think of it like:**'; "
+        "otherwise make it a short closing paragraph. "
+        f"Take every comparison and example only from things universal to children: {_CHILD_ANALOGY_DOMAINS}. "
+        "The comparison is a familiar picture, NOT a fact — it must never change, contradict, or add to "
+        "what the retrieved material says, and it stays in its own sentence, separate from the facts. "
+        "Nothing involving money amounts, brands, religion, or anything frightening."
+    )
+
+
 def _age_adaptive_style(grade_level: str) -> str:
     """Return a communication-style instruction matched to the student's grade level."""
     g = grade_level.lower().strip()
-    num = 0
-    for token in g.split():
-        if token.isdigit():
-            num = int(token)
-            break
+    num = _grade_number(g)
     if num <= 3 or "kg" in g or "kindergarten" in g or "primary" in g:
         return (
             "Use very simple words, very short sentences (under 12 words each), "
@@ -1050,6 +1099,7 @@ def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
             topic=req.topic,
             sub_topic=req.subTopic,
             question=req.question,
+            mode=req.mode,
         )
     return _retrieve_in_memory(req)
 
@@ -1069,6 +1119,7 @@ def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[
             topic=req.topic,
             sub_topic=req.subTopic,
             question=req.question,
+            mode=req.mode,
         )
     return _retrieve_in_memory(req), []
 
@@ -1257,6 +1308,10 @@ def build_prompt(
         }.get(diff, f"Difficulty level: {req.difficulty}.")
         instruction = f"{instruction} {difficulty_note}"
 
+    # Everyday-analogy + concrete-example layer for the "help me understand" modes.
+    if req.mode in {"explain", "custom", "visual_explain"}:
+        instruction = f"{instruction}\n\n{_understanding_layer_instruction(req)}"
+
     location = " > ".join(filter(None, [req.subject, req.chapterTitle or req.topic, req.subTopic]))
     parts = [
         f"Topic: {location}",
@@ -1288,7 +1343,7 @@ def build_prompt(
 
 
 def _live_visual_grounding(req: TutorGenerateRequest, citations: list[dict]) -> str | None:
-    """Re-read the actual cited page with llava:13b for this specific question.
+    """Re-read the actual cited page with the vision model for this specific question.
 
     The ingestion-time visual extraction is a generic, one-shot description of the whole
     page, written without knowing what the student would eventually ask. Re-reading the
@@ -1372,7 +1427,10 @@ _DIAGRAM_PLANNER_SYSTEM = (
     "2. NODES — list every node. Use the exact terms, labels, and numeric values from the "
     "material. No node that is not supported by the material.\n"
     "3. CONNECTIONS — every arrow: from which node to which, and the label that names the "
-    "relationship (\"releases\", \"becomes\", \"is part of\", \"causes\"…).\n"
+    "relationship (\"releases\", \"becomes\", \"is part of\", \"causes\"…). The whole diagram "
+    "must be ONE connected structure — every node reachable from the start by following arrows. "
+    "No side-by-side 'concept → value' pairs; chain everything into a single flow. Put a value "
+    "on the same node as its label, not in a separate node.\n"
     "4. GROUPS — which nodes belong together in a labelled group/box.\n"
     "5. DETAIL — for a 'deep' request aim for 12-18 nodes; for 'simple' aim for 5-8.\n\n"
     "Output a numbered plan in plain English — NOT Mermaid code, no code fences. Be concrete "
@@ -1441,11 +1499,14 @@ def _ensure_renderable_mermaid(chain, messages: list, content: str, mode: str) -
 
     logger.info("Mermaid invalid for mode=%s (%s) — attempting one repair pass", mode, error)
     repair = HumanMessage(content=(
-        f"The ```mermaid block in your previous reply is invalid ({error}) and will not render. "
-        "Return your COMPLETE previous response again, changing ONLY the mermaid code so it is valid: "
-        "start with `flowchart TD`; node ids are single alphanumeric tokens (A, B, step1) and never the "
-        "word `end`; put every label in double quotes; remove any ( ) [ ] { } \" ; | # & < > characters "
-        "from label text (reword instead); one statement per line; nothing but the diagram inside the fence. "
+        f"The ```mermaid block in your previous reply is not usable ({error}). "
+        "Return your COMPLETE previous response again, changing ONLY the mermaid code. Requirements:\n"
+        "- start with `flowchart TD`; node ids are single alphanumeric tokens (A, B, step1), never `end`\n"
+        "- put every label in double quotes; remove any ( ) [ ] { } \" ; | # & < > from label text\n"
+        "- one statement per line; nothing but the diagram inside the fence\n"
+        "- it must be ONE connected diagram: every node reachable from the starting node by "
+        "following arrows. No isolated pairs, no floating nodes. If you are comparing two things, "
+        "connect them to a shared start or end node.\n"
         "Keep every other section of the response identical."
     ))
     try:
@@ -1466,13 +1527,99 @@ def _ensure_renderable_mermaid(chain, messages: list, content: str, mode: str) -
     return repaired or content
 
 
+# Client-supplied conversation history is user-controllable — bound how much reaches the model.
+_MAX_HISTORY_TURNS = 10          # 5 exchanges
+_MAX_HISTORY_TURN_CHARS = 1500
+
+_MORE_INTENT_RE = re.compile(
+    r"\b(more|another|other|different|else|again|additional|such as|similar|"
+    r"next\s+(one|example)|keep going|one more|fresh)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_different_content(question: str | None) -> bool:
+    """True when the student is asking for another / a different example than before."""
+    return bool(question and _MORE_INTENT_RE.search(question))
+
+
+def _last_assistant_turn(req: TutorGenerateRequest) -> str:
+    for turn in reversed(req.conversationHistory or []):
+        if turn.role == "assistant" and turn.text.strip():
+            # History is client-supplied — sanitise before it feeds prompt text.
+            return _strip_injection_attempts(turn.text.strip())[:_MAX_HISTORY_TURN_CHARS]
+    return ""
+
+
+def _summarise_prior_answer(text: str) -> str:
+    """A short plain-text gist of a previous tutor answer, for 'don't repeat this' hints."""
+    body = strip_mermaid_block(text)
+    body = re.sub(r"(?is)^.*?\bEXPLANATION:\s*", "", body, count=1)
+    body = re.sub(r"\*\*[^*\n]+\*\*:?", " ", body)          # drop bold headers
+    body = re.sub(r"(?im)^\s*DIAGRAM:.*$", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return body[:240]
+
+
+_QUERY_REWRITE_SYSTEM = (
+    "Rewrite the student's latest message as ONE self-contained search query for a school "
+    "textbook retrieval system. Resolve pronouns and vague references using the conversation. "
+    "Keep it under 25 words. Output ONLY the query text — no quotes, no preamble. "
+    "Use POSITIVE keywords for what to find; never write 'not', 'avoid', or 'except'. "
+    "If the student wants another or a different example, choose different topic words / a "
+    "different sub-skill than the one already discussed rather than negating it."
+)
+
+
+def _rewrite_retrieval_query(req: TutorGenerateRequest) -> str | None:
+    """Turn a conversational follow-up into a standalone retrieval query.
+
+    'give me another example' embeds to almost nothing and pulls the same chunks as last
+    time. Rewriting it with the chat history ('addition word problem in Chapter 4, not the
+    fuel/lorry one') lets the vector search actually move. Fails soft to the raw question.
+    """
+    model = settings.ollama_query_rewrite_model.strip()
+    question = (req.question or "").strip()
+    history = req.conversationHistory or []
+    if not model or not question or not history:
+        return None
+
+    convo = "\n".join(
+        f"{'Tutor' if turn.role == 'assistant' else 'Student'}: "
+        f"{_strip_injection_attempts((turn.text or '').strip())[:350]}"
+        for turn in history[-4:]
+    )
+    user = (
+        f"Subject: {req.subject}\n"
+        f"Topic: {req.chapterTitle or req.topic}\n\n"
+        f"Conversation:\n{convo}\n\n"
+        f"Student's latest message: {question}\n\nSearch query:"
+    )
+    try:
+        chain = create_chain(mode="", temperature=0.0, model=model)
+        out = chain.invoke([SystemMessage(content=_QUERY_REWRITE_SYSTEM), HumanMessage(content=user)])
+    except Exception as exc:  # noqa: BLE001 - rewrite is best-effort
+        logger.warning("Query rewrite (%s) failed: %s", model, exc)
+        return None
+
+    out = _strip_injection_attempts(out or "").strip().strip('"').strip()
+    out = out.splitlines()[0].strip()[:200] if out else ""
+    return out or None
+
+
 def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     """Full RAG pipeline for student tutor requests.
 
     Owns: retrieval → sanitization → prompt building → LLM invocation → response shaping.
     The router endpoint delegates entirely to this function.
     """
-    chunks, citations = retrieve_relevant_chunks_with_citations(req)
+    retrieval_req = req
+    rewritten_query = _rewrite_retrieval_query(req)
+    if rewritten_query:
+        logger.info("Retrieval query rewritten: %r -> %r", req.question, rewritten_query)
+        retrieval_req = req.model_copy(update={"question": rewritten_query})
+
+    chunks, citations = retrieve_relevant_chunks_with_citations(retrieval_req)
     if not chunks:
         return {
             "mode": req.mode,
@@ -1526,33 +1673,41 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
             f"{diagram_plan}"
         )
 
-    # If prior assistant turns exist, extract question stems to avoid exact repetition.
-    prior_questions: list[str] = []
-    if req.conversationHistory:
-        for turn in req.conversationHistory:
-            if turn.role == "assistant":
-                # Grab the first line of each assistant response as a proxy for the question/title
-                first = turn.text.strip().splitlines()[0][:120] if turn.text.strip() else ""
-                if first:
-                    prior_questions.append(first)
-
     messages: list = [SystemMessage(content=system)]
-    if req.conversationHistory:
-        for turn in req.conversationHistory:
-            if turn.role == "assistant":
-                messages.append(AIMessage(content=turn.text))
-            else:
-                messages.append(HumanMessage(content=turn.text))
+    # Conversation history now arrives straight from the client, so a student could forge
+    # "assistant said X" turns — run every turn through the same injection stripper used on
+    # retrieved context, and cap length, before it reaches the model.
+    for turn in (req.conversationHistory or [])[-_MAX_HISTORY_TURNS:]:
+        turn_text = _strip_injection_attempts((turn.text or "").strip())[:_MAX_HISTORY_TURN_CHARS]
+        if not turn_text:
+            continue
+        if turn.role == "assistant":
+            messages.append(AIMessage(content=turn_text))
+        else:
+            messages.append(HumanMessage(content=turn_text))
 
-    # Anti-repetition: warn LLM when it has already generated content this session
-    if prior_questions and req.mode in {"quiz", "visual_quiz", "flashcards", "notes", "explain", "visual_explain"}:
-        diversity_note = (
-            f"IMPORTANT: You have already provided responses in this session (e.g. starting with: "
-            f"{'; '.join(prior_questions[-3:])}). "
-            "Generate COMPLETELY DIFFERENT content this time — new questions, new angles, new examples. "
-            "Do NOT repeat questions, vocabulary items, or explanations already given above."
-        )
-        user_prompt = f"{diversity_note}\n\n{user_prompt}"
+    # Anti-repetition: the model tends to reuse the same worked example on a follow-up because
+    # it sees similar retrieved material. Name what it already showed and forbid reusing it.
+    prior_answer = _last_assistant_turn(req)
+    if prior_answer and req.mode in {
+        "quiz", "visual_quiz", "flashcards", "notes", "explain", "visual_explain", "custom",
+    }:
+        already = _summarise_prior_answer(prior_answer)
+        if _wants_different_content(req.question):
+            user_prompt = (
+                "THE STUDENT WANTS A DIFFERENT EXAMPLE. You already showed them this:\n"
+                f'"{already}"\n'
+                "Do NOT reuse that scenario, those objects, or those numbers. Use a different "
+                "situation from the retrieved material, or build a fresh analogous example with "
+                "different objects and different numbers. Then:\n\n"
+                f"{user_prompt}"
+            )
+        elif already:
+            user_prompt = (
+                f'CONTINUITY — earlier in this chat you said: "{already}" '
+                "Build on it; do not repeat the same explanation or examples word for word.\n\n"
+                f"{user_prompt}"
+            )
 
     messages.append(HumanMessage(content=user_prompt))
 
