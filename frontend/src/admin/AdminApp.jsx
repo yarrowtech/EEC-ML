@@ -41,7 +41,7 @@ import { syncScopeFromProfile } from './utils/adminScope';
 import { apiFetch, AUTH_NOTICE } from '../utils/authSession';
 import toast from 'react-hot-toast';
 
-// ── Error Boundary ────────────────────────────────────────────────────────────
+// ── Error Boundaryy ────────────────────────────────────────────────────────────
 class AdminErrorBoundary extends Component {
   constructor(props) {
     super(props);
