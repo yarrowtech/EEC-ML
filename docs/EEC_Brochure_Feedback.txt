@@ -1,0 +1,82 @@
+
+============================================================
+ERRORS TO FIX (real problems)
+============================================================
+
+1. "software as a solution (SaaS)" — SaaS stands for Software as a
+   SERVICE, not "Software as a Solution." This is in the About Us
+   section on the front panel. Fix before this goes out — it's a
+   well-known acronym and getting it wrong reads as unpolished.
+
+2. "witb Ạctionable intelligence service" (bottom right, under
+   "Building Solutions For") — typo: "witb" should be "with", and
+   "Ạctionable" has a stray diacritic/rendering glitch and should be
+   "actionable." Proofread that whole sentence.
+
+3. "3 OF THE FEW KEY FEATURES" — awkward, redundant phrasing.
+   Suggest "3 OF OUR KEY FEATURES" or just "KEY FEATURES."
+
+4. Double space in the pricing blurb: "changes from time  to time."
+
+============================================================
+MISSING / UNDERREPRESENTED
+(given what's actually built in the product)
+============================================================
+
+- AI Tutor isn't named anywhere. This is the flagship, most-built
+  feature (RAG-grounded tutoring, quizzes, flashcards, mind maps,
+  Socratic homework help, visual/diagram explanations) — the
+  brochure only gestures at "AI engine" generically. Deserves its
+  own callout, not just a background badge.
+
+- No mention of the Mastery / Development Engine — the 6-category
+  holistic profile (cognitive, memory, creative, language,
+  social-emotional, physical) is a genuine differentiator and
+  matches your own stated mission ("not just academic learning").
+  "Pinpoint Knowledge Gaps" hints at it but undersells the
+  holistic-child framing.
+
+- Reading & Writing Assessment (language practice) — a real, built
+  feature (pronunciation/fluency scoring, writing feedback, CEFR
+  level) — not mentioned at all. Most competitors don't have this;
+  it's a strong selling point currently left out.
+
+- Data privacy / security isn't mentioned anywhere. Worth adding
+  given this handles children's data, and given you're already
+  working on DPDP/privacy compliance documentation elsewhere in
+  this project. A trust badge ("secure, compliant data handling")
+  could matter a lot to school decision-makers.
+
+- Attendance, Timetable, and Communications only appear as sidebar
+  labels inside the dashboard mockup screenshot — not called out
+  as feature bullets in the actual copy.
+
+============================================================
+THINGS TO DOUBLE-CHECK
+============================================================
+
+- "Total Students 1,060" / "Active Teachers 540" in the dashboard
+  mockup — confirm these are intentionally illustrative placeholder
+  numbers and not readable as real scale/customer-count claims.
+
+- Contact email "eecinfo@yarrowtech.co.in" differs from the sales
+  address on file (electroniceducaresales@yarrowtech.co.in). May be
+  intentional (different department) — just flagging the mismatch.
+
+- Address / phone number — verify current and correct.
+
+============================================================
+WHAT'S WORKING WELL
+============================================================
+
+- Clean visual hierarchy; the dashboard mockup makes "SaaS" tangible
+  instead of abstract.
+- "Solution Outline" (Identification -> Knowledge Gap -> Enquiry ->
+  Level of Difficulty -> Well-being) reads as a coherent methodology
+  and roughly tracks the actual gap-detection -> recommendation ->
+  wellbeing flow in the product.
+- Correctly does NOT claim gamification/badges — those are still
+  "not built" in the product, so good that the brochure doesn't
+  overclaim there.
+
+

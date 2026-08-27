@@ -6,6 +6,7 @@ import logging
 import math
 import re
 
+import httpx
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -13,11 +14,13 @@ from app.core.config import settings
 from app.core.llm import active_model_name, create_chain
 from app.modules.chat.schemas import TutorGenerateRequest
 from app.modules.chat.visuals import build_tutor_visuals, visual_prompt_context
+from app.modules.documents.service import render_source_pdf_page
 from app.modules.embeddings.service import embed_texts
 from app.modules.parser.cleaner import _strip_injection_attempts, _strip_teacher_notes
 from app.modules.retrieval.service import retrieve_from_qdrant
 from app.modules.stem.service import detect_discipline
 from app.modules.stem.verifier import verify_stem_question
+from app.modules.vision.client import _encode_image, _supports_thinking
 
 # Safety guardrail prepended to every student-facing tutor system prompt.
 _SAFETY_PREFIX = (
@@ -1267,6 +1270,82 @@ def build_prompt(
     return system, "\n\n".join(parts)
 
 
+def _live_visual_grounding(req: TutorGenerateRequest, citations: list[dict]) -> str | None:
+    """Re-read the actual cited page with llava:13b for this specific question.
+
+    The ingestion-time visual extraction is a generic, one-shot description of the whole
+    page, written without knowing what the student would eventually ask. Re-reading the
+    same page live — with the student's actual question — grounds the diagram/explanation
+    in detail relevant to that question instead of a stale generic summary. Runs only for
+    visual_explain, only when retrieval already surfaced a visual page for the answer, and
+    fails soft (returns None) so a vision-model hiccup never blocks the text-only fallback.
+    """
+    if req.mode != "visual_explain" or not settings.ollama_vision_enabled:
+        return None
+
+    target = next(
+        (
+            (citation["source_url"], page["page_number"])
+            for citation in citations
+            if citation.get("source_url")
+            for page in citation.get("visual_pages", [])
+        ),
+        None,
+    )
+    if not target:
+        return None
+    source_url, page_number = target
+
+    try:
+        image_bytes = render_source_pdf_page(source_url, page_number)
+        encoded_image = _encode_image(image_bytes)
+    except Exception as exc:
+        logger.warning("Live visual grounding: could not render page %s: %s", page_number, exc)
+        return None
+
+    question = (req.question or f"{req.topic} {req.subTopic or ''}").strip()
+    grade = req.gradeLevel or "school"
+    system_prompt = (
+        f"You are verifying an educational page for a {grade} student's question: \"{question}\". "
+        "Describe ONLY what is visibly on this page: objects, labels, arrows, formulas, and how they "
+        "relate to each other. Focus on the details relevant to the question above. Do not answer the "
+        "question directly and do not solve any exercise shown — just describe the visible evidence "
+        "precisely so a tutor can build a diagram from it. Keep it under 200 words."
+    )
+    payload = {
+        "model": settings.ollama_vision_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question or "Describe this page.", "images": [encoded_image]},
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_ctx": settings.ollama_vision_num_ctx,
+            "num_predict": 500,
+        },
+    }
+    if _supports_thinking(settings.ollama_vision_model):
+        payload["think"] = False
+
+    try:
+        response = httpx.post(
+            f"{settings.ollama_url.rstrip('/')}/api/chat",
+            json=payload,
+            timeout=settings.ollama_vision_timeout,
+        )
+        response.raise_for_status()
+        content = response.json()["message"]["content"].strip()
+    except (httpx.HTTPError, KeyError, TypeError) as exc:
+        logger.warning("Live visual grounding: vision model call failed: %s", exc)
+        return None
+
+    if not content:
+        return None
+    content = _strip_injection_attempts(content)
+    return f"LIVE VISION VERIFICATION — page {page_number} (read just now for this question):\n{content}"
+
+
 def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     """Full RAG pipeline for student tutor requests.
 
@@ -1305,6 +1384,10 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
 
     visuals = build_tutor_visuals(req, full_visual_context)
     citations = _citations_used_in_context(citations, context)
+
+    live_grounding = _live_visual_grounding(req, citations)
+    if live_grounding:
+        context = f"{context}\n\n{live_grounding}"
 
     verification_context = verify_stem_question(req.question) if req.mode != "homework_help" else None
     system, user_prompt = build_prompt(req, context, verification_context, visuals)
@@ -1396,7 +1479,7 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
 
     return {
         "mode": req.mode,
-        "model": active_model_name(),
+        "model": active_model_name(req.mode),
         "content": content,
         "groundedInMaterial": True,
         "noMaterialFound": False,

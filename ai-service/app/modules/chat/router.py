@@ -158,7 +158,7 @@ async def generate_learning_path(req: LearningPathRequest) -> dict:
     if not nodes:
         raise HTTPException(status_code=422, detail="LLM returned empty node list")
 
-    return {"nodes": nodes, "model": active_model_name()}
+    return {"nodes": nodes, "model": active_model_name("notes")}
 
 
 # ── Teacher AI ────────────────────────────────────────────────────────────────
@@ -201,10 +201,11 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
         f"{context_block}{question_block}"
     )
 
-    chain = create_chain(mode=req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain")
+    teacher_model_mode = req.mode if req.mode in _TEACHER_LONG_OUTPUT_MODES else "explain"
+    chain = create_chain(mode=teacher_model_mode)
     try:
         content = chain.invoke([SystemMessage(content=system), HumanMessage(content=user_prompt)])
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 
-    return {"mode": req.mode, "model": active_model_name(), "content": content}
+    return {"mode": req.mode, "model": active_model_name(teacher_model_mode), "content": content}

@@ -1,1 +1,40 @@
-Explain the requested concept through retrieved visual evidence. Guide the student through what to look at, what to notice, and how the visible relationship supports the concept. If no relevant visual page is available, say so and provide a concise material-grounded text explanation instead.
+Explain the student's specific question visually using retrieved material. You MUST return BOTH a Mermaid diagram AND a structured explanation.
+
+CRITICAL — READ THE STUDENT'S QUESTION FIRST:
+The diagram must directly answer what the student asked. If they ask about "real life examples", diagram real objects from the material (fan, clock, door). If they ask "how does X work", diagram the process. If they ask about a comparison, diagram the comparison. NEVER default to a generic concept diagram when the student asked a specific question.
+
+If a block labelled "LIVE VISION VERIFICATION" is present in the retrieved material, it is a fresh, verified read of the actual cited page taken specifically for this question — prefer it over any older/generic visual description of the same page when they conflict, and ground the diagram and explanation in its detail.
+
+Use EXACTLY this format — no deviations:
+
+DIAGRAM:
+```mermaid
+<valid Mermaid.js syntax tailored to the student's question:
+  flowchart TD for processes/cycles/how-it-works
+  graph LR for comparisons or side-by-side relationships
+  graph TD for hierarchies or classifications
+  sequenceDiagram for step-by-step sequences>
+Max 12 nodes. Labels 2-5 words. Arrow labels show relationships.
+Use only objects, labels, and values from the retrieved material.
+```
+
+EXPLANATION:
+<Use EXACTLY these headings, each in bold with a colon, each on its own line:
+
+**Overview:**
+One sentence answering the student's question directly. Reference the diagram.
+
+**How It Works:**
+3-5 numbered points walking through the diagram node by node. Simple, age-appropriate language.
+
+**Key Words:**
+3-5 terms from the material: Term — plain-English definition.
+
+**Why It Matters:**
+2-3 sentences connecting this to real life or to why students need to know this.
+
+**Quick Question:**
+One short question for the student to think about.
+Answer: <one-sentence answer>>
+
+If the retrieved material does not have enough information to build a diagram, write "DIAGRAM: none" and still provide the full EXPLANATION section.

@@ -42,10 +42,22 @@ MODE_TEMPERATURE: dict[str, float] = {
 }
 DEFAULT_TEMPERATURE = 0.7
 
+# Modes that need a stronger model than the default fast tutor model (llama3.2:3b) —
+# e.g. visual_explain requires reliable structured Mermaid-diagram synthesis, which the
+# 3b model produces unreliably. Reuses ollama_summary_model (qwen2.5:14b) already loaded
+# for lesson summaries, rather than introducing another model into the VRAM budget.
+MODE_MODEL_OVERRIDE: dict[str, str] = {
+    "visual_explain": settings.ollama_summary_model,
+}
 
-def active_model_name() -> str:
+
+def _model_for_mode(mode: str) -> str:
+    return MODE_MODEL_OVERRIDE.get(mode, settings.ollama_model)
+
+
+def active_model_name(mode: str = "") -> str:
     """Return the model identifier that _create_chain() will use."""
-    return settings.openrouter_model if settings.openrouter_api_key else settings.ollama_model
+    return settings.openrouter_model if settings.openrouter_api_key else _model_for_mode(mode)
 
 
 def create_chain(mode: str = "", temperature: float | None = None) -> Runnable:
@@ -53,7 +65,7 @@ def create_chain(mode: str = "", temperature: float | None = None) -> Runnable:
     Build a LangChain chain (LLM | StrOutputParser) for the given mode.
 
     OpenRouter is used when OPENROUTER_API_KEY is configured; otherwise
-    falls back to local Ollama.
+    falls back to local Ollama (with a per-mode model override where configured).
     """
     if temperature is None:
         temperature = MODE_TEMPERATURE.get(mode, DEFAULT_TEMPERATURE)
@@ -79,7 +91,7 @@ def create_chain(mode: str = "", temperature: float | None = None) -> Runnable:
         )
         llm = ChatOllama(
             base_url=settings.ollama_url,
-            model=settings.ollama_model,
+            model=_model_for_mode(mode),
             num_ctx=settings.ollama_num_ctx,
             num_predict=num_predict,
             temperature=temperature,
