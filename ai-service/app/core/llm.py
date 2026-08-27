@@ -42,12 +42,14 @@ MODE_TEMPERATURE: dict[str, float] = {
 }
 DEFAULT_TEMPERATURE = 0.7
 
-# Modes that need a stronger model than the default fast tutor model (llama3.2:3b) —
-# e.g. visual_explain requires reliable structured Mermaid-diagram synthesis, which the
-# 3b model produces unreliably. Reuses ollama_summary_model (qwen2.5:14b) already loaded
-# for lesson summaries, rather than introducing another model into the VRAM budget.
+# Modes whose output is structured diagram code (Mermaid) rather than prose. The default
+# tutor model produces broken Mermaid often enough that the diagram fails to render for the
+# student, so route these to a code-tuned model (see settings.ollama_diagram_model) which is
+# markedly more reliable at bracket/quote/keyword correctness. A server-side validate+repair
+# pass in chat/service.py is the second line of defence.
 MODE_MODEL_OVERRIDE: dict[str, str] = {
-    "visual_explain": settings.ollama_summary_model,
+    "visual_explain": settings.ollama_diagram_model,
+    "diagram": settings.ollama_diagram_model,
 }
 
 
@@ -60,12 +62,18 @@ def active_model_name(mode: str = "") -> str:
     return settings.openrouter_model if settings.openrouter_api_key else _model_for_mode(mode)
 
 
-def create_chain(mode: str = "", temperature: float | None = None) -> Runnable:
+def create_chain(
+    mode: str = "",
+    temperature: float | None = None,
+    model: str | None = None,
+) -> Runnable:
     """
     Build a LangChain chain (LLM | StrOutputParser) for the given mode.
 
     OpenRouter is used when OPENROUTER_API_KEY is configured; otherwise
     falls back to local Ollama (with a per-mode model override where configured).
+    An explicit ``model`` overrides both the mode default and the per-mode override
+    (Ollama only; ignored when OpenRouter is active).
     """
     if temperature is None:
         temperature = MODE_TEMPERATURE.get(mode, DEFAULT_TEMPERATURE)
@@ -91,7 +99,7 @@ def create_chain(mode: str = "", temperature: float | None = None) -> Runnable:
         )
         llm = ChatOllama(
             base_url=settings.ollama_url,
-            model=_model_for_mode(mode),
+            model=model or _model_for_mode(mode),
             num_ctx=settings.ollama_num_ctx,
             num_predict=num_predict,
             temperature=temperature,

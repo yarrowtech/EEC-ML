@@ -6,7 +6,42 @@
 
 import React from 'react';
 
+import MermaidBlock from './MermaidBlock';
+
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
+// Fenced block: ``` optionally followed by a language token and trailing spaces,
+// then a newline, then anything up to the next ```. Tolerant of ```mermaid,
+// ``` mermaid, ```Mermaid, and a bare ``` with no language.
+const FENCE_PATTERN = /```[ \t]*([a-zA-Z-]*)[ \t]*\r?\n([\s\S]*?)```/g;
+const MERMAID_HEADER = /^\s*(flowchart|graph|sequencediagram|classdiagram|statediagram|erdiagram|journey|gantt|pie|mindmap|timeline|quadrantchart|gitgraph|c4context|block-beta|xychart-beta)\b/i;
+
+/**
+ * Split a tutor message into ordered plain-text and fenced-code segments so a
+ * ```mermaid block anywhere in any answer renders as a diagram inline. A fenced
+ * block with no language but a Mermaid-looking first line is treated as a diagram.
+ */
+const splitFencedSegments = (text) => {
+  const source = String(text || '').replace(/\r\n/g, '\n');
+  const segments = [];
+  let cursor = 0;
+  let match;
+
+  FENCE_PATTERN.lastIndex = 0;
+  while ((match = FENCE_PATTERN.exec(source)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ type: 'text', content: source.slice(cursor, match.index) });
+    }
+    const lang = (match[1] || '').toLowerCase();
+    const content = match[2].replace(/\s+$/, '');
+    const isMermaid = lang === 'mermaid' || (!lang && MERMAID_HEADER.test(content));
+    segments.push({ type: isMermaid ? 'mermaid' : 'code', content });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < source.length) {
+    segments.push({ type: 'text', content: source.slice(cursor) });
+  }
+  return segments.filter((s) => s.type !== 'text' || s.content.trim());
+};
 
 export const renderInlineTutorText = (text, keyPrefix) => {
   const parts = String(text || '').split(URL_PATTERN);
@@ -49,7 +84,7 @@ export const renderInlineTutorText = (text, keyPrefix) => {
   });
 };
 
-export const TutorMessageContent = ({ text }) => {
+const TutorTextLines = ({ text }) => {
   const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
 
   return (
@@ -127,6 +162,35 @@ export const TutorMessageContent = ({ text }) => {
             {renderInlineTutorText(trimmed, `line-${index}`)}
           </div>
         );
+      })}
+    </div>
+  );
+};
+
+export const TutorMessageContent = ({ text }) => {
+  const segments = splitFencedSegments(text);
+
+  if (!segments.some((s) => s.type !== 'text')) {
+    return <TutorTextLines text={text} />;
+  }
+
+  return (
+    <div className="min-w-0 max-w-full space-y-2">
+      {segments.map((segment, index) => {
+        if (segment.type === 'mermaid') {
+          return <MermaidBlock key={`mermaid-${index}`} code={segment.content} />;
+        }
+        if (segment.type === 'code') {
+          return (
+            <pre
+              key={`code-${index}`}
+              className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-700"
+            >
+              {segment.content}
+            </pre>
+          );
+        }
+        return <TutorTextLines key={`text-${index}`} text={segment.content} />;
       })}
     </div>
   );

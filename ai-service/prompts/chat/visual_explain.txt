@@ -1,21 +1,48 @@
 Explain the student's specific question visually using retrieved material. You MUST return BOTH a Mermaid diagram AND a structured explanation.
 
 CRITICAL — READ THE STUDENT'S QUESTION FIRST:
-The diagram must directly answer what the student asked. If they ask about "real life examples", diagram real objects from the material (fan, clock, door). If they ask "how does X work", diagram the process. If they ask about a comparison, diagram the comparison. NEVER default to a generic concept diagram when the student asked a specific question.
+The diagram must directly answer what the student asked. If they ask about "real life examples", diagram real objects from the material. If they ask "how does X work", diagram the process. If they ask about a comparison, diagram the comparison. NEVER default to a generic concept diagram when the student asked a specific question.
 
-If a block labelled "LIVE VISION VERIFICATION" is present in the retrieved material, it is a fresh, verified read of the actual cited page taken specifically for this question — prefer it over any older/generic visual description of the same page when they conflict, and ground the diagram and explanation in its detail.
+If a block labelled "DIAGRAM PLAN" is present below, a diagram architect has already designed the diagram from the material — build the ```mermaid block to match its structure, node set, groupings, and relationships. You may shorten label wording, but do not drop nodes or connections.
+
+If a block labelled "LIVE VISION VERIFICATION" is present, it is a fresh, verified read of the actual cited page — prefer it over older/generic descriptions and ground the diagram in its detail.
 
 Use EXACTLY this format — no deviations:
 
 DIAGRAM:
 ```mermaid
-<valid Mermaid.js syntax tailored to the student's question:
-  flowchart TD for processes/cycles/how-it-works
-  graph LR for comparisons or side-by-side relationships
-  graph TD for hierarchies or classifications
-  sequenceDiagram for step-by-step sequences>
-Max 12 nodes. Labels 2-5 words. Arrow labels show relationships.
-Use only objects, labels, and values from the retrieved material.
+<valid Mermaid.js — pick the form that fits the content:
+  flowchart TD / flowchart LR ...... processes, cycles, how-it-works, cause→effect
+  flowchart LR with two subgraphs .. side-by-side comparisons
+  classDiagram ..................... structures, "parts of", properties of a thing
+  mindmap .......................... open concept maps radiating from one central idea
+  stateDiagram-v2 .................. changes of state or phase (solid→liquid, stages)
+  timeline ......................... ordered events / historical sequence
+Group related nodes with `subgraph "Group name"` ... `end`.
+Label every arrow with the relationship it represents (-->|"releases"| ).
+8–18 nodes (follow the DIAGRAM PLAN's count). Node labels 2–6 words.
+Use only objects, labels, and numeric values from the retrieved material.>
+```
+
+MERMAID SYNTAX RULES — a broken diagram shows the student nothing, follow exactly:
+- First line is the diagram declaration only: `flowchart TD` (or `flowchart LR` / `classDiagram` / `mindmap` / `stateDiagram-v2` / `timeline`).
+- Node ids are single short alphanumeric tokens, no spaces (A, B, step1); never use `end` as an id.
+- Put ALL flowchart label text inside double quotes: A["Water evaporates"].
+- Never put ( ) [ ] { } " ; | # & < > or line breaks inside label text — reword instead.
+- One statement per line; nothing inside the fence but the diagram (no comments, no prose, no blank lines).
+- subgraph blocks must be closed with `end`.
+
+EXAMPLE (process with grouping):
+```mermaid
+flowchart TD
+subgraph LIGHT["Light reactions"]
+A["Sunlight hits chlorophyll"] -->|"excites"| B["Electrons released"]
+B --> C["ATP and NADPH made"]
+end
+subgraph DARK["Calvin cycle"]
+C -->|"powers"| D["CO2 fixed into sugar"]
+D --> E["Glucose formed"]
+end
 ```
 
 EXPLANATION:
@@ -25,13 +52,13 @@ EXPLANATION:
 One sentence answering the student's question directly. Reference the diagram.
 
 **How It Works:**
-3-5 numbered points walking through the diagram node by node. Simple, age-appropriate language.
+Numbered points walking through the diagram group by group, node by node. Match the depth requested — a "deep" request gets 6–10 points with the reasoning behind each step; a "simple" request gets 3–4. Simple, age-appropriate language.
 
 **Key Words:**
-3-5 terms from the material: Term — plain-English definition.
+4–6 terms from the material: Term — plain-English definition.
 
 **Why It Matters:**
-2-3 sentences connecting this to real life or to why students need to know this.
+2–3 sentences connecting this to real life or to why students need to know this.
 
 **Quick Question:**
 One short question for the student to think about.

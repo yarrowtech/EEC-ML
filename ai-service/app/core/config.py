@@ -9,7 +9,15 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
     ollama_summary_model: str = "qwen2.5:14b"
     ollama_clean_model: str = "llama3.2:3b"  # lightweight model for ingestion-time cleaning
-    ollama_vision_model: str = "llava:13b"  # multimodal — understands images in teacher PDFs. Requires ~12GB VRAM (RTX 5080 16GB recommended). Fallback: llava:7b (8GB VRAM) or moondream (CPU-only)
+    # Structured Mermaid/diagram synthesis (visual_explain, diagram modes). Mermaid is code —
+    # a code-tuned model produces far fewer un-renderable syntax errors than the general tutor
+    # model. Stronger options: "qwen2.5-coder:14b" or "qwen2.5:14b" (slower, more VRAM).
+    ollama_diagram_model: str = "qwen2.5-coder:7b"
+    # Two-pass visual_explain: this reasoning model first designs the diagram (what nodes,
+    # relationships, groupings, depth) from the material, then ollama_diagram_model renders it
+    # to valid Mermaid. Set to "" to disable and generate in a single pass.
+    ollama_diagram_planner_model: str = "gemma4:12b"
+    ollama_vision_model: str = "qwen2.5vl:7b"  # multimodal — reads labels/formulas/layout in teacher PDFs far better than llava. ~7GB VRAM. Fallbacks: "llava:13b", "llava:7b", "moondream" (CPU)
     ollama_vision_num_ctx: int = 32768         # 16GB VRAM can handle larger context
     ollama_vision_timeout: int = 180
     ollama_vision_enabled: bool = True

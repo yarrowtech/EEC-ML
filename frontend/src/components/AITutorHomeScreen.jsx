@@ -2412,9 +2412,13 @@ function HingeQuestionUI({ text }) {
 
 function parseVisualExplain(raw) {
   const text = raw || '';
-  const diagramMatch = text.match(/DIAGRAM:\s*\n```mermaid\n([\s\S]*?)```/i);
-  const noneMatch    = /DIAGRAM:\s*none/i.test(text);
-  const explainMatch = text.match(/EXPLANATION:\s*\n([\s\S]*?)(?:$)/i);
+  // Tolerate ```mermaid / ``` mermaid / bare ``` after "DIAGRAM:", and fall back to
+  // the first fenced block anywhere in the response.
+  const diagramMatch =
+    text.match(/DIAGRAM:\s*```[ \t]*[a-zA-Z-]*[ \t]*\r?\n([\s\S]*?)```/i) ||
+    text.match(/```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/i);
+  const noneMatch    = /DIAGRAM:\s*none/i.test(text) && !diagramMatch;
+  const explainMatch = text.match(/EXPLANATION:\s*\r?\n?([\s\S]*)$/i);
 
   return {
     mermaidCode: diagramMatch ? diagramMatch[1].trim() : null,
@@ -2426,18 +2430,23 @@ function parseVisualExplain(raw) {
 function VisualExplainUI({ text }) {
   const { mermaidCode, noDiagram, explanation } = useMemo(() => parseVisualExplain(text), [text]);
   const [svgContent, setSvgContent] = useState('');
-  const [diagramError, setDiagramError] = useState('');
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!mermaidCode || noDiagram) return;
+    setSvgContent('');
+    setFailed(false);
     ensureMermaid();
     const id = `ve-mermaid-${Date.now()}`;
     mermaid.render(id, mermaidCode)
-      .then(({ svg }) => { setSvgContent(svg); setDiagramError(''); })
-      .catch(() => setDiagramError('Diagram could not be rendered — showing explanation only.'));
+      .then(({ svg }) => { setSvgContent(svg); setFailed(false); })
+      .catch((err) => {
+        console.warn('[VisualExplainUI] mermaid render failed:', err?.message || err, '\n---\n', mermaidCode);
+        setFailed(true);
+      });
   }, [mermaidCode, noDiagram]);
 
-  if (noDiagram || (!mermaidCode && !svgContent)) {
+  if (noDiagram || failed || (!mermaidCode && !svgContent)) {
     return <ExplainUI text={explanation || text} />;
   }
 
@@ -2456,9 +2465,7 @@ function VisualExplainUI({ text }) {
           <span className="text-xs font-bold text-white tracking-wide uppercase">Visual Diagram</span>
         </div>
         <div className="p-4 min-h-[160px] flex items-center justify-center overflow-x-auto">
-          {diagramError ? (
-            <p className="text-sm text-red-400 font-medium text-center">{diagramError}</p>
-          ) : svgContent ? (
+          {svgContent ? (
             <div className="w-full" dangerouslySetInnerHTML={{ __html: svgContent }} />
           ) : (
             <div className="flex items-center gap-2 text-violet-400 text-sm">
@@ -2771,7 +2778,20 @@ const DEFAULT_FOLLOW_UPS = [
   { label: 'Give an example', text: 'Give me an example', chip: 'Give Example' },
   { label: 'Quiz me on this', text: 'Quiz me on this', chip: 'Create Quiz' },
 ];
-const followUpsFor = (mode) => FOLLOW_UP_SETS[mode] || DEFAULT_FOLLOW_UPS;
+// Always offer a way to turn any answer into a diagram — visuals should not be
+// locked behind picking the "Visual Explain" chip up front.
+const VISUAL_EXAMPLE_FOLLOW_UP = {
+  label: 'Give a visual example',
+  text: 'Show this as a labelled diagram with a real-life example from the material',
+  chip: 'Visual Explain',
+};
+const VISUAL_MODES = new Set(['visual_explain', 'visual_quiz', 'diagram']);
+
+const followUpsFor = (mode) => {
+  const base = FOLLOW_UP_SETS[mode] || DEFAULT_FOLLOW_UPS;
+  if (VISUAL_MODES.has(mode)) return base;
+  return [...base, VISUAL_EXAMPLE_FOLLOW_UP];
+};
 
 const SMART_INSIGHTS = [
   { label: 'Strongest Subject', value: 'English', detail: '91% mastery', icon: Trophy, color: 'text-emerald-600 bg-emerald-100', trend: [30, 48, 44, 64, 72, 88] },

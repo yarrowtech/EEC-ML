@@ -12,6 +12,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.core.config import settings
 from app.core.llm import active_model_name, create_chain
+from app.modules.chat.mermaid import (
+    extract_mermaid_block,
+    replace_diagram_with_none,
+    strip_mermaid_block,
+    validate_mermaid,
+)
 from app.modules.chat.schemas import TutorGenerateRequest
 from app.modules.chat.visuals import build_tutor_visuals, visual_prompt_context
 from app.modules.documents.service import render_source_pdf_page
@@ -393,12 +399,19 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "```mermaid\n"
         "<valid Mermaid.js syntax tailored to the student's question:\n"
         "  flowchart TD for processes/cycles/how-it-works\n"
-        "  graph LR for comparisons or side-by-side relationships\n"
-        "  graph TD for hierarchies or classifications\n"
+        "  flowchart LR for comparisons or side-by-side relationships\n"
+        "  flowchart TD for hierarchies or classifications\n"
         "  sequenceDiagram for step-by-step sequences>\n"
         "Max 12 nodes. Labels 2–5 words. Arrow labels show relationships.\n"
         "Use only objects, labels, and values from the retrieved material.\n"
         "```\n\n"
+        "MERMAID SYNTAX RULES — a broken diagram shows the student nothing, follow exactly:\n"
+        "- First line is the diagram declaration only: `flowchart TD` (or `flowchart LR` / `sequenceDiagram`).\n"
+        "- Node ids are single short alphanumeric tokens, no spaces (A, B, step1); never use `end` as an id.\n"
+        "- Put ALL label text inside double quotes: A[\"Water evaporates\"].\n"
+        "- Never put ( ) [ ] { } \" ; | # & < > or line breaks inside label text — reword instead.\n"
+        "- One statement per line; one arrow per line (A --> B or A -->|\"label\"| B).\n"
+        "- Nothing inside the fence but the diagram — no comments, markdown, prose, or blank lines.\n\n"
         "EXPLANATION:\n"
         "<Use EXACTLY these headings, each in bold with a colon, each on its own line:\n\n"
         "**Overview:**\n"
@@ -511,7 +524,11 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "3. Use ONLY concepts visible in the retrieved material — never invent nodes.\n"
         "4. Keep node labels short (2-5 words). Use arrow labels to show relationships.\n"
         "5. Maximum 12 nodes — keep it readable for a school student.\n"
-        "6. Ensure syntax is valid Mermaid.js — no special characters in node IDs."
+        "6. Mermaid syntax must be valid or the diagram will not render:\n"
+        "   - Node ids are single short alphanumeric tokens, no spaces (A, B, step1); never use `end` as an id.\n"
+        "   - Put ALL label text inside double quotes: A[\"Water evaporates\"].\n"
+        "   - Never put ( ) [ ] { } \" ; | # & < > or line breaks inside label text — reword instead.\n"
+        "   - One statement per line; nothing inside the fence but the diagram."
     ),
     "practice_basic": (
         "You are generating FOUNDATION-level practice for a student who is still learning this topic.\n"
@@ -1346,6 +1363,109 @@ def _live_visual_grounding(req: TutorGenerateRequest, citations: list[dict]) -> 
     return f"LIVE VISION VERIFICATION — page {page_number} (read just now for this question):\n{content}"
 
 
+_DIAGRAM_PLANNER_SYSTEM = (
+    "You are a diagram architect for a school tutor. Given retrieved course material and a "
+    "student's question, design ONE diagram that answers that question in depth.\n\n"
+    "Decide and state explicitly:\n"
+    "1. FORM — the best structure: process flow, cycle, hierarchy/classification, comparison, "
+    "parts-of-a-whole, cause-and-effect, state changes, or timeline.\n"
+    "2. NODES — list every node. Use the exact terms, labels, and numeric values from the "
+    "material. No node that is not supported by the material.\n"
+    "3. CONNECTIONS — every arrow: from which node to which, and the label that names the "
+    "relationship (\"releases\", \"becomes\", \"is part of\", \"causes\"…).\n"
+    "4. GROUPS — which nodes belong together in a labelled group/box.\n"
+    "5. DETAIL — for a 'deep' request aim for 12-18 nodes; for 'simple' aim for 5-8.\n\n"
+    "Output a numbered plan in plain English — NOT Mermaid code, no code fences. Be concrete "
+    "and thorough. If the material genuinely lacks the content for a diagram, reply with "
+    "exactly: NO DIAGRAM."
+)
+
+
+def _plan_visual_diagram(req: TutorGenerateRequest, context: str) -> str | None:
+    """Pass 1 of two-pass visual_explain: a reasoning model designs the diagram in prose.
+
+    Separating "what the diagram should show" (needs reasoning over the material) from
+    "emit valid Mermaid" (needs a code model) produces deeper, more accurate diagrams than
+    a single small-model call. Disabled when ollama_diagram_planner_model is "".
+    """
+    planner_model = settings.ollama_diagram_planner_model.strip()
+    if not planner_model:
+        return None
+
+    depth = (req.responseDepth or "detailed").lower()
+    question = (req.question or f"{req.topic} {req.subTopic or ''}").strip()
+    grade = req.gradeLevel or "school"
+    user = (
+        f"Grade: {grade}\n"
+        f"Subject: {req.subject}\n"
+        f"Depth requested: {depth}\n"
+        f"Student's question: {question}\n\n"
+        f"Retrieved material:\n{context[:6000]}"
+    )
+    try:
+        chain = create_chain(mode="", temperature=0.3, model=planner_model)
+        plan = chain.invoke(
+            [SystemMessage(content=_DIAGRAM_PLANNER_SYSTEM), HumanMessage(content=user)]
+        )
+    except Exception as exc:  # noqa: BLE001 - planning is best-effort; fall back to single pass
+        logger.warning("Diagram planner (%s) failed: %s", planner_model, exc)
+        return None
+
+    plan = _strip_injection_attempts(plan or "").strip()
+    if not plan or "NO DIAGRAM" in plan.upper()[:60]:
+        return None
+    return plan
+
+
+_MERMAID_MODES = {"visual_explain", "diagram", "custom"}
+
+
+def _ensure_renderable_mermaid(chain, messages: list, content: str, mode: str) -> str:
+    """Validate the generated Mermaid block; run one repair pass, then degrade gracefully.
+
+    Small models emit un-renderable Mermaid often enough that shipping it unchecked means a
+    blank diagram for the student. Order of preference: keep valid output → repair invalid
+    output with one targeted follow-up → for visual_explain, fall back to ``DIAGRAM: none``
+    (explanation-only) rather than a broken diagram.
+    """
+    if mode not in _MERMAID_MODES:
+        return content
+
+    code = extract_mermaid_block(content)
+    if code is None:
+        return content  # visual_explain may legitimately answer "DIAGRAM: none"
+
+    error = validate_mermaid(code)
+    if not error:
+        return content
+
+    logger.info("Mermaid invalid for mode=%s (%s) — attempting one repair pass", mode, error)
+    repair = HumanMessage(content=(
+        f"The ```mermaid block in your previous reply is invalid ({error}) and will not render. "
+        "Return your COMPLETE previous response again, changing ONLY the mermaid code so it is valid: "
+        "start with `flowchart TD`; node ids are single alphanumeric tokens (A, B, step1) and never the "
+        "word `end`; put every label in double quotes; remove any ( ) [ ] { } \" ; | # & < > characters "
+        "from label text (reword instead); one statement per line; nothing but the diagram inside the fence. "
+        "Keep every other section of the response identical."
+    ))
+    try:
+        repaired = chain.invoke(messages + [AIMessage(content=content), repair])
+    except Exception as exc:  # noqa: BLE001 - repair is best-effort
+        logger.warning("Mermaid repair call failed: %s", exc)
+        repaired = ""
+
+    repaired_code = extract_mermaid_block(repaired) if repaired else None
+    if repaired_code and not validate_mermaid(repaired_code):
+        return repaired
+
+    logger.warning("Mermaid still invalid after repair for mode=%s — degrading", mode)
+    if mode == "visual_explain":
+        return replace_diagram_with_none(repaired or content)
+    if mode == "custom":
+        return strip_mermaid_block(repaired or content)
+    return repaired or content
+
+
 def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     """Full RAG pipeline for student tutor requests.
 
@@ -1392,6 +1512,19 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
     verification_context = verify_stem_question(req.question) if req.mode != "homework_help" else None
     system, user_prompt = build_prompt(req, context, verification_context, visuals)
     system = _SAFETY_PREFIX + system
+
+    # Two-pass visual_explain: a reasoning model designs the diagram from the material first,
+    # then the (code-tuned) generation model renders it to valid Mermaid. Deeper, more
+    # accurate structure than asking one small model to reason and emit syntax at once.
+    diagram_plan = _plan_visual_diagram(req, context) if req.mode == "visual_explain" else None
+    if diagram_plan:
+        user_prompt = (
+            f"{user_prompt}\n\n"
+            "DIAGRAM PLAN — a diagram architect designed this from the material. Build the "
+            "```mermaid block to match it: keep its structure, groupings, node set, and "
+            "relationships; you may shorten label wording for readability.\n"
+            f"{diagram_plan}"
+        )
 
     # If prior assistant turns exist, extract question stems to avoid exact repetition.
     prior_questions: list[str] = []
@@ -1474,6 +1607,8 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
             ))])
             # Use the LLM revision even if minor issues remain — static fallbacks cause identical
             # output on every request which is worse than a slightly imperfect but varied response.
+
+        content = _ensure_renderable_mermaid(chain, messages, content, req.mode)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
 

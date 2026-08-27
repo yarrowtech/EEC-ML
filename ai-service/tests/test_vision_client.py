@@ -50,10 +50,11 @@ def test_extract_visual_content_sends_one_image_and_schema():
     assert url == f"{settings.ollama_url}/api/chat"
     payload = request["json"]
     assert payload["model"] == settings.ollama_vision_model
-    assert payload["think"] is False
+    # "think" is only sent for models that support thinking mode; vision models do not.
+    assert "think" not in payload
     assert payload["stream"] is False
     assert payload["options"]["temperature"] == 0
-    assert payload["options"]["num_ctx"] == 16384
+    assert payload["options"]["num_ctx"] == settings.ollama_vision_num_ctx
     assert payload["format"]["required"] == [
         "visible_text",
         "formulas",

@@ -92,7 +92,9 @@ def test_generated_visual_prompt_tells_model_diagram_is_on_screen(make_request):
     assert "Quarter turn = 90° = Right angle" in user
 
 
-def test_visual_explain_depth_and_goal_customize_structure(make_request):
+def test_visual_explain_uses_structured_diagram_format(make_request):
+    # visual_explain has its own DIAGRAM + EXPLANATION structure; the old Look-Notice-Connect
+    # depth/goal instructions are intentionally NOT appended (they conflict with the format).
     _, user = service.build_prompt(
         make_request(
             mode="visual_explain",
@@ -101,11 +103,13 @@ def test_visual_explain_depth_and_goal_customize_structure(make_request):
         ),
         "A visual concept from the material.",
     )
-    assert "three progressively harder" in user
-    assert "comparison table" in user
-    assert "exam-ready recap" in user
-    assert "unsolved self-check" in user
-    assert "do not invent extension calculations" in user
+    assert "DIAGRAM:" in user
+    assert "```mermaid" in user
+    assert "MERMAID SYNTAX RULES" in user
+    assert "**Overview:**" in user
+    # old depth/goal wording must not leak back in
+    assert "three progressively harder" not in user
+    assert "exam-ready recap" not in user
 
 
 def test_text_only_prompt_does_not_claim_visual_evidence(make_request):
