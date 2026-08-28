@@ -28,7 +28,7 @@ describe('NotificationPopover', () => {
       />
     );
 
-    expect(screen.getByTestId('notification-popover')).toHaveClass('backdrop-blur-2xl');
+    expect(screen.getByTestId('notification-popover')).toHaveClass('bg-white');
     expect(screen.getByText('The Class 5 exam schedule is now available.')).toBeInTheDocument();
     expect(screen.getByText('1 Aug')).toBeInTheDocument();
 

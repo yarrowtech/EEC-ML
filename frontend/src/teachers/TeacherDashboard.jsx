@@ -29,6 +29,7 @@ import {
 
 const MotionSection = framerMotion.section;
 const MotionDiv = framerMotion.div;
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const getAcademicYearId = (item = {}) =>
   String(item?.classId?.academicYearId?._id || item?.classId?.academicYearId || '').trim();
@@ -47,6 +48,9 @@ const formatDate = (value, options = { month: 'short', day: 'numeric' }) => {
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleDateString('en-US', options);
 };
+
+const deadlineKey = (task) =>
+  String(task?.id || `${task?.title || ''}|${task?.class || ''}|${task?.dueDate || ''}`);
 
 const daysUntil = (value) => {
   if (!value) return 'No due date';
@@ -147,6 +151,35 @@ const TeacherDashboard = () => {
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [activeTimeframe, setActiveTimeframe] = useState('weekly');
+  const [clearedDeadlines, setClearedDeadlines] = useState(() => new Set());
+  const [completingDeadlineId, setCompletingDeadlineId] = useState('');
+  const [deadlineError, setDeadlineError] = useState('');
+
+  const clearDeadline = async (task) => {
+    const taskId = deadlineKey(task);
+    if (!task?.id || completingDeadlineId) return;
+    setDeadlineError('');
+    setCompletingDeadlineId(taskId);
+    setClearedDeadlines((previous) => new Set(previous).add(taskId));
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/teacher/dashboard/deadlines/${task.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'Unable to complete deadline task');
+    } catch (err) {
+      setClearedDeadlines((previous) => {
+        const next = new Set(previous);
+        next.delete(taskId);
+        return next;
+      });
+      setDeadlineError(err.message || 'Unable to complete deadline task');
+    } finally {
+      setCompletingDeadlineId('');
+    }
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentDateTime(new Date()), 1000);
@@ -164,9 +197,9 @@ const TeacherDashboard = () => {
           authorization: `Bearer ${token}`,
         };
         const [dashboardRes, allocationRes, activeYearRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL}/api/teacher/dashboard`, { headers }),
-          fetch(`${import.meta.env.VITE_API_URL}/api/teacher/dashboard/allocations`, { headers }),
-          fetch(`${import.meta.env.VITE_API_URL}/api/academic/active-year`, { headers }).catch(() => null),
+          fetch(`${API_BASE}/api/teacher/dashboard`, { headers }),
+          fetch(`${API_BASE}/api/teacher/dashboard/allocations`, { headers }),
+          fetch(`${API_BASE}/api/academic/active-year`, { headers }).catch(() => null),
         ]);
 
         const dashboardPayload = await dashboardRes.json().catch(() => ({}));
@@ -250,8 +283,10 @@ const TeacherDashboard = () => {
     time: timeAgo(activity.time),
   }));
 
+  const visibleDeadlines = upcomingDeadlines.filter((task) => !clearedDeadlines.has(deadlineKey(task)));
+
   const nextClass = dashboardData?.nextClass || null;
-  const pendingTasks = Number(stats.pendingEvaluations ?? upcomingDeadlines.length ?? 0);
+  const pendingTasks = Number(stats.pendingEvaluations ?? visibleDeadlines.length ?? 0);
 
   const insightCards = [
     {
@@ -458,9 +493,10 @@ const TeacherDashboard = () => {
                   </CardShell>
 
                   <CardShell>
-                    <SectionHeader icon={CheckCircle2} title="Priority Task Board" subtitle="Deadlines without report-page overload." action={<Badge tone="amber">{upcomingDeadlines.length} pending</Badge>} />
+                    <SectionHeader icon={CheckCircle2} title="Priority Task Board" subtitle="Deadlines without report-page overload." action={<Badge tone="amber">{visibleDeadlines.length} pending</Badge>} />
                     <div className="max-h-[440px] space-y-3 overflow-y-auto p-5">
-                      {upcomingDeadlines.length === 0 ? <EmptyState icon={CheckCircle2} title="All caught up" description="No upcoming deadlines are waiting for action." /> : upcomingDeadlines.map((task, index) => <DeadlineTask key={`${task.title}-${index}`} task={task} index={index} />)}
+                      {deadlineError && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
+                      {visibleDeadlines.length === 0 ? <EmptyState icon={CheckCircle2} title="All caught up" description="No upcoming deadlines are waiting for action." /> : visibleDeadlines.map((task, index) => <DeadlineTask key={deadlineKey(task)} task={task} index={index} onComplete={() => clearDeadline(task)} completing={completingDeadlineId === deadlineKey(task)} />)}
                     </div>
                   </CardShell>
                 </div>
@@ -547,7 +583,7 @@ const ActivityItem = ({ activity, index, total }) => (
   </div>
 );
 
-const DeadlineTask = ({ task, index }) => (
+const DeadlineTask = ({ task, index, onComplete, completing = false }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:bg-slate-50">
     <div className="mb-3 flex items-center justify-between gap-2">
       <Badge tone={index === 0 ? 'rose' : 'amber'}>{daysUntil(task.dueDate)}</Badge>
@@ -556,7 +592,14 @@ const DeadlineTask = ({ task, index }) => (
     <h3 className="font-semibold text-slate-950">{task.title}</h3>
     <p className="mt-1 text-sm text-slate-500">{task.class || '-'}{task.subject ? ` • ${task.subject}` : ''}</p>
     <div className="mt-4 flex gap-2">
-      <button type="button" className="h-8 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:border-slate-300">Mark complete</button>
+      <button
+        type="button"
+        onClick={onComplete}
+        disabled={completing}
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+      >
+        <CheckCircle2 size={14} /> {completing ? 'Completing…' : 'Mark complete'}
+      </button>
       <Link to="/teacher/classes/current/assignments" className="inline-flex h-8 items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white">Open task</Link>
     </div>
   </div>

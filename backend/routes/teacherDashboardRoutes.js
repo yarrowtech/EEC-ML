@@ -8,6 +8,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
+const ParentUser = require('../models/ParentUser');
+const ExamResult = require('../models/ExamResult');
 const StudentProgress = require('../models/StudentProgress');
 const Assignment = require('../models/Assignment');
 const Timetable = require('../models/Timetable');
@@ -23,6 +25,8 @@ const TeacherAllocation = require('../models/TeacherAllocation');
 const TeacherFeedback = require('../models/TeacherFeedback');
 const SupportRequest = require('../models/SupportRequest');
 const Notification = require('../models/Notification');
+const ParentMeeting = require('../models/ParentMeeting');
+const TeacherTaskAcknowledgement = require('../models/TeacherTaskAcknowledgement');
 
 const router = express.Router();
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -260,7 +264,7 @@ const toObjectIdVariants = (value) => {
   return variants;
 };
 
-const formatTeacherComplaint = (doc) => ({
+const formatTeacherComplaint = (doc, guardianName) => ({
   id: doc._id,
   ticketNumber: doc.ticketNumber,
   title: doc.subject || 'Complaint',
@@ -268,7 +272,9 @@ const formatTeacherComplaint = (doc) => ({
   status: doc.status || 'open',
   priority: doc.priority || 'low',
   category: doc.category || 'General',
-  parentName: doc.requestDetails?.parentName || 'Parent',
+  // Prefer the current guardian/parent name (resolved live) over the name that was
+  // frozen into requestDetails at submit time, so corrections show through.
+  parentName: guardianName || doc.requestDetails?.parentName || 'Parent',
   studentName: doc.requestDetails?.studentName || '',
   studentGrade: doc.requestDetails?.studentGrade || '',
   studentSection: doc.requestDetails?.studentSection || '',
@@ -276,6 +282,44 @@ const formatTeacherComplaint = (doc) => ({
   createdAt: doc.createdAt,
   updatedAt: doc.updatedAt,
 });
+
+// Resolve the live guardian name for a set of complaints. Prefers the student's
+// father/guardian/mother name; falls back to the current ParentUser name.
+const resolveComplaintGuardianNames = async (complaints, schoolId) => {
+  const studentIds = new Set();
+  const parentIds = new Set();
+  complaints.forEach((doc) => {
+    const sid = doc.requestDetails?.studentId;
+    const pid = doc.requestDetails?.parentId;
+    if (sid && mongoose.isValidObjectId(sid)) studentIds.add(String(sid));
+    if (pid && mongoose.isValidObjectId(pid)) parentIds.add(String(pid));
+  });
+
+  const [students, parents] = await Promise.all([
+    studentIds.size
+      ? StudentUser.find({ _id: { $in: [...studentIds] }, schoolId })
+        .select('fatherName guardianName motherName').lean()
+      : [],
+    parentIds.size
+      ? ParentUser.find({ _id: { $in: [...parentIds] }, schoolId }).select('name').lean()
+      : [],
+  ]);
+
+  const studentMap = new Map(students.map((s) => [String(s._id), s]));
+  const parentMap = new Map(parents.map((p) => [String(p._id), p]));
+
+  const byComplaint = new Map();
+  complaints.forEach((doc) => {
+    const student = studentMap.get(String(doc.requestDetails?.studentId || ''));
+    const parent = parentMap.get(String(doc.requestDetails?.parentId || ''));
+    const name =
+      (student && (student.fatherName || student.guardianName || student.motherName)) ||
+      (parent && parent.name) ||
+      '';
+    byComplaint.set(String(doc._id), String(name || '').trim());
+  });
+  return byComplaint;
+};
 
 router.get('/', authTeacher, async (req, res) => {
   // #swagger.tags = ['Teacher Dashboard']
@@ -360,7 +404,7 @@ router.get('/', authTeacher, async (req, res) => {
     const studentMap = new Map(scopedStudents.map((s) => [String(s._id), s]));
 
     submissionItems.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    const recentActivities = submissionItems.slice(0, 5).map((item, idx) => {
+    const submissionActivities = submissionItems.slice(0, 6).map((item, idx) => {
       const assignment = assignmentMap.get(String(item.assignmentId));
       const student = studentMap.get(String(item.studentId));
       const assignmentTitle = assignment?.title || 'Assignment';
@@ -374,6 +418,99 @@ router.get('/', authTeacher, async (req, res) => {
         status: item.status,
       };
     });
+
+    // Attendance activity — derived from the already-loaded student records, so no
+    // extra query. One entry per recent day the teacher's class was marked.
+    const attendanceByDate = new Map();
+    scopedStudents.forEach((student) => {
+      (student.attendance || []).forEach((entry) => {
+        const day = new Date(entry.date);
+        if (Number.isNaN(day.getTime())) return;
+        const key = day.toISOString().slice(0, 10);
+        const bucket = attendanceByDate.get(key) || { present: 0, total: 0, date: day };
+        bucket.total += 1;
+        if (entry.status === 'present') bucket.present += 1;
+        attendanceByDate.set(key, bucket);
+      });
+    });
+    const attendanceActivities = [...attendanceByDate.values()]
+      .sort((a, b) => b.date - a.date)
+      .slice(0, 3)
+      .map((bucket) => ({
+        id: `attendance-${bucket.date.toISOString().slice(0, 10)}`,
+        type: 'attendance',
+        message: `Attendance recorded — ${bucket.present}/${bucket.total} present on ${bucket.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+        time: bucket.date.toISOString(),
+        status: 'present',
+      }));
+
+    // Recently published exam results for the teacher's students.
+    let resultActivities = [];
+    try {
+      if (studentIds.length > 0) {
+        const recentResults = await ExamResult.find({ schoolId, studentId: { $in: studentIds }, published: true })
+          .populate('examId', 'subject title')
+          .sort({ updatedAt: -1 })
+          .limit(4)
+          .lean();
+        resultActivities = recentResults.map((result) => {
+          const student = studentMap.get(String(result.studentId));
+          const subject = result.examId?.subject || result.examId?.title || 'exam';
+          return {
+            id: `result-${result._id}`,
+            type: 'result',
+            message: `Result published: ${subject}${student?.name ? ` — ${student.name}` : ''}`,
+            time: new Date(result.updatedAt || result.createdAt || Date.now()).toISOString(),
+            status: 'graded',
+          };
+        });
+      }
+    } catch (resultErr) {
+      console.warn('recentActivities: exam results lookup failed', resultErr?.message);
+    }
+
+    const activityCampusFilter = campusId
+      ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : {};
+    const [recentAssignments, recentMeetings] = teacherId
+      ? await Promise.all([
+        Assignment.find({ schoolId, teacherId, ...activityCampusFilter })
+          .sort({ createdAt: -1 })
+          .limit(4)
+          .select('title class section subject createdAt status')
+          .lean(),
+        ParentMeeting.find({ schoolId, teacherId, ...activityCampusFilter })
+          .sort({ updatedAt: -1 })
+          .limit(4)
+          .select('title status meetingDate meetingTime createdAt updatedAt')
+          .lean(),
+      ])
+      : [[], []];
+    const assignmentActivities = recentAssignments.map((assignment) => ({
+      id: `assignment-created-${assignment._id}`,
+      type: 'assignment',
+      message: `Assignment ${assignment.status === 'draft' ? 'drafted' : 'published'}: ${assignment.title}`,
+      time: new Date(assignment.createdAt || Date.now()).toISOString(),
+      status: assignment.status || 'active',
+      class: [assignment.class, assignment.section].filter(Boolean).join('-'),
+    }));
+    const meetingActivities = recentMeetings.map((meeting) => ({
+      id: `meeting-${meeting._id}`,
+      type: 'meeting',
+      message: `Parent meeting ${meeting.status || 'scheduled'}: ${meeting.title}`,
+      time: new Date(meeting.updatedAt || meeting.createdAt || meeting.meetingDate || Date.now()).toISOString(),
+      status: meeting.status || 'scheduled',
+    }));
+
+    const recentActivities = [
+      ...submissionActivities,
+      ...attendanceActivities,
+      ...resultActivities,
+      ...assignmentActivities,
+      ...meetingActivities,
+    ]
+      .sort((a, b) => new Date(b.time) - new Date(a.time))
+      .slice(0, 8);
 
     const performanceBucket = new Map();
     progressDocs.forEach((doc) => {
@@ -529,7 +666,17 @@ router.get('/', authTeacher, async (req, res) => {
       return startMinutes !== null && startMinutes >= currentMinutes;
     }) || null;
 
-    const assignmentFilter = { schoolId, dueDate: { $gte: today } };
+    const completedTasks = teacherId
+      ? await TeacherTaskAcknowledgement.find({ schoolId, teacherId }).select('assignmentId').lean()
+      : [];
+    const completedAssignmentIds = completedTasks.map((item) => item.assignmentId).filter(Boolean);
+    const assignmentFilter = {
+      schoolId,
+      teacherId,
+      status: 'active',
+      dueDate: { $gte: today },
+      ...(completedAssignmentIds.length ? { _id: { $nin: completedAssignmentIds } } : {}),
+    };
     if (campusId) {
       assignmentFilter.campusId = campusId;
     }
@@ -558,6 +705,7 @@ router.get('/', authTeacher, async (req, res) => {
       performanceMetrics,
       topStudents,
       upcomingDeadlines: upcomingDeadlines.map((item) => ({
+        id: String(item._id),
         title: item.title,
         class: item.class || '',
         subject: item.subject || '',
@@ -566,6 +714,35 @@ router.get('/', authTeacher, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load dashboard data' });
+  }
+});
+
+router.post('/deadlines/:assignmentId/complete', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    const teacherId = req.user?.id || null;
+    const { assignmentId } = req.params;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+    if (!mongoose.isValidObjectId(assignmentId)) {
+      return res.status(400).json({ error: 'Invalid assignment id' });
+    }
+
+    const assignment = await Assignment.findOne({ _id: assignmentId, schoolId, teacherId }).select('_id').lean();
+    if (!assignment) return res.status(404).json({ error: 'Deadline task not found' });
+
+    const acknowledgement = await TeacherTaskAcknowledgement.findOneAndUpdate(
+      { schoolId, teacherId, assignmentId },
+      { $set: { completedAt: new Date() } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return res.json({
+      message: 'Deadline task marked complete',
+      assignmentId: String(assignmentId),
+      completedAt: acknowledgement.completedAt,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to complete deadline task' });
   }
 });
 
@@ -1462,9 +1639,11 @@ router.get('/routine', authTeacher, async (req, res) => {
     }
 
     const schedule = {};
+    const scheduleKeys = {};
     const assignedClassLabels = new Set();
     WEEK_DAYS.forEach((day) => {
       schedule[day] = [];
+      scheduleKeys[day] = new Set();
     });
 
     timetables.forEach((tt) => {
@@ -1478,6 +1657,16 @@ router.get('/routine', authTeacher, async (req, res) => {
         const normalizedDay = normalizeDayLabel(entry.dayOfWeek);
         if (!normalizedDay || !schedule[normalizedDay]) return;
 
+        const scheduleKey = [
+          entry.period || '',
+          entry.startTime || '',
+          entry.endTime || '',
+          String(tt.classId?._id || tt.classId || ''),
+          String(tt.sectionId?._id || tt.sectionId || ''),
+          String(entry.subjectId?._id || entry.subjectId || ''),
+        ].join('|');
+        if (scheduleKeys[normalizedDay].has(scheduleKey)) return;
+        scheduleKeys[normalizedDay].add(scheduleKey);
         schedule[normalizedDay].push({
           subject: entry.subjectId?.name || 'Subject',
           className,
@@ -1506,6 +1695,10 @@ router.get('/routine', authTeacher, async (req, res) => {
 
     // Fetch school info (name, address, logo) for PDF header
     const school = await School.findById(schoolId).select('name address logo').lean();
+    const busiestDay = WEEK_DAYS.reduce((best, day) => {
+      const count = schedule[day].length;
+      return count > best.count ? { day, count } : best;
+    }, { day: 'None', count: 0 });
 
     res.json({
       schedule,
@@ -1519,6 +1712,7 @@ router.get('/routine', authTeacher, async (req, res) => {
         campusScoped:   Boolean(campusId),
         timetableCount: Array.isArray(timetables) ? timetables.length : 0,
         filterSource:   campusId ? 'campus' : 'school',
+        busiestDay,
       },
     });
   } catch (err) {
@@ -1643,9 +1837,11 @@ router.get('/complaints', authTeacher, async (req, res) => {
       { total: 0, open: 0, inProgress: 0, resolved: 0 }
     );
 
+    const guardianNames = await resolveComplaintGuardianNames(complaints, schoolId);
+
     res.json({
       stats,
-      complaints: complaints.map(formatTeacherComplaint),
+      complaints: complaints.map((doc) => formatTeacherComplaint(doc, guardianNames.get(String(doc._id)))),
     });
   } catch (err) {
     console.error('Teacher complaints fetch error:', err);
@@ -1707,7 +1903,8 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
 
     await complaint.save();
 
-    res.json(formatTeacherComplaint(complaint));
+    const guardianNames = await resolveComplaintGuardianNames([complaint], schoolId);
+    res.json(formatTeacherComplaint(complaint, guardianNames.get(String(complaint._id))));
   } catch (err) {
     console.error('Teacher complaint update error:', err);
     res.status(500).json({ error: err.message || 'Unable to update complaint' });

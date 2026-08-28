@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Award, Calendar, ChevronRight, Edit3, Loader2, Search, Trophy, Trash2, Upload, X } from 'lucide-react';
+import { Award, Calendar, ChevronRight, Edit3, Info, Loader2, Search, Trophy, Trash2, Upload, X } from 'lucide-react';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '') + '/api';
 const norm = (v = '') => String(v || '').trim().toLowerCase();
@@ -472,9 +472,14 @@ const TeacherAchievements = () => {
             ))}
           </div>
           {!loadingAllocations && classTeacherAllocations.length === 0 && (
-            <p className="mt-3 text-xs text-red-500">
-              No class-teacher allocation found. Achievements can only be managed for your allocated class.
-            </p>
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                Achievements are recorded by the <strong>class teacher</strong> for their class. You&rsquo;re
+                not set as a class teacher for any class right now — ask your school admin to assign you as
+                class teacher if you need to manage achievements here.
+              </span>
+            </div>
           )}
         </Motion.div>
 

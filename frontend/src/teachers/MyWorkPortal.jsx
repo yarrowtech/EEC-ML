@@ -83,6 +83,35 @@ const staggerMotion = {
   animate: { transition: { staggerChildren: 0.055 } }
 };
 
+// Map a raw /api/notifications/user record into the shape this portal renders.
+const relativeTime = (value) => {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) return '';
+  const mins = Math.floor((Date.now() - then) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+const mapNotification = (raw) => {
+  const kindText = `${raw?.type || ''} ${raw?.typeLabel || ''} ${raw?.title || ''}`.toLowerCase();
+  const type = /approv|success|confirm|complete/.test(kindText)
+    ? 'success'
+    : /reject|declin|overdue|warning|action required|pending|documentation/.test(kindText)
+      ? 'warning'
+      : 'info';
+  return {
+    id: String(raw?._id || raw?.id || ''),
+    title: raw?.title || 'Notification',
+    message: raw?.message || '',
+    type,
+    category: raw?.typeLabel || raw?.category || 'Workflow',
+    read: Boolean(raw?.isRead),
+    timestamp: relativeTime(raw?.createdAt),
+  };
+};
+
 const emptyAttendanceStats = { presentDays: 0, lateDays: 0, absentDays: 0, attendanceRate: 0 };
 const emptyToday = {
   hasCheckedIn: false,
@@ -322,12 +351,8 @@ const MyWorkPortal = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
 
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Leave Request Approved', message: 'Your sick leave request has been approved.', type: 'success', category: 'Leave Updates', read: false, timestamp: '2 hours ago' },
-    { id: 2, title: 'Expense Claim Update', message: 'A submitted expense claim needs additional documentation.', type: 'warning', category: 'Expense Updates', read: false, timestamp: '5 hours ago' },
-    { id: 3, title: 'Profile Update Required', message: 'Please verify your emergency contact information.', type: 'info', category: 'Profile Actions', read: true, timestamp: '1 day ago' },
-    { id: 4, title: 'Attendance Reminder', message: 'Check out when your work session is complete.', type: 'info', category: 'Attendance Alerts', read: true, timestamp: '2 days ago' }
-  ]);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [documentQuery, setDocumentQuery] = useState('');
 
   const tabs = [
@@ -673,10 +698,50 @@ const MyWorkPortal = () => {
     fetchWorkAttendance(selectedMonth);
   }, [fetchWorkAttendance, selectedMonth]);
 
+  const fetchNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) { setNotifications([]); return; }
+      const res = await fetch(`${API_BASE}/api/notifications/user`, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'Unable to load notifications');
+      setNotifications(
+        (Array.isArray(data) ? data : [])
+          .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
+          .slice(0, 30)
+          .map(mapNotification)
+      );
+    } catch {
+      setNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  const markNotificationRead = useCallback(async (id) => {
+    if (!id) return;
+    setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      await fetch(`${API_BASE}/api/notifications/user/${id}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      });
+    } catch {
+      /* optimistic update stands; server will reconcile on next load */
+    }
+  }, []);
+
   useEffect(() => {
     fetchLeaveRequests();
     fetchExpenses();
-  }, []);
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -700,14 +765,20 @@ const MyWorkPortal = () => {
   }, []);
 
   const leaveStats = useMemo(() => {
-    const usedDays = leaveData
-      .filter((leave) => String(leave.status).toLowerCase() === 'approved' && String(leave.type || '').toLowerCase() === 'casual leave')
+    const approved = leaveData.filter((leave) => String(leave.status).toLowerCase() === 'approved');
+    // "Used Leave" / "Leave Utilization" reflect ALL approved leave, so a sick or
+    // other-type leave still moves them. `casualUsedDays` stays casual-only for the
+    // dedicated casual-leave balance card.
+    const usedDays = approved.reduce((sum, leave) => sum + getLeaveDays(leave.startDate, leave.endDate), 0);
+    const casualUsedDays = approved
+      .filter((leave) => String(leave.type || '').toLowerCase() === 'casual leave')
       .reduce((sum, leave) => sum + getLeaveDays(leave.startDate, leave.endDate), 0);
     const pendingRequests = leaveData.filter((leave) => String(leave.status).toLowerCase() === 'pending').length;
     return {
       usedDays,
+      casualUsedDays,
       pendingRequests,
-      availableDays: Math.max((leavePolicy.casualLeaveDays || 0) - usedDays, 0)
+      availableDays: Math.max((leavePolicy.casualLeaveDays || 0) - casualUsedDays, 0)
     };
   }, [leaveData, leavePolicy.casualLeaveDays]);
 
@@ -832,7 +903,7 @@ const MyWorkPortal = () => {
 
       <MotionDiv variants={staggerMotion} initial="initial" animate="animate" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={CheckCircle} label="Days Present" value={attendanceStats.presentDays} hint={`${attendanceStats.lateDays || 0} late arrivals this month`} tone="emerald" progress={attendanceStats.attendanceRate || 0} onClick={() => setActiveTab('attendance')} />
-        <MetricCard icon={CalendarCheck} label="Leave Balance" value={leaveQuota.casualAvailableDays} hint={`${leaveStats.pendingRequests} pending approvals`} tone="blue" progress={(leaveQuota.casualAvailableDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} onClick={() => setActiveTab('leave')} />
+        <MetricCard icon={CalendarCheck} label="Casual Leave Left" value={leaveQuota.casualAvailableDays} hint={`${leaveStats.pendingRequests} pending approval${leaveStats.pendingRequests === 1 ? '' : 's'}`} tone="blue" progress={(leaveQuota.casualAvailableDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} onClick={() => setActiveTab('leave')} />
         <MetricCard icon={Receipt} label="Pending Claims" value={expenseStats.pendingCount} hint={`Rs ${expenseStats.pending.toLocaleString('en-IN')} awaiting review`} tone="amber" onClick={() => setActiveTab('expenses')} />
         <MetricCard icon={BellRing} label="Unread Alerts" value={unreadNotifications} hint="Workflow inbox" tone="violet" onClick={() => setActiveTab('notifications')} />
       </MotionDiv>
@@ -970,7 +1041,7 @@ const MyWorkPortal = () => {
       {leaveError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{leaveError}</div>}
       <div className="grid gap-4 sm:grid-cols-3">
         <MetricCard icon={CalendarCheck} label="Available Casual Leave" value={leaveQuota.casualAvailableDays} tone="blue" progress={(leaveQuota.casualAvailableDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} />
-        <MetricCard icon={Archive} label="Used Leave" value={leaveQuota.casualUsedDays || leaveStats.usedDays} tone="slate" />
+        <MetricCard icon={Archive} label="Used Leave" value={leaveStats.usedDays} tone="slate" />
         <MetricCard icon={Clock} label="Pending Requests" value={leaveStats.pendingRequests} tone="amber" />
       </div>
       <Card className="border-slate-200 bg-white py-0 shadow-sm">
@@ -1053,8 +1124,14 @@ const MyWorkPortal = () => {
     <MotionDiv {...tabContentProps} className="space-y-5">
       <SectionTitle icon={BellRing} title="Notifications" description="A smart workflow inbox for leave, expense, attendance, administrative, and profile actions." action={<Badge className="border-violet-200 bg-violet-50 text-violet-700">{unreadNotifications} unread</Badge>} />
       <div className="grid gap-3">
+        {!notificationsLoading && notifications.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+            <Bell className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+            All caught up — no notifications.
+          </div>
+        )}
         {notifications.map((notification) => (
-          <MotionButton key={notification.id} whileHover={{ x: 2 }} type="button" onClick={() => setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, read: true } : item))} className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-slate-400">
+          <MotionButton key={notification.id} whileHover={{ x: 2 }} type="button" onClick={() => markNotificationRead(notification.id)} className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm outline-none transition hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-slate-400">
             <div className="flex gap-3">
               <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', notification.type === 'success' && 'bg-emerald-50 text-emerald-700', notification.type === 'warning' && 'bg-amber-50 text-amber-700', notification.type === 'info' && 'bg-blue-50 text-blue-700')}>
                 {notification.type === 'success' ? <CheckCircle className="h-4 w-4" /> : notification.type === 'warning' ? <AlertCircle className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
@@ -1120,7 +1197,7 @@ const MyWorkPortal = () => {
   const renderInsights = () => (
     <MotionDiv {...tabContentProps} className="space-y-5">
       <SectionTitle icon={TrendingUp} title="Work Insights" description="Operational signals that summarize consistency, leave usage, reimbursements, and monthly readiness." />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard icon={Gauge} label="Work Health Score" value={insightScore} tone="blue" progress={insightScore} /><MetricCard icon={Activity} label="Attendance Consistency" value={`${attendanceStats.attendanceRate || 0}%`} tone="emerald" progress={attendanceStats.attendanceRate || 0} /><MetricCard icon={CalendarRange} label="Leave Utilization" value={`${leaveStats.usedDays}/${leavePolicy.casualLeaveDays}`} tone="amber" progress={(leaveStats.usedDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} /><MetricCard icon={Wallet} label="Claim Volume" value={`Rs ${(expenseStats.approved + expenseStats.pending).toLocaleString('en-IN')}`} tone="violet" /></div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard icon={Gauge} label="Work Health Score" value={insightScore} tone="blue" progress={insightScore} /><MetricCard icon={Activity} label="Attendance Consistency" value={`${attendanceStats.attendanceRate || 0}%`} tone="emerald" progress={attendanceStats.attendanceRate || 0} /><MetricCard icon={CalendarRange} label="Approved Leave Days" value={`${leaveStats.usedDays} day${leaveStats.usedDays === 1 ? '' : 's'}`} tone="amber" /><MetricCard icon={Wallet} label="Claim Volume" value={`Rs ${(expenseStats.approved + expenseStats.pending).toLocaleString('en-IN')}`} tone="violet" /></div>
       <Card className="border-slate-200 bg-white py-0 shadow-sm"><CardHeader className="p-4"><CardTitle>Monthly Work Statistics</CardTitle><CardDescription>{toMonthLabel(selectedMonth)} summary</CardDescription></CardHeader><CardContent className="space-y-4 p-4 pt-0"><div className="grid gap-3 md:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Work streak</p><p className="mt-1 text-xl font-semibold text-slate-950">{attendanceStats.presentDays || 0} days</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Punctuality signal</p><p className="mt-1 text-xl font-semibold text-slate-950">{attendanceStats.lateDays ? 'Needs attention' : 'On track'}</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Pending approvals</p><p className="mt-1 text-xl font-semibold text-slate-950">{leaveStats.pendingRequests + expenseStats.pendingCount}</p></div></div><Separator /><p className="text-sm text-slate-500">Insight is calculated from attendance rate, remaining leave buffer, and profile readiness. It is a workspace signal, not a performance grade.</p></CardContent></Card>
     </MotionDiv>
   );

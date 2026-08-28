@@ -30,8 +30,12 @@ const AssessmentCard = ({ assessment, types, onChange }) => {
       />
       <Input
         type="number"
-        value={assessment.marks}
-        onChange={(event) => onChange({ ...assessment, marks: Number(event.target.value) || 0 })}
+        min={0}
+        value={assessment.marks ?? ''}
+        onChange={(event) => {
+          const raw = event.target.value;
+          onChange({ ...assessment, marks: raw === '' ? '' : Math.max(0, Number(raw)) });
+        }}
         placeholder="Marks"
         className="rounded-xl"
       />

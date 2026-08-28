@@ -610,7 +610,7 @@ const AIPoweredTeaching = () => {
 
   const addAssessmentToActiveChapter = (chapterId) => {
     if (!chapterId) return;
-    const next = { id: `a-${Date.now()}`, title: '', type: assessmentTypes[0], dueDate: '', marks: 0 };
+    const next = { id: `a-${Date.now()}`, title: '', type: assessmentTypes[0], dueDate: '', marks: '' };
     updateChapter(chapterId, (chapter) => ({ ...chapter, assessments: [...(chapter.assessments || []), next] }));
   };
 

@@ -137,7 +137,7 @@ const CLASS_COLORS = [
 const ClassRoutine = () => {
   const [schedule, setSchedule] = useState({});
   const [teacherProfile, setTeacherProfile] = useState(null);
-  const [routineMeta, setRoutineMeta] = useState({ campusScoped: true, timetableCount: 0, filterSource: 'campus' });
+  const [routineMeta, setRoutineMeta] = useState({ campusScoped: true, timetableCount: 0, filterSource: 'campus', busiestDay: null });
   const [selectedDay, setSelectedDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
   const [viewMode, setViewMode] = useState('weekly');
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,6 +174,7 @@ const ClassRoutine = () => {
           campusScoped: Boolean(data?.meta?.campusScoped),
           timetableCount: Number(data?.meta?.timetableCount || 0),
           filterSource: data?.meta?.filterSource || (data?.meta?.campusScoped ? 'campus' : 'school'),
+          busiestDay: data?.meta?.busiestDay || null,
         });
         if (data.teacher) {
           setTeacherProfile(data.teacher);
@@ -210,6 +211,7 @@ const ClassRoutine = () => {
           campusScoped: true,
           timetableCount: Number((dashboardData?.upcomingClasses || []).length > 0 ? 1 : 0),
           filterSource: 'dashboard-fallback',
+          busiestDay: null,
         });
         setTeacherProfile(dashboardData?.teacher || null);
       }
@@ -450,10 +452,11 @@ const ClassRoutine = () => {
     return start !== null && end !== null && end > start ? sum + (end - start) : sum + 40;
   }, 0), [scheduleEntries, timeToMinutes]);
 
-  const busiestDay = useMemo(() => DAYS.reduce((best, day) => {
+  const computedBusiestDay = useMemo(() => DAYS.reduce((best, day) => {
     const count = (effectiveSchedule[day] || []).length;
     return count > best.count ? { day, count } : best;
   }, { day: 'None', count: 0 }), [effectiveSchedule]);
+  const busiestDay = routineMeta.busiestDay || computedBusiestDay;
 
   const subjectDistribution = useMemo(() => uniqueSubjects.map((subject) => ({
     subject,

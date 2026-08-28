@@ -24,6 +24,11 @@ const TeacherLearningPath = require('../models/TeacherLearningPath');
 const TeacherUser = require('../models/TeacherUser');
 const StudentUser = require('../models/StudentUser');
 const { logger } = require('../utils/logger');
+const {
+  buildTeacherAllocationScope,
+  studentIsWithinTeacherScope,
+  subjectIsAllowedForStudent,
+} = require('../utils/teacherAllocationScope');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -49,10 +54,25 @@ const validateObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 router.post('/generate', authTeacher, async (req, res) => {
   // #swagger.tags = ['Learning Paths']
   try {
-    const { studentName, subject, focus, pace, notes, gradeLevel, mastery } = req.body;
+    const { studentId, studentName, subject, focus, pace, notes, gradeLevel, mastery } = req.body;
 
     if (!subject || !focus) {
       return res.status(400).json({ error: 'subject and focus are required' });
+    }
+
+    if (studentId) {
+      if (!validateObjectId(studentId)) return res.status(400).json({ error: 'Invalid studentId' });
+      const student = await StudentUser.findOne({ _id: studentId, schoolId: req.schoolId })
+        .select('grade section className sectionName')
+        .lean();
+      const scope = await buildTeacherAllocationScope({
+        schoolId: req.schoolId,
+        campusId: req.campusId || null,
+        teacherId: req.user?.id,
+      });
+      if (!student || !studentIsWithinTeacherScope(student, scope) || !subjectIsAllowedForStudent(student, subject, scope)) {
+        return res.status(403).json({ error: 'Student or subject is outside your assigned scope' });
+      }
     }
 
     const aiRes = await axios.post(
@@ -105,6 +125,14 @@ router.post('/publish', authTeacher, async (req, res) => {
       .lean();
     if (!student) {
       return res.status(404).json({ error: 'Student not found in this school' });
+    }
+    const scope = await buildTeacherAllocationScope({
+      schoolId,
+      campusId: req.campusId || null,
+      teacherId,
+    });
+    if (!studentIsWithinTeacherScope(student, scope) || !subjectIsAllowedForStudent(student, subject, scope)) {
+      return res.status(403).json({ error: 'Student or subject is outside your assigned scope' });
     }
 
     const teacher = await TeacherUser.findById(teacherId).select('name').lean();

@@ -7,6 +7,12 @@ const Assignment = require('../models/Assignment');
 const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
+const {
+  allowedSubjectsForStudent,
+  buildTeacherAllocationScope,
+  scopeAllowsRequest,
+  studentIsWithinTeacherScope,
+} = require('../utils/teacherAllocationScope');
 
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const toGradeVariants = (value = '') => {
@@ -53,36 +59,93 @@ const resolveSchoolId = (req, res) => {
   return schoolId;
 };
 
-// Get progress for all students
-router.get('/students', adminAuth, async (req, res) => {
+const isTeacherRequest = (req) => (
+  String(req.user?.userType || req.user?.type || req.userType || '').toLowerCase() === 'teacher'
+);
+
+const loadVisibleStudents = async (req, res, { grade, section, subject, academicYearId } = {}) => {
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return null;
+
+  const studentFilter = { schoolId, status: 'Active' };
+  if (req.campusId) studentFilter.campusId = req.campusId;
+  applyGradeAndSectionFilter(studentFilter, { grade, section });
+
+  if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+    const year = await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean();
+    if (year?.name) {
+      studentFilter.academicYear = new RegExp(`^${escapeRegex(year.name.trim())}$`, 'i');
+    }
+  }
+
+  const students = await StudentUser.find(studentFilter)
+    .select('name grade section roll academicYear campusId')
+    .lean();
+  if (!isTeacherRequest(req)) return { schoolId, students, scope: null };
+
+  const scope = await buildTeacherAllocationScope({
+    schoolId,
+    campusId: req.campusId || null,
+    teacherId: req.user?.id,
+  });
+  if (!scope.length) return { schoolId, students: [], scope };
+  if ((grade || section || subject) && !scopeAllowsRequest(scope, { grade, section, subject })) {
+    res.status(403).json({ error: 'Requested progress data is outside your assigned class, section, or subject.' });
+    return null;
+  }
+
+  return {
+    schoolId,
+    students: students.filter((student) => studentIsWithinTeacherScope(student, scope)),
+    scope,
+  };
+};
+
+const filterMetricsForScope = ({ metrics = [], student, subject = '', scope = null }) => {
+  const requestedSubject = String(subject || '').trim().toLowerCase();
+  const allowedSubjects = scope ? allowedSubjectsForStudent(student, scope) : null;
+  return (metrics || []).filter((metric) => {
+    const metricSubject = String(metric?.subject || '').trim().toLowerCase();
+    if (requestedSubject && metricSubject !== requestedSubject) return false;
+    return allowedSubjects === null || allowedSubjects.has(metricSubject);
+  });
+};
+
+// Get progress for all students.
+// authTeacher accepts both admin and teacher tokens (see middleware/authTeacher),
+// so the teacher analytics portal can read class progress without a 403 falling
+// back to empty metrics. Scoping stays by schoolId + grade/section query params.
+router.get('/students', teacherAuth, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
-    const schoolId = resolveSchoolId(req, res);
-    if (!schoolId) return;
     const { grade, section, subject } = req.query;
-    
-    let studentFilter = { schoolId, status: 'Active' };
-    applyGradeAndSectionFilter(studentFilter, { grade, section });
-
-    const students = await StudentUser.find(studentFilter).select('name grade section roll');
+    const visible = await loadVisibleStudents(req, res, { grade, section, subject });
+    if (!visible) return;
+    const { schoolId, students, scope } = visible;
     const studentIds = students.map(student => student._id);
+    const progressData = await StudentProgress.find({ studentId: { $in: studentIds }, schoolId }).lean();
+    const progressByStudent = new Map(progressData.map((progress) => [String(progress.studentId), progress]));
 
-    let progressQuery = { studentId: { $in: studentIds }, schoolId };
-    
-    const progressData = await StudentProgress.find(progressQuery)
-      .populate('studentId', 'name grade section roll')
-      .lean();
-
-    // Filter by subject if specified
-    let filteredData = progressData;
-    if (subject) {
-      filteredData = progressData.map(progress => ({
+    // A student remains visible before their first StudentProgress document exists.
+    const response = students.map((student) => {
+      const progress = progressByStudent.get(String(student._id)) || {};
+      return {
         ...progress,
-        progressMetrics: progress.progressMetrics.filter(metric => metric.subject === subject)
-      }));
-    }
+        _id: progress._id || null,
+        studentId: student,
+        progressMetrics: filterMetricsForScope({
+          metrics: progress.progressMetrics || [],
+          student,
+          subject,
+          scope,
+        }),
+        submissions: progress.submissions || [],
+        overallGrade: progress.overallGrade || null,
+        improvementTrend: progress.improvementTrend || 'stable',
+      };
+    });
 
-    res.status(200).json(filteredData);
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching student progress:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -96,6 +159,20 @@ router.get('/student/:studentId', teacherAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const { studentId } = req.params;
+
+    if (isTeacherRequest(req)) {
+      const student = await StudentUser.findOne({ _id: studentId, schoolId })
+        .select('grade section className sectionName')
+        .lean();
+      const scope = await buildTeacherAllocationScope({
+        schoolId,
+        campusId: req.campusId || null,
+        teacherId: req.user?.id,
+      });
+      if (!student || !studentIsWithinTeacherScope(student, scope)) {
+        return res.status(403).json({ error: 'Student is outside your assigned scope' });
+      }
+    }
 
     const progress = await StudentProgress.findOne({ studentId, schoolId })
       .populate('studentId', 'name grade section roll email mobile')
@@ -168,15 +245,18 @@ router.put('/submission/grade/:studentId/:assignmentId', teacherAuth, async (req
     const { studentId, assignmentId } = req.params;
     const { score, feedback, status } = req.body;
 
-    if (req.campusId) {
-      const campusStudent = await StudentUser.findOne({
-        _id: studentId,
-        schoolId,
-        campusId: req.campusId,
-      }).select('_id');
-      if (!campusStudent) {
-        return res.status(403).json({ error: 'Student not in your campus' });
-      }
+    const studentFilter = { _id: studentId, schoolId };
+    if (req.campusId) studentFilter.campusId = req.campusId;
+    const student = await StudentUser.findOne(studentFilter)
+      .select('grade section className sectionName')
+      .lean();
+    const scope = await buildTeacherAllocationScope({
+      schoolId,
+      campusId: req.campusId || null,
+      teacherId: req.user?.id,
+    });
+    if (!student || !studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'Student is outside your assigned scope' });
     }
 
     let progress = await StudentProgress.findOne({ studentId, schoolId });
@@ -213,33 +293,23 @@ router.put('/submission/grade/:studentId/:assignmentId', teacherAuth, async (req
 });
 
 // Get class performance analytics
-router.get('/analytics', adminAuth, async (req, res) => {
+// authTeacher accepts admin + teacher tokens; both the admin dashboard and the
+// teacher analytics portal call this.
+router.get('/analytics', teacherAuth, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
-    const schoolId = resolveSchoolId(req, res);
-    if (!schoolId) return;
     const { grade, section, subject, academicYearId } = req.query;
-
-    let studentFilter = { schoolId, status: 'Active' };
-    applyGradeAndSectionFilter(studentFilter, { grade, section });
-
-    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
-      // StudentUser.academicYear stores the AcademicYear's *name* (e.g. "2024-2025"),
-      // not its ObjectId, so resolve the id to a name before filtering.
-      const year = await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean();
-      if (year?.name) {
-        studentFilter.academicYear = new RegExp(`^${escapeRegex(year.name.trim())}$`, 'i');
-      }
-    }
-
-    const students = await StudentUser.find(studentFilter);
+    const visible = await loadVisibleStudents(req, res, { grade, section, subject, academicYearId });
+    if (!visible) return;
+    const { schoolId, students, scope } = visible;
     const studentIds = students.map(student => student._id);
 
     const progressData = await StudentProgress.find({ studentId: { $in: studentIds }, schoolId })
-      .populate('studentId', 'name grade section');
+      .lean();
+    const studentMap = new Map(students.map((student) => [String(student._id), student]));
 
     // Calculate analytics
-    let analytics = {
+    const analytics = {
       totalStudents: students.length,
       averageScore: 0,
       gradeDistribution: { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C+': 0, 'C': 0, 'D': 0, 'F': 0 },
@@ -261,11 +331,14 @@ router.get('/analytics', adminAuth, async (req, res) => {
         }
 
         // Improvement trends
-        analytics.improvementTrends[progress.improvementTrend]++;
+        const trend = ['improving', 'stable', 'declining'].includes(progress.improvementTrend)
+          ? progress.improvementTrend
+          : 'stable';
+        analytics.improvementTrends[trend]++;
 
         // Subject performance and attendance
-        progress.progressMetrics.forEach(metric => {
-          if (!subject || metric.subject === subject) {
+        const student = studentMap.get(String(progress.studentId));
+        filterMetricsForScope({ metrics: progress.progressMetrics, student, subject, scope }).forEach(metric => {
             if (metric.averageScore > 0) {
               totalScore += metric.averageScore;
               scoreCount++;
@@ -286,7 +359,6 @@ router.get('/analytics', adminAuth, async (req, res) => {
             
             analytics.subjectPerformance[metric.subject].totalScore += metric.averageScore;
             analytics.subjectPerformance[metric.subject].studentCount++;
-          }
         });
       });
 

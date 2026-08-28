@@ -236,7 +236,7 @@ const HistoryEntry = ({ entry }) => {
               {ratingEntries.map(([key, val]) => (
                 <span
                   key={key}
-                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${TONE_BADGE[optionTone(val)] || TONE_BADGE.slate}`}
+                  className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold break-words ${TONE_BADGE[optionTone(val)] || TONE_BADGE.slate}`}
                 >
                   {key}: {val}
                 </span>
@@ -247,7 +247,9 @@ const HistoryEntry = ({ entry }) => {
       </AnimatePresence>
 
       {entry.additionalNotes && (
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-500 line-clamp-2 whitespace-pre-line">
+        <p
+          className={`mt-2 whitespace-pre-line break-words text-[11px] leading-relaxed text-slate-500 ${expanded ? '' : 'line-clamp-2'}`}
+        >
           {entry.additionalNotes}
         </p>
       )}
@@ -679,7 +681,7 @@ const StudentObservationOverview = () => {
         </form>
 
         {/* ── Right: history ──────────────────────────────────── */}
-        <div>
+        <div className="min-w-0">
           <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] p-5 sticky top-4">
             <h2 className="text-sm font-semibold text-slate-950 mb-4">Observation History</h2>
 
@@ -693,7 +695,7 @@ const StudentObservationOverview = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="max-h-[calc(100vh-9rem)] space-y-2.5 overflow-y-auto pr-1">
                 <AnimatePresence initial={false}>
                   {observations.map((entry, i) => (
                     <Motion.div

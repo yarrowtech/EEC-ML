@@ -10,6 +10,9 @@ import { formatStudentDisplay } from '../utils/studentDisplay';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '') + '/api';
 
+const mergeOptions = (server, derived) =>
+  [...new Set([...(server || []), ...(derived || [])].map(String).filter(Boolean))].sort();
+
 const EMPTY_FORM = {
   studentId: '', title: '', topic: '', description: '',
   meetingDate: '', meetingTime: '', meetingType: 'In Person',
@@ -238,10 +241,18 @@ const ParentMeetings = () => {
     }
   };
 
-  /* ── Derived filter options from meetings ── */
-  const listSessionOptions = useMemo(() => [...new Set(meetings.map(m => String(m.studentId?.academicYear || m.studentId?.session || '')).filter(Boolean))].sort(), [meetings]);
-  const listClassOptions   = useMemo(() => [...new Set(meetings.filter(m => !filterSession || String(m.studentId?.academicYear || m.studentId?.session || '') === filterSession).map(m => m.studentId?.grade).filter(Boolean))].sort(), [meetings, filterSession]);
-  const listSectionOptions = useMemo(() => [...new Set(meetings.filter(m => (!filterSession || String(m.studentId?.academicYear || m.studentId?.session || '') === filterSession) && (!filterClass || m.studentId?.grade === filterClass)).map(m => m.studentId?.section).filter(Boolean))].sort(), [meetings, filterSession, filterClass]);
+  /* ── Filter options ──
+     Prefer the server-provided lists (from /meeting/teacher/students -> data.options,
+     which cover every session/class/section the teacher can meet), then union in
+     anything that only appears on an existing meeting. Deriving purely from the
+     loaded meetings left the dropdowns empty whenever there were few meetings. */
+  const derivedSessions = useMemo(() => meetings.map(m => String(m.studentId?.academicYear || m.studentId?.session || '')).filter(Boolean), [meetings]);
+  const derivedClasses  = useMemo(() => meetings.filter(m => !filterSession || String(m.studentId?.academicYear || m.studentId?.session || '') === filterSession).map(m => String(m.studentId?.grade || '')).filter(Boolean), [meetings, filterSession]);
+  const derivedSections = useMemo(() => meetings.filter(m => (!filterSession || String(m.studentId?.academicYear || m.studentId?.session || '') === filterSession) && (!filterClass || String(m.studentId?.grade || '') === filterClass)).map(m => String(m.studentId?.section || '')).filter(Boolean), [meetings, filterSession, filterClass]);
+
+  const listSessionOptions = useMemo(() => mergeOptions(sessionOptions, derivedSessions), [sessionOptions, derivedSessions]);
+  const listClassOptions   = useMemo(() => mergeOptions(classOptions,   derivedClasses),  [classOptions, derivedClasses]);
+  const listSectionOptions = useMemo(() => mergeOptions(sectionOptions, derivedSections), [sectionOptions, derivedSections]);
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter((m) => {

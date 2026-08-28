@@ -8,6 +8,11 @@ const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const AcademicYear = require('../models/AcademicYear');
 const Notification = require('../models/Notification');
+const {
+  buildTeacherAllocationScope,
+  scopeAllowsRequest,
+  studentIsWithinTeacherScope,
+} = require('../utils/teacherAllocationScope');
 
 // ========== TEACHER ROUTES ==========
 
@@ -16,6 +21,8 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.teacher?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const teacherId = req.teacher?.id || req.user?.id;
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
 
     const requestedSession = String(req.query?.session || '').trim();
     const requestedClass = String(req.query?.className || req.query?.class || '').trim();
@@ -33,11 +40,19 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
       .lean();
     const activeSession = String(activeYear?.name || '').trim();
 
-    // Get all students from the school/campus.
-    const allStudents = await StudentUser.find(filter)
+    const scope = await buildTeacherAllocationScope({ schoolId, campusId, teacherId });
+    if ((requestedClass || requestedSection) && !scopeAllowsRequest(scope, {
+      grade: requestedClass,
+      section: requestedSection,
+    })) {
+      return res.status(403).json({ error: 'Requested meeting class or section is outside your allocation.' });
+    }
+
+    const schoolStudents = await StudentUser.find({ ...filter, status: 'Active' })
       .select('name grade section roll academicYear')
       .sort({ grade: 1, section: 1, roll: 1 })
       .lean();
+    const allStudents = schoolStudents.filter((student) => studentIsWithinTeacherScope(student, scope));
 
     const sessionOptionsSet = new Set(
       allStudents.map((student) => String(student?.academicYear || '').trim()).filter(Boolean)
@@ -100,6 +115,20 @@ router.get('/teacher/student/:studentId/parent', authTeacher, async (req, res) =
     const { studentId } = req.params;
     const schoolId = req.schoolId || req.teacher?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const teacherId = req.teacher?.id || req.user?.id;
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+      .select('grade section className sectionName')
+      .lean();
+    const scope = await buildTeacherAllocationScope({
+      schoolId,
+      campusId: req.campusId || null,
+      teacherId,
+    });
+    if (!student || !studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'Student is outside your assigned scope' });
+    }
 
     // Find parent with this student ID
     const parent = await ParentUser.findOne({
@@ -152,8 +181,16 @@ router.post('/teacher/create', authTeacher, async (req, res) => {
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
     }
+    const scope = await buildTeacherAllocationScope({
+      schoolId,
+      campusId: req.campusId || null,
+      teacherId,
+    });
+    if (!studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'Student is outside your assigned scope' });
+    }
 
-    const parent = await ParentUser.findOne({ _id: parentId, schoolId });
+    const parent = await ParentUser.findOne({ _id: parentId, schoolId, childrenIds: studentId });
     if (!parent) {
       return res.status(404).json({ error: 'Parent not found' });
     }

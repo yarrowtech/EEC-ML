@@ -1370,7 +1370,7 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
       {/* Header */}
       <div className="border-b border-rose-200 bg-rose-100 px-4 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid gap-3 sm:grid-cols-4 sm:gap-4 w-full">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4 w-full">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Count</label>
               <select
@@ -1409,15 +1409,23 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Mode</label>
-              <div className="mt-1 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="aiAppendMode" checked={aiAppend} onChange={() => setAiAppend(true)} className="accent-rose-500" />
+              <div className="mt-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-300 bg-white p-1 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setAiAppend(true)}
+                  aria-pressed={aiAppend}
+                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
                   Append
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="aiAppendMode" checked={!aiAppend} onChange={() => setAiAppend(false)} className="accent-rose-500" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiAppend(false)}
+                  aria-pressed={!aiAppend}
+                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${!aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                >
                   Replace
-                </label>
+                </button>
               </div>
             </div>
           </div>

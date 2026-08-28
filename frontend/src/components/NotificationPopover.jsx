@@ -37,10 +37,10 @@ const NotificationRow = ({ notification, index, formatTime, onOpen, onDismiss })
             onDismiss(id);
           }
         }}
-        whileHover={{ x: 2, backgroundColor: 'rgba(255,255,255,0.82)' }}
+        whileHover={{ x: 2, backgroundColor: 'rgb(248,250,252)' }}
         whileTap={{ scale: 0.99 }}
         aria-label={`${notification?.title || 'Notification'}. Swipe left to dismiss.`}
-        className="mx-2 flex w-[calc(100%-1rem)] touch-pan-y items-start gap-3 rounded-xl border border-white/70 bg-white/50 px-4 py-3 text-left shadow-[0_2px_8px_rgba(0,0,0,0.01)] backdrop-blur-sm"
+        className="mx-2 flex w-[calc(100%-1rem)] touch-pan-y items-start gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 text-left"
       >
         <span className={`mt-2 size-1.5 shrink-0 rounded-full bg-violet-500 transition-opacity ${isRead ? 'opacity-0' : 'opacity-100'}`} />
         <span className="min-w-0 flex-1">
@@ -83,7 +83,7 @@ const NotificationPopover = ({
     role="dialog"
     aria-label="Notifications"
     data-testid="notification-popover"
-    className="absolute right-0 top-full z-50 mt-2 w-[min(420px,calc(100vw-1rem))] overflow-hidden rounded-3xl border border-white/80 bg-white/60 pb-2 pt-5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.03)] backdrop-blur-2xl saturate-[1.8]"
+    className="absolute right-0 top-full z-50 mt-2 w-[min(420px,calc(100vw-1rem))] overflow-hidden rounded-3xl border border-slate-200 bg-white pb-2 pt-5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.14),0_4px_12px_rgba(0,0,0,0.06)]"
   >
     <header className="flex items-center justify-between border-b border-black/[0.03] px-5 pb-4">
       <div className="flex items-center gap-2">

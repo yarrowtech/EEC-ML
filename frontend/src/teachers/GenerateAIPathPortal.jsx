@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
-import { useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,65 +20,6 @@ import {
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-
-const FALLBACK_STUDENTS = [
-  {
-    id: 'arjun',
-    name: 'Arjun Singh',
-    cls: '5-A',
-    subject: 'Mathematics',
-    focus: 'Fractions',
-    status: 'red',
-    mastery: [
-      ['Concept understanding', 38],
-      ['Problem solving', 45],
-      ['Application', 52],
-      ['Speed & accuracy', 35],
-    ],
-  },
-  {
-    id: 'priya',
-    name: 'Priya Sharma',
-    cls: '6-B',
-    subject: 'Science',
-    focus: 'Force & Motion',
-    status: 'yellow',
-    mastery: [
-      ['Concept understanding', 58],
-      ['Problem solving', 49],
-      ['Application', 61],
-      ['Speed & accuracy', 54],
-    ],
-  },
-  {
-    id: 'rahul',
-    name: 'Rahul Verma',
-    cls: '7-A',
-    subject: 'English',
-    focus: 'Grammar',
-    status: 'yellow',
-    mastery: [
-      ['Concept understanding', 62],
-      ['Problem solving', 55],
-      ['Application', 67],
-      ['Speed & accuracy', 60],
-    ],
-  },
-  {
-    id: 'sarah',
-    name: 'Sarah Khan',
-    cls: '5-A',
-    subject: 'Mathematics',
-    focus: 'Decimals',
-    status: 'red',
-    mastery: [
-      ['Concept understanding', 31],
-      ['Problem solving', 40],
-      ['Application', 44],
-      ['Speed & accuracy', 33],
-    ],
-  },
-];
 
 const blueprints = {
   Mathematics: [
@@ -153,7 +93,12 @@ const tierBadge = {
 
 const ringPath = 'M18 2.5a15.5 15.5 0 110 31 15.5 15.5 0 010-31';
 
-const overallMastery = (student) => Math.round(student.mastery.reduce((sum, [, value]) => sum + value, 0) / student.mastery.length);
+const overallMastery = (student) => {
+  const mastery = Array.isArray(student?.mastery) ? student.mastery : [];
+  return mastery.length
+    ? Math.round(mastery.reduce((sum, [, value]) => sum + Number(value || 0), 0) / mastery.length)
+    : 0;
+};
 
 const masteryClass = (value) => {
   if (value >= 60) return 'high';
@@ -162,7 +107,15 @@ const masteryClass = (value) => {
 };
 
 const createDraft = (student, subject, focus, pace, notes, aiNodes = null) => {
-  const bp = aiNodes || (blueprints[subject] || blueprints.Mathematics).map(([title, bloom, tier, hasLesson]) => ({ title, bloom, tier, hasLesson }));
+  const genericBlueprint = [
+    [`Introduction to ${focus}`, 'remember', 'blue', true],
+    [`Core ideas in ${focus}`, 'understand', 'blue', true],
+    [`Guided ${focus} practice`, 'apply', 'orange', false],
+    [`Independent ${focus} practice`, 'apply', 'orange', false],
+    [`Analyze ${focus} misconceptions`, 'analyze', 'purple', false],
+    [`${focus} mastery assessment`, 'evaluate', 'green', false],
+  ];
+  const bp = aiNodes || (blueprints[subject] || genericBlueprint).map(([title, bloom, tier, hasLesson]) => ({ title, bloom, tier, hasLesson }));
   return {
     student: student.id,
     studentName: student.name,
@@ -184,16 +137,16 @@ const createDraft = (student, subject, focus, pace, notes, aiNodes = null) => {
 };
 
 const GenerateAIPathPortal = () => {
-  const { classId } = useParams();
   const [activeTab, setActiveTab] = useState('generate'); // 'generate' | 'published'
   const [role] = useState('teacher');
-  const [students, setStudents] = useState(FALLBACK_STUDENTS);
-  const [selectedId, setSelectedId] = useState(FALLBACK_STUDENTS[0].id);
-  const [subject, setSubject] = useState('Mathematics');
-  const [focus, setFocus] = useState('Fractions');
+  const [students, setStudents] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [allocations, setAllocations] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [focus, setFocus] = useState('');
   const [pace, setPace] = useState('1 week');
-  const [notes, setNotes] = useState('Struggles with fraction operations');
-  const [draft, setDraft] = useState(() => createDraft(FALLBACK_STUDENTS[0], 'Mathematics', 'Fractions', '1 week', 'Struggles with fraction operations'));
+  const [notes, setNotes] = useState('');
+  const [draft, setDraft] = useState(null);
   const [published, setPublished] = useState(null);
   const [publishing, setPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState(null); // 'success' | 'error' | null
@@ -201,6 +154,7 @@ const GenerateAIPathPortal = () => {
   const [generateError, setGenerateError] = useState(null);
   const [lessonState, setLessonState] = useState({ open: false, index: null });
   const [studentProgress, setStudentProgress] = useState(null);
+  const [activityLog, setActivityLog] = useState([]);
   const selectedStudent = useMemo(() => students.find((item) => item.id === selectedId) || students[0], [selectedId, students]);
 
   useEffect(() => {
@@ -212,7 +166,12 @@ const GenerateAIPathPortal = () => {
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         const list = data?.students || [];
-        if (!list.length) return;
+        if (!list.length) {
+          setStudents([]);
+          setSelectedId('');
+          setDraft(null);
+          return;
+        }
         const mapped = list.map((s) => ({
           id: s._id || s.id,
           name: s.name || 'Student',
@@ -229,23 +188,73 @@ const GenerateAIPathPortal = () => {
         }));
         setStudents(mapped);
         setSelectedId(mapped[0].id);
-        setDraft(createDraft(mapped[0], 'Mathematics', 'General', '1 week', ''));
+        setFocus('General');
       })
+      .catch(() => {
+        setStudents([]);
+        setSelectedId('');
+        setDraft(null);
+      });
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setAllocations(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
+  // Real subjects the teacher is allocated, scoped to the selected student's class
+  // when we can match it; falls back only to the teacher's other allocations.
+  const subjectOptions = useMemo(() => {
+    const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const studentClass = norm(selectedStudent?.cls).replace(/-.*/, '') || norm(selectedStudent?.cls);
+    const forClass = allocations.filter((a) => {
+      const cn = norm(a?.classId?.name || a?.className);
+      return !studentClass || cn === studentClass || norm(selectedStudent?.cls).startsWith(cn);
+    });
+    const pick = (list) => [...new Set(
+      list.map((a) => String(a?.subjectId?.name || a?.subjectName || a?.subject || '').trim()).filter(Boolean),
+    )].sort();
+    const scoped = pick(forClass);
+    const all = pick(allocations);
+    return scoped.length ? scoped : all;
+  }, [allocations, selectedStudent]);
+
+  useEffect(() => {
+    if (subjectOptions.length && !subjectOptions.includes(subject)) {
+      setSubject(subjectOptions[0]);
+    } else if (!subjectOptions.length) {
+      setSubject('');
+    }
+  }, [subjectOptions, subject]);
+
   const teacherCount = students.filter((item) => item.status === 'red' || item.status === 'yellow').length;
-  const subjectLessons = lessons[subject] || lessons.Mathematics;
+  const subjectLessons = lessons[subject] || {
+    explain: `Review the core idea behind ${focus || subject || 'this topic'}, then connect it to an example from class.`,
+    q: `Which response best demonstrates understanding of ${focus || subject || 'this topic'}?`,
+    opts: [['A correct worked example', true], ['An unrelated fact', false], ['A copied answer without reasoning', false]],
+    hint: 'Look for the option that explains or applies the idea.',
+  };
   const activePath = role === 'student' ? studentProgress : draft;
 
   const syncStudent = (nextId) => {
     const next = students.find((item) => item.id === nextId) || students[0];
+    if (!next) return;
     setSelectedId(next.id);
-    setSubject(next.subject);
-    setFocus(next.focus);
+    setFocus(next.focus || 'General');
+    setDraft(null);
   };
 
   const generate = async () => {
+    if (!selectedStudent || !subject || !focus.trim()) {
+      setGenerateError('Select an allocated student, subject, and focus area first.');
+      return;
+    }
     setLoading(true);
     setGenerateError(null);
     const token = localStorage.getItem('token');
@@ -254,6 +263,7 @@ const GenerateAIPathPortal = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
+          studentId: selectedStudent.id,
           studentName: selectedStudent.name,
           subject,
           focus,
@@ -266,6 +276,7 @@ const GenerateAIPathPortal = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'AI generation failed');
       setDraft(createDraft(selectedStudent, subject, focus, pace, notes, data.nodes));
+      setActivityLog((previous) => [`Path generated for ${selectedStudent.name} · ${subject}`, ...previous].slice(0, 6));
       requestAnimationFrame(() => {
         document.getElementById('path-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -319,6 +330,7 @@ const GenerateAIPathPortal = () => {
         setPublished(next);
         setStudentProgress(next);
         setPublishStatus('success');
+        setActivityLog((previous) => [`Path published to ${selectedStudent.name} · ${draft.subject}`, ...previous].slice(0, 6));
       } else {
         setPublishStatus('error');
       }
@@ -415,6 +427,11 @@ const GenerateAIPathPortal = () => {
                     </span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {students.length === 0 && (
+                      <div className="col-span-full rounded-[1.4rem] border border-dashed border-[#dbe7fe] bg-[#f8fbfe] px-5 py-8 text-center text-sm text-[#65758b]">
+                        No students are available in your assigned classes.
+                      </div>
+                    )}
                     {students.map((item, index) => (
                       <Motion.button
                         key={item.id}
@@ -466,6 +483,7 @@ const GenerateAIPathPortal = () => {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <Field label="Student">
                       <select value={selectedId} onChange={(event) => syncStudent(event.target.value)}>
+                        {students.length === 0 && <option value="">No assigned students</option>}
                         {students.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.name} · {item.cls}
@@ -474,10 +492,11 @@ const GenerateAIPathPortal = () => {
                       </select>
                     </Field>
                     <Field label="Subject">
-                      <select value={subject} onChange={(event) => setSubject(event.target.value)}>
-                        <option>Mathematics</option>
-                        <option>Science</option>
-                        <option>English</option>
+                      <select value={subject} onChange={(event) => setSubject(event.target.value)} disabled={!subjectOptions.length}>
+                        {subjectOptions.length === 0 && <option value="">No allocated subjects</option>}
+                        {subjectOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
                       </select>
                     </Field>
                     <Field label="Focus area">
@@ -511,7 +530,7 @@ const GenerateAIPathPortal = () => {
                       whileHover={{ scale: 1.04, boxShadow: '0 0 0 3px rgba(45,122,255,0.18), 0 8px 28px rgba(45,122,255,0.10)' }}
                       whileTap={{ scale: 0.97 }}
                       onClick={generate}
-                      disabled={loading}
+                      disabled={loading || !selectedStudent || !subject || !focus.trim()}
                       className="relative inline-flex items-center gap-2.5 overflow-hidden rounded-full border border-[#2d7aff] bg-transparent px-8 py-3 text-sm font-semibold text-[#2d7aff] transition-all duration-300 hover:border-[#1a5fd9] hover:text-[#1a5fd9] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Motion.span
@@ -689,7 +708,10 @@ const GenerateAIPathPortal = () => {
                 >
                   <h3 className="mb-4 text-base font-semibold text-[#0b1c2f]">Recent activity</h3>
                   <div className="space-y-3">
-                    {['Path generated for Arjun Singh', 'Equivalent fractions preview opened', 'Teacher switched to Science draft'].map((item, index) => (
+                    {activityLog.length === 0 && (
+                      <p className="rounded-[1.2rem] border border-dashed border-[#dbe7fe] bg-[#f8fbfe] px-4 py-6 text-center text-sm text-[#65758b]">No learning-path activity yet.</p>
+                    )}
+                    {activityLog.map((item, index) => (
                       <Activity key={item} index={index} text={item} />
                     ))}
                   </div>

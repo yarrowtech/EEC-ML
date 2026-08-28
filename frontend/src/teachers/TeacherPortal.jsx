@@ -129,6 +129,16 @@ const communicationSectionLinks = [
 const buildClassPath = (classId, section) =>
   `${PORTAL_BASE}/classes/${encodeURIComponent(classId || 'current')}${section ? `/${section}` : ''}`;
 
+const allocationAcademicYearId = (allocation) => String(
+  allocation?.classId?.academicYearId?._id || allocation?.classId?.academicYearId || ''
+);
+
+const allocationsForActiveYear = (allocations, activeYearId) => (
+  activeYearId
+    ? allocations.filter((allocation) => allocationAcademicYearId(allocation) === String(activeYearId))
+    : allocations
+);
+
 const classDisplayName = (classId) =>
   classId === 'current' ? 'Current Class' : decodeURIComponent(classId || 'Current Class').replace(/-/g, ' ');
 
@@ -412,10 +422,12 @@ const ClassesHub = () => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [allocationError, setAllocationError] = useState('');
 
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setAllocationError('');
       try {
         const token = localStorage.getItem('token');
         const [allocRes, yearRes] = await Promise.all([
@@ -427,21 +439,19 @@ const ClassesHub = () => {
           }),
         ]);
         const allocRaw = await allocRes.json().catch(() => []);
+        if (!allocRes.ok) throw new Error(allocRaw?.error || 'Unable to load teacher allocations');
         const all = Array.isArray(allocRaw) ? allocRaw : [];
         const yearData = yearRes.ok ? await yearRes.json().catch(() => null) : null;
         const activeYearId = yearData?._id ? String(yearData._id) : '';
 
-        // Restrict to the active academic year so old allocations don't appear.
-        // Fall back to all allocations if there's no active year or nothing matched.
-        const filtered = activeYearId
-          ? all.filter((a) => {
-              const ayId = String(a?.classId?.academicYearId?._id || a?.classId?.academicYearId || '');
-              return ayId === activeYearId;
-            })
-          : all;
-        setAllocations(filtered.length > 0 ? filtered : all);
-      } catch {
+        const filtered = allocationsForActiveYear(all, activeYearId);
+        setAllocations(filtered);
+        if (activeYearId && all.length > 0 && filtered.length === 0) {
+          setAllocationError('Your allocations belong to an earlier academic year. Ask your administrator to assign the active year.');
+        }
+      } catch (err) {
         setAllocations([]);
+        setAllocationError(err.message || 'Unable to load teacher allocations');
       } finally {
         setLoading(false);
       }
@@ -497,13 +507,20 @@ const ClassesHub = () => {
         (a?.sectionId?.name || a?.sectionName || '') === selectedSection,
     );
     const mongoId = alloc?.classId?._id || alloc?.classId?.id || '';
+    const sectionMongoId = alloc?.sectionId?._id || alloc?.sectionId?.id || '';
     const slug =
       `${selectedClass.trim()}-${selectedSection.trim()}`
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '') || 'current';
     navigate(buildClassPath(slug), {
-      state: { className: `${selectedClass} ${selectedSection}`, classMongoId: mongoId },
+      state: {
+        className: selectedClass,
+        sectionName: selectedSection,
+        classMongoId: mongoId,
+        sectionMongoId,
+        subjectName: selectedSubject,
+      },
     });
   };
 
@@ -545,7 +562,7 @@ const ClassesHub = () => {
     return (
       <div className="flex min-h-full items-center justify-center bg-white p-6 ">
         <div className="w-full max-w-[520px] rounded-[40px] p-11 text-center" style={GLASS_CARD}>
-          <p className="text-sm text-[#2c405e]">No class allocations found. Contact your administrator.</p>
+          <p className="text-sm text-[#2c405e]">{allocationError || 'No class allocations found. Contact your administrator.'}</p>
         </div>
       </div>
     );
@@ -701,15 +718,71 @@ const CW_TABS = [
 const ClassWorkspace = () => {
   const { classId = 'current' } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [className, setClassName] = useState('');
   const [sectionName, setSectionName] = useState('');
   const basePath = buildClassPath(classId);
+
+  // ── Resolve the `current` placeholder slug to the teacher's real class-section.
+  // Dashboard shortcuts (Attendance, Achievements, …) link to `classes/current/…`;
+  // without this every child page opens with no class context ("No students found").
+  useEffect(() => {
+    if (classId !== 'current') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const [res, yearRes] = await Promise.all([
+          fetch(`${API_BASE}/api/teacher/dashboard/allocations`, {
+            headers: { authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_BASE}/api/academic/active-year`, {
+            headers: { authorization: `Bearer ${token}` },
+          }),
+        ]);
+        if (!res.ok) return;
+        const data = await res.json().catch(() => []);
+        const yearData = yearRes.ok ? await yearRes.json().catch(() => null) : null;
+        const activeAllocations = allocationsForActiveYear(
+          Array.isArray(data) ? data : [],
+          yearData?._id ? String(yearData._id) : ''
+        );
+        if (cancelled || activeAllocations.length === 0) return;
+        // Prefer the class-teacher allocation; fall back to the first allocation.
+        const primary = activeAllocations.find((a) => a?.isClassTeacher) || activeAllocations[0];
+        const cn = String(primary?.classId?.name || primary?.className || '').trim();
+        const sn = String(primary?.sectionId?.name || primary?.sectionName || '').trim();
+        if (!cn || !sn) return;
+        const slug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        if (!slug || slug === 'current' || cancelled) return;
+        const rest = location.pathname.slice(basePath.length); // e.g. "/students/attendance"
+        navigate(`${buildClassPath(slug)}${rest}${location.search}`, {
+          replace: true,
+          state: {
+            className: cn,
+            sectionName: sn,
+            classMongoId: primary?.classId?._id || primary?.classId?.id || '',
+            sectionMongoId: primary?.sectionId?._id || primary?.sectionId?.id || '',
+            subjectName: primary?.subjectId?.name || primary?.subjectName || '',
+          },
+        });
+      } catch {
+        /* stay on 'current' — child pages surface their own empty state */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [classId, location.pathname, location.search, basePath, navigate]);
 
   // ── Resolve class name + section separately ───────────────
   useEffect(() => {
     // seed from navigation state
     const navName = location.state?.className || '';
-    if (navName) {
+    const navSection = location.state?.sectionName || '';
+    if (navName && navSection) {
+      setClassName(navName);
+      setSectionName(navSection);
+    } else if (navName) {
       const parts = navName.split(' ');
       setClassName(parts[0] || navName);
       setSectionName(parts.slice(1).join(' '));
@@ -733,10 +806,13 @@ const ClassWorkspace = () => {
         const data = await res.json().catch(() => []);
         if (cancelled || !Array.isArray(data)) return;
         const classMongoId = location.state?.classMongoId;
+        const sectionMongoId = location.state?.sectionMongoId;
         const alloc = data.find((it) => {
           if (classMongoId) {
             const aid = it?.classId?._id || it?.classId?.id || it?.classId;
-            return String(aid || '') === String(classMongoId);
+            const sid = it?.sectionId?._id || it?.sectionId?.id || it?.sectionId;
+            return String(aid || '') === String(classMongoId)
+              && (!sectionMongoId || String(sid || '') === String(sectionMongoId));
           }
           // fallback: match by slug derived from class + section name
           const cn = it?.classId?.name || it?.className || '';
@@ -753,7 +829,7 @@ const ClassWorkspace = () => {
     };
     load();
     return () => { cancelled = true; };
-  }, [classId, location.state?.className]);
+  }, [classId, location.state?.classMongoId, location.state?.className, location.state?.sectionMongoId, location.state?.sectionName]);
 
   // ── Active tab ────────────────────────────────────────────
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
