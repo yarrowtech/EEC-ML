@@ -113,7 +113,7 @@ const StatCard = ({ icon: Icon, label, value, sub, grad, shadow }) => (
 const TabBtn = ({ active, icon: Icon, label, onClick }) => (
   <button type="button" onClick={onClick}
     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition
-      ${active ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200' : 'text-slate-600 hover:bg-slate-100'}`}>
+      ${active ? 'bg-linear-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-200' : 'text-slate-600 hover:bg-slate-100'}`}>
     <Icon className="h-4 w-4" />
     <span className="hidden sm:inline">{label}</span>
   </button>
@@ -454,10 +454,16 @@ const AttendanceView = () => {
   /* ─── RENDER ─── */
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
-          <p className="mt-3 text-sm text-slate-500">Loading your attendance...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-3 sm:p-6" aria-busy="true">
+        <div className="mx-auto max-w-6xl space-y-5">
+          <div className="h-28 animate-pulse rounded-2xl bg-slate-200/70" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-slate-200/70" />
+            ))}
+          </div>
+          <div className="h-64 animate-pulse rounded-2xl bg-slate-200/70" />
+          <div className="h-48 animate-pulse rounded-2xl bg-slate-200/70" />
         </div>
       </div>
     );
@@ -468,13 +474,13 @@ const AttendanceView = () => {
       <div className="mx-auto max-w-6xl space-y-5">
 
         {/* ─── Header ─── */}
-        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-indigo-500 via-indigo-600 to-purple-600 p-5 shadow-lg shadow-indigo-200/60 sm:p-6">
+        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-amber-400 via-amber-500 to-orange-500 p-5 shadow-lg shadow-amber-200/60 sm:p-6">
           <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
           <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
           <div className="relative flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-                <CalendarDays className="h-5.5 w-5.5 text-white" />
+                <CalendarDays className="h-5 w-5 text-white" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-white sm:text-2xl">My Attendance</h1>
@@ -552,7 +558,7 @@ const AttendanceView = () => {
 
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <StatCard icon={BookOpen} label="Total Classes" value={attendanceStats.totalClasses} grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
+                      <StatCard icon={BookOpen} label="Total Classes" value={attendanceStats.totalClasses} grad="from-amber-500 to-blue-600" shadow="shadow-amber-200/60" />
                       <StatCard icon={CheckCircle2} label="Present" value={attendanceStats.attended} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
                       <StatCard icon={XCircle} label="Absent" value={attendanceStats.absent} grad="from-rose-500 to-red-600" shadow="shadow-rose-200/60" />
                       <StatCard icon={Flame} label="Current Streak" value={`${currentStreak} day${currentStreak !== 1 ? 's' : ''}`} grad="from-orange-400 to-amber-500" shadow="shadow-orange-200/60" />
@@ -561,7 +567,7 @@ const AttendanceView = () => {
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                          <CalendarDays className="h-3.5 w-3.5 text-indigo-600" />
+                          <CalendarDays className="h-3.5 w-3.5 text-amber-600" />
                           This Month
                         </div>
                         <p className="mt-3 text-base font-semibold text-slate-900">
@@ -576,10 +582,10 @@ const AttendanceView = () => {
                         <p className="mt-3 text-3xl font-bold text-emerald-600">{monthlyPresent}</p>
                         <p className="mt-1 text-xs text-emerald-700/80">Absences this month: {monthlyAbsent}</p>
                       </div>
-                      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">Monthly Rate</p>
-                        <p className="mt-3 text-3xl font-bold text-indigo-600">{monthlyPct}%</p>
-                        <p className="mt-1 text-xs text-indigo-700/80">Based on current month records</p>
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Monthly Rate</p>
+                        <p className="mt-3 text-3xl font-bold text-amber-600">{monthlyPct}%</p>
+                        <p className="mt-1 text-xs text-amber-700/80">Based on current month records</p>
                       </div>
                     </div>
                   </div>
@@ -590,7 +596,7 @@ const AttendanceView = () => {
                 <div className="p-5 md:p-6">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-indigo-600" />
+                      <BookOpen className="h-4 w-4 text-amber-600" />
                       <h2 className="font-semibold text-slate-900">Subject-wise Attendance</h2>
                     </div>
                     <span className="text-xs font-medium text-slate-400">{subjectStats.length} subjects</span>
@@ -617,7 +623,7 @@ const AttendanceView = () => {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <p className="flex items-center gap-2 text-sm text-slate-600">
-                <Target className="h-4 w-4 shrink-0 text-indigo-600" />
+                <Target className="h-4 w-4 shrink-0 text-amber-600" />
                 Aim to maintain 75%+ attendance. If any entry looks incorrect, contact your class teacher.
               </p>
             </div>
@@ -664,14 +670,14 @@ const AttendanceView = () => {
                         }
                       }}
                       className={`relative flex flex-col items-center justify-center aspect-square rounded-xl border transition
-                        ${selectedDate === day.key ? 'border-indigo-500 ring-2 ring-indigo-100 bg-indigo-50' : ''}
-                        ${day.isToday && selectedDate !== day.key ? 'border-indigo-300 bg-indigo-50/50' : ''}
+                        ${selectedDate === day.key ? 'border-amber-500 ring-2 ring-amber-100 bg-amber-50' : ''}
+                        ${day.isToday && selectedDate !== day.key ? 'border-amber-300 bg-amber-50/50' : ''}
                         ${day.isCurrentMonth
                           ? 'text-slate-900 hover:bg-slate-50 cursor-pointer'
                           : 'text-slate-300 border-transparent cursor-default'}
                         ${!day.isToday && selectedDate !== day.key ? 'border-slate-100' : ''}
                       `}>
-                      <span className={`text-xs font-medium ${day.isToday ? 'text-indigo-600' : ''}`}>
+                      <span className={`text-xs font-medium ${day.isToday ? 'text-amber-600' : ''}`}>
                         {day.date.getDate()}
                       </span>
                       {day.status && (
@@ -688,7 +694,7 @@ const AttendanceView = () => {
                     <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Absent
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-200 ring-1 ring-indigo-300" /> Today
+                    <span className="h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" /> Today
                   </div>
                 </div>
               </div>
@@ -696,9 +702,9 @@ const AttendanceView = () => {
 
             {/* Selected date detail */}
             {selectedDateRecords.length > 0 && (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-5 shadow-sm animate-in fade-in">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/30 p-5 shadow-sm animate-in fade-in">
                 <h3 className="mb-3 text-sm font-semibold text-slate-900 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-indigo-600" />
+                  <Calendar className="h-4 w-4 text-amber-600" />
                   {fmtDateLong(selectedDate)}
                 </h3>
                 <div className="space-y-2">
@@ -739,7 +745,7 @@ const AttendanceView = () => {
                 <p className="text-xs text-slate-500">Present</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-                <p className="text-2xl font-bold text-indigo-600">{monthlyPct}%</p>
+                <p className="text-2xl font-bold text-amber-600">{monthlyPct}%</p>
                 <p className="text-xs text-slate-500">Rate</p>
               </div>
             </div>
@@ -752,7 +758,7 @@ const AttendanceView = () => {
             {/* Daily header with filter */}
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
               <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-                <List className="h-4 w-4 text-indigo-600" />
+                <List className="h-4 w-4 text-amber-600" />
                 Day-by-Day Attendance
                 <span className="text-xs font-normal text-slate-400">({filteredDailyDates.length} days)</span>
               </h2>
@@ -761,7 +767,7 @@ const AttendanceView = () => {
                   <button key={v} type="button" onClick={() => setDailyFilter(v)}
                     className={`rounded-md px-2.5 py-1 font-semibold transition ${
                       dailyFilter === v
-                        ? 'bg-indigo-600 text-white'
+                        ? 'bg-amber-600 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}>
                     {v === 'all' ? 'All' : v === 'present' ? 'Present' : 'Absent'}
@@ -837,7 +843,7 @@ const AttendanceView = () => {
         {activeTab === 'weekly' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-1">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />
+              <BarChart3 className="h-4 w-4 text-amber-600" />
               <h2 className="font-semibold text-slate-900">Weekly Breakdown</h2>
               <span className="text-xs text-slate-400">({weeklyData.length} weeks)</span>
             </div>
@@ -938,10 +944,10 @@ const AttendanceView = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in">
           <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-purple-50 p-5">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-indigo-600" />
+                  <BookOpen className="h-5 w-5 text-amber-600" />
                   Learning Materials
                 </h2>
                 <p className="mt-1 text-sm text-slate-600">
@@ -988,7 +994,7 @@ const AttendanceView = () => {
                   <h3 className="text-sm font-semibold text-slate-900 mb-3">Lesson Plan Completion</h3>
                   {loadingLessonPlans ? (
                     <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
                       Loading lesson plan status...
                     </div>
                   ) : lessonPlanStatuses.length === 0 ? (
@@ -1054,7 +1060,7 @@ const AttendanceView = () => {
                   <h3 className="text-sm font-semibold text-slate-900 mb-3">Learning Materials</h3>
                   {loadingMaterials ? (
                     <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
                       Loading materials...
                     </div>
                   ) : materials.length === 0 ? (
@@ -1071,7 +1077,7 @@ const AttendanceView = () => {
                             <div className="mb-3">
                               <div className="flex items-start justify-between gap-3 mb-2">
                                 <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                                  <FileText className="h-5 w-5 text-indigo-600" />
+                                  <FileText className="h-5 w-5 text-amber-600" />
                                   {material.title}
                                 </h3>
                                 {material.priority && (
@@ -1095,7 +1101,7 @@ const AttendanceView = () => {
                                   </span>
                                 )}
                                 {material.typeLabel && (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-1 text-purple-700">
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-amber-700">
                                     {material.typeLabel}
                                   </span>
                                 )}
@@ -1107,7 +1113,7 @@ const AttendanceView = () => {
                             {attachments.length > 0 && (
                               <div className="mt-4 pt-4 border-t border-slate-200">
                                 <div className="flex items-center gap-2 mb-3">
-                                  <Paperclip className="h-4 w-4 text-indigo-600" />
+                                  <Paperclip className="h-4 w-4 text-amber-600" />
                                   <span className="text-sm font-semibold text-slate-700">
                                     Attachments ({attachments.length})
                                   </span>
@@ -1121,20 +1127,20 @@ const AttendanceView = () => {
                                         href={attachment?.url || '#'}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50 transition group"
+                                        className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 hover:border-amber-300 hover:bg-amber-50 transition group"
                                       >
-                                        <div className="p-2 bg-indigo-100 rounded-lg group-hover:bg-indigo-200 transition">
-                                          <FileIcon className="w-5 h-5 text-indigo-600" />
+                                        <div className="p-2 bg-amber-100 rounded-lg group-hover:bg-amber-200 transition">
+                                          <FileIcon className="w-5 h-5 text-amber-600" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-900 truncate group-hover:text-indigo-700">
+                                          <p className="text-sm font-medium text-slate-900 truncate group-hover:text-amber-700">
                                             {attachment?.name || `File ${attIdx + 1}`}
                                           </p>
                                           {attachment?.size && (
                                             <p className="text-xs text-slate-500">{formatFileSize(attachment.size)}</p>
                                           )}
                                         </div>
-                                        <Download className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 shrink-0" />
+                                        <Download className="w-4 h-4 text-slate-400 group-hover:text-amber-600 shrink-0" />
                                       </a>
                                     );
                                   })}
@@ -1154,7 +1160,7 @@ const AttendanceView = () => {
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-3">
               <button
                 onClick={() => setShowMaterialsModal(false)}
-                className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition"
+                className="w-full rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 transition"
               >
                 Close
               </button>

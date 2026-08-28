@@ -96,6 +96,6 @@ describe('AttendanceView', () => {
     renderWithRouter('/student/attendance?filter=present');
 
     expect(await screen.findByText(/Day-by-Day Attendance/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Present' })).toHaveClass('bg-indigo-600');
+    expect(screen.getByRole('button', { name: 'Present' })).toHaveClass('bg-amber-600');
   });
 });

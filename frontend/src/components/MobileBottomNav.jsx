@@ -2,46 +2,66 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
-  Brain, Save, LogOut, Wallet,
+  Brain, Save, LogOut, Wallet, GraduationCap, Bell, Heart, Zap,
+  ClipboardCheck, MoreHorizontal,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import { useNotifications } from '../hooks/useNotifications';
+import ConfirmDialog from './ConfirmDialog';
 
 /* ─── Sub-menu definitions ─────────────────────────────────────────────── */
 const subMenus = {
-  academics: {
-    title: 'Academics',
-    gradient: 'from-emerald-500 to-emerald-600',
+  learn: {
+    title: 'Learn',
+    gradient: 'from-amber-500 to-orange-500',
     items: [
-      { id: 'assignments',                 name: 'Assignments',     icon: FileText,      color: 'bg-blue-500',   desc: 'Submit & track' },
-      { id: 'assignments-journal',         name: 'Journal',         icon: NotebookPen,   color: 'bg-green-500',  desc: 'My notes' },
-      { id: 'assignments-academic-alcove', name: 'The Wall',        icon: Target,        color: 'bg-purple-500', desc: 'Deep focus' },
-      { id: 'results',                     name: 'Results',         icon: BarChart3,     color: 'bg-indigo-500', desc: 'Grades' },
-      { id: 'fees',                        name: 'Fees',            icon: Wallet,        color: 'bg-amber-500',  desc: 'Bills & dues' },
+      { id: 'learning',                    name: 'Learning Hub',  icon: Brain,         color: 'bg-amber-500',  desc: 'Lessons & tutor' },
+      { id: 'assignments',                 name: 'Assignments',   icon: FileText,      color: 'bg-amber-600',  desc: 'Submit & track' },
+      { id: 'assignments-journal',         name: 'Journal',       icon: NotebookPen,   color: 'bg-amber-500',  desc: 'My notes' },
+      { id: 'assignments-academic-alcove', name: 'Class Wall',    icon: Target,        color: 'bg-amber-600',  desc: 'Deep focus' },
+      { id: 'results',                     name: 'Results',       icon: BarChart3,     color: 'bg-amber-500',  desc: 'Grades' },
+      { id: 'mastery',                     name: 'Mastery',       icon: Zap,           color: 'bg-amber-600',  desc: 'Topic strength' },
+      { id: 'error-analysis',              name: 'Error Analysis', icon: ClipboardCheck, color: 'bg-amber-500', desc: 'What to fix' },
     ],
   },
-  schedule: {
-    title: 'Schedule',
-    gradient: 'from-orange-500 to-orange-600',
+  school: {
+    title: 'School',
+    gradient: 'from-amber-500 to-orange-500',
     items: [
-      { id: 'routine',            name: 'Daily Routine', icon: Calendar, color: 'bg-orange-500', desc: 'Timetable' },
-      { id: 'exams',              name: 'Exams',         icon: FileText, color: 'bg-indigo-500', desc: 'Exam routine' },
-      { id: 'holidays',           name: 'Holidays',      icon: CalendarDays, color: 'bg-amber-500',  desc: 'Holiday list' },
-      { id: 'attendance',         name: 'Attendance',    icon: Users,    color: 'bg-green-500',  desc: 'Track presence' },
-      { id: 'lesson-plan-status', name: 'Syllabus',      icon: BookOpen, color: 'bg-blue-500',   desc: 'Course status' },
+      { id: 'routine',            name: 'Timetable',    icon: Calendar,     color: 'bg-amber-500', desc: 'Class schedule' },
+      { id: 'attendance',         name: 'Attendance',   icon: Users,        color: 'bg-amber-600', desc: 'Track presence' },
+      { id: 'exams',              name: 'Exams',        icon: FileText,     color: 'bg-amber-500', desc: 'Exam routine' },
+      { id: 'lesson-plan-status', name: 'Syllabus',     icon: BookOpen,     color: 'bg-amber-600', desc: 'Course status' },
+      { id: 'holidays',           name: 'Holidays',     icon: CalendarDays, color: 'bg-amber-500', desc: 'Holiday list' },
+      { id: 'noticeboard',        name: 'Notice Board', icon: Bell,         color: 'bg-amber-600', desc: 'Announcements' },
+    ],
+  },
+  more: {
+    title: 'More',
+    gradient: 'from-amber-500 to-orange-500',
+    items: [
+      { id: 'profile',       name: 'Profile',       icon: CircleUserRound, color: 'bg-amber-500', desc: 'Your account' },
+      { id: 'notifications', name: 'Notifications',  icon: Bell,            color: 'bg-amber-600', desc: 'Alerts' },
+      { id: 'fees',          name: 'Fees',           icon: Wallet,          color: 'bg-amber-500', desc: 'Bills & dues' },
+      { id: 'teacherfeedback', name: 'Teacher Feedback', icon: BarChart3,   color: 'bg-amber-600', desc: 'For your teachers' },
+      { id: 'meetings',      name: 'Parent Meetings', icon: CalendarDays,   color: 'bg-amber-500', desc: 'PTM schedule' },
+      { id: 'excuse-letter', name: 'Excuse Letter',  icon: FileText,        color: 'bg-amber-600', desc: 'Request leave' },
+      { id: 'complaints',    name: 'Complaints',     icon: X,               color: 'bg-amber-500', desc: 'Raise an issue' },
+      { id: 'wellbeing',     name: 'Wellbeing',      icon: Heart,           color: 'bg-amber-600', desc: 'Check-in & health' },
+      { id: 'achievements',  name: 'Achievements',   icon: Target,          color: 'bg-amber-500', desc: 'Badges earned' },
+      { id: 'logout',        name: 'Logout',         icon: LogOut,          color: 'bg-red-500',   desc: 'Sign out', action: 'logout' },
     ],
   },
 };
 
-/* ─── Bottom-nav tab definitions ────────────────────────────────────────── */
+/* ─── Bottom-nav tab definitions (5 tabs — the rest live under "More") ──── */
 const navItems = [
-  { id: 'dashboard', label: 'Home',      icon: Home,          path: '/student' },
-  { id: 'learning',  label: 'Learning',  icon: Brain,         path: '/student/learning' },
-  { id: 'academics', label: 'Academics', icon: BookOpen,      subMenu: 'academics' },
-  { id: 'schedule',  label: 'Schedule',  icon: Calendar,      subMenu: 'schedule' },
-  { id: 'chat',      label: 'Messages',  icon: MessageCircle,  path: '/student/chat' },
-  { id: 'profile',   label: 'Profile',   icon: CircleUserRound, path: '/student/profile' },
-  { id: 'logout',    label: 'Logout',    icon: LogOut,        action: 'logout' },
+  { id: 'dashboard', label: 'Home',     icon: Home,          path: '/student' },
+  { id: 'learn',     label: 'Learn',    icon: GraduationCap, subMenu: 'learn' },
+  { id: 'school',    label: 'School',   icon: BookOpen,      subMenu: 'school' },
+  { id: 'chat',      label: 'Messages', icon: MessageCircle, path: '/student/chat' },
+  { id: 'more',      label: 'More',     icon: MoreHorizontal, subMenu: 'more' },
 ];
 
 // Every view served by the Learning hub — legacy ids keep deep links alive.
@@ -52,15 +72,19 @@ const LEARNING_HUB_VIEWS = [
 ];
 
 /* ─── Helper ─────────────────────────────────────────────────────────────── */
-const isViewInSubMenu = (menuKey, activeView) =>
-  subMenus[menuKey]?.items.some(
+const isViewInSubMenu = (menuKey, activeView) => {
+  if (menuKey === 'learn' && LEARNING_HUB_VIEWS.includes(activeView)) return true;
+  return subMenus[menuKey]?.items.some(
     (item) => activeView === item.id || activeView.startsWith(`${item.id}-`)
   ) ?? false;
+};
 
 /* ─── Component ─────────────────────────────────────────────────────────── */
 const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const navigate = useNavigate();
+  const { unreadCount: notifUnreadCount } = useNotifications();
   const [openMenu, setOpenMenu] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const chatFetchInFlight = useRef(false);
 
@@ -112,13 +136,6 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   }, [loadChatUnreadCount]);
 
   const handleTabPress = (item) => {
-    if (item.action === 'logout') {
-      const shouldLogout = window.confirm('Do you want to logout?');
-      if (!shouldLogout) return;
-      logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
-      return;
-    }
-
     if (item.subMenu) {
       setOpenMenu((prev) => (prev === item.subMenu ? null : item.subMenu));
     } else {
@@ -127,15 +144,29 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
     }
   };
 
-  const handleCardPress = (childId) => {
-    navigate(`/student/${childId}`);
+  const handleCardPress = (child) => {
     setOpenMenu(null);
+    if (child.action === 'logout') {
+      setShowLogoutConfirm(true);
+      return;
+    }
+    navigate(`/student/${child.id}`);
   };
 
   const currentMenu = openMenu ? subMenus[openMenu] : null;
 
   return (
     <>
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        onOpenChange={setShowLogoutConfirm}
+        onConfirm={() => logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT })}
+        icon={LogOut}
+        title="Confirm logout"
+        description="Are you sure you want to log out? Any unsaved changes will be lost."
+        confirmLabel="Logout"
+      />
+
       {/* ── Sub-menu overlay ─────────────────────────────────────────────── */}
       {openMenu && currentMenu && (
         <>
@@ -161,7 +192,7 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
             </div>
 
             {/* App-icon card grid */}
-            <div className="p-4 sm:p-5 grid grid-cols-3 gap-3 sm:gap-4">
+            <div className="p-4 sm:p-5 grid grid-cols-3 gap-3 sm:gap-4 max-h-[70vh] overflow-y-auto">
               {currentMenu.items.map((item) => {
                 const Icon = item.icon;
                 const isActive =
@@ -170,7 +201,7 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => handleCardPress(item.id)}
+                    onClick={() => handleCardPress(item)}
                     className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all active:scale-90 ${
                       isActive
                         ? 'bg-amber-50 ring-2 ring-amber-400'
@@ -229,7 +260,7 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
               Save Entry
             </button>
             <button
-              onClick={() => setOpenMenu('academics')}
+              onClick={() => setOpenMenu('learn')}
               className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-lg text-gray-500 hover:bg-gray-100 active:scale-90 transition-all"
             >
               <BookOpen size={20} className="sm:w-6 sm:h-6" />
@@ -245,8 +276,6 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                 ? openMenu === item.subMenu || isViewInSubMenu(item.subMenu, activeView)
                 : item.id === 'dashboard'
                 ? activeView === 'dashboard' || activeView === 'home'
-                : item.id === 'learning'
-                ? LEARNING_HUB_VIEWS.includes(activeView)
                 : activeView === item.id;
 
               return (
@@ -270,6 +299,11 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                     {item.id === 'chat' && chatUnreadCount > 0 && (
                       <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
                         {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                      </span>
+                    )}
+                    {item.id === 'more' && notifUnreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
+                        {notifUnreadCount > 99 ? '99+' : notifUnreadCount}
                       </span>
                     )}
                   </div>

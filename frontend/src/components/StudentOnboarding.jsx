@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Headphones, PenLine, Monitor, ChevronRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { BookOpen, Headphones, PenLine, Monitor, ChevronRight, CheckCircle2, Sparkles, AlertCircle } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
@@ -20,6 +20,7 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
   const [selectedSubjects, setSelectedSubjects] = useState([]);
   const [learningStyle, setLearningStyle] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const toggleSubject = (s) => {
     setSelectedSubjects((prev) =>
@@ -27,18 +28,52 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
     );
   };
 
+  const persistPreferences = async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE}/api/student/auth/onboarding`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ subjects: selectedSubjects, learningStyle }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed (${res.status})`);
+    }
+  };
+
+  // Primary "finish" action: the choices must actually reach the server before we
+  // close the modal, otherwise the student is told setup is done while their
+  // subject / learning-style picks are silently discarded.
   const save = async () => {
     setSaving(true);
+    setError('');
     try {
-      const token = localStorage.getItem('token');
-      await fetch(`${API_BASE}/api/student/auth/onboarding`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subjects: selectedSubjects, learningStyle }),
-      });
-    } catch (_) {}
-    finally { setSaving(false); }
-    onComplete?.();
+      await persistPreferences();
+      onComplete?.();
+    } catch (err) {
+      setError(
+        err?.message?.includes('Failed to fetch')
+          ? "Couldn't reach the server. Check your connection and try again."
+          : 'We couldn\'t save your preferences. Please try again.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // "Skip for now" is explicitly low-stakes — make a best-effort save so onboarding
+  // doesn't nag again, but never trap the student behind a network error.
+  const skip = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await persistPreferences();
+    } catch (_) {
+      /* best effort — onboarding may reappear next session, no data is lost */
+    } finally {
+      setSaving(false);
+      onComplete?.();
+    }
   };
 
   const firstName = (studentName || '').split(' ')[0] || 'Student';
@@ -46,6 +81,9 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
       <Motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-heading"
         initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         className="w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden"
@@ -79,7 +117,7 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-200">
                   <Sparkles className="size-8 text-white" />
                 </div>
-                <h2 className="text-2xl font-black text-slate-900 mb-2">Welcome, {firstName}! 🎉</h2>
+                <h2 id="onboarding-heading" className="text-2xl font-black text-slate-900 mb-2">Welcome, {firstName}! 🎉</h2>
                 <p className="text-slate-500 text-sm leading-relaxed">
                   Let's take 30 seconds to personalise your learning experience. We'll use your preferences to suggest the right study materials and activities for you.
                 </p>
@@ -94,7 +132,7 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
             {/* Step 1 — Subjects */}
             {step === 1 && (
               <Motion.div key="subjects" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.25 }}>
-                <h2 className="text-xl font-black text-slate-900 mb-1">Your favourite subjects</h2>
+                <h2 id="onboarding-heading" className="text-xl font-black text-slate-900 mb-1">Your favourite subjects</h2>
                 <p className="text-sm text-slate-500 mb-4">Pick up to 5 subjects you enjoy or want to focus on.</p>
                 <div className="flex flex-wrap gap-2">
                   {SUBJECTS.map((s) => {
@@ -124,7 +162,7 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
             {/* Step 2 — Learning Style */}
             {step === 2 && (
               <Motion.div key="style" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.25 }}>
-                <h2 className="text-xl font-black text-slate-900 mb-1">How do you learn best?</h2>
+                <h2 id="onboarding-heading" className="text-xl font-black text-slate-900 mb-1">How do you learn best?</h2>
                 <p className="text-sm text-slate-500 mb-4">This helps us tailor AI explanations just for you.</p>
                 <div className="space-y-2.5">
                   {LEARNING_STYLES.map((style) => {
@@ -157,6 +195,14 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
             )}
           </AnimatePresence>
 
+          {/* Save error — announced to assistive tech, modal stays open for retry */}
+          {error && (
+            <p role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-semibold text-red-700">
+              <AlertCircle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+              <span>{error}</span>
+            </p>
+          )}
+
           {/* Navigation */}
           <div className="mt-6 flex gap-3">
             {step > 0 && (
@@ -177,13 +223,13 @@ const StudentOnboarding = ({ studentName = 'Student', onComplete }) => {
               }}
               className="ml-auto flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:opacity-90 transition-opacity disabled:opacity-60"
             >
-              {saving ? 'Saving…' : step < STEPS.length - 1 ? 'Continue' : "Let's Go!"}
+              {saving ? 'Saving…' : error ? 'Try again' : step < STEPS.length - 1 ? 'Continue' : "Let's Go!"}
               {!saving && <ChevronRight className="size-4" />}
             </button>
           </div>
 
           {step < STEPS.length - 1 && (
-            <button type="button" onClick={save} className="mt-3 w-full text-center text-xs text-slate-400 hover:text-slate-500 transition-colors">
+            <button type="button" disabled={saving} onClick={skip} className="mt-3 w-full text-center text-xs text-slate-400 hover:text-slate-500 transition-colors disabled:opacity-60">
               Skip for now
             </button>
           )}

@@ -3,11 +3,13 @@ import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
-  Heart, Star, Target, PanelLeft, Zap, Wallet, AlertOctagon, Video, Activity,
+  Heart, Star, Target, Zap, Wallet, AlertOctagon, Video, Activity,
+  GraduationCap, CalendarClock, ClipboardCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import ConfirmDialog from './ConfirmDialog';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -20,58 +22,61 @@ const LEARNING_HUB_VIEWS = [
   'study-materials', 'practice-papers', 'my-paths',
 ];
 
+// Grouped by what a student is trying to do — Learn / School / Money / Messages /
+// Wellbeing — with plain-language labels (no "The Wall" / "PTM Schedule" / "Syllabus
+// Status"). Child ids are URL segments and must match Dashboard's viewComponents map.
 const MENU_ITEMS = [
   {
     id: 'dashboard', name: 'Dashboard', icon: Home,
-    iconColor: 'text-blue-600', iconBg: 'bg-blue-100',
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
   },
   {
-    id: 'learning', name: 'Learning', icon: Brain,
-    iconColor: 'text-violet-600', iconBg: 'bg-violet-100',
-  },
-  {
-    id: 'academics', name: 'Academics', icon: BookOpen,
-    iconColor: 'text-emerald-600', iconBg: 'bg-emerald-100',
+    id: 'learn', name: 'Learn', icon: GraduationCap,
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
     children: [
+      { id: 'learning',                     name: 'Learning Hub',    icon: Brain     },
       { id: 'assignments',                  name: 'Assignments',     icon: FileText  },
       { id: 'assignments-journal',          name: 'Journal',         icon: File      },
-      { id: 'assignments-academic-alcove',  name: 'The Wall',        icon: Target    },
+      { id: 'assignments-academic-alcove',  name: 'Class Wall',      icon: Target    },
       { id: 'results',                      name: 'Results',         icon: BarChart3 },
-      { id: 'fees',                         name: 'Fees',            icon: Wallet    },
+      { id: 'mastery',                      name: 'Mastery Progress', icon: Zap      },
+      { id: 'error-analysis',               name: 'Error Analysis',  icon: ClipboardCheck },
     ],
   },
   {
-    id: 'schedule', name: 'Schedule', icon: Calendar,
-    iconColor: 'text-orange-600', iconBg: 'bg-orange-100',
+    id: 'school', name: 'School', icon: BookOpen,
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
     children: [
-      { id: 'routine',             name: 'Class Routine',  icon: Calendar  },
-      { id: 'exams',               name: 'Exams',           icon: FileText  },
-      { id: 'holidays',            name: 'Holiday List',    icon: Bell      },
-      { id: 'attendance',          name: 'Attendance',      icon: Users     },
-      { id: 'lesson-plan-status',  name: 'Syllabus Status', icon: BookOpen  },
+      { id: 'routine',             name: 'Timetable',    icon: Calendar     },
+      { id: 'attendance',          name: 'Attendance',   icon: Users        },
+      { id: 'exams',               name: 'Exams',        icon: FileText     },
+      { id: 'lesson-plan-status',  name: 'Syllabus',     icon: BookOpen     },
+      { id: 'holidays',            name: 'Holidays',     icon: CalendarClock },
+      { id: 'noticeboard',         name: 'Notice Board', icon: Bell         },
     ],
   },
   {
-    id: 'communication', name: 'Communication', icon: MessageSquare,
-    iconColor: 'text-indigo-600', iconBg: 'bg-indigo-100',
+    id: 'fees', name: 'Fees', icon: Wallet,
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
+  },
+  {
+    id: 'messages', name: 'Messages', icon: MessageSquare,
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
     children: [
-      { id: 'chat',           name: 'Messages',        icon: MessageCircle },
-      { id: 'teacherfeedback',name: 'Teacher Feedback',icon: Star          },
-      { id: 'excuse-letter',  name: 'Excuse Letter',   icon: FileText      },
-      { id: 'noticeboard',    name: 'Notice Board',    icon: Bell          },
-      { id: 'complaints',     name: 'Complaints',      icon: AlertOctagon  },
-      { id: 'meetings',       name: 'PTM Schedule',    icon: Video         },
+      { id: 'chat',            name: 'Chat',            icon: MessageCircle },
+      { id: 'teacherfeedback', name: 'Teacher Feedback', icon: Star        },
+      { id: 'meetings',        name: 'Parent Meetings',  icon: Video       },
+      { id: 'excuse-letter',   name: 'Excuse Letter',    icon: FileText    },
+      { id: 'complaints',      name: 'Complaints',       icon: AlertOctagon },
     ],
   },
   {
-    id: 'wellness', name: 'Wellness', icon: Heart,
-    iconColor: 'text-pink-600', iconBg: 'bg-pink-100',
+    id: 'wellbeing', name: 'Wellbeing', icon: Heart,
+    iconColor: 'text-amber-700', iconBg: 'bg-amber-100',
     children: [
-      { id: 'wellbeing',      name: 'Emotional Wellbeing', icon: Heart     },
-      { id: 'health',         name: 'Health Record',       icon: Activity  },
-      { id: 'achievements',   name: 'Achievements',        icon: Trophy    },
-      { id: 'mastery',        name: 'Mastery Progress',   icon: Zap       },
-      { id: 'error-analysis', name: 'Error Analysis',     icon: BarChart3 },
+      { id: 'wellbeing',    name: 'Emotional Wellbeing', icon: Heart    },
+      { id: 'health',       name: 'Health Record',       icon: Activity },
+      { id: 'achievements', name: 'Achievements',        icon: Trophy   },
     ],
   },
 ];
@@ -196,36 +201,15 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 
   return (
     <>
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
-            <div className="p-6">
-              <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <LogOut className="w-6 h-6 text-red-500" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900 text-center">Confirm Logout</h3>
-              <p className="text-sm text-slate-500 text-center mt-1">
-                Are you sure you want to log out? Any unsaved changes will be lost.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmLogout}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        onOpenChange={setShowLogoutConfirm}
+        onConfirm={confirmLogout}
+        icon={LogOut}
+        title="Confirm logout"
+        description="Are you sure you want to log out? Any unsaved changes will be lost."
+        confirmLabel="Logout"
+      />
 
       {/* ── Mobile backdrop ── */}
       {isOpen && (
@@ -341,10 +325,10 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
             {MENU_ITEMS.map((item) => {
               const Icon       = item.icon;
               const hasChildren = !!item.children?.length;
-              const isCommunicationItem = item.id === 'communication';
+              const isCommunicationItem = item.id === 'messages';
               const hasUnreadCommunication = isCommunicationItem && unreadChatCount > 0;
               const isActive   = activeView === item.id ||
-                (item.id === 'learning' && LEARNING_HUB_VIEWS.includes(activeView)) ||
+                (item.id === 'learn' && LEARNING_HUB_VIEWS.includes(activeView)) ||
                 (hasChildren && item.children?.some(c => c.id === activeView));
               const expanded   = openGroups[item.id] === undefined
                 ? (hasChildren && isActive)
@@ -432,7 +416,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                     <div className="ml-3 mt-0.5 space-y-0.5 border-l-2 border-slate-100 pl-3">
                       {item.children.map((child) => {
                         const ChildIcon  = child.icon;
-                        const childActive = activeView === child.id;
+                        const childActive = activeView === child.id ||
+                          (child.id === 'learning' && LEARNING_HUB_VIEWS.includes(activeView));
                         const isMessagesChild = child.id === 'chat';
                         return (
                           <button

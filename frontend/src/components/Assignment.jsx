@@ -5,6 +5,7 @@ import {
   CheckCircle,
   AlertCircle,
   Book,
+  BookOpen,
   FileText,
   Download,
   Search as SearchIcon,
@@ -26,7 +27,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { addPoints, hasAward, markAwarded } from '../utils/points';
 import axios from 'axios';
 import { useLocation } from 'react-router-dom';
-import Swal from 'sweetalert2';
+import toast from 'react-hot-toast';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
 import WorksheetSubmitModal from './WorksheetSubmitModal';
 import { labModelUrl } from './assignmentLabModelUrl';
@@ -427,19 +428,11 @@ const closeDetail = () => {
   const handleSubmit = async () => {
     const requiresPdfUpload = selectedAssignment?.submissionFormat === 'pdf';
     if (!requiresPdfUpload && !submissionText.trim()) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Submission required',
-        text: 'Please write something before submitting.',
-      });
+      toast.error('Submission required: Please write something before submitting.');
       return;
     }
     if (requiresPdfUpload && !submissionFileUrl) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'PDF required',
-        text: 'Please upload your PDF before submitting.',
-      });
+      toast.error('PDF required: Please upload your PDF before submitting.');
       return;
     }
     try {
@@ -477,11 +470,7 @@ const closeDetail = () => {
       });
     } catch (err) {
       console.error('Submit error:', err);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Submission failed',
-        text: err.response?.data?.error || 'Failed to submit. Please try again.',
-      });
+      toast.error(`Submission failed: ${err.response?.data?.error || 'Failed to submit. Please try again.'}`);
     } finally {
       setSubmitting(false);
     }
@@ -493,21 +482,13 @@ const closeDetail = () => {
     if (!file) return;
 
     if (file.type !== 'application/pdf') {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Invalid file',
-        text: 'Please upload a PDF file.',
-      });
+      toast.error('Invalid file: Please upload a PDF file.');
       input.value = '';
       return;
     }
 
     if (file.size > 20 * 1024 * 1024) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'File too large',
-        text: 'File size must be under 20MB.',
-      });
+      toast.error('File too large: File size must be under 20MB.');
       input.value = '';
       return;
     }
@@ -535,11 +516,7 @@ const closeDetail = () => {
       setSubmissionFileName(uploaded.originalName || file.name);
     } catch (error) {
       console.error('Assignment submission upload failed:', error);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Upload failed',
-        text: 'Failed to upload PDF. Please try again.',
-      });
+      toast.error('Upload failed: Failed to upload PDF. Please try again.');
       setSubmissionFileUrl('');
       setSubmissionFileName('');
     } finally {

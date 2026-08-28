@@ -33,6 +33,52 @@ import StudentFees from './StudentFees';
 import StudentHealthReport from './StudentHealthReport';
 import StudentComplaints from './StudentComplaints';
 import StudentMeetings from './StudentMeetings';
+import useDocumentTitle from '../hooks/useDocumentTitle';
+
+// Per-route tab titles. The school name is appended automatically, so
+// `/student/attendance` shows "Attendance · <School>". Falls back to "Student".
+const VIEW_TITLES = {
+  dashboard: 'Dashboard',
+  home: 'Dashboard',
+  learning: 'Learning',
+  'smart-learning': 'Learning',
+  'smart-learning-courses': 'Learning',
+  'smart-learning-courses-reference': 'Learning',
+  'smart-learning-tutor': 'AI Tutor',
+  academics: 'Assignments',
+  assignments: 'Assignments',
+  'assignments-journal': 'Journal',
+  'assignments-academic-alcove': 'Academic Alcove',
+  'study-materials': 'Study Materials',
+  'practice-papers': 'Practice Papers',
+  'my-paths': 'My Paths',
+  attendance: 'Attendance',
+  routine: 'Timetable',
+  schedule: 'Timetable',
+  exams: 'Exams',
+  holidays: 'Holidays',
+  'lesson-plan-status': 'Lesson Plan Status',
+  courses: 'Courses',
+  results: 'Results',
+  fees: 'Fees',
+  health: 'Health Record',
+  complaints: 'Complaints',
+  meetings: 'Meetings',
+  communication: 'Messages',
+  chat: 'Messages',
+  noticeboard: 'Notice Board',
+  teacherfeedback: 'Teacher Feedback',
+  'excuse-letter': 'Excuse Letter',
+  wellness: 'Wellbeing',
+  wellbeing: 'Wellbeing',
+  achievements: 'Achievements',
+  notifications: 'Notifications',
+  'learning-path-map': 'Learning Path',
+  mastery: 'Mastery Progress',
+  'error-analysis': 'Error Analysis',
+  profile: 'Profile',
+  themecustomizer: 'Appearance',
+};
 
 // All of these views render the same LearningHub component (it owns an
 // internal tab bar). Treat them as one logical page so switching tabs inside
@@ -76,6 +122,8 @@ const Dashboard = () => {
   }, [location.pathname, navigate]);
 
   const effectiveView = normalizeViewFromPath(location.pathname);
+
+  useDocumentTitle(VIEW_TITLES[effectiveView] || 'Student');
 
   // These views manage their own full-height internal layout (e.g. a sticky
   // composer pinned to the bottom) instead of flowing/scrolling like a normal

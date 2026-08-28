@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { setTitleBase } from '../utils/documentTitle';
 
 const DEFAULT_BRANDING = Object.freeze({
   name: 'Electronic Educare',
@@ -71,7 +72,8 @@ export function TenantProvider({ children }) {
     const root = document.documentElement;
     root.style.setProperty('--tenant-primary', isCssColor(branding.primaryColor) ? branding.primaryColor : DEFAULT_BRANDING.primaryColor);
     root.style.setProperty('--tenant-secondary', isCssColor(branding.secondaryColor) ? branding.secondaryColor : DEFAULT_BRANDING.secondaryColor);
-    document.title = String(branding.name || DEFAULT_BRANDING.name).trim() || DEFAULT_BRANDING.name;
+    // Base tab title — per-route page titles are composed on top of this via useDocumentTitle.
+    setTitleBase(String(branding.name || DEFAULT_BRANDING.name));
 
     let favicon = document.querySelector("link[rel~='icon']");
     const faviconUrl = resolveAssetUrl(branding.favicon) || resolveAssetUrl(branding.logo) || DEFAULT_FAVICON;

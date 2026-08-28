@@ -9,7 +9,7 @@
 [data-theme="light"],
 [data-theme="default"] {
   /* Base styles */
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -18,8 +18,8 @@
   -moz-osx-font-smoothing: grayscale;
 
   /* Theme Colors (Light Mode) */
-  --accent: oklch(62.04% 0.1950 253.83);
-  --accent-foreground: oklch(99.11% 0 0);
+  --accent: oklch(76.86% 0.1647 70.08);
+  --accent-foreground: oklch(21.03% 0.0500 75);
   --background: oklch(97.02% 0.0015 253.83);
   --border: oklch(90.00% 0.0015 253.83);
   --danger: oklch(65.32% 0.2335 25.74);
@@ -30,7 +30,7 @@
   --field-border: transparent;
   --field-foreground: oklch(21.03% 0.0015 253.83);
   --field-placeholder: oklch(55.17% 0.0030 253.83);
-  --focus: oklch(62.04% 0.1950 253.83);
+  --focus: oklch(55.53% 0.1455 48.99);
   --foreground: oklch(21.03% 0.0015 253.83);
   --muted: oklch(55.17% 0.0030 253.83);
   --overlay: oklch(100.00% 0.0004 253.83);
@@ -55,7 +55,7 @@
   --field-radius: 0.75rem;
 
   /* Font Family */
-  --font-sans: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   /* Light mode defaults */
   color-scheme: light;
@@ -68,8 +68,8 @@
   color-scheme: dark;
 
   /* Theme Colors (Dark Mode) */
-  --accent: oklch(62.04% 0.1950 253.83);
-  --accent-foreground: oklch(99.11% 0 0);
+  --accent: oklch(76.86% 0.1647 70.08);
+  --accent-foreground: oklch(21.03% 0.0500 75);
   --background: oklch(12.00% 0.0015 253.83);
   --border: oklch(28.00% 0.0015 253.83);
   --danger: oklch(59.40% 0.1973 24.63);
@@ -80,7 +80,7 @@
   --field-border: transparent;
   --field-foreground: oklch(99.11% 0.0015 253.83);
   --field-placeholder: oklch(70.50% 0.0030 253.83);
-  --focus: oklch(62.04% 0.1950 253.83);
+  --focus: oklch(55.53% 0.1455 48.99);
   --foreground: oklch(99.11% 0.0015 253.83);
   --muted: oklch(70.50% 0.0030 253.83);
   --overlay: oklch(21.03% 0.0030 253.83);
@@ -208,38 +208,38 @@ body {
 }
 a {
   font-weight: 500;
-  color: #646cff;
+  color: inherit;
   text-decoration: inherit;
 }
-a:hover {
-  color: #535bf2;
-}
-/* h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-} */
 * {
   box-sizing: border-box;
 }
 
-/* button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
+/*
+ * Global keyboard-focus indicator.
+ * The portal runs on school-managed machines and is used with assistive tech, so
+ * every interactive element needs a visible focus state. `:focus-visible` keeps
+ * the ring off plain mouse clicks; `!important` is required because a large number
+ * of components set `outline-none` via Tailwind and would otherwise suppress it.
+ */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[role="menuitem"]:focus-visible,
+[role="option"]:focus-visible,
+[role="checkbox"]:focus-visible,
+[role="switch"]:focus-visible,
+[contenteditable]:focus-visible {
+  outline: 2px solid var(--focus) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
 }
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-} */
 
 /*
  * Auto dark mode based on system preference is intentionally disabled:
@@ -342,4 +342,24 @@ button:focus-visible {
 :root {
   --tenant-primary: #2563eb;
   --tenant-secondary: #0f172a;
+}
+
+/*
+ * Respect the OS "reduce motion" preference.
+ * The portal animates on every route change plus card entrances, streak effects
+ * and loaders — all decorative. This neutralises CSS animation/transition and
+ * smooth-scroll; Framer Motion is handled app-side via <MotionConfig reducedMotion="user">.
+ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
 }

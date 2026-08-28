@@ -1,8 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Space+Grotesk:wght@400;500;600;700&family=Nunito:wght@500;600;700;800;900&display=swap");
+/* Type system: Inter (body, self-hosted below) + Nunito (display/headings). */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 @import "@fontsource-variable/inter";
 
 @custom-variant dark (&:is(.dark *));
@@ -30,7 +30,7 @@
 }
 
 .routine-shell {
-  font-family: "Space Grotesk", "Trebuchet MS", "Segoe UI", sans-serif;
+  font-family: var(--font-sans, "Inter Variable", system-ui, sans-serif);
   color: #0f172a;
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(14, 165, 233, 0.18), transparent 60%),
@@ -39,7 +39,7 @@
 }
 
 .routine-title {
-  font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+  font-family: var(--font-heading, "Nunito", system-ui, sans-serif);
   letter-spacing: 0.2px;
 }
 
@@ -102,9 +102,9 @@
 }
 
 @theme inline {
-  /* Fonts */
-  --font-heading: var(--font-sans);
-  --font-sans: 'Inter Variable', sans-serif;
+  /* Fonts — one body face (Inter), one display face (Nunito). */
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Nunito', 'Inter Variable', system-ui, sans-serif;
 
   /* Sidebar Colors */
   --color-sidebar-ring: var(--sidebar-ring);
@@ -193,18 +193,18 @@
   --card-foreground: oklch(21.03% 0.0015 253.83);
   --popover: oklch(100% 0.0004 253.83);
   --popover-foreground: oklch(21.03% 0.0015 253.83);
-  --primary: oklch(62.04% 0.1950 253.83);
-  --primary-foreground: oklch(99.11% 0 0);
+  --primary: oklch(76.86% 0.1647 70.08);
+  --primary-foreground: oklch(21.03% 0.0500 75);
   --secondary: oklch(95.24% 0.0012 253.83);
   --secondary-foreground: oklch(21.03% 0.0015 253.83);
   --muted: oklch(55.17% 0.0030 253.83);
   --muted-foreground: oklch(55.17% 0.0030 253.83);
-  --accent: oklch(62.04% 0.1950 253.83);
-  --accent-foreground: oklch(99.11% 0 0);
+  --accent: oklch(76.86% 0.1647 70.08);
+  --accent-foreground: oklch(21.03% 0.0500 75);
   --destructive: oklch(65.32% 0.2335 25.74);
   --border: oklch(90.00% 0.0015 253.83);
   --input: oklch(90.00% 0.0015 253.83);
-  --ring: oklch(62.04% 0.1950 253.83);
+  --ring: oklch(69.23% 0.1637 55.93);
 
   /* HeroUI Theme Colors (Light Mode) */
   --danger: oklch(65.32% 0.2335 25.74);
@@ -215,7 +215,7 @@
   --warning-foreground: oklch(21.03% 0.0059 72.33);
   --default: oklch(94.00% 0.0015 253.83);
   --default-foreground: oklch(21.03% 0.0059 253.83);
-  --focus: oklch(62.04% 0.1950 253.83);
+  --focus: oklch(55.53% 0.1455 48.99);
   --overlay: oklch(100.00% 0.0004 253.83);
   --overlay-foreground: oklch(21.03% 0.0015 253.83);
   --separator: oklch(92.00% 0.0015 253.83);
@@ -251,12 +251,12 @@
   /* Sidebar Colors */
   --sidebar: oklch(100% 0.0008 253.83);
   --sidebar-foreground: oklch(21.03% 0.0015 253.83);
-  --sidebar-primary: oklch(62.04% 0.1950 253.83);
-  --sidebar-primary-foreground: oklch(99.11% 0 0);
+  --sidebar-primary: oklch(76.86% 0.1647 70.08);
+  --sidebar-primary-foreground: oklch(21.03% 0.0500 75);
   --sidebar-accent: oklch(95.24% 0.0012 253.83);
   --sidebar-accent-foreground: oklch(21.03% 0.0015 253.83);
   --sidebar-border: oklch(90.00% 0.0015 253.83);
-  --sidebar-ring: oklch(62.04% 0.1950 253.83);
+  --sidebar-ring: oklch(69.23% 0.1637 55.93);
 }
 
 .dark {
@@ -269,18 +269,18 @@
   --card-foreground: oklch(99.11% 0.0015 253.83);
   --popover: oklch(21.03% 0.0030 253.83);
   --popover-foreground: oklch(99.11% 0.0015 253.83);
-  --primary: oklch(62.04% 0.1950 253.83);
-  --primary-foreground: oklch(99.11% 0 0);
+  --primary: oklch(76.86% 0.1647 70.08);
+  --primary-foreground: oklch(21.03% 0.0500 75);
   --secondary: oklch(25.70% 0.0023 253.83);
   --secondary-foreground: oklch(99.11% 0.0015 253.83);
   --muted: oklch(70.50% 0.0030 253.83);
   --muted-foreground: oklch(70.50% 0.0030 253.83);
-  --accent: oklch(62.04% 0.1950 253.83);
-  --accent-foreground: oklch(99.11% 0 0);
+  --accent: oklch(76.86% 0.1647 70.08);
+  --accent-foreground: oklch(21.03% 0.0500 75);
   --destructive: oklch(59.40% 0.1973 24.63);
   --border: oklch(28.00% 0.0015 253.83);
   --input: oklch(28.00% 0.0015 253.83);
-  --ring: oklch(62.04% 0.1950 253.83);
+  --ring: oklch(69.23% 0.1637 55.93);
 
   /* HeroUI Theme Colors (Dark Mode) */
   --danger: oklch(59.40% 0.1973 24.63);
@@ -291,7 +291,7 @@
   --warning-foreground: oklch(21.03% 0.0059 76.34);
   --default: oklch(27.40% 0.0015 253.83);
   --default-foreground: oklch(99.11% 0 0);
-  --focus: oklch(62.04% 0.1950 253.83);
+  --focus: oklch(55.53% 0.1455 48.99);
   --overlay: oklch(21.03% 0.0030 253.83);
   --overlay-foreground: oklch(99.11% 0.0015 253.83);
   --separator: oklch(25.00% 0.0015 253.83);
@@ -323,12 +323,12 @@
   /* Sidebar Colors */
   --sidebar: oklch(21.03% 0.0030 253.83);
   --sidebar-foreground: oklch(99.11% 0.0015 253.83);
-  --sidebar-primary: oklch(62.04% 0.1950 253.83);
-  --sidebar-primary-foreground: oklch(99.11% 0 0);
+  --sidebar-primary: oklch(76.86% 0.1647 70.08);
+  --sidebar-primary-foreground: oklch(21.03% 0.0500 75);
   --sidebar-accent: oklch(27.40% 0.0015 253.83);
   --sidebar-accent-foreground: oklch(99.11% 0.0015 253.83);
   --sidebar-border: oklch(28.00% 0.0015 253.83);
-  --sidebar-ring: oklch(62.04% 0.1950 253.83);
+  --sidebar-ring: oklch(69.23% 0.1637 55.93);
 }
 
 @layer base {

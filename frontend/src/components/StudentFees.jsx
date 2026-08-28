@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CreditCard, FileText, Loader2, Wallet } from 'lucide-react';
+import toast from 'react-hot-toast';
+import PageHeader from './PageHeader';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -27,7 +29,6 @@ const StudentFees = () => {
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [processingInvoiceId, setProcessingInvoiceId] = useState('');
 
   const fetchInvoices = async () => {
@@ -67,7 +68,6 @@ const StudentFees = () => {
     const token = localStorage.getItem('token');
     setProcessingInvoiceId(invoice._id);
     setError('');
-    setSuccess('');
     try {
       const orderResponse = await fetch(`${API_BASE}/api/fees/${invoice._id}/pay`, {
         method: 'POST',
@@ -94,17 +94,17 @@ const StudentFees = () => {
             });
             const verifyData = await verifyResponse.json();
             if (!verifyResponse.ok) throw new Error(verifyData.error || 'Payment verification failed');
-            setSuccess('Payment successful. Your invoice and receipt are updated.');
+            toast.success('Payment successful — your invoice and receipt are updated.');
             await fetchInvoices();
           } catch (verifyError) {
-            setError(verifyError.message);
+            toast.error(verifyError.message || 'Payment verification failed');
           } finally { setProcessingInvoiceId(''); }
         },
         modal: { ondismiss: () => setProcessingInvoiceId('') },
       });
       razorpay.open();
     } catch (paymentError) {
-      setError(paymentError.message || 'Payment failed');
+      toast.error(paymentError.message || 'Payment failed');
       setProcessingInvoiceId('');
     }
   };
@@ -122,14 +122,25 @@ const StudentFees = () => {
   }, [invoices]);
 
   return (
-    <div className="w-full p-2 sm:p-3 md:p-4 space-y-4">
-      <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-4 sm:p-6 text-white">
-        <h1 className="text-2xl sm:text-3xl font-bold mb-1 sm:mb-2">Fees Overview</h1>
-        <p className="text-yellow-100 text-sm sm:text-base">View invoices and pay securely online</p>
-      </div>
+    <div className="w-full p-3 sm:p-4 md:p-5 space-y-4">
+      <PageHeader
+        icon={Wallet}
+        title="Fees"
+        description="View invoices and pay securely online."
+        actions={totals.balance > 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+            <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            ₹{Number(totals.balance).toLocaleString('en-IN')} due
+          </span>
+        ) : null}
+      />
 
-      {error && <div className="text-sm text-red-600">{error}</div>}
-      {success && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{success}</div>}
+      {error && (
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white rounded-xl p-8 border border-gray-100 flex items-center justify-center text-gray-500">

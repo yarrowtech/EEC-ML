@@ -5,7 +5,7 @@ import {
   Filter, RefreshCw, Sparkles, FileText, Eye, EyeOff, Loader2, AlertCircle,
   PenLine, ListChecks, CircleHelp, PlusCircle,
 } from 'lucide-react';
-import Swal from 'sweetalert2';
+import toast from 'react-hot-toast';
 
 const API = import.meta.env.VITE_API_URL;
 
@@ -201,7 +201,7 @@ export default function AcademicAlcove() {
       setComments(p => [...p, newComment]);
       setCommentText('');
     } catch (e) {
-      await Swal.fire({ icon: 'error', title: 'Comment failed', text: e.message });
+      toast.error(`Comment failed: ${e.message}`);
     } finally { setPostingComment(false); }
   };
 
@@ -220,15 +220,15 @@ export default function AcademicAlcove() {
       setMySubmission(data.submission);
       const r = await fetch(`${API}/api/alcove/posts/${selected._id}/submissions`, { headers: auth() });
       if (r.ok) setSubmissions(await r.json());
-      await Swal.fire({ icon: 'success', title: 'Answer submitted!', text: 'Your answer has been saved.' });
+      toast.success('Answer submitted — your answer has been saved.');
     } catch (e) {
-      await Swal.fire({ icon: 'error', title: 'Submission failed', text: e.message });
+      toast.error(`Submission failed: ${e.message}`);
     } finally { setSubmitting(false); }
   };
 
   const submitStudentProblem = async () => {
     if (!newProblem.title.trim() || !newProblem.subject.trim() || !newProblem.chapter.trim() || !newProblem.problemText.trim()) {
-      await Swal.fire({ icon: 'warning', title: 'Missing details', text: 'Please fill title, subject, chapter and problem.' });
+      toast.error('Please fill in title, subject, chapter and problem.');
       return;
     }
     setCreatingProblem(true);
@@ -248,7 +248,7 @@ export default function AcademicAlcove() {
         const error = await res.json().catch(() => ({}));
         throw new Error(error.error || 'Failed to post problem');
       }
-      await Swal.fire({ icon: 'success', title: 'Problem posted', text: 'Your problem is now visible to teachers and students.' });
+      toast.success('Problem posted — now visible to teachers and students.');
       setNewProblem({ title: '', subject: '', chapter: '', difficulty: 'medium', problemText: '' });
       setSubjectIsOther(false);
       setChapterIsOther(false);
@@ -256,7 +256,7 @@ export default function AcademicAlcove() {
       setPage(1);
       fetchItems();
     } catch (e) {
-      await Swal.fire({ icon: 'error', title: 'Post failed', text: e.message || 'Could not post your problem' });
+      toast.error(`Post failed: ${e.message || 'Could not post your problem'}`);
     } finally {
       setCreatingProblem(false);
     }
@@ -295,7 +295,7 @@ export default function AcademicAlcove() {
         ? { ...prev, likeCount: Number(data.likeCount) || 0, isLiked: Boolean(data.liked) }
         : prev));
     } catch (e) {
-      await Swal.fire({ icon: 'error', title: 'Like failed', text: e.message || 'Could not update like' });
+      toast.error(`Like failed: ${e.message || 'Could not update like'}`);
     }
   };
 

@@ -1483,7 +1483,7 @@
   },
   "src/main.jsx": {
     "react/react-in-jsx-scope": {
-      "count": 2
+      "count": 3
     }
   },
   "src/pages/FeedbackPage.jsx": {
@@ -2134,6 +2134,36 @@
     },
     "no-unused-vars": {
       "count": 4
+    }
+  },
+  "src/components/ConfirmDialog.jsx": {
+    "react/prop-types": {
+      "count": 9
+    }
+  },
+  "src/components/EmptyState.jsx": {
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/components/PageHeader.jsx": {
+    "react/prop-types": {
+      "count": 6
+    }
+  },
+  "src/components/ui/skeleton.jsx": {
+    "react/prop-types": {
+      "count": 1
+    }
+  },
+  "src/components/Modal.jsx": {
+    "react/prop-types": {
+      "count": 10
+    }
+  },
+  "src/components/DataTable.jsx": {
+    "react/prop-types": {
+      "count": 14
     }
   }
 }

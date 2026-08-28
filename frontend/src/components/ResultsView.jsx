@@ -27,6 +27,7 @@ import toast from 'react-hot-toast';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import PostExamFeedbackView from './PostExamFeedbackView';
+import PageHeader from './PageHeader';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const toNumber = (value, fallback = 0) => {
@@ -527,10 +528,14 @@ const ResultsView = () => {
           </div>
         </div>
       </div> */}
-      <h1 className='text-4xl font-bold pl-2'>My Results</h1>
+      <PageHeader
+        title="Results"
+        eyebrow={activeAcademicSession ? `Session ${activeAcademicSession}` : undefined}
+        description="Published exam performance, subject-wise marks and your report card."
+      />
       {activeAcademicSession && (
-        <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-          <span className="h-2 w-2 rounded-full bg-indigo-500" />
+        <div className="-mt-2 inline-flex items-center gap-2 rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
           Active Session: {activeAcademicSession}
         </div>
       )}

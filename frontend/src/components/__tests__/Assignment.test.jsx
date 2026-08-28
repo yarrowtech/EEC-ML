@@ -3,12 +3,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
-import Swal from 'sweetalert2';
+import toast from 'react-hot-toast';
 import Assignment from '../Assignment';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../../utils/studentApiCache';
 
 jest.mock('axios');
-jest.mock('sweetalert2', () => ({ fire: jest.fn() }));
+jest.mock('react-hot-toast', () => ({ __esModule: true, default: { success: jest.fn(), error: jest.fn() } }));
 jest.mock('../../utils/studentApiCache', () => ({
   fetchCachedJson: jest.fn(),
   clearStudentApiCacheByUrl: jest.fn(),
@@ -80,7 +80,7 @@ describe('student school assignment workflow', () => {
       );
     });
     expect(clearStudentApiCacheByUrl).toHaveBeenCalled();
-    expect(Swal.fire).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   test('uploads a PDF and submits its returned URL', async () => {

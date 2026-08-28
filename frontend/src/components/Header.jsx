@@ -14,20 +14,9 @@ import { AnimatePresence } from 'framer-motion';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { useNotifications } from '../hooks/useNotifications';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
-import { useTypewriterPlaceholder } from '../hooks/useTypewriterPlaceholder';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import NotificationPopover from './NotificationPopover';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
-
-// Rotating typewriter examples shown in the search placeholder while it's
-// empty and unfocused — hints at what can be searched without extra UI.
-const SEARCH_PLACEHOLDER_EXAMPLES = [
-  'Search assignments…',
-  'Search attendance…',
-  'Search exam routine…',
-  'Search notices…',
-  'Search results…',
-];
 
 const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const navigate = useNavigate();
@@ -35,7 +24,6 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
-  const typedSearchPlaceholder = useTypewriterPlaceholder(SEARCH_PLACEHOLDER_EXAMPLES, Boolean(searchText));
   const { profile } = useStudentDashboard();
 
   const notifRef = useRef(null);
@@ -162,84 +150,50 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
   };
 
-  const runSearch = () => {
-    const query = searchText.trim();
-    if (!query) return;
-    const q = query.toLowerCase();
-
-    if (q.includes('attendance') || q.includes('present') || q.includes('absent')) {
-      const filter = q.includes('present') ? 'present' : q.includes('absent') ? 'absent' : 'all';
-      navigate(`/student/attendance?filter=${filter}`);
-      return;
-    }
-    if (q.includes('journal')) {
-      navigate('/student/assignments-journal');
-      return;
-    }
-    if (q.includes('assignment') || q.includes('homework')) {
-      navigate(`/student/assignments?q=${encodeURIComponent(query)}`);
-      return;
-    }
-    if (q.includes('result')) {
-      navigate('/student/results');
-      return;
-    }
-    if (q.includes('notice')) {
-      navigate('/student/noticeboard');
-      return;
-    }
-    if (q.includes('excuse') || q.includes('leave')) {
-      navigate('/student/excuse-letter');
-      return;
-    }
-    if (q.includes('routine') || q.includes('schedule')) {
-      navigate('/student/routine');
-      return;
-    }
-    if (q.includes('profile')) {
-      navigate('/student/profile');
-      return;
-    }
-    if (q.includes('chat') || q.includes('message')) {
-      navigate('/student/chat');
-      return;
-    }
-    if (q.includes('wellbeing') || q.includes('wellness')) {
-      navigate('/student/wellbeing');
-      return;
-    }
-    if (q.includes('achievement')) {
-      navigate('/student/achievements');
-      return;
-    }
-    if (q.includes('course')) {
-      navigate('/student/courses');
-      return;
-    }
-
-    navigate(`/student/assignments?q=${encodeURIComponent(query)}`);
-  };
-
+  // This box is a destination picker ("jump to a page"), not full-text search.
+  // Every entry is a real page; Enter follows the first match, nothing more.
   const searchSuggestions = useMemo(() => ([
+    { label: 'Dashboard', hint: 'Home overview', action: () => navigate('/student') },
+    { label: 'Learning Hub', hint: 'Lessons and AI tutor', action: () => navigate('/student/learning') },
     { label: 'Assignments', hint: 'View all assignments', action: () => navigate('/student/assignments') },
-    { label: 'Attendance (All)', hint: 'Daily attendance overview', action: () => navigate('/student/attendance?filter=all') },
-    { label: 'Attendance (Present)', hint: 'Only present days', action: () => navigate('/student/attendance?filter=present') },
-    { label: 'Attendance (Absent)', hint: 'Only absent days', action: () => navigate('/student/attendance?filter=absent') },
-    { label: 'Journal', hint: 'My Learning Journal', action: () => navigate('/student/assignments-journal') },
+    { label: 'Journal', hint: 'My learning journal', action: () => navigate('/student/assignments-journal') },
     { label: 'Results', hint: 'Academic results', action: () => navigate('/student/results') },
+    { label: 'Mastery Progress', hint: 'Topic-by-topic strength', action: () => navigate('/student/mastery') },
+    { label: 'Error Analysis', hint: 'What to work on', action: () => navigate('/student/error-analysis') },
+    { label: 'Timetable', hint: 'Weekly class schedule', action: () => navigate('/student/routine') },
+    { label: 'Attendance', hint: 'Daily attendance overview', action: () => navigate('/student/attendance?filter=all') },
+    { label: 'Attendance — absences', hint: 'Only absent days', action: () => navigate('/student/attendance?filter=absent') },
+    { label: 'Exams', hint: 'Exam routine', action: () => navigate('/student/exams') },
+    { label: 'Holidays', hint: 'Holiday list', action: () => navigate('/student/holidays') },
+    { label: 'Syllabus', hint: 'Course coverage status', action: () => navigate('/student/lesson-plan-status') },
     { label: 'Notice Board', hint: 'School notices', action: () => navigate('/student/noticeboard') },
+    { label: 'Fees', hint: 'Bills and dues', action: () => navigate('/student/fees') },
+    { label: 'Messages', hint: 'Chat with teachers', action: () => navigate('/student/chat') },
+    { label: 'Teacher Feedback', hint: 'Rate your teachers', action: () => navigate('/student/teacherfeedback') },
+    { label: 'Parent Meetings', hint: 'PTM schedule', action: () => navigate('/student/meetings') },
     { label: 'Excuse Letter', hint: 'Leave application', action: () => navigate('/student/excuse-letter') },
-    { label: 'Routine', hint: 'Weekly routine', action: () => navigate('/student/routine') },
+    { label: 'Complaints', hint: 'Raise an issue', action: () => navigate('/student/complaints') },
+    { label: 'Wellbeing', hint: 'Mood check-in', action: () => navigate('/student/wellbeing') },
+    { label: 'Health Record', hint: 'Your health report', action: () => navigate('/student/health') },
+    { label: 'Achievements', hint: 'Badges earned', action: () => navigate('/student/achievements') },
     { label: 'Profile', hint: 'Update your profile', action: () => navigate('/student/profile') },
   ]), [navigate]);
 
   const filteredSuggestions = useMemo(() => {
     const q = searchText.trim().toLowerCase();
-    if (!q) return searchSuggestions.slice(0, 5);
+    if (!q) return searchSuggestions.slice(0, 6);
     return searchSuggestions
       .filter((s) => s.label.toLowerCase().includes(q) || s.hint.toLowerCase().includes(q))
-      .slice(0, 6);
+      .slice(0, 8);
   }, [searchText, searchSuggestions]);
+
+  const jumpToFirstMatch = () => {
+    const first = filteredSuggestions[0];
+    if (!first) return;
+    setShowSearchSuggestions(false);
+    setSearchText('');
+    first.action();
+  };
 
   // Handle notification click
   const handleNotificationClick = async (notification) => {
@@ -275,7 +229,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
 
           {/* Left: Sidebar toggle + Greeting */}
-          <div className="flex items-center gap- 2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
@@ -285,7 +239,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             </button>
             <div className="hidden sm:block min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">
-                {greeting}, <span className="text-indigo-600">{studentData.name?.split(' ')[0] || 'Student'}</span>
+                {greeting}, <span className="text-amber-600">{studentData.name?.split(' ')[0] || 'Student'}</span>
               </p>
               <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
                 <CalendarDays size={12} />
@@ -306,29 +260,34 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             </div>
           </div>
 
-          {/* Center: Search */}
+          {/* Center: Jump-to (destination picker, not full-text search) */}
           <div className="flex-1 max-w-lg mx-2">
             <div className="relative">
               <div className="relative flex items-center">
                 <Search className="absolute left-3 text-gray-400 pointer-events-none" size={16} />
                 <input
                   type="text"
-                  placeholder={typedSearchPlaceholder || 'Search...'}
+                  role="combobox"
+                  aria-expanded={showSearchSuggestions}
+                  aria-controls="header-jumpto-list"
+                  aria-label="Jump to a page"
+                  placeholder="Jump to a page…"
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   onFocus={() => setShowSearchSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 150)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+                    if (e.key === 'Enter') { e.preventDefault(); jumpToFirstMatch(); }
+                    if (e.key === 'Escape') setShowSearchSuggestions(false);
                   }}
-                  className="w-full pl-9 pr-9 py-2 rounded-full bg-gray-50 border border-gray-200 text-sm placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 outline-none transition-all"
+                  className="w-full pl-9 pr-9 py-2 rounded-full bg-gray-50 border border-gray-200 text-sm placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-amber-500/30 focus:border-amber-300 outline-none transition-all"
                 />
                 {searchText && (
                   <button
                     type="button"
                     onClick={() => { setSearchText(''); setShowSearchSuggestions(true); }}
                     className="absolute right-3 text-gray-400 hover:text-gray-600 transition-colors"
-                    aria-label="Clear"
+                    aria-label="Clear the jump-to box"
                   >
                     <X size={14} />
                   </button>
@@ -336,20 +295,25 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
               </div>
 
               {showSearchSuggestions && (
-                <div className="absolute left-0 right-0 mt-2 rounded-xl border border-gray-100 bg-white shadow-2xl z-50 overflow-hidden">
+                <div
+                  id="header-jumpto-list"
+                  role="listbox"
+                  aria-label="Pages"
+                  className="absolute left-0 right-0 mt-2 rounded-xl border border-gray-100 bg-white shadow-2xl z-50 overflow-hidden max-h-[60vh] overflow-y-auto"
+                >
                   {filteredSuggestions.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-400">No results found</div>
+                    <div className="px-4 py-3 text-sm text-gray-400">No page matches “{searchText.trim()}”</div>
                   ) : (
                     <ul>
                       {filteredSuggestions.map((s, i) => (
-                        <li key={s.label}>
+                        <li key={s.label} role="option" aria-selected={i === 0}>
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => { setShowSearchSuggestions(false); s.action(); }}
-                            className={`w-full px-4 py-2.5 text-left hover:bg-indigo-50/50 transition-colors flex items-center gap-3 ${i > 0 ? 'border-t border-gray-50' : ''}`}
+                            onClick={() => { setShowSearchSuggestions(false); setSearchText(''); s.action(); }}
+                            className={`w-full px-4 py-2.5 text-left hover:bg-amber-50/60 transition-colors flex items-center gap-3 ${i > 0 ? 'border-t border-gray-50' : ''}`}
                           >
-                            <Search size={14} className="text-gray-300 shrink-0" />
+                            <Search size={14} className="text-gray-300 shrink-0" aria-hidden="true" />
                             <div>
                               <div className="text-sm font-medium text-gray-800">{s.label}</div>
                               <div className="text-[11px] text-gray-400">{s.hint}</div>
@@ -442,7 +406,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                     }}
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
                     {initialsLabel}
                   </div>
                 )}
@@ -456,12 +420,12 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
               {profileOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
                   {/* Profile card */}
-                  <div className="px-4 py-3 bg-linear-to-br from-indigo-50 to-purple-50 border-b border-gray-100">
+                  <div className="px-4 py-3 bg-linear-to-br from-amber-50 to-orange-50 border-b border-gray-100">
                     <div className="flex items-center gap-3">
                       {hasProfileImage ? (
                         <img src={profileImage} alt="" className="w-10 h-10 rounded-lg border-2 border-white object-cover shadow-sm" onError={(e) => { e.target.style.display = 'none'; }} />
                       ) : (
-                        <div className="w-10 h-10 rounded-lg bg-linear-to-br from-indigo-500 to-purple-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                        <div className="w-10 h-10 rounded-lg bg-linear-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
                           {initialsLabel}
                         </div>
                       )}

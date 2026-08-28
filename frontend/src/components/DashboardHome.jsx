@@ -1,13 +1,16 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from 'recharts';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BookOpen, ClipboardList, CalendarDays, Compass } from 'lucide-react';
 import WelcomeCard from './WelcomeCard';
 import CourseProgress from './CourseProgress';
 import AchievementCard from './AchievementCard';
 import CalendarWidget from './CalendarWidget';
 import QuickStats from './QuickStats';
-import TestPetButton from './TestPetButton';
-import DashboardPet from './DashboardPet';
 import RecommendationWidget from './RecommendationWidget';
+import PageHeader from './PageHeader';
+import EmptyState from './EmptyState';
+import { Skeleton } from './ui/skeleton';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 
@@ -42,23 +45,23 @@ const ProgressTrendChart = () => {
   if (loading || chartData.length < 2) return null;
 
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
-      <p className="mb-3 text-sm font-black text-indigo-900">Score Trend</p>
+    <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
+      <p className="mb-3 text-sm font-black text-amber-900">Score Trend</p>
       <ResponsiveContainer width="100%" height={140}>
         <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" />
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6366f1' }} />
-          <YAxis tick={{ fontSize: 10, fill: '#6366f1' }} domain={[0, 100]} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#fde68a" />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#b45309' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#b45309' }} domain={[0, 100]} />
           <ReTooltip
-            contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e0e7ff' }}
+            contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #fde68a' }}
             formatter={(v) => [`${v} marks`, 'Score']}
           />
           <Line
             type="monotone"
             dataKey="marks"
-            stroke="#6366f1"
+            stroke="#b45309"
             strokeWidth={2.5}
-            dot={{ r: 4, fill: '#6366f1', strokeWidth: 0 }}
+            dot={{ r: 4, fill: '#b45309', strokeWidth: 0 }}
             activeDot={{ r: 6 }}
           />
         </LineChart>
@@ -162,7 +165,7 @@ const MasteryTopicsCard = () => {
   }, []);
   if (loading || !data.length) return null;
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
       <p className="mb-3 text-sm font-black text-gray-800">Topic Mastery</p>
       <div className="space-y-2">
         {data.slice(0, 6).map((t) => (
@@ -193,13 +196,13 @@ const LearningStreakCard = () => {
   }, []);
   if (!data) return null;
   return (
-    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 px-4 py-3 shadow-sm flex items-center gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-100 to-indigo-100 border border-violet-200">
+    <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3 shadow-sm flex items-center gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 border border-amber-200">
         <span className="text-lg leading-none">{data.streak >= 7 ? '🏆' : data.streak >= 3 ? '⚡' : '📖'}</span>
       </div>
       <div>
-        <p className="text-sm font-black text-violet-900">{data.streak} day learning streak</p>
-        <p className="text-xs text-violet-600">{data.totalActiveDays} active days total</p>
+        <p className="text-sm font-black text-amber-900">{data.streak} day learning streak</p>
+        <p className="text-xs text-amber-700">{data.totalActiveDays} active days total</p>
       </div>
     </div>
   );
@@ -268,125 +271,122 @@ const FlashcardStatsCard = () => {
   );
 };
 
-const DashboardHome = () => {
-  const [pets, setPets] = useState([]);
-  const [containerBounds, setContainerBounds] = useState({ width: 0, height: 0 });
-  const containerRef = useRef();
+const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
+  weekday: 'long', month: 'long', day: 'numeric',
+});
 
-  // Update container bounds on resize
-  useEffect(() => {
-    const updateBounds = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerBounds({
-          width: rect.width,
-          height: rect.height
-        });
-      }
-    };
+/** Full-grid placeholder shown on the first load, before the dashboard data
+ *  resolves — keeps the page shape stable instead of a staggered pop-in. */
+const DashboardSkeleton = () => (
+  <div className="space-y-4 sm:space-y-6 p-4 sm:p-6" aria-hidden="true">
+    <Skeleton className="h-8 w-48" />
+    <Skeleton className="h-28 w-full rounded-2xl" />
+    <Skeleton className="h-20 w-full rounded-2xl" />
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+    </div>
+    <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+      <Skeleton className="h-64 rounded-2xl lg:col-span-2" />
+      <Skeleton className="h-64 rounded-2xl" />
+    </div>
+  </div>
+);
 
-    updateBounds();
-    window.addEventListener('resize', updateBounds);
-    
-    // Update bounds when content changes
-    const observer = new ResizeObserver(updateBounds);
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
+const FIRST_RUN_LINKS = [
+  { to: '/student/learning', icon: Compass, label: 'Open the Learning hub', desc: 'Start a lesson or ask the AI tutor' },
+  { to: '/student/assignments', icon: ClipboardList, label: 'Check your assignments', desc: 'See what your teachers have set' },
+  { to: '/student/routine', icon: CalendarDays, label: 'View your timetable', desc: 'Know what class is next' },
+  { to: '/student/materials', icon: BookOpen, label: 'Browse study materials', desc: 'Notes and resources from teachers' },
+];
+
+/** Shown to a brand-new student whose account has no attendance, results or
+ *  activity yet — so the dashboard explains what will fill it and where to begin
+ *  instead of rendering a screen of empty cards. */
+const FirstRunDashboard = () => (
+  <EmptyState
+    icon={Compass}
+    title="Your dashboard is getting ready"
+    description="Progress, streaks and results will appear here as you attend classes and use the portal. Here's where to start:"
+    action={
+      <div className="mt-2 grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+        {FIRST_RUN_LINKS.map(({ to, icon: Icon, label, desc }) => (
+          <Link
+            key={to}
+            to={to}
+            className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-amber-300 hover:bg-amber-50/40"
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">{label}</span>
+              <span className="block text-xs text-slate-500">{desc}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
     }
+  />
+);
 
-    return () => {
-      window.removeEventListener('resize', updateBounds);
-      observer.disconnect();
-    };
-  }, []);
+const DashboardHome = () => {
+  const { loading, error, stats, recentAttendance } = useStudentDashboard();
 
-  // Pet names for different types
-  const petNames = {
-    puppy: ['Buddy', 'Max', 'Luna', 'Charlie', 'Bailey', 'Rocky', 'Bella', 'Duke'],
-    cat: ['Whiskers', 'Shadow', 'Mittens', 'Luna', 'Simba', 'Chloe', 'Tiger', 'Princess']
-  };
+  const isNewStudent = useMemo(() => (
+    !loading && !error && stats
+    && (stats.totalClasses || 0) === 0
+    && (stats.achievements || 0) === 0
+    && (!recentAttendance || recentAttendance.length === 0)
+  ), [loading, error, stats, recentAttendance]);
 
-  const addPet = (petType) => {
-    const names = petNames[petType];
-    const randomName = names[Math.floor(Math.random() * names.length)];
-    
-    const newPet = {
-      id: Date.now() + Math.random(),
-      type: petType,
-      name: randomName,
-      createdAt: Date.now()
-    };
-    
-    setPets(prevPets => {
-      return [...prevPets, newPet];
-    });
-  };
-
-  const removePet = (petId) => {
-    setPets(prevPets => prevPets.filter(pet => pet.id !== petId));
-  };
+  if (loading) return <DashboardSkeleton />;
 
   return (
-    <div
-      ref={containerRef}
-      className="relative space-y-4 sm:space-y-6 p-4 sm:p-6"
-    >
+    <div className="relative space-y-4 sm:space-y-6 p-4 sm:p-6">
+      <PageHeader eyebrow={TODAY_LABEL} title="Dashboard" />
+
       {/* Welcome Section */}
       <WelcomeCard />
 
-      {/* Streak Tracker */}
-      <StreakTracker />
+      {isNewStudent ? (
+        <FirstRunDashboard />
+      ) : (
+        <>
+          {/* Streaks — attendance and learning activity, side by side so they
+              read as two related metrics rather than a duplicated card. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <StreakTracker />
+            <LearningStreakCard />
+          </div>
 
-      {/* Learning Streak (learning-event based) */}
-      <LearningStreakCard />
+          {/* Progress Trend */}
+          <ProgressTrendChart />
 
-      {/* Progress Trend */}
-      <ProgressTrendChart />
+          {/* Quick Stats */}
+          <QuickStats />
 
-      {/* Quick Stats */}
-      <QuickStats />
+          {/* Learning-analytics cards — each renders only when it has data */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <MasteryTopicsCard />
+            <TimeBySubjectCard />
+            <FlashcardStatsCard />
+          </div>
 
-      {/* New tracking cards row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MasteryTopicsCard />
-        <TimeBySubjectCard />
-        <FlashcardStatsCard />
-      </div>
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+            {/* Main Content - Left 2 columns */}
+            <div className="space-y-4 sm:space-y-6 lg:col-span-2">
+              <CourseProgress />
+              <AchievementCard />
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Main Content - Left 2 columns */}
-        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-          {/* Course Progress */}
-          <CourseProgress />
-
-          {/* Achievements */}
-          <AchievementCard />
-        </div>
-
-        {/* Sidebar - Right 1 column */}
-        <div className="space-y-4 sm:space-y-6">
-          {/* Personalised Recommendations */}
-          <RecommendationWidget />
-          {/* Calendar */}
-          <CalendarWidget />
-        </div>
-      </div>
-
-      {/* Dashboard Pets */}
-      {pets.map(pet => (
-        <DashboardPet
-          key={pet.id}
-          pet={pet}
-          onRemove={removePet}
-          containerBounds={containerBounds}
-        />
-      ))}
-
-      {/* Test Pet Button */}
-      <TestPetButton 
-        onAddPet={addPet} 
-        activePets={pets}
-      />
+            {/* Sidebar - Right 1 column */}
+            <div className="space-y-4 sm:space-y-6">
+              <RecommendationWidget />
+              <CalendarWidget />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
