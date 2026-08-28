@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
-  Brain, Save, LogOut, Wallet, GraduationCap, Bell, Heart, Zap,
+  Brain, Save, LogOut, GraduationCap, Bell, Heart, Zap,
   ClipboardCheck, MoreHorizontal,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -43,7 +43,6 @@ const subMenus = {
     items: [
       { id: 'profile',       name: 'Profile',       icon: CircleUserRound, color: 'bg-amber-500', desc: 'Your account' },
       { id: 'notifications', name: 'Notifications',  icon: Bell,            color: 'bg-amber-600', desc: 'Alerts' },
-      { id: 'fees',          name: 'Fees',           icon: Wallet,          color: 'bg-amber-500', desc: 'Bills & dues' },
       { id: 'teacherfeedback', name: 'Teacher Feedback', icon: BarChart3,   color: 'bg-amber-600', desc: 'For your teachers' },
       { id: 'meetings',      name: 'Parent Meetings', icon: CalendarDays,   color: 'bg-amber-500', desc: 'PTM schedule' },
       { id: 'excuse-letter', name: 'Excuse Letter',  icon: FileText,        color: 'bg-amber-600', desc: 'Request leave' },

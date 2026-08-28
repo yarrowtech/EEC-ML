@@ -54,7 +54,6 @@ const studentSections = [
   "holidays",
   "routine",
   "attendance",
-  "fees",
   "health",
   "complaints",
   "meetings",

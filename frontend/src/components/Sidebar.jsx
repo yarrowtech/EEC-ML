@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
-  Heart, Star, Target, Zap, Wallet, AlertOctagon, Video, Activity,
+  Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
   GraduationCap, CalendarClock, ClipboardCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -50,7 +50,6 @@ const MENU_ITEMS = [
       { id: 'noticeboard',         name: 'Notice Board', icon: Bell         },
     ],
   },
-  { id: 'fees', name: 'Fees', icon: Wallet },
   {
     id: 'messages', name: 'Messages', icon: MessageSquare,
     children: [

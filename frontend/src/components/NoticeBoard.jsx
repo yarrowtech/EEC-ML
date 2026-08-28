@@ -141,8 +141,6 @@ const NoticeDetailsView = ({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold text-slate-900 leading-snug">{notice.title || 'Untitled Notice'}</h1>
-                {/* <p className="mt-2 text-sm text-slate-500 leading-relaxed">{notice.message}</p> */}
-
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
                   <span className="flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5" />
@@ -294,20 +292,6 @@ const NoticeDetailsView = ({
               </div>
             )}
           </div>
-
-          {/* <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Share2 className="h-4 w-4 text-indigo-500" />
-              <h2 className="text-sm font-semibold text-slate-900">Share Notice</h2>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">Share this notice with others</p>
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <ShareButton icon={MessageCircle} label="WhatsApp" color="bg-emerald-500" onClick={() => onShare('whatsapp', notice)} />
-              <ShareButton icon={Mail} label="Email" color="bg-blue-500" onClick={() => onShare('email', notice)} />
-              <ShareButton icon={Phone} label="SMS" color="bg-amber-500" onClick={() => onShare('sms', notice)} />
-              <ShareButton icon={Copy} label="Copy Link" color="bg-purple-500" onClick={() => onShare('copy', notice)} />
-            </div>
-          </div> */}
         </div>
       </div>
     </div>
@@ -325,19 +309,6 @@ const InfoRow = (props) => {
         {children || <p className="text-sm text-slate-700 mt-0.5">{value || '—'}</p>}
       </div>
     </div>
-  );
-};
-
-const ShareButton = (props) => {
-  const { icon, label, color, onClick } = props;
-  const Icon = icon;
-  return (
-    <button type="button" onClick={onClick} className="flex flex-col items-center gap-1.5 group">
-      <span className={`w-11 h-11 rounded-full flex items-center justify-center text-white ${color} group-hover:opacity-90 transition shadow-sm`}>
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="text-[11px] text-slate-500">{label}</span>
-    </button>
   );
 };
 
@@ -439,8 +410,7 @@ const NoticeBoard = () => {
     loadNoticeBoardData({ forceRefresh: false });
   }, [loadNoticeBoardData]);
 
-  // Deep link support: notifications route here as ?notice=<id> so clicking
-  // one opens that specific notice instead of just landing on the board.
+  // Deep link support
   useEffect(() => {
     const noticeIdParam = searchParams.get('notice');
     if (!noticeIdParam || !notices.length) return;
@@ -560,378 +530,312 @@ const NoticeBoard = () => {
     }
   };
 
+  // ─── NEW UI ──────────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      {selectedNotice ? (
-        <NoticeDetailsView
-          notice={selectedNotice}
-          onBack={() => setSelectedNoticeId(null)}
-          examGroup={matchedExamGroup}
-          onDownloadRoutine={handleDownloadRoutine}
-          downloadingRoutine={downloadingExamId === String(matchedExamGroup?._id || '')}
-          onViewExams={() => navigate('/student/exams')}
-          onPrev={() => prevNotice && setSelectedNoticeId(resolveId(prevNotice))}
-          onNext={() => nextNotice && setSelectedNoticeId(resolveId(nextNotice))}
-          hasPrev={Boolean(prevNotice)}
-          hasNext={Boolean(nextNotice)}
-          onShare={handleShare}
-        />
-      ) : (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
-                  <Megaphone className="h-5 w-5 text-indigo-600" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-slate-900 tracking-tight">Notice Board</h1>
-                  <p className="text-sm text-slate-400 mt-0.5">Stay updated with all important announcements and notices.</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadNoticeBoardData({ forceRefresh: true })}
-                  disabled={refreshing || loading}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
-                >
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  {refreshing ? 'Refreshing…' : 'Refresh'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSearchBar((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
-                >
-                  <Filter className="h-4 w-4" />
-                  Filter &amp; Search
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2 text-xs">
-                <User className="h-3.5 w-3.5 text-indigo-400" />
-                {teacherLoading ? (
-                  <span className="text-slate-400">Loading class teacher…</span>
-                ) : classTeacher ? (
-                  <span className="text-slate-500">
-                    Class Teacher:{' '}
-                    <span className="font-semibold text-slate-700">{classTeacher.name}</span>
-                    {classTeacher.subject ? ` · ${classTeacher.subject}` : ''}
-                    {classTeacher.className ? ` · ${classTeacher.className}` : ''}
-                    {classTeacher.sectionName ? `-${classTeacher.sectionName}` : ''}
-                  </span>
-                ) : (
-                  <span className="text-slate-400">Class Teacher: Not assigned</span>
-                )}
-              </div>
-              {lastUpdated && !loading && (
-                <span className="text-[11px] text-slate-300">
-                  Last updated {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-            </div>
-
-            {error && (
-              <div className="mt-3 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {showSearchBar && (
-              <div className="mt-4 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Search notices…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Category pills */}
-          <div className="flex flex-wrap items-center gap-2">
-            {CATEGORY_ORDER.map((key) => {
-              const meta = CATEGORY_META[key];
-              const Icon = meta.icon;
-              const active = activeCategory === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setActiveCategory(key)}
-                  className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold border transition ${
-                    active
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center ${active ? 'bg-white/20' : meta.iconBg || 'bg-indigo-50'}`}>
-                    <Icon className={`h-3 w-3 ${active ? 'text-white' : meta.iconColor || 'text-indigo-500'}`} />
-                  </span>
-                  {meta.label}
-                  <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                    {categoryCounts[key] || 0}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {loading ? (
-            <div className="space-y-3">
-              <SkeletonCard /><SkeletonCard /><SkeletonCard />
-            </div>
-          ) : (
-            <>
-              {/* Pinned notices */}
-              {pinnedNotices.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Pin className="h-4 w-4 text-indigo-500" />
-                      <h2 className="text-sm font-semibold text-slate-900">Pinned Notices</h2>
-                    </div>
-                    {noticesWithMeta.filter((n) => isPinnedNotice(n)).length > 3 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllPinned((v) => !v)}
-                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-                      >
-                        {showAllPinned ? 'Show Less' : 'View All Pinned'}
-                      </button>
-                    )}
+    <div className="min-h-screen bg-white p-4 md:p-6 flex justify-center">
+      <div className="w-full max-w-4xl">
+        {selectedNotice ? (
+          <NoticeDetailsView
+            notice={selectedNotice}
+            onBack={() => setSelectedNoticeId(null)}
+            examGroup={matchedExamGroup}
+            onDownloadRoutine={handleDownloadRoutine}
+            downloadingRoutine={downloadingExamId === String(matchedExamGroup?._id || '')}
+            onViewExams={() => navigate('/student/exams')}
+            onPrev={() => prevNotice && setSelectedNoticeId(resolveId(prevNotice))}
+            onNext={() => nextNotice && setSelectedNoticeId(resolveId(nextNotice))}
+            hasPrev={Boolean(prevNotice)}
+            hasNext={Boolean(nextNotice)}
+            onShare={handleShare}
+          />
+        ) : (
+          <div className="space-y-6">
+            {/* ─── Floating Card ─── */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 md:p-8 animate-float">
+              {/* Header */}
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
+                    <Megaphone className="h-6 w-6 text-indigo-600" />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {pinnedNotices.map((notice) => {
-                      const meta = CATEGORY_META[notice._displayCategory];
-                      const Icon = meta.icon;
-                      const creator = getCreator(notice);
-                      const fresh = isNewNotice(notice);
-                      return (
-                        <div
-                          key={resolveId(notice)}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setSelectedNoticeId(resolveId(notice))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
-                          className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-                                <Icon className={`h-4 w-4 ${meta.iconColor}`} />
-                              </span>
-                              <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
-                            </div>
-                            <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
-                              PINNED
-                            </span>
-                          </div>
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
-                            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 mt-0.5" />
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
-                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                            <div className="flex items-center gap-3">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                {formatNoticeDate(resolveDate(notice))}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                {creator}
-                              </span>
-                            </div>
-                            {fresh && (
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div>
+                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Notice Board</h1>
+                    <p className="text-sm text-slate-400 mt-0.5">Stay updated with all important announcements and notices.</p>
                   </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-2 text-sm text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
+                    <User className="h-4 w-4 text-indigo-400" />
+                    {teacherLoading ? 'Loading…' : classTeacher ? `Class Teacher: ${classTeacher.name}` : 'No teacher assigned'}
+                  </span>
+                  {lastUpdated && !loading && (
+                    <span className="text-xs text-slate-400 whitespace-nowrap">
+                      <Clock className="inline h-3 w-3 mr-1" />
+                      {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div className="mt-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {error}
                 </div>
               )}
 
-              {/* All notices */}
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value)}
-                      className="appearance-none pl-3 pr-8 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
-                    >
-                      <option value="newest">Sort by: Newest First</option>
-                      <option value="oldest">Sort by: Oldest First</option>
-                      <option value="priority">Sort by: Priority</option>
-                    </select>
-                    <div className="hidden sm:flex items-center rounded-xl border border-slate-200 overflow-hidden">
+              {/* Filters & Sort */}
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-4">
+                <div className="flex flex-wrap gap-2">
+                  {['all', 'general', 'academic', 'exam'].map((key) => {
+                    const label = key === 'all' ? 'All' : CATEGORY_META[key]?.label || key;
+                    const isActive = activeCategory === key;
+                    return (
                       <button
+                        key={key}
                         type="button"
-                        onClick={() => setListLayout('list')}
-                        className={`p-2 transition ${listLayout === 'list' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
-                        title="List view"
-                      >
-                        <ListIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setListLayout('grid')}
-                        className={`p-2 transition ${listLayout === 'grid' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:bg-slate-50'}`}
-                        title="Grid view"
-                      >
-                        <LayoutGrid className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {sortedNotices.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 gap-3">
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                      <Bell className="h-7 w-7 text-indigo-200" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-400">No notices found</p>
-                    <p className="text-xs text-slate-300">Try adjusting your search or filter criteria</p>
-                  </div>
-                ) : listLayout === 'list' ? (
-                  <div className="divide-y divide-slate-100">
-                    {paginatedNotices.map((notice) => {
-                      const meta = CATEGORY_META[notice._displayCategory];
-                      const Icon = meta.icon;
-                      const creator = getCreator(notice);
-                      const fresh = isNewNotice(notice);
-                      return (
-                        <div
-                          key={resolveId(notice)}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setSelectedNoticeId(resolveId(notice))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
-                          className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
-                        >
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta.iconBg}`}>
-                            <Icon className={`h-5 w-5 ${meta.iconColor}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-xs font-semibold ${meta.text}`}>{meta.label}</p>
-                            <p className="text-sm font-semibold text-slate-900 truncate">{notice.title || 'Untitled Notice'}</p>
-                            <p className="text-xs text-slate-500 truncate">{notice.message}</p>
-                          </div>
-                          <div className="hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3.5 w-3.5" />
-                              {formatNoticeDate(resolveDate(notice))}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <User className="h-3.5 w-3.5" />
-                              {creator}
-                            </span>
-                          </div>
-                          {fresh && (
-                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
-                          )}
-                          <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
-                    {paginatedNotices.map((notice) => {
-                      const meta = CATEGORY_META[notice._displayCategory];
-                      const Icon = meta.icon;
-                      const creator = getCreator(notice);
-                      const fresh = isNewNotice(notice);
-                      return (
-                        <div
-                          key={resolveId(notice)}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setSelectedNoticeId(resolveId(notice))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
-                          className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-                              <Icon className={`h-4 w-4 ${meta.iconColor}`} />
-                            </span>
-                            <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
-                          </div>
-                          <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
-                          <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
-                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                            <div className="flex items-center gap-3">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                {formatNoticeDate(resolveDate(notice))}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                {creator}
-                              </span>
-                            </div>
-                            {fresh && (
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {sortedNotices.length > 0 && (
-                  <div className="flex items-center justify-center gap-1.5 px-5 py-4 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                      <button
-                        key={page}
-                        type="button"
-                        onClick={() => setCurrentPage(page)}
-                        className={`min-w-9 h-9 rounded-lg text-sm font-semibold transition ${
-                          page === currentPage
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'text-slate-500 hover:bg-slate-50 border border-slate-200'
+                        onClick={() => setActiveCategory(key)}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded-full border transition ${
+                          isActive
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                         }`}
                       >
-                        {page}
+                        {label}
+                        <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded-full ${
+                          isActive ? 'bg-indigo-200 text-indigo-800' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {categoryCounts[key] || 0}
+                        </span>
                       </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="appearance-none pl-3 pr-8 py-1.5 text-sm border border-slate-200 rounded-full bg-white text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="priority">Priority</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowSearchBar(!showSearchBar)}
+                    className="p-2 rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 transition"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => loadNoticeBoardData({ forceRefresh: true })}
+                    disabled={refreshing || loading}
+                    className="p-2 rounded-full border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-50 transition"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Search bar */}
+              {showSearchBar && (
+                <div className="relative mt-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Search notices…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* ─── Loading / Content ─── */}
+            {loading ? (
+              <div className="space-y-3">
+                <SkeletonCard /><SkeletonCard /><SkeletonCard />
+              </div>
+            ) : (
+              <>
+                {/* Pinned Notices */}
+                {pinnedNotices.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Pin className="h-4 w-4 text-indigo-500" />
+                        <h2 className="text-sm font-semibold text-slate-900">Pinned Notices</h2>
+                      </div>
+                      {noticesWithMeta.filter((n) => isPinnedNotice(n)).length > 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllPinned(!showAllPinned)}
+                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                        >
+                          {showAllPinned ? 'Show Less' : 'View All Pinned'}
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {pinnedNotices.map((notice) => {
+                        const meta = CATEGORY_META[notice._displayCategory];
+                        const Icon = meta.icon;
+                        const creator = getCreator(notice);
+                        const fresh = isNewNotice(notice);
+                        return (
+                          <div
+                            key={resolveId(notice)}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSelectedNoticeId(resolveId(notice))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
+                            className="rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+                                  <Icon className={`h-4 w-4 ${meta.iconColor}`} />
+                                </span>
+                                <span className={`text-xs font-semibold ${meta.text}`}>{meta.label}</span>
+                              </div>
+                              <span className="text-[10px] font-bold tracking-wide text-white bg-indigo-600 rounded-full px-2 py-0.5">
+                                PINNED
+                              </span>
+                            </div>
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="text-sm font-semibold text-slate-900 leading-snug">{notice.title}</h3>
+                              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 mt-0.5" />
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">{notice.message}</p>
+                            <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {formatNoticeDate(resolveDate(notice))}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  {creator}
+                                </span>
+                              </div>
+                              {fresh && (
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
+
+                {/* All Notices List */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">{sortedNotices.length} items</span>
+                    </div>
+                  </div>
+
+                  {sortedNotices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                      <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                        <Bell className="h-7 w-7 text-indigo-200" />
+                      </div>
+                      <p className="text-sm font-medium text-slate-400">No notices found</p>
+                      <p className="text-xs text-slate-300">Try adjusting your search or filter criteria</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {paginatedNotices.map((notice) => {
+                        const meta = CATEGORY_META[notice._displayCategory];
+                        const Icon = meta.icon;
+                        const creator = getCreator(notice);
+                        const fresh = isNewNotice(notice);
+                        return (
+                          <div
+                            key={resolveId(notice)}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSelectedNoticeId(resolveId(notice))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setSelectedNoticeId(resolveId(notice)); }}
+                            className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                          >
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta.iconBg}`}>
+                              <Icon className={`h-5 w-5 ${meta.iconColor}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${meta.text}`}>{meta.label}</p>
+                              <p className="text-sm font-semibold text-slate-900 truncate">{notice.title || 'Untitled Notice'}</p>
+                              <p className="text-xs text-slate-500 truncate">{notice.message}</p>
+                            </div>
+                            <div className="hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="h-3.5 w-3.5" />
+                                {formatNoticeDate(resolveDate(notice))}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="h-3.5 w-3.5" />
+                                {creator}
+                              </span>
+                            </div>
+                            {fresh && (
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${meta.badge}`}>New</span>
+                            )}
+                            <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {sortedNotices.length > 0 && (
+                    <div className="flex items-center justify-center gap-1.5 px-5 py-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-9 h-9 rounded-lg text-sm font-semibold transition ${
+                            page === currentPage
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'text-slate-500 hover:bg-slate-50 border border-slate-200'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

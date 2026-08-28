@@ -36,7 +36,6 @@ const resolveNotifPath = (notification) => {
   if (hasExamRoutine) return `/student/noticeboard?notice=${notification._id}`;
   if (relatedEntity === 'exam' || type === 'exam') return '/student/exams';
   if (relatedEntity === 'result' || type === 'result') return '/student/results';
-  if (relatedEntity === 'fee' || type === 'fee') return '/student/fees';
   if (type === 'notice' || type === 'announcement') return `/student/noticeboard?notice=${notification._id}`;
   if (type === 'class_note') return '/student/assignments-journal';
   return '/student/home';

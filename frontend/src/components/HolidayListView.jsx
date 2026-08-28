@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STUDENT_HOLIDAYS_ENDPOINT = `${API_BASE}/api/holidays/student`;
 const STUDENT_HOLIDAYS_CACHE_TTL_MS = 10 * 60 * 1000;
 
+// ─── Helpers (unchanged) ──────────────────────────────────────────
 const formatDate = (value) => {
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '—';
@@ -121,22 +122,21 @@ const STATUS_TONE = {
 };
 
 const STATUS_FILTERS = [
-  { key: 'all', label: 'All', activeClass: 'bg-slate-800 border-slate-800' },
+  { key: 'all', label: 'All', activeClass: 'bg-indigo-600 border-indigo-600' },
   { key: 'Upcoming', label: 'Upcoming', activeClass: 'bg-emerald-500 border-emerald-500' },
   { key: 'Ongoing', label: 'Ongoing', activeClass: 'bg-sky-500 border-sky-500' },
   { key: 'Past', label: 'Past', activeClass: 'bg-slate-400 border-slate-400' },
 ];
 
-const StatTile = ({ label, value, grad, shadow }) => (
-  <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
-    <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
-    <div className="relative z-10">
-      <p className="text-[11px] font-semibold text-white/80">{label}</p>
-      <p className="mt-1.5 text-xl font-black text-white leading-tight">{value}</p>
-    </div>
+// ─── Stats Tile (simplified, white) ─────────────────────────────
+const StatTile = ({ label, value, accentColor }) => (
+  <div className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5`}>
+    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{label}</p>
+    <p className={`mt-1 text-2xl font-bold ${accentColor}`}>{value}</p>
   </div>
 );
 
+// ─── Main Component ───────────────────────────────────────────────
 const HolidayListView = () => {
   const { profile } = useStudentDashboard();
   const [holidays, setHolidays] = useState([]);
@@ -352,119 +352,146 @@ const HolidayListView = () => {
     }
   };
 
+  // ─── New UI ──────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-slate-50 space-y-5 p-4 pb-8 sm:p-6">
-      <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-purple-500 via-purple-600 to-violet-700 p-5 shadow-lg shadow-purple-200/60 sm:p-6">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
-        <div className="relative flex flex-wrap items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-            <CalendarDays className="h-5.5 w-5.5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-white sm:text-2xl">Holiday Calendar</h1>
-            <p className="text-sm text-white/80">Track upcoming and completed holidays in one place</p>
-          </div>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={loading || !sortedHolidays.length || downloading}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-semibold text-purple-700 shadow-sm transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Download className="h-3.5 w-3.5" />
-            {downloading ? 'Preparing...' : 'Download PDF'}
-          </button>
-        </div>
-      </div>
-
-      {!loading && !error && sortedHolidays.length > 0 && (
-        <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatTile label="Total" value={stats.total} grad="from-slate-700 to-slate-900" shadow="shadow-slate-300/60" />
-            <StatTile label="Upcoming" value={stats.upcoming} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
-            <StatTile label="Ongoing" value={stats.ongoing} grad="from-sky-500 to-blue-600" shadow="shadow-sky-200/60" />
-            <StatTile label="Past" value={stats.past} grad="from-slate-400 to-slate-500" shadow="shadow-slate-200/60" />
-          </div>
-
-          <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
-            {STATUS_FILTERS.map(({ key, label, activeClass }) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setStatusFilter(key)}
-                className={`shrink-0 rounded-full border px-4 py-1.5 text-sm font-bold transition-all ${
-                  statusFilter === key
-                    ? `${activeClass} text-white shadow-md`
-                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {loading ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-500 shadow-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading holidays...
-        </div>
-      ) : error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-          <p className="text-sm font-medium text-rose-700">{error}</p>
-        </div>
-      ) : sortedHolidays.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-slate-500">No holidays announced yet.</p>
-        </div>
-      ) : filteredHolidays.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-slate-500">No {statusFilter.toLowerCase()} holidays right now.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredHolidays.map((item) => {
-            const start = item.startDate || item.date;
-            const end = item.endDate || item.startDate || item.date;
-            const status = getHolidayStatus(start, end);
-            const duration = getHolidayDuration(start, end);
-            const tone = STATUS_TONE[status] || STATUS_TONE.Unknown;
-            const isPast = status === 'Past';
-            const startDt = new Date(start);
-            const hasValidStart = !Number.isNaN(startDt.getTime());
-            const monthLabel = hasValidStart ? startDt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase() : '—';
-            const dayLabel = hasValidStart ? startDt.getDate() : '—';
-
-            return (
-              <div
-                key={item._id}
-                className={`flex items-center gap-3 rounded-2xl border border-slate-100 border-l-4 bg-white p-3 shadow-sm transition-transform hover:-translate-y-0.5 sm:p-4 ${tone.accent}`}
-              >
-                <div className={`flex w-14 shrink-0 flex-col items-center overflow-hidden rounded-xl border ${tone.dateBorder}`}>
-                  <div className={`w-full py-1 text-center text-[10px] font-bold text-white ${tone.dateHeader}`}>{monthLabel}</div>
-                  <div className={`w-full py-1.5 text-center text-lg font-black ${tone.dateText} ${tone.dateBody}`}>{dayLabel}</div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className={`font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</p>
-                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${tone.badge}`}>
-                      {status}
-                    </span>
-                  </div>
-                  <p className={`mt-1 text-xs ${isPast ? 'text-slate-400' : 'text-slate-500'}`}>
-                    {formatDateRange(start, end)} · {duration} day{duration > 1 ? 's' : ''}
-                  </p>
-                </div>
+    <div className="min-h-screen bg-white p-4 md:p-6 flex justify-center">
+      <div className="w-full max-w-4xl">
+        {/* Floating Card */}
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 md:p-8">
+          {/* Header */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <CalendarDays className="h-6 w-6 text-indigo-600" />
               </div>
-            );
-          })}
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Holiday Calendar</h1>
+                <p className="text-sm text-slate-400 mt-0.5">Track upcoming and completed holidays</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={loading || !sortedHolidays.length || downloading}
+              className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="h-4 w-4" />
+              {downloading ? 'Preparing…' : 'Download PDF'}
+            </button>
+          </div>
 
-          <p className="pt-1 text-sm font-semibold text-slate-700">
-            {statusFilter === 'all' ? `Total Holidays: ${sortedHolidays.length}` : `Showing ${filteredHolidays.length} of ${sortedHolidays.length} holidays`}
-          </p>
+          {/* Error */}
+          {error && (
+            <div className="mt-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+              <span className="shrink-0">⚠️</span>
+              {error}
+            </div>
+          )}
+
+          {/* Stats */}
+          {!loading && !error && sortedHolidays.length > 0 && (
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatTile label="Total" value={stats.total} accentColor="text-slate-800" />
+              <StatTile label="Upcoming" value={stats.upcoming} accentColor="text-emerald-600" />
+              <StatTile label="Ongoing" value={stats.ongoing} accentColor="text-sky-600" />
+              <StatTile label="Past" value={stats.past} accentColor="text-slate-400" />
+            </div>
+          )}
+
+          {/* Filters */}
+          {!loading && !error && sortedHolidays.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+              {STATUS_FILTERS.map(({ key, label, activeClass }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  className={`px-4 py-1.5 text-sm font-semibold rounded-full border transition ${
+                    statusFilter === key
+                      ? `${activeClass} text-white shadow-sm`
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Loading / Content */}
+        {loading ? (
+          <div className="mt-6 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading holidays…
+          </div>
+        ) : error ? (
+          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+            <p className="text-sm font-medium text-rose-700">{error}</p>
+          </div>
+        ) : sortedHolidays.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
+            <p className="text-sm text-slate-500">No holidays announced yet.</p>
+          </div>
+        ) : filteredHolidays.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
+            <p className="text-sm text-slate-500">No {statusFilter.toLowerCase()} holidays right now.</p>
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {filteredHolidays.map((item) => {
+              const start = item.startDate || item.date;
+              const end = item.endDate || item.startDate || item.date;
+              const status = getHolidayStatus(start, end);
+              const duration = getHolidayDuration(start, end);
+              const tone = STATUS_TONE[status] || STATUS_TONE.Unknown;
+              const isPast = status === 'Past';
+              const startDt = new Date(start);
+              const hasValidStart = !Number.isNaN(startDt.getTime());
+              const monthLabel = hasValidStart ? startDt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase() : '—';
+              const dayLabel = hasValidStart ? startDt.getDate() : '—';
+
+              return (
+                <div
+                  key={item._id}
+                  className={`flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 sm:p-4`}
+                >
+                  {/* Date block */}
+                  <div className={`flex w-14 shrink-0 flex-col items-center overflow-hidden rounded-xl border ${tone.dateBorder}`}>
+                    <div className={`w-full py-1 text-center text-[10px] font-bold text-white ${tone.dateHeader}`}>
+                      {monthLabel}
+                    </div>
+                    <div className={`w-full py-1.5 text-center text-lg font-black ${tone.dateText} ${tone.dateBody}`}>
+                      {dayLabel}
+                    </div>
+                  </div>
+                  {/* Details */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className={`font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                        {item.name}
+                      </p>
+                      <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${tone.badge}`}>
+                        {status}
+                      </span>
+                    </div>
+                    <p className={`mt-1 text-xs ${isPast ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {formatDateRange(start, end)} · {duration} day{duration > 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            <p className="pt-1 text-sm font-semibold text-slate-700">
+              {statusFilter === 'all'
+                ? `Total Holidays: ${sortedHolidays.length}`
+                : `Showing ${filteredHolidays.length} of ${sortedHolidays.length} holidays`}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

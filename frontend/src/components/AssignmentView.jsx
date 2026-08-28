@@ -164,7 +164,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
     return () => clearTimeout(t);
   }, [journalTitle, journalContent, journalTags, journalMood, assignmentType]);
 
-  /* Type tabs */
+  /* ─── Type tabs config ─── */
   const typeTabs = [
     { key: "school", label: "School", icon: BookOpen },
     { key: "eec", label: "Practice", icon: GraduationCap },
@@ -195,36 +195,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
 
   /* ═══════════════ RENDER ═══════════════ */
   return (
-    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-slate-50 px-3 sm:px-6 md:px-8 py-5 pb-24 md:pb-6 space-y-5 overflow-x-hidden"}>
-
-      {/* Header (non-journal) */}
-      {assignmentType !== "journal" && (
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-200/60">
-              <BookOpen className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900">Assignments</h1>
-              <p className="mt-0.5 text-sm text-slate-500">Manage your assignments and submissions</p>
-            </div>
-          </div>
-          {/* <PointsBadge /> */}
-        </div>
-      )}
-
-      {/* Type Tabs (non-journal) */}
-      {assignmentType !== "journal" && (
-        <div className="flex gap-1.5 overflow-x-auto rounded-2xl bg-white p-1.5 shadow-sm border border-slate-100">
-          {typeTabs.filter(t => t.key !== 'tryout' && t.key !== 'flashcard' && t.key !== 'lab').map((t) => (
-            <button key={t.key} onClick={() => { setAssignmentType(t.key); }}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${assignmentType === t.key ? "bg-linear-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200/60" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-                }`}>
-              <t.icon className="h-4 w-4" /> {t.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-white px-4 md:px-6 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
 
       {/* ═══════════════ JOURNAL - VIBRANT MINIMALIST ═══════════════ */}
       {assignmentType === "journal" && (
@@ -292,13 +263,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                   {autosaveLabel === "Saved" ? <Save className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
                   <span className="hidden sm:inline">{autosaveLabel}</span>
                 </div>
-                {/* <div
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold"
-                  style={{ background: "#fffbeb", borderColor: "#fde68a", color: "#b45309" }}
-                >
-                  <span>⚡</span>
-                  <PointsBadge />
-                </div> */}
               </div>
             </div>
 
@@ -563,7 +527,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                           Categories &amp; Tags
                         </label>
                         <div className="flex flex-wrap gap-2">
-                          {/* Render each tag as a pill */}
                           {(journalTags || "").split(",").map(t => t.trim()).filter(Boolean).map(tag => (
                             <span
                               key={tag}
@@ -587,7 +550,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                               </button>
                             </span>
                           ))}
-                          {/* Quick-add tag input / button */}
                           <input
                             type="text"
                             placeholder="+ Add Tag"
@@ -646,7 +608,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                   </div>
                 </div>
 
-                {/* ── Bottom Save Bar (sticky inside section) ── */}
+                {/* ── Bottom Save Bar ── */}
                 <div
                   className="shrink-0 md:flex items-center justify-between px-6 sm:px-10 lg:px-20 py-3 border-t pb-20 md:pb-3 hidden"
                   style={{ borderColor: "#f1f5f9", background: "#ffffff" }}
@@ -749,9 +711,47 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
         </div>
       )}
 
-      {/* Assignment types */}
-      {["school", "eec", "lab", "flashcard"].includes(assignmentType) && (
-        <Assignment assignmentType={assignmentType} filter={filter} setFilter={setFilter} />
+      {/* ═══════════════ NON-JOURNAL VIEW — REDESIGNED ═══════════════ */}
+      {assignmentType !== "journal" && (
+        <>
+          {/* ─── Floating Card with Centered Header & Tabs ─── */}
+          <div className="bg-white rounded-3xl border border-purple-200 shadow-lg p-6 md:p-8">
+            {/* Centered Header */}
+            <div className="text-center">
+              <h1 className="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">
+                Assignments
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Manage your assignments and submissions
+              </p>
+            </div>
+
+            {/* Tab Bar */}
+            <div className="flex flex-wrap justify-center gap-3 mt-6 pt-6 border-t border-slate-100">
+              {typeTabs.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setAssignmentType(t.key)}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border-2 ${
+                    assignmentType === t.key
+                      ? 'border-purple-600 bg-purple-50 text-purple-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300 hover:text-purple-600'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <t.icon className="h-4 w-4" />
+                    {t.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ─── Assignment Content ─── */}
+          <div className="mt-6">
+            <Assignment assignmentType={assignmentType} filter={filter} setFilter={setFilter} />
+          </div>
+        </>
       )}
     </div>
   );

@@ -29,7 +29,6 @@ import StudentOnboarding from './StudentOnboarding';
 import LearningPathMapView from './LearningPathMapView';
 import MasteryView from './MasteryView';
 import ErrorAnalysisView from './ErrorAnalysisView';
-import StudentFees from './StudentFees';
 import StudentHealthReport from './StudentHealthReport';
 import StudentComplaints from './StudentComplaints';
 import StudentMeetings from './StudentMeetings';
@@ -60,7 +59,6 @@ const VIEW_TITLES = {
   'lesson-plan-status': 'Lesson Plan Status',
   courses: 'Courses',
   results: 'Results',
-  fees: 'Fees',
   health: 'Health Record',
   complaints: 'Complaints',
   meetings: 'Meetings',
@@ -210,7 +208,6 @@ const Dashboard = () => {
     'my-paths': LearningHub,
     courses: CoursesView,
     results: ResultsView,
-    fees: StudentFees,
     health: StudentHealthReport,
     complaints: StudentComplaints,
     meetings: StudentMeetings,

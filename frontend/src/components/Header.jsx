@@ -79,7 +79,6 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     if (hasExamRoutine) return `/student/noticeboard?notice=${notification._id}`;
     if (relatedEntity === 'exam' || type === 'exam') return '/student/exams';
     if (relatedEntity === 'result' || type === 'result') return '/student/results';
-    if (relatedEntity === 'fee' || type === 'fee') return '/student/fees';
     if (type === 'notice' || type === 'announcement') return `/student/noticeboard?notice=${notification._id}`;
     if (type === 'class_note') return '/student/assignments-journal';
     return '/student/home';
@@ -167,7 +166,6 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     { label: 'Holidays', hint: 'Holiday list', action: () => navigate('/student/holidays') },
     { label: 'Syllabus', hint: 'Course coverage status', action: () => navigate('/student/lesson-plan-status') },
     { label: 'Notice Board', hint: 'School notices', action: () => navigate('/student/noticeboard') },
-    { label: 'Fees', hint: 'Bills and dues', action: () => navigate('/student/fees') },
     { label: 'Messages', hint: 'Chat with teachers', action: () => navigate('/student/chat') },
     { label: 'Teacher Feedback', hint: 'Rate your teachers', action: () => navigate('/student/teacherfeedback') },
     { label: 'Parent Meetings', hint: 'PTM schedule', action: () => navigate('/student/meetings') },

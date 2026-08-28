@@ -60,11 +60,6 @@ jest.mock('../ResultsView', () => {
   return () => React.createElement('div', { 'data-testid': 'results-view' });
 });
 
-jest.mock('../StudentFees', () => {
-  const React = require('react');
-  return () => React.createElement('div', { 'data-testid': 'student-fees-view' });
-});
-
 jest.mock('../StudentHealthReport', () => {
   const React = require('react');
   return () => React.createElement('div', { 'data-testid': 'student-health-view' });
@@ -222,13 +217,15 @@ describe('Dashboard', () => {
     expect(screen.getByTestId('dashboard-home')).toBeInTheDocument();
   });
 
-  test('renders the student fees view on the fees route', () => {
+  test('redirects the removed fees route back to the dashboard', async () => {
     mockPathname = '/student/fees';
 
     render(<Dashboard />);
 
-    expect(screen.getByTestId('student-fees-view')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar')).toHaveAttribute('data-active-view', 'fees');
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/student', { replace: true });
+    });
+    expect(screen.getByTestId('dashboard-home')).toBeInTheDocument();
   });
 
   test.each([
