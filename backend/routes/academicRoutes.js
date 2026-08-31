@@ -118,24 +118,29 @@ const findDuplicateClass = async ({ schoolId, campusId, academicYearId, name, st
   const normalizedStream = normalizeStream(stream) || '';
   if (!normalizedName) return null;
 
+  // Scope by school + campus only. Academic year is compared in JS below so that
+  // an "unscoped" class (no academicYearId) collides with a year-scoped class of
+  // the same name — otherwise "Class 1" (no year) and "Class 1" (2025-26) can
+  // both be created and both show up in the "all years" view.
   const filter = {
     schoolId,
     ...(campusId
       ? { campusId }
       : { $or: [{ campusId: null }, { campusId: { $exists: false } }] }),
-    ...(academicYearId
-      ? { academicYearId }
-      : { academicYearId: { $in: [null] } }),
   };
   if (excludeId && mongoose.isValidObjectId(excludeId)) {
     filter._id = { $ne: excludeId };
   }
 
-  const existingClasses = await ClassModel.find(filter).select('_id name stream').lean();
-  return existingClasses.find((item) => (
-    normalizeKey(item.name) === normalizedName
-    && (normalizeStream(item.stream) || '') === normalizedStream
-  )) || null;
+  const targetYear = academicYearId ? String(academicYearId) : '';
+  const existingClasses = await ClassModel.find(filter).select('_id name stream academicYearId').lean();
+  return existingClasses.find((item) => {
+    if (normalizeKey(item.name) !== normalizedName) return false;
+    if ((normalizeStream(item.stream) || '') !== normalizedStream) return false;
+    const itemYear = item.academicYearId ? String(item.academicYearId) : '';
+    // Same academic year, or either side is unscoped → treat as a duplicate.
+    return itemYear === targetYear || !itemYear || !targetYear;
+  }) || null;
 };
 
 const generateInvoicesForAcademicYear = async ({ schoolId, campusId, academicYearId }) => {
@@ -716,31 +721,28 @@ router.post('/classes', adminAuth, async (req, res) => {
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Class name is required' });
     }
-    if (academicYearId && !mongoose.isValidObjectId(academicYearId)) {
+    if (!academicYearId) {
+      return res.status(400).json({ error: 'An academic year is required to add a class' });
+    }
+    if (!mongoose.isValidObjectId(academicYearId)) {
       return res.status(400).json({ error: 'Invalid academicYearId' });
     }
     const validatedClassMeta = validateClassStandardAndStream({ name, standard, stream });
     if (validatedClassMeta.error) {
       return res.status(400).json({ error: validatedClassMeta.error });
     }
-    let yearExists = null;
-    if (academicYearId) {
-      yearExists = await AcademicYear.findOne({ _id: academicYearId, schoolId }).lean();
-      if (!yearExists) {
-        return res.status(404).json({ error: 'Academic year not found for this school' });
-      }
+    const yearExists = await AcademicYear.findOne({ _id: academicYearId, schoolId }).lean();
+    if (!yearExists) {
+      return res.status(404).json({ error: 'Academic year not found for this school' });
     }
-    if (validatedClassMeta.stream && !academicYearId) {
-      return res.status(400).json({ error: 'academicYearId is required for Class 11/12 stream setup' });
-    }
-    if (validatedClassMeta.stream && yearExists && !yearExists.isActive) {
+    if (validatedClassMeta.stream && !yearExists.isActive) {
       return res.status(400).json({ error: 'Class 11/12 stream setup is allowed only in the active academic year' });
     }
 
     const duplicateClass = await findDuplicateClass({
       schoolId,
       campusId,
-      academicYearId: academicYearId || null,
+      academicYearId,
       name,
       stream: validatedClassMeta.stream,
     });
@@ -752,7 +754,7 @@ router.post('/classes', adminAuth, async (req, res) => {
       schoolId,
       campusId: campusId || null,
       name: String(name).trim(),
-      academicYearId: academicYearId || undefined,
+      academicYearId,
       order: Number.isFinite(Number(order)) ? Number(order) : 0,
       standard: validatedClassMeta.standard,
       stream: validatedClassMeta.stream,

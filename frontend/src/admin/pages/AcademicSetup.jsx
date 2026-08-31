@@ -231,7 +231,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [subjects, setSubjects] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [teacherAllocations, setTeacherAllocations] = useState([]);
-  const [error, setError] = useState("");
 
   // Forms
   const [yearForm, setYearForm] = useState({ name: "", startDate: "", endDate: "", status: "active", isActive: true });
@@ -262,7 +261,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [editClassTeacherForm, setEditClassTeacherForm] = useState({ teacherId: "", yearId: "", classId: "", sectionId: "" });
 
   // Search/filter
-  const [yearSuccessMessage, setYearSuccessMessage] = useState("");
   const [showYearForm, setShowYearForm] = useState(false);
   const [searchClass, setSearchClass] = useState("");
   const [showAddClassesModal, setShowAddClassesModal] = useState(false);
@@ -566,11 +564,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const handleSaveClassTeacher = async (e) => {
     e.preventDefault();
     if (!classTeacherForm.teacherId || !classTeacherForm.yearId || !classTeacherForm.classId || !classTeacherForm.sectionId) {
-      setError("Teacher, year, class, and section are required.");
+      toast.error("Teacher, year, class, and section are required.");
       return;
     }
     setSavingClassTeacher(true);
-    setError("");
     try {
       const allocationId = classTeacherAllocations.find(
         (a) =>
@@ -599,7 +596,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       setClassTeacherForm({ teacherId: "", yearId: "", classId: "", sectionId: "" });
       toast.success(allocationId ? "Class teacher updated." : "Class teacher saved.");
     } catch (err) {
-      setError(err.message);
       toast.error(err.message);
     } finally {
       setSavingClassTeacher(false);
@@ -627,7 +623,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       return;
     }
     setIsSubmitting(true);
-    setError("");
     try {
       const res = await fetch(`${API_BASE}/api/teacher-allocations/${editingClassTeacher._id}`, {
         method: "PUT",
@@ -677,7 +672,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await loadClassTeachers();
       Swal.fire({ title: "Deleted!", text: "Class teacher assignment has been removed.", icon: "success", timer: 2000, showConfirmButton: false });
     } catch (err) {
-      setError(err.message);
       Swal.fire({ title: "Error", text: err.message, icon: "error" });
     } finally {
       setDeletingId(null);
@@ -687,7 +681,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ─── API helpers ─── */
   const handleApiError = (err) => {
     console.error(err);
-    setError("Unable to load academic data. Please retry.");
+    toast.error("Unable to load academic data. Please retry.");
   };
 
   const loadAcademicData = async () => {
@@ -769,7 +763,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     } catch (err) {
       if (!cached) {
         console.error(err);
-        setError("Unable to load class teacher data.");
+        toast.error("Unable to load class teacher data.");
       } else {
         console.warn("Class teacher fetch failed, showing cached data:", err);
       }
@@ -778,7 +772,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   useEffect(() => {
     setShowAdminHeader?.(true);
-    setError("");
     loadAcademicData().catch(handleApiError);
     loadClassTeachers().catch(() => {});
   }, [setShowAdminHeader]);
@@ -794,7 +787,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    setError("");
     try {
       await Promise.all([loadAcademicData(), loadClassTeachers()]);
       toast.success("Data Refreshed");
@@ -825,13 +817,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showAddClassesModal]);
 
-  const showTransientSuccess = (setter, message, durationMs = 4000) => {
-    setter(message);
-    window.setTimeout(() => setter(""), durationMs);
-  };
-
   const handleCreate = async (endpoint, payload, onSuccess) => {
-    setError("");
     setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -847,7 +833,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await onSuccess();
       toast.success("Created successfully!");
     } catch (err) {
-      setError(err.message);
       toast.error(err.message);
     } finally {
       setIsSubmitting(false);
@@ -857,7 +842,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* ─── Submit handlers ─── */
   const submitYearWithMode = async (mode) => {
     if (!yearForm.name.trim()) {
-      setError("Academic year name is required");
+      toast.error("Academic year name is required");
       return;
     }
     // Drafts are saved but never made the school's default academic year —
@@ -869,7 +854,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await loadAcademicData();
       setYearForm({ name: "", startDate: "", endDate: "", status: "active", isActive: true });
       setShowYearForm(false);
-      showTransientSuccess(setYearSuccessMessage, mode === "draft" ? "Saved as draft." : "Academic year added successfully!");
+      toast.success(mode === "draft" ? "Saved as draft." : "Academic year added successfully!");
       if (mode === "continue") setActiveTab("classes");
     });
   };
@@ -881,9 +866,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const openClassAddMode = (mode) => {
     setClassAddMode(mode);
     setShowAddClassesModal(true);
-    if (selectedYearId) {
-      setClassRangeForm((p) => ({ ...p, academicYearId: selectedYearId }));
-      setClassCustomYear(selectedYearId);
+    const defaultYearId = selectedYearId || currentAcademicYear?._id || "";
+    if (defaultYearId) {
+      setClassRangeForm((p) => ({ ...p, academicYearId: defaultYearId }));
+      setClassCustomYear(defaultYearId);
     }
   };
   const applyQuickClassPreset = (preset) => {
@@ -895,6 +881,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     openClassAddMode(preset.mode);
   };
 
+  /* ─── Single toast summarising a bulk class-add result ─── */
+  const notifyBulkClassResult = (created, failed, failures) => {
+    if (!failed) {
+      toast.success(`${created} class${created !== 1 ? "es" : ""} created.`);
+      return;
+    }
+    if (!created) {
+      toast.error(failures[0] || "No classes were added.");
+      return;
+    }
+    toast.success(`${created} class${created !== 1 ? "es" : ""} created, ${failed} skipped — ${failures[0]}`);
+  };
+
   /* ─── Bulk submit: classes by range ─── */
   const submitClassRange = async (e) => {
     e.preventDefault();
@@ -902,54 +901,71 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const fromValue = String(from ?? "").trim();
     const toValue = String(to ?? "").trim();
     if (!fromValue || !toValue) {
-      setError("From and To are required.");
+      toast.error("From and To are required.");
       return;
     }
     const f = Math.min(Number(from), Number(to));
     const t = Math.max(Number(from), Number(to));
     if (isNaN(f) || isNaN(t) || f < 1 || t < 1) {
-      setError("From and To must be valid numbers starting from 1.");
+      toast.error("From and To must be valid numbers starting from 1.");
+      return;
+    }
+    if (!academicYearId) {
+      toast.error("Select an academic year before adding classes.");
       return;
     }
     const names = Array.from({ length: t - f + 1 }, (_, i) => `${prefix ? prefix + " " : ""}${f + i}`);
     setIsSubmitting(true);
-    setError("");
     let created = 0, failed = 0;
+    const failures = [];
     for (let i = 0; i < names.length; i++) {
       try {
         const res = await fetch(`${API_BASE}/api/academic/classes`, {
           method: "POST", headers: authHeaders,
-          body: JSON.stringify({ name: names[i], academicYearId: academicYearId || undefined, order: f + i }),
+          body: JSON.stringify({ name: names[i], academicYearId, order: f + i }),
         });
-        if (res.ok) created++; else failed++;
-      } catch { failed++; }
+        if (res.ok) {
+          created++;
+        } else {
+          failed++;
+          const data = await res.json().catch(() => ({}));
+          failures.push(`${names[i]}: ${data.error || "failed"}`);
+        }
+      } catch { failed++; failures.push(`${names[i]}: request failed`); }
     }
     await loadAcademicData();
     setIsSubmitting(false);
-    toast.success(`${created} class${created !== 1 ? "es" : ""} created${failed ? `, ${failed} failed` : ""}.`);
+    notifyBulkClassResult(created, failed, failures);
   };
 
   /* ─── Bulk submit: classes by custom list ─── */
   const submitClassCustom = async (e) => {
     e.preventDefault();
-    const names = classCustomInput.split(",").map((s) => s.trim()).filter(Boolean);
-    if (!names.length) { setError("Enter at least one class name."); return; }
+    const names = [...new Set(classCustomInput.split(",").map((s) => s.trim()).filter(Boolean))];
+    if (!names.length) { toast.error("Enter at least one class name."); return; }
+    if (!classCustomYear) { toast.error("Select an academic year before adding classes."); return; }
     setIsSubmitting(true);
-    setError("");
     let created = 0, failed = 0;
+    const failures = [];
     for (let i = 0; i < names.length; i++) {
       try {
         const res = await fetch(`${API_BASE}/api/academic/classes`, {
           method: "POST", headers: authHeaders,
-          body: JSON.stringify({ name: names[i], academicYearId: classCustomYear || undefined, order: i }),
+          body: JSON.stringify({ name: names[i], academicYearId: classCustomYear, order: i }),
         });
-        if (res.ok) created++; else failed++;
-      } catch { failed++; }
+        if (res.ok) {
+          created++;
+        } else {
+          failed++;
+          const data = await res.json().catch(() => ({}));
+          failures.push(`${names[i]}: ${data.error || "failed"}`);
+        }
+      } catch { failed++; failures.push(`${names[i]}: request failed`); }
     }
     await loadAcademicData();
     setIsSubmitting(false);
-    setClassCustomInput("");
-    toast.success(`${created} class${created !== 1 ? "es" : ""} created${failed ? `, ${failed} failed` : ""}.`);
+    if (!failed) setClassCustomInput("");
+    notifyBulkClassResult(created, failed, failures);
   };
 
   const submitSeniorSecondaryStreamSetup = async (e) => {
@@ -977,7 +993,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const className = `Class ${standardValue} - ${streamLabel}`;
 
     setIsSubmitting(true);
-    setError("");
 
     try {
       const existingClass = classes.find(
@@ -1022,12 +1037,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const submitSectionsBulk = async (e) => {
     e.preventDefault();
     const { selected, custom, classIds } = sectionBulkForm;
-    if (!classIds || classIds.length === 0) { setError("Select at least one class."); return; }
+    if (!classIds || classIds.length === 0) { toast.error("Select at least one class."); return; }
     const extra = custom.split(",").map((s) => s.trim()).filter(Boolean);
     const allNames = [...new Set([...selected, ...extra])];
-    if (!allNames.length) { setError("Add at least one section."); return; }
+    if (!allNames.length) { toast.error("Add at least one section."); return; }
     setIsSubmitting(true);
-    setError("");
     let created = 0, failed = 0;
     for (const cId of classIds) {
       for (const name of allNames) {
@@ -1053,7 +1067,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const allNames = [...new Set([...subjectTags, ...extra])];
     if (!allNames.length) { toast("Add at least one subject.", { icon: "⚠️" }); return; }
     setIsSubmitting(true);
-    setError("");
     let created = 0, failed = 0;
     for (const name of allNames) {
       try {
@@ -1077,7 +1090,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!assignClassId) { toast("Select a class to assign subjects to.", { icon: "⚠️" }); return; }
     if (!assignSubjectIds.length) { toast("Select at least one subject to assign.", { icon: "⚠️" }); return; }
     setIsSubmitting(true);
-    setError("");
     let assigned = 0, failed = 0;
     for (const subjectId of assignSubjectIds) {
       const subject = subjects.find((s) => String(s._id) === subjectId);
@@ -1099,7 +1111,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   /* ─── Update handlers ─── */
   const handleUpdate = async (endpoint, id, payload, onSuccess) => {
-    setError("");
     setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}${endpoint}/${id}`, {
@@ -1115,7 +1126,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await onSuccess();
       toast.success("Updated successfully!");
     } catch (err) {
-      setError(err.message);
       toast.error(err.message);
     } finally {
       setIsSubmitting(false);
@@ -1149,11 +1159,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const name = String(editingClass?.name || '').trim();
     const academicYearId = editingClass?.academicYearId || selectedYearId || currentAcademicYear?._id;
     if (!name) {
-      setError('Class name is required.');
+      toast.error('Class name is required.');
       return;
     }
     if (!academicYearId) {
-      setError('Select an academic year before adding a class.');
+      toast.error('Select an academic year before adding a class.');
       return;
     }
     await handleCreate('/api/academic/classes', {
@@ -1172,7 +1182,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const updateSection = async (e) => {
     e.preventDefault();
     if (!editingSection.classId) {
-      setError("Select a class before updating section.");
+      toast.error("Select a class before updating section.");
       return;
     }
     await handleUpdate("/api/academic/sections", editingSection._id, {
@@ -1666,29 +1676,48 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     );
   };
 
-  const BulkBar = ({ entityType, entityName }) => {
-    const [selected] = selectionMap[entityType];
-    if (selected.length === 0) return null;
+  const BulkBar = ({ entityType, entityName, total = 0 }) => {
+    const [selected, setSelected] = selectionMap[entityType];
+    const count = selected.length;
     return (
-      <div className="mb-3 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5">
-        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-800">
-          <CheckCircle2 className="h-4 w-4 text-blue-500" /> {selected.length} selected
-        </span>
-        <div className="flex gap-2">
-          <button
-            onClick={() => selectionMap[entityType][1]([])}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+      <AnimatePresence initial={false}>
+        {count > 0 && (
+          <Motion.div
+            key="bulkbar"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
           >
-            Clear
-          </button>
-          <button
-            onClick={() => handleBulkDelete(entityType, entityName)}
-            className="flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </button>
-        </div>
-      </div>
+            <div className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/70 py-2 pl-2 pr-2.5 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 min-w-[1.75rem] items-center justify-center rounded-lg bg-blue-600 px-1.5 text-xs font-bold tabular-nums text-white shadow-sm">
+                  {count}
+                </span>
+                <span className="text-sm font-semibold text-blue-900">
+                  {entityName}{count !== 1 ? "s" : ""} selected
+                  {total > 0 && <span className="ml-1 font-normal text-blue-400">of {total}</span>}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setSelected([])}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100"
+                >
+                  <X className="h-3.5 w-3.5" /> Clear
+                </button>
+                <button
+                  onClick={() => handleBulkDelete(entityType, entityName)}
+                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 active:scale-[0.97]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete{count > 1 ? ` ${count}` : ""}
+                </button>
+              </div>
+            </div>
+          </Motion.div>
+        )}
+      </AnimatePresence>
     );
   };
 
@@ -1755,13 +1784,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </Motion.div>
-
-        {/* ─── Error ─── */}
-        {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
 
         <AnimatePresence>
         {activeTab !== "years" && (
@@ -2012,21 +2034,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       </div>
                     </div>
                   </Motion.div>
-                  </Motion.div>
-                )}
-              </AnimatePresence>
-
-
-              {/* Success banner */}
-              <AnimatePresence>
-                {yearSuccessMessage && (
-                  <Motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
-                  >
-                    <CheckCircle2 className="h-4 w-4 shrink-0" /> {yearSuccessMessage}
                   </Motion.div>
                 )}
               </AnimatePresence>
@@ -2323,7 +2330,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       <SearchInput value={searchClass} onChange={setSearchClass} placeholder="Search classes..." />
                     </div>
                   </div>
-                  <BulkBar entityType="classes" entityName="class" />
+                  <BulkBar entityType="classes" entityName="class" total={sortedClasses.length} />
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
@@ -2489,7 +2496,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             </div>
                           </div>
                         )}
-                        <button type="submit" disabled={isSubmitting || !hasValidClassRange}
+                        <button type="submit" disabled={isSubmitting || !hasValidClassRange || !classRangeForm.academicYearId}
                           className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
                           <Plus className="h-4 w-4" />
                           {isSubmitting ? "Creating…" : `Create ${classRangeCount} Classes`}
@@ -2530,7 +2537,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             </div>
                           </div>
                         )}
-                        <button type="submit" disabled={isSubmitting || !classCustomInput.trim()}
+                        <button type="submit" disabled={isSubmitting || !classCustomInput.trim() || !classCustomYear}
                           className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
                           <Plus className="h-4 w-4" />
                           {isSubmitting ? "Creating…" : `Create ${classCustomInput.split(",").filter((s) => s.trim()).length || 0} Classes`}
@@ -2758,7 +2765,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         <SearchInput value={searchSection} onChange={setSearchSection} placeholder="Search sections..." />
                       </div>
                     </div>
-                    <BulkBar entityType="sections" entityName="section" />
+                    <BulkBar entityType="sections" entityName="section" total={sortedSections.length} />
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
@@ -3002,7 +3009,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         <SearchInput value={searchSubject} onChange={setSearchSubject} placeholder="Search subjects..." />
                       </div>
                     </div>
-                    <BulkBar entityType="subjects" entityName="subject" />
+                    <BulkBar entityType="subjects" entityName="subject" total={sortedSubjects.length} />
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
