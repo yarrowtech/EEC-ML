@@ -338,6 +338,40 @@ summary:focus-visible,
     transform: translateY(0) scale(1);
   }
 }
+
+/* Reusable modal entrance: fade the backdrop, pop the panel */
+.animate-overlay-fade {
+  animation: fadeIn 0.18s ease-out both;
+}
+.animate-modal-pop {
+  animation: slideUp 0.22s cubic-bezier(0.34, 1.1, 0.64, 1) both;
+}
+
+/* Thin, light scrollbar for data tables inside a rounded card */
+.table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+.table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+  background-clip: content-box;
+}
+.table-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
 /* Tenant branding variables are populated by TenantProvider at runtime. */
 :root {
   --tenant-primary: #2563eb;

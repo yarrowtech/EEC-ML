@@ -29,9 +29,11 @@ import {
   Star,
   X,
   Upload,
+  GraduationCap,
   FileDown,
   Archive,
   RotateCcw,
+  FileClock,
   Trash2,
   Eye,
   KeyRound,
@@ -39,15 +41,7 @@ import {
   CalendarDays,
   Wallet,
 } from "lucide-react";
-import {
-  PersonalInformationSection,
-  ParentGuardianSection,
-  AcademicAdmissionSection,
-  PreviousAcademicSection,
-  MedicalInformationSection,
-  DocumentInformationSection,
-  OfficeUseSection,
-} from "./components/StudentFormSections";
+import StudentEnrollWizard, { DocPreviewModal } from "./components/StudentEnrollWizard";
 import Swal from "sweetalert2";
 import * as XLSX from "xlsx";
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -65,6 +59,63 @@ const escapeHtml = (value) => {
 };
 
 const STUDENTS_CACHE_PREFIX = "admin_students_cache_v1";
+const DRAFTS_API = `${API_BASE}/api/student/auth/enrollment-drafts`;
+const ENROLL_STEP_LABELS = [
+  "Student Personal Information",
+  "Address Information",
+  "Parent / Guardian Information",
+  "Previous Academic History",
+  "Medical Information",
+  "Admission & Academic Details",
+  "Documents",
+  "Office / Administration",
+  "Review & Submit",
+];
+
+const draftTimeAgo = (iso) => {
+  const t = new Date(iso).getTime();
+  if (!t) return "";
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d} day${d > 1 ? "s" : ""} ago`;
+  return new Date(iso).toLocaleString();
+};
+
+// Blank "Enroll New Student" form. Kept at module scope so it can seed useState
+// and reset the form after enrolling / starting a fresh draft.
+const INITIAL_NEW_STUDENT = {
+  // core
+  name: "", email: "", mobile: "", gender: "", dob: "",
+  address: "", permanentAddress: "", pincode: "", status: "Active",
+  // Personal Details Extended
+  birthPlace: "", nationality: "Indian", religion: "", caste: "", category: "", photograph: "",
+  // Guardian/Parent Info
+  guardianName: "", guardianEmail: "", guardianPhone: "",
+  guardianRelation: "", guardianType: "", // guardianType: father | mother | existing | other
+  fatherName: "", fatherOccupation: "", fatherPhone: "",
+  motherName: "", motherOccupation: "", motherPhone: "",
+  // Emergency Contact
+  emergencyContactName: "", emergencyContactPhone: "", emergencyContactRelation: "",
+  // Academic History
+  hasPreviousSchool: "", // "" | "yes" | "no"
+  previousSchoolName: "", previousClass: "", previousPercentage: "",
+  transferCertificateNo: "", transferCertificateDate: "", reasonForLeaving: "",
+  // Medical Info
+  bloodGroup: "", knownHealthIssues: "", allergies: "", immunizationStatus: "", learningDisabilities: "",
+  // Documents
+  aadharNumber: "", birthCertificateNo: "",
+  documents: [], // [{ type, label, url, fileName }]
+  // Office Use
+  applicationId: "", applicationDate: "", approvalStatus: "Approved", remarks: "",
+  // academic
+  serialNo: "", academicYear: "", admissionDate: "", admissionNumber: "", roll: "", class: "", section: "",
+  admissionType: "New Admission",
+};
 const EXCLUDED_STUDENT_STATUSES = new Set(["leaving", "left", "expelled"]);
 const shouldHideLeavingStudent = (student) =>
   EXCLUDED_STUDENT_STATUSES.has(String(student?.status || "").trim().toLowerCase());
@@ -84,6 +135,12 @@ const Students = ({ setShowAdminHeader }) => {
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [wellbeingData, setWellbeingData] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [enrollDrafts, setEnrollDrafts] = useState([]);
+  const [activeDraftId, setActiveDraftId] = useState(null);
+  const [resumeStep, setResumeStep] = useState(0);
+  const [enrollSessionKey, setEnrollSessionKey] = useState(0);
+  const [showDraftsModal, setShowDraftsModal] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -129,79 +186,11 @@ const Students = ({ setShowAdminHeader }) => {
   const [viewAttendance, setViewAttendance] = useState([]);
   const [viewFees, setViewFees] = useState([]);
   const [viewParent, setViewParent] = useState(null);
+  const [docPreview, setDocPreview] = useState(null); // { src, label }
   const [loadingViewData, setLoadingViewData] = useState(false);
   const [viewTab, setViewTab] = useState("overview");
 
-  const [newStudent, setNewStudent] = useState({
-    // core
-    name: "",
-    email: "",
-    mobile: "",
-    gender: "",
-    dob: "",
-    address: "",
-    permanentAddress: "",
-    pincode: "",
-    status: "Active",
-
-    // Personal Details Extended
-    birthPlace: "",
-    nationality: "Indian",
-    religion: "",
-    caste: "",
-    category: "",
-    photograph: "",
-
-    // Guardian/Parent Info
-    guardianName: "",
-    guardianEmail: "",
-    guardianPhone: "",
-    fatherName: "",
-    fatherOccupation: "",
-    fatherPhone: "",
-    motherName: "",
-    motherOccupation: "",
-    motherPhone: "",
-
-    // Emergency Contact
-    emergencyContactName: "",
-    emergencyContactPhone: "",
-    emergencyContactRelation: "",
-
-    // Academic History
-    previousSchoolName: "",
-    previousClass: "",
-    previousPercentage: "",
-    transferCertificateNo: "",
-    transferCertificateDate: "",
-    reasonForLeaving: "",
-
-    // Medical Info
-    bloodGroup: "",
-    knownHealthIssues: "",
-    allergies: "",
-    immunizationStatus: "",
-    learningDisabilities: "",
-
-    // Documents
-    aadharNumber: "",
-    birthCertificateNo: "",
-
-    // Office Use
-    applicationId: "",
-    applicationDate: "",
-    approvalStatus: "Pending",
-    remarks: "",
-
-    // academic
-    serialNo: "",
-    academicYear: "",
-    admissionDate: "",
-    admissionNumber: "",
-    roll: "",
-    class: "",
-    section: "",
-  });
+  const [newStudent, setNewStudent] = useState(() => ({ ...INITIAL_NEW_STUDENT }));
 
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -308,7 +297,9 @@ const Students = ({ setShowAdminHeader }) => {
       const classFromCatalog = academicClasses
         .map((item) => String(item?.name || "").trim())
         .filter(Boolean);
-      return Array.from(new Set([...classFromStudents, ...classFromCatalog])).sort();
+      return Array.from(new Set([...classFromStudents, ...classFromCatalog])).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+      );
     },
     [sessionFilter, studentData, academicClasses]
   );
@@ -331,7 +322,9 @@ const Students = ({ setShowAdminHeader }) => {
             .filter(Boolean)
         : academicSections.map((section) => String(section?.name || "").trim()).filter(Boolean);
 
-      return Array.from(new Set([...sectionFromStudents, ...sectionFromCatalog])).sort();
+      return Array.from(new Set([...sectionFromStudents, ...sectionFromCatalog])).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+      );
     },
     [sessionFilter, classFilter, studentData, academicClasses, academicSections]
   );
@@ -809,7 +802,9 @@ const Students = ({ setShowAdminHeader }) => {
       .filter((parent) => {
         const name = String(parent?.name || "").toLowerCase();
         const username = String(parent?.username || "").toLowerCase();
-        return name.includes(query) || username.includes(query);
+        const mobile = String(parent?.mobile || "").toLowerCase();
+        const email = String(parent?.email || "").toLowerCase();
+        return name.includes(query) || username.includes(query) || mobile.includes(query) || email.includes(query);
       })
       .slice(0, 8);
   }, [parentDirectory, parentSearchTerm]);
@@ -855,7 +850,10 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const handleSelectExistingParent = (parent) => {
-    if (!parent) return;
+    if (!parent) {
+      setSelectedExistingParent(null);
+      return;
+    }
     setSelectedExistingParent(parent);
     setParentSearchTerm(parent.name || parent.username || "");
     setNewStudent((prev) => ({
@@ -934,7 +932,9 @@ const Students = ({ setShowAdminHeader }) => {
       );
       setAcademicClasses(
         classesRes.status === "fulfilled" && Array.isArray(classesRes.value)
-          ? classesRes.value
+          ? [...classesRes.value].sort((a, b) =>
+              String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { numeric: true, sensitivity: "base" })
+            )
           : []
       );
       setAcademicSections(
@@ -1288,6 +1288,136 @@ const Students = ({ setShowAdminHeader }) => {
     setNewStudent((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Upload an enrolment document to Cloudinary; reports progress and returns the hosted URL.
+  const uploadEnrollDocument = (file, onProgress) =>
+    new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "nif_students");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/api/uploads/cloudinary/single`);
+      xhr.setRequestHeader("authorization", `Bearer ${localStorage.getItem("token")}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data?.files?.[0]?.secure_url) {
+          resolve(data.files[0].secure_url);
+        } else {
+          reject(new Error(data?.message || `Upload failed (${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(fd);
+    });
+
+  /* -------------------- Enrollment drafts -------------------- */
+  const draftAuthHeaders = () => ({
+    "Content-Type": "application/json",
+    authorization: `Bearer ${localStorage.getItem("token")}`,
+  });
+
+  const loadEnrollDrafts = useCallback(async () => {
+    try {
+      const res = await fetch(DRAFTS_API, { headers: draftAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setEnrollDrafts(Array.isArray(data.data) ? data.data : []);
+    } catch {
+      /* offline / ignore */
+    }
+  }, []);
+
+  const saveEnrollDraft = async ({ step, silent = false } = {}) => {
+    const payload = {
+      id: activeDraftId || undefined,
+      label: newStudent.name?.trim() || "Untitled draft",
+      className: newStudent.class || "",
+      step: Number(step) || 0,
+      data: {
+        newStudent,
+        selectedAcademicYearId,
+        selectedClassId,
+        selectedSectionId,
+        selectedExistingParentId: selectedExistingParent?._id || null,
+      },
+    };
+    const res = await fetch(DRAFTS_API, {
+      method: "POST",
+      headers: draftAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Could not save draft");
+    if (data?.data?._id) setActiveDraftId(data.data._id);
+    if (data?.data) {
+      // keep the local list fresh without an extra round-trip
+      setEnrollDrafts((prev) => {
+        const rest = prev.filter((d) => d._id !== data.data._id);
+        return [data.data, ...rest];
+      });
+    }
+    if (!silent) await loadEnrollDrafts();
+    return data.data;
+  };
+
+  const deleteEnrollDraft = async (id) => {
+    setDeletingDraftId(id);
+    try {
+      await fetch(`${DRAFTS_API}/${id}`, { method: "DELETE", headers: draftAuthHeaders() });
+    } catch {
+      /* ignore */
+    }
+    if (activeDraftId === id) setActiveDraftId(null);
+    setEnrollDrafts((prev) => prev.filter((d) => d._id !== id));
+    setDeletingDraftId(null);
+  };
+
+  const resumeEnrollDraft = (draft) => {
+    const d = draft?.data || {};
+    setNewStudent({ ...INITIAL_NEW_STUDENT, ...(d.newStudent || {}) });
+    setSelectedAcademicYearId(d.selectedAcademicYearId || "");
+    setSelectedClassId(d.selectedClassId || "");
+    setSelectedSectionId(d.selectedSectionId || "");
+    setActiveDraftId(draft._id);
+    setResumeStep(Number(draft.step) || 0);
+    setEnrollSessionKey((k) => k + 1);
+    setShowDraftsModal(false);
+    setShowAddForm(true);
+  };
+
+  const startNewEnrollment = () => {
+    setNewStudent({ ...INITIAL_NEW_STUDENT });
+    setSelectedAcademicYearId("");
+    setSelectedClassId("");
+    setSelectedSectionId("");
+    setSelectedExistingParent(null);
+    setParentSearchTerm("");
+    setActiveDraftId(null);
+    setResumeStep(0);
+    setEnrollSessionKey((k) => k + 1);
+    setShowAddForm(true);
+  };
+
+  useEffect(() => {
+    loadEnrollDrafts();
+  }, [loadEnrollDrafts]);
+
+  useEffect(() => {
+    if (showAddForm || showDraftsModal) loadEnrollDrafts();
+  }, [showAddForm, showDraftsModal, loadEnrollDrafts]);
+
+  // Lock the page behind the drafts modal so only the modal scrolls.
+  useEffect(() => {
+    if (!showDraftsModal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showDraftsModal]);
+
   const handleAcademicClassChange = (e) => {
     const nextClassId = e.target.value;
     const selectedClass = addFormClassOptions.find(
@@ -1327,7 +1457,6 @@ const Students = ({ setShowAdminHeader }) => {
       "mobile",
       "gender",
       "admissionDate",
-      "roll",
       "class",
       "section",
     ];
@@ -1365,8 +1494,10 @@ const Students = ({ setShowAdminHeader }) => {
         guardianName: newStudent.guardianName,
         guardianPhone: newStudent.guardianPhone,
         guardianEmail: newStudent.guardianEmail,
+        guardianRelation: newStudent.guardianRelation,
         admissionNumber: newStudent.admissionNumber,
         admissionDate: newStudent.admissionDate,
+        admissionType: newStudent.admissionType,
         roll: newStudent.roll,
         grade: newStudent.class,
         section: newStudent.section,
@@ -1376,6 +1507,7 @@ const Students = ({ setShowAdminHeader }) => {
         applicationId: newStudent.applicationId,
         applicationDate: newStudent.applicationDate,
         approvalStatus: newStudent.approvalStatus,
+        hasPreviousSchool: newStudent.hasPreviousSchool,
         previousSchoolName: newStudent.previousSchoolName,
         previousClass: newStudent.previousClass,
         previousPercentage: newStudent.previousPercentage,
@@ -1395,6 +1527,7 @@ const Students = ({ setShowAdminHeader }) => {
         learningDisabilities: newStudent.learningDisabilities,
         aadharNumber: newStudent.aadharNumber,
         birthCertificateNo: newStudent.birthCertificateNo,
+        documents: Array.isArray(newStudent.documents) ? newStudent.documents : [],
         remarks: newStudent.remarks,
       };
 
@@ -1415,7 +1548,7 @@ const Students = ({ setShowAdminHeader }) => {
         await Swal.fire({
           icon: "error",
           title: "Registration failed",
-          text: data.message || res.statusText,
+          text: data.error || data.message || res.statusText,
         });
         return;
       }
@@ -1423,12 +1556,18 @@ const Students = ({ setShowAdminHeader }) => {
       const studentPassword = data.password || "";
       const parentId = data?.parentCredentials?.userId || "";
       const parentPassword = data?.parentCredentials?.password || "";
+      const admissionNo = data.admissionNumber || "";
+      const rollNo = data.roll ?? "";
+      const applicationNo = data.applicationId || "";
       Swal.fire({
         icon: "success",
         title: "Student enrolled successfully!",
         html: `
           <div class="text-left space-y-2">
           <div><strong>Student ID:</strong> ${escapeHtml(studentId)}</div>
+          ${applicationNo ? `<div><strong>Application ID:</strong> ${escapeHtml(applicationNo)}</div>` : ""}
+          ${admissionNo ? `<div><strong>Admission Number:</strong> ${escapeHtml(admissionNo)}</div>` : ""}
+          ${rollNo !== "" ? `<div><strong>Roll Number:</strong> ${escapeHtml(String(rollNo))}</div>` : ""}
           ${studentPassword ? `<div><strong>Student Password:</strong> ${escapeHtml(studentPassword)}</div>` : ""}
           ${parentId ? `<div><strong>Parent ID:</strong> ${escapeHtml(parentId)}</div>` : ""}
           ${parentPassword ? `<div><strong>Parent Password:</strong> ${escapeHtml(parentPassword)}</div>` : ""}
@@ -1438,6 +1577,12 @@ const Students = ({ setShowAdminHeader }) => {
       });
 
       await refreshStudents();
+
+      // enrollment succeeded — drop the draft it came from (if any)
+      if (activeDraftId) {
+        await deleteEnrollDraft(activeDraftId);
+        setActiveDraftId(null);
+      }
 
       setShowAddForm(false);
       setParentSearchTerm("");
@@ -3172,10 +3317,14 @@ const Students = ({ setShowAdminHeader }) => {
 
   /* -------------------- UI -------------------- */
   return (
-    <div className="flex-1 bg-gray-50 overflow-hidden flex flex-col">
+    // Fixed to the viewport so the students table scrolls inside its own
+    // container instead of the whole page scrolling.
+    // ── Adjust the table area height here: bump the subtracted px to make it
+    //    shorter (63.4px = AdminHeader; the extra ~30px leaves a bottom gap).
+    <div className="flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-4 flex-shrink-0">
+        <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-900">
               Student Management
@@ -3186,25 +3335,23 @@ const Students = ({ setShowAdminHeader }) => {
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
             <button
-              onClick={downloadStudentDemoTemplate}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              onClick={startNewEnrollment}
+              className="bg-amber-500 text-white px-3 py-2 rounded-full hover:bg-amber-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
-              <FileDown size={15} />
-              Demo Excel
+              <Plus size={15} /> Add
             </button>
             <button
-              onClick={handleRefreshTableData}
-              disabled={tableRefreshing}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-              title="Refresh students table data"
+              onClick={downloadStudentDemoTemplate}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
-              {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-              {tableRefreshing ? "Refreshing..." : "Refresh"}
+              <FileDown size={15} />
+              Demo
             </button>
+            
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isImporting}
-              className="relative overflow-hidden border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
+              className="relative overflow-hidden border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
             >
               {isImporting && (
                 <span
@@ -3228,37 +3375,25 @@ const Students = ({ setShowAdminHeader }) => {
               }}
             />
 
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="bg-amber-500 text-white px-3 py-2 rounded-lg hover:bg-amber-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-            >
-              <Plus size={15} /> Add Student
-            </button>
-            <button
-              onClick={toggleSelectAllFiltered}
-              disabled={filteredStudentIds.length === 0}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-              title={isAllFilteredSelected ? "Clear selection" : `Select all ${filteredStudentIds.length} student(s)`}
-            >
-              <CheckCircle size={15} />
-              {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`}
-            </button>
+            
+           
             {selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkArchiveStudents}
                 disabled={isArchiving}
-                className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                className="bg-blue-600 text-white px-3 py-2 rounded-full hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
                 title={`Archive ${selectedStudentIds.length} selected student(s)`}
               >
                 <Archive size={15} />
-                {isArchiving ? "Archiving..." : `Archive (${selectedStudentIds.length})`}
+                {/* {isArchiving ? "Archiving..." : `Archive (${selectedStudentIds.length})`} */}
+                {isArchiving ? "Archiving..." : `Archive All`}
               </button>
             )}
             {selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkDeleteStudents}
                 disabled={isBulkDeleting}
-                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
+                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-full hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
                 title={`Delete ${selectedStudentIds.length} selected student(s)`}
               >
                 {isBulkDeleting && (
@@ -3269,21 +3404,52 @@ const Students = ({ setShowAdminHeader }) => {
                 )}
                 <span className="relative flex items-center gap-2">
                   {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete (${selectedStudentIds.length})`}
+                  {/* {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete (${selectedStudentIds.length})`} */}
+                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete All`}
                 </span>
               </button>
             )}
             <button
+              onClick={() => setShowDraftsModal(true)}
+              className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <FileClock size={15} /> Drafts
+              {enrollDrafts.length > 0 && (
+                <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-semibold text-blue-700">
+                  {enrollDrafts.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setShowArchiveModal(true)}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
               <Archive size={15} /> Archived
+            </button>
+             <button
+              onClick={toggleSelectAllFiltered}
+              disabled={filteredStudentIds.length === 0}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              title={isAllFilteredSelected ? "Clear selection" : `Select all ${filteredStudentIds.length} student(s)`}
+            >
+              <CheckCircle size={15} />
+              {/* {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`} */ }
+              {isAllFilteredSelected ? "Deselect All" : `Select All`}
+            </button>
+            <button
+              onClick={handleRefreshTableData}
+              disabled={tableRefreshing}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              title="Refresh students table data"
+            > 
+              {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+              {tableRefreshing ? "Refreshing..." : "Refresh"}
             </button>
           </div>
         </div>
         <div className="flex-1 flex flex-col min-h-0">
           {/* Filter Bar */}
-          <div className="mb-3 bg-white rounded-xl border border-gray-200 p-3 md:p-4 flex-shrink-0 shadow-sm">
+          <div className="mb-1 p-3 md:p-4 flex-shrink-0  ">
             <div className="flex flex-wrap items-center gap-3">
               {/* Search */}
               <div className="flex-1 min-w-[200px] relative">
@@ -3291,7 +3457,7 @@ const Students = ({ setShowAdminHeader }) => {
                 <input
                   type="text"
                   placeholder="Search by name, roll, email, or username..."
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-sm"
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:rounded-full focus:ring-yellow-500 text-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -3302,7 +3468,7 @@ const Students = ({ setShowAdminHeader }) => {
                 value={sessionFilter}
                 onChange={(e) => { setSessionFilter(e.target.value); setClassFilter(""); setSectionFilter(""); }}
                 disabled={!sessionOptions.length}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
               >
                 {!sessionOptions.length && <option value="">No Active Session</option>}
                 {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -3312,7 +3478,7 @@ const Students = ({ setShowAdminHeader }) => {
               <select
                 value={classFilter}
                 onChange={(e) => { setClassFilter(e.target.value); setSectionFilter(""); }}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
               >
                 <option value="">All Classes</option>
                 {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -3322,7 +3488,7 @@ const Students = ({ setShowAdminHeader }) => {
               <select
                 value={sectionFilter}
                 onChange={(e) => setSectionFilter(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
               >
                 <option value="">All Sections</option>
                 {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -3368,7 +3534,10 @@ const Students = ({ setShowAdminHeader }) => {
 
           {/* Students Table */}
           <>
-            <div className="relative flex-1 overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+            {/* Outer clips the rounded corners; inner does the scrolling so the
+                scrollbar stays inside the rounded border. */}
+            <div className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+              <div className="h-full overflow-auto table-scroll">
               {isImporting && (
                 <div className="sticky top-0 z-20 bg-blue-50/95 border-b border-blue-200">
                   <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700">
@@ -3669,7 +3838,7 @@ const Students = ({ setShowAdminHeader }) => {
                               </div>
                               {studentData.length === 0 && (
                                 <button
-                                  onClick={() => setShowAddForm(true)}
+                                  onClick={startNewEnrollment}
                                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors"
                                 >
                                   + Add First Student
@@ -3685,9 +3854,10 @@ const Students = ({ setShowAdminHeader }) => {
                   </tbody>
                 </table>
               </div>
+            </div>
 
-              {/* Pagination */}
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
+            {/* Pagination */}
+              <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
                 <p className="text-gray-500 text-xs">
                   {filteredStudents.length === 0
                     ? "No students to display"
@@ -3791,133 +3961,102 @@ const Students = ({ setShowAdminHeader }) => {
           </>
         </div>
 
-        {/* Add Student Modal */}
+        {/* Enroll New Student — full-screen wizard */}
         {showAddForm && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-hidden border border-gray-200">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-yellow-500 to-amber-500 p-6">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                      <Plus className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-white">
-                        Enroll New {enrollContext.schoolName}{" "}
-                        {enrollContext.campusType ? `(${enrollContext.campusType}) ` : ""}
-                        Student
-                      </h2>
-                      <p className="text-yellow-100 mt-1">
-                        Complete all sections to register student
-                      </p>
-                    </div>
+          <StudentEnrollWizard
+            key={`enroll-${enrollSessionKey}`}
+            newStudent={newStudent}
+            handleAddStudentChange={handleAddStudentChange}
+            enrollContext={enrollContext}
+            onClose={() => setShowAddForm(false)}
+            onSubmit={handleAddStudentSubmit}
+            isSubmitting={isSubmitting}
+            initialStep={resumeStep}
+            onSaveDraft={saveEnrollDraft}
+            onUploadFile={uploadEnrollDocument}
+            parentSearchTerm={parentSearchTerm}
+            setParentSearchTerm={setParentSearchTerm}
+            matchedParents={matchedParents}
+            handleSelectExistingParent={handleSelectExistingParent}
+            selectedExistingParent={selectedExistingParent}
+            academicYears={academicYears}
+            academicClasses={academicClasses}
+            academicSections={academicSections}
+            selectedAcademicYearId={selectedAcademicYearId}
+            setSelectedAcademicYearId={setSelectedAcademicYearId}
+            selectedClassId={selectedClassId}
+            setSelectedClassId={setSelectedClassId}
+            selectedSectionId={selectedSectionId}
+            setSelectedSectionId={setSelectedSectionId}
+          />
+        )}
+
+        {/* Enrollment Drafts modal */}
+        {showDraftsModal && (
+          <div className="animate-overlay-fade fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDraftsModal(false)}>
+            <div className="animate-modal-pop flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                    <FileClock size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Enrollment Drafts</h3>
+                    <p className="text-xs text-gray-500">Resume a partially filled enrollment form.</p>
                   </div>
-                  <button
-                    onClick={() => setShowAddForm(false)}
-                    className="text-white/80 hover:text-white p-2 hover:bg-white/10 rounded-lg"
-                  >
-                    <X size={24} />
-                  </button>
                 </div>
+                <button onClick={() => setShowDraftsModal(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                  <X size={20} />
+                </button>
               </div>
 
-              {/* Steps (visual only) */}
-              <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center justify-between max-w-2xl mx-auto">
-                  {["Personal", "Academic", "Review"].map((step, idx) => (
-                    <div key={step} className="flex items-center">
-                      <div
-                        className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                          idx === 0
-                            ? "bg-yellow-500 border-yellow-500 text-white"
-                            : "border-gray-300 text-gray-500"
-                        } font-semibold text-sm`}
-                      >
-                        {idx + 1}
-                      </div>
-                      <span
-                        className={`ml-2 text-sm font-medium ${
-                          idx === 0 ? "text-yellow-600" : "text-gray-500"
-                        }`}
-                      >
-                        {step}
-                      </span>
-                      {idx < 2 && (
-                        <div className="w-12 h-0.5 bg-gray-300 mx-4" />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Student Add Form */}
-              <div className="p-6 max-h-[60vh] overflow-y-auto">
-                <form
-                  onSubmit={handleAddStudentSubmit}
-                  className="space-y-8"
-                >
-                  <PersonalInformationSection newStudent={newStudent} handleAddStudentChange={handleAddStudentChange} />
-                  <ParentGuardianSection
-                    newStudent={newStudent}
-                    handleAddStudentChange={handleAddStudentChange}
-                    parentSearchTerm={parentSearchTerm}
-                    setParentSearchTerm={setParentSearchTerm}
-                    matchedParents={matchedParents}
-                    handleSelectExistingParent={handleSelectExistingParent}
-                    selectedExistingParent={selectedExistingParent}
-                  />
-                  <PreviousAcademicSection newStudent={newStudent} handleAddStudentChange={handleAddStudentChange} />
-                  <MedicalInformationSection newStudent={newStudent} handleAddStudentChange={handleAddStudentChange} />
-                  <DocumentInformationSection newStudent={newStudent} handleAddStudentChange={handleAddStudentChange} />
-                  <AcademicAdmissionSection
-                    newStudent={newStudent}
-                    handleAddStudentChange={handleAddStudentChange}
-                    academicYears={academicYears}
-                    academicClasses={academicClasses}
-                    academicSections={academicSections}
-                    selectedAcademicYearId={selectedAcademicYearId}
-                    setSelectedAcademicYearId={setSelectedAcademicYearId}
-                    selectedClassId={selectedClassId}
-                    setSelectedClassId={setSelectedClassId}
-                    selectedSectionId={selectedSectionId}
-                    setSelectedSectionId={setSelectedSectionId}
-                  />
-                  <OfficeUseSection newStudent={newStudent} handleAddStudentChange={handleAddStudentChange} />
-
-                  {/* Actions */}
-                  <div className="flex justify-between items-center pt-6 border-t border-gray-200">
-                    <div className="text-sm text-gray-500">
-                      All fields marked with{" "}
-                      <span className="text-red-500">*</span> are required
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setShowAddForm(false)}
-                        className="px-8 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="px-8 py-3 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-xl hover:from-yellow-600 hover:to-amber-600 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed flex items-center gap-2"
-                      >
-                        <Plus size={18} />
-                        {isSubmitting ? "Enrolling..." : "Enroll Student"}
-                      </button>
-                    </div>
+              <div className="flex-1 overflow-y-auto px-4 py-3">
+                {enrollDrafts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-14 text-center text-gray-400">
+                    <FileClock size={34} className="mb-3 text-gray-300" />
+                    <p className="text-sm font-medium text-gray-500">No saved drafts</p>
+                    <p className="mt-1 text-xs">Start enrolling a student — your progress is saved automatically.</p>
                   </div>
-                </form>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {enrollDrafts.map((d) => (
+                      <li key={d._id} className="flex flex-wrap items-center gap-3 px-2 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-800">{d.label || "Untitled draft"}</p>
+                          <p className="mt-0.5 truncate text-xs text-gray-400">
+                            {d.className ? `${d.className} · ` : ""}
+                            up to “{ENROLL_STEP_LABELS[d.step] || ENROLL_STEP_LABELS[0]}” · saved {draftTimeAgo(d.updatedAt)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => resumeEnrollDraft(d)}
+                            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                          >
+                            <RotateCcw size={13} /> Resume
+                          </button>
+                          <button
+                            onClick={() => deleteEnrollDraft(d._id)}
+                            disabled={deletingDraftId === d._id}
+                            title="Delete draft"
+                            className="rounded-lg p-1.5 text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                          >
+                            {deletingDraftId === d._id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </div>
         )}
+
         {/* Student View Modal */}
         {showViewModal && viewStudent && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[80vh]">
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -3930,11 +4069,23 @@ const Students = ({ setShowAdminHeader }) => {
                       )}
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold text-gray-900">{viewStudent.name}</h3>
-                      <p className="text-sm text-gray-500">
-                        Roll: {viewStudent.roll} | {viewStudent.class || viewStudent.grade} - {viewStudent.section}
-                        {viewStudent.admissionNumber ? ` | Adm: ${viewStudent.admissionNumber}` : ""}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <h3 className="text-xl font-bold text-gray-900">{viewStudent.name}</h3>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          String(viewStudent.status || "Active").toLowerCase() === "active"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {viewStudent.status || "Active"}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Roll: {viewStudent.roll || "-"}</span>
+                        <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Class: {viewStudent.class || viewStudent.grade || "-"} - {viewStudent.section || "-"}</span>
+                        {viewStudent.admissionNumber && (
+                          <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Adm: {viewStudent.admissionNumber}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -3978,178 +4129,215 @@ const Students = ({ setShowAdminHeader }) => {
                 )}
 
                 {!loadingViewData && viewTab === "overview" && (
-                  <div className="space-y-5">
-                    {/* Quick Stats Row */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="rounded-xl bg-blue-50 p-3 text-center">
-                        <p className="text-xs text-blue-500 font-medium">Class</p>
-                        <p className="text-lg font-bold text-blue-700">{viewStudent.class || viewStudent.grade || "-"} - {viewStudent.section || "-"}</p>
-                      </div>
-                      <div className="rounded-xl bg-green-50 p-3 text-center">
-                        <p className="text-xs text-green-500 font-medium">Status</p>
-                        <p className="text-lg font-bold text-green-700">{viewStudent.status || "Active"}</p>
-                      </div>
-                      <div className="rounded-xl bg-amber-50 p-3 text-center">
-                        <p className="text-xs text-amber-500 font-medium">Attendance</p>
-                        <p className="text-lg font-bold text-amber-700">
-                          {viewAttendance.length > 0
-                            ? `${Math.round((viewAttendance.filter((a) => a.status === "present").length / viewAttendance.length) * 100)}%`
-                            : "-"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-purple-50 p-3 text-center">
-                        <p className="text-xs text-purple-500 font-medium">Fees Due</p>
-                        <p className="text-lg font-bold text-purple-700">
-                          {viewFees.length > 0
-                            ? `₹${viewFees.reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0).toLocaleString("en-IN")}`
-                            : "-"}
-                        </p>
-                      </div>
-                    </div>
+                  (() => {
+                    const s = viewStudent;
+                    const dash = "—";
+                    const val = (v) => {
+                      const t = String(v ?? "").trim();
+                      return t || dash;
+                    };
+                    const dobStr = toDateInputValue(s.dob);
+                    let age = null;
+                    if (dobStr) {
+                      const d = new Date(dobStr);
+                      if (!Number.isNaN(d.getTime())) {
+                        const now = new Date();
+                        age = now.getFullYear() - d.getFullYear() - (now < new Date(now.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0);
+                      }
+                    }
+                    const attTotal = viewAttendance.length;
+                    const attPresent = viewAttendance.filter((a) => a.status === "present").length;
+                    const attPct = attTotal > 0 ? Math.round((attPresent / attTotal) * 100) : 0;
+                    const feesDue = viewFees.reduce((sum, inv) => sum + Number(inv.balanceAmount || 0), 0);
+                    const docs = Array.isArray(s.documents) ? s.documents : [];
+                    const hasPrev = s.previousSchoolName || s.previousClass || s.transferCertificateNo;
+                    const hasMedical = s.bloodGroup || s.knownHealthIssues || s.allergies || s.immunizationStatus || s.learningDisabilities;
 
-                    {/* Personal Info */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                      <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                        <Users size={16} className="text-yellow-600" />
-                        Personal Information
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                        {[
-                          { label: "Email", value: viewStudent.email },
-                          { label: "Mobile", value: viewStudent.mobile },
-                          { label: "Gender", value: viewStudent.gender },
-                          { label: "Date of Birth", value: toDateInputValue(viewStudent.dob) },
-                          { label: "Blood Group", value: viewStudent.bloodGroup },
-                          { label: "Nationality", value: viewStudent.nationality },
-                          { label: "Religion", value: viewStudent.religion },
-                          { label: "Category", value: viewStudent.category },
-                          { label: "Aadhar", value: viewStudent.aadharNumber },
-                        ]
-                          .filter((f) => f.value)
-                          .map((field) => (
-                            <div key={field.label}>
-                              <p className="text-xs text-gray-400">{field.label}</p>
-                              <p className="text-sm font-medium text-gray-800 capitalize">{field.value}</p>
-                            </div>
-                          ))}
+                    const Field = ({ label, value, wide }) => (
+                      <div className={wide ? "sm:col-span-2" : ""}>
+                        <p className="text-xs text-gray-400">{label}</p>
+                        <p className="mt-0.5 text-sm font-medium text-gray-800">{value}</p>
                       </div>
-                      {(viewStudent.address || viewStudent.permanentAddress) && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-gray-200">
-                          {viewStudent.address && (
-                            <div>
-                              <p className="text-xs text-gray-400">Current Address</p>
-                              <p className="text-sm text-gray-700">{viewStudent.address}</p>
-                            </div>
-                          )}
-                          {viewStudent.permanentAddress && (
-                            <div>
-                              <p className="text-xs text-gray-400">Permanent Address</p>
-                              <p className="text-sm text-gray-700">{viewStudent.permanentAddress}</p>
-                            </div>
-                          )}
+                    );
+                    const SectionCard = ({ icon: Icon, title, right, children }) => (
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <p className="flex items-center gap-2 text-sm font-bold text-gray-900">
+                            {Icon && <Icon size={15} className="text-amber-600" />} {title}
+                          </p>
+                          {right}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Academic Info */}
-                    <div className="rounded-xl border border-gray-100 bg-blue-50/50 p-4">
-                      <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                        <BookOpen size={16} className="text-blue-600" />
-                        Academic Information
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {[
-                          { label: "Admission No.", value: viewStudent.admissionNumber },
-                          { label: "Roll Number", value: viewStudent.roll },
-                          { label: "Class", value: viewStudent.class || viewStudent.grade },
-                          { label: "Section", value: viewStudent.section },
-                          { label: "Academic Year", value: viewStudent.academicYear },
-                          { label: "Admission Date", value: toDateInputValue(viewStudent.admissionDate) },
-                        ]
-                          .filter((f) => f.value)
-                          .map((field) => (
-                            <div key={field.label}>
-                              <p className="text-xs text-gray-400">{field.label}</p>
-                              <p className="text-sm font-medium text-gray-800">{field.value}</p>
-                            </div>
-                          ))}
+                        {children}
                       </div>
-                    </div>
+                    );
 
-                    {/* Parent / Guardian Info */}
-                    <div className="rounded-xl border border-gray-100 bg-green-50/50 p-4">
-                      <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                        <Phone size={16} className="text-green-600" />
-                        Parent / Guardian Information
-                      </h4>
-                      {viewParent && (
-                        <div className="mb-3 rounded-lg bg-white border border-green-100 p-3">
-                          <p className="text-xs text-green-600 font-semibold uppercase tracking-wide mb-1">Linked Parent Account</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div>
-                              <p className="text-xs text-gray-400">Name</p>
-                              <p className="text-sm font-medium text-gray-800">{viewParent.name || "-"}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-400">Mobile</p>
-                              <p className="text-sm font-medium text-gray-800">{viewParent.mobile || "-"}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-400">Email</p>
-                              <p className="text-sm font-medium text-gray-800">{viewParent.email || "-"}</p>
-                            </div>
+                    return (
+                      <div className="mx-auto max-w-3xl space-y-4">
+                          {/* Quick stats */}
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            {[
+                              { label: "Class", value: `${s.class || s.grade || "-"} - ${s.section || "-"}` },
+                              { label: "Status", value: s.status || "Active" },
+                              { label: "Attendance", value: attTotal ? `${attPct}%` : "—" },
+                              { label: "Fees Due", value: viewFees.length ? `₹${feesDue.toLocaleString("en-IN")}` : "—" },
+                            ].map((c) => (
+                              <div key={c.label} className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-center">
+                                <p className="text-xs font-medium text-amber-600">{c.label}</p>
+                                <p className="mt-0.5 text-base font-bold text-amber-800">{c.value}</p>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {[
-                          { label: "Father's Name", value: viewStudent.fatherName },
-                          { label: "Father's Phone", value: viewStudent.fatherPhone },
-                          { label: "Father's Occupation", value: viewStudent.fatherOccupation },
-                          { label: "Mother's Name", value: viewStudent.motherName },
-                          { label: "Mother's Phone", value: viewStudent.motherPhone },
-                          { label: "Mother's Occupation", value: viewStudent.motherOccupation },
-                          { label: "Guardian Name", value: viewStudent.guardianName },
-                          { label: "Guardian Phone", value: viewStudent.guardianPhone },
-                          { label: "Guardian Email", value: viewStudent.guardianEmail },
-                        ]
-                          .filter((f) => f.value)
-                          .map((field) => (
-                            <div key={field.label}>
-                              <p className="text-xs text-gray-400">{field.label}</p>
-                              <p className="text-sm font-medium text-gray-800">{field.value}</p>
-                            </div>
-                          ))}
-                      </div>
-                      {!viewParent && !viewStudent.fatherName && !viewStudent.motherName && !viewStudent.guardianName && (
-                        <p className="text-sm text-gray-400">No parent/guardian information available.</p>
-                      )}
-                    </div>
 
-                    {/* Medical */}
-                    {(viewStudent.knownHealthIssues || viewStudent.allergies) && (
-                      <div className="rounded-xl border border-gray-100 bg-red-50/50 p-4">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                          <Heart size={16} className="text-red-500" />
-                          Medical Information
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {viewStudent.knownHealthIssues && (
-                            <div>
-                              <p className="text-xs text-gray-400">Known Health Issues</p>
-                              <p className="text-sm text-gray-700">{viewStudent.knownHealthIssues}</p>
+                          {/* Student Details */}
+                          <SectionCard icon={Users} title="Student Details">
+                            <div className="flex flex-col gap-4 sm:flex-row">
+                              <div className="shrink-0">
+                                <div className="h-24 w-24 overflow-hidden rounded-full border border-gray-200 bg-gray-100">
+                                  {s.profilePic ? (
+                                    <img src={s.profilePic} alt={s.name || "Student"} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-gray-300">{s.name?.charAt(0) || "?"}</div>
+                                  )}
+                                </div>
+                                {s.profilePic && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDocPreview({ src: s.profilePic, label: "Student Photograph" })}
+                                    className="mt-1.5 flex w-full items-center justify-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800"
+                                  >
+                                    <Eye size={12} /> View Photo
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                <Field label="Full Name" value={val(s.name)} />
+                                <Field label="Date of Birth" value={dobStr ? `${dobStr}${age != null ? `  (Age: ${age})` : ""}` : dash} />
+                                <Field label="Gender" value={<span className="capitalize">{val(s.gender)}</span>} />
+                                <Field label="Mobile Number" value={val(s.mobile)} />
+                                <Field label="Email" value={val(s.email)} />
+                                <Field label="Nationality" value={val(s.nationality)} />
+                                <Field label="Religion" value={val(s.religion)} />
+                                <Field label="Caste" value={val(s.caste)} />
+                                <Field label="Category" value={val(s.category)} />
+                                <Field label="Aadhar Number" value={val(s.aadharNumber)} wide />
+                              </div>
                             </div>
-                          )}
-                          {viewStudent.allergies && (
-                            <div>
-                              <p className="text-xs text-gray-400">Allergies</p>
-                              <p className="text-sm text-gray-700">{viewStudent.allergies}</p>
+                            <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-100 pt-3 sm:grid-cols-2">
+                              <div>
+                                <p className="text-xs text-gray-400">Current Address</p>
+                                <p className="mt-0.5 text-sm text-gray-700">{val(s.address)}{s.pincode ? ` - ${s.pincode}` : ""}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400">Permanent Address</p>
+                                <p className="mt-0.5 text-sm text-gray-700">{val(s.permanentAddress)}</p>
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          </SectionCard>
+
+                          {/* Parent / Guardian */}
+                          <SectionCard icon={Users} title="Parent / Guardian Details">
+                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">{`Father's Details`}</p>
+                                <div className="space-y-2.5">
+                                  <Field label="Name" value={val(s.fatherName)} />
+                                  <Field label="Phone" value={val(s.fatherPhone)} />
+                                  <Field label="Occupation" value={val(s.fatherOccupation)} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">{`Mother's Details`}</p>
+                                <div className="space-y-2.5">
+                                  <Field label="Name" value={val(s.motherName)} />
+                                  <Field label="Phone" value={val(s.motherPhone)} />
+                                  <Field label="Occupation" value={val(s.motherOccupation)} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Guardian Details</p>
+                                <div className="space-y-2.5">
+                                  <Field label="Name" value={val(s.guardianName || viewParent?.name)} />
+                                  <Field label="Phone" value={val(s.guardianPhone || viewParent?.mobile)} />
+                                  <Field label="Email" value={val(s.guardianEmail || viewParent?.email)} />
+                                  <Field label="Relationship" value={val(s.guardianRelation)} />
+                                </div>
+                              </div>
+                            </div>
+                          </SectionCard>
+
+                          {/* Previous Academic + Medical */}
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <SectionCard icon={GraduationCap} title="Previous Academic Information">
+                              {hasPrev ? (
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <Field label="Previous School Name" value={val(s.previousSchoolName)} />
+                                  <Field label="Class Last Attended" value={val(s.previousClass)} />
+                                  <Field label="TC Number" value={val(s.transferCertificateNo)} />
+                                  <Field label="TC Date" value={val(toDateInputValue(s.transferCertificateDate) || s.transferCertificateDate)} />
+                                  <Field label="Percentage Obtained" value={val(s.previousPercentage ? `${s.previousPercentage}${String(s.previousPercentage).includes("%") ? "" : "%"}` : "")} />
+                                  <Field label="Reason for Leaving" value={val(s.reasonForLeaving)} />
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-400">No previous school on record.</p>
+                              )}
+                            </SectionCard>
+                            <SectionCard icon={Heart} title="Medical Information">
+                              {hasMedical ? (
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <Field label="Blood Group" value={val(s.bloodGroup)} />
+                                  <Field label="Immunization Status" value={val(s.immunizationStatus)} />
+                                  <Field label="Known Health Issues" value={val(s.knownHealthIssues)} />
+                                  <Field label="Allergies" value={val(s.allergies)} />
+                                  <Field label="Learning Disabilities" value={val(s.learningDisabilities)} />
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-400">No medical information on record.</p>
+                              )}
+                            </SectionCard>
+                          </div>
+
+                          {/* Documents */}
+                          <SectionCard icon={FileDown} title="Documents">
+                            {docs.length > 0 ? (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+                                      <th className="pb-2 pr-4 font-medium">Document Name</th>
+                                      <th className="pb-2 pr-4 font-medium">File Name</th>
+                                      <th className="pb-2 pr-4 font-medium">Status</th>
+                                      <th className="pb-2 font-medium" />
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-50">
+                                    {docs.map((d, i) => (
+                                      <tr key={i}>
+                                        <td className="py-2 pr-4 font-medium text-gray-800">{d.label || d.type || "Document"}</td>
+                                        <td className="py-2 pr-4 text-gray-600">{d.fileName || "—"}</td>
+                                        <td className="py-2 pr-4">
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-600">
+                                            <CheckCircle size={12} /> Uploaded
+                                          </span>
+                                        </td>
+                                        <td className="py-2">
+                                          {d.url && (
+                                            <button type="button" onClick={() => setDocPreview({ src: d.url, label: d.label || d.type })} className="text-amber-700 hover:text-amber-800" title="Preview">
+                                              <Eye size={15} />
+                                            </button>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-400">No documents uploaded.</p>
+                            )}
+                          </SectionCard>
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()
                 )}
 
                 {/* Attendance Tab */}
@@ -4188,7 +4376,8 @@ const Students = ({ setShowAdminHeader }) => {
                         </div>
 
                         {/* Attendance Table */}
-                        <div className="rounded-xl border border-gray-200 overflow-hidden">
+                        <p className="text-sm font-bold text-gray-800">Attendance Record</p>
+                        <div className="rounded-xl border border-gray-200 overflow-hidden table-scroll">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-gray-50">
@@ -4453,6 +4642,13 @@ const Students = ({ setShowAdminHeader }) => {
             </div>
           </div>
         )}
+
+        <DocPreviewModal
+          open={!!docPreview}
+          src={docPreview?.src}
+          label={docPreview?.label}
+          onClose={() => setDocPreview(null)}
+        />
 
         {showDetailModal && editingStudent && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">

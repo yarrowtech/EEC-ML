@@ -20,6 +20,7 @@ const TeacherFeedback = require('../models/TeacherFeedback');
 const School = require('../models/School');
 const SupportRequest = require('../models/SupportRequest');
 const StudentObservation = require('../models/StudentObservation');
+const StudentEnrollmentDraft = require('../models/StudentEnrollmentDraft');
 const Wellbeing = require('../models/Wellbeing');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -144,10 +145,22 @@ const normalizeOrgPrefix = (adminUsername) => {
     .replace(/[^A-Z0-9-]/g, '');
   return normalized || 'SCH';
 };
-const resolveStudentPrefix = ({ adminUsername, admissionYear }) =>
-  `${normalizeOrgPrefix(adminUsername)}-STD-${String(admissionYear).slice(-2)}-`;
-const resolveParentPrefix = ({ adminUsername, admissionYear }) =>
-  `${normalizeOrgPrefix(adminUsername)}-PTA-${String(admissionYear).slice(-2)}-`;
+// Two-digit code that identifies the student's enrolment session. It is derived
+// from the *active academic year* (its name / dates) — NOT the calendar date — so
+// every student admitted while "2025-2026" is active gets the same code, even if
+// the calendar has rolled into 2026. It only changes when a new session is activated.
+const deriveSessionCode = (yearDoc, fallbackYear) => {
+  const name = String(yearDoc?.name || '').trim();
+  const groups = name.match(/\d{2,4}/g);
+  if (groups && groups.length) return groups[groups.length - 1].slice(-2).padStart(2, '0');
+  const d = yearDoc?.endDate || yearDoc?.startDate;
+  if (d && !Number.isNaN(new Date(d).getTime())) return String(new Date(d).getFullYear()).slice(-2);
+  return String(fallbackYear || new Date().getFullYear()).slice(-2);
+};
+const resolveStudentPrefix = ({ adminUsername, sessionCode }) =>
+  `${normalizeOrgPrefix(adminUsername)}-STD-${sessionCode}-`;
+const resolveParentPrefix = ({ adminUsername, sessionCode }) =>
+  `${normalizeOrgPrefix(adminUsername)}-PTA-${sessionCode}-`;
 const getNextStudentUsername = async ({ schoolId, campusId, prefix }) => {
   const regex = new RegExp(`^${escapeRegex(prefix)}\\d+$`);
   const filter = {
@@ -182,6 +195,55 @@ const getNextParentUsername = async ({ schoolId, campusId, prefix }) => {
   });
   return `${prefix}${padNumber(maxSequence + 1)}`;
 };
+
+// Auto admission number: ADM/<year>/<0001> — sequential per school (+ campus).
+const getNextAdmissionNumber = async ({ schoolId, campusId, admissionYear }) => {
+  const year = String(admissionYear || new Date().getFullYear());
+  const prefix = `ADM/${year}/`;
+  const filter = { schoolId, admissionNumber: { $regex: `^${escapeRegex(prefix)}\\d+$` } };
+  if (campusId) filter.campusId = campusId;
+  const rows = await StudentUser.find(filter).select('admissionNumber').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const m = String(r?.admissionNumber || '').match(/(\d+)$/);
+    const n = m ? Number(m[1]) : 0;
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return `${prefix}${padNumber(max + 1, 4)}`;
+};
+
+// Auto application id: APP/<year>/<0001> — sequential per school (+ campus).
+const getNextApplicationId = async ({ schoolId, campusId, admissionYear }) => {
+  const year = String(admissionYear || new Date().getFullYear());
+  const prefix = `APP/${year}/`;
+  const filter = { schoolId, applicationId: { $regex: `^${escapeRegex(prefix)}\\d+$` } };
+  if (campusId) filter.campusId = campusId;
+  const rows = await StudentUser.find(filter).select('applicationId').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const m = String(r?.applicationId || '').match(/(\d+)$/);
+    const n = m ? Number(m[1]) : 0;
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return `${prefix}${padNumber(max + 1, 4)}`;
+};
+
+// Auto roll number: continuous across all sections of a class for a session.
+// e.g. Class 5 / Sec A holds 1-30, Sec B continues 31-60, the next student = 61.
+const getNextRollForClass = async ({ schoolId, campusId, grade, academicYear }) => {
+  if (!grade) return undefined;
+  const filter = { schoolId, grade, isArchived: { $ne: true } };
+  if (campusId) filter.campusId = campusId;
+  if (academicYear) filter.academicYear = academicYear;
+  const rows = await StudentUser.find(filter).select('roll').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const n = Number(r?.roll);
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return Math.max(max, rows.length) + 1;
+};
+
 const buildTeacherFeedbackContext = async (studentDoc = null) => {
   const fallback = { classDoc: null, contexts: [] };
   if (!studentDoc || !studentDoc.schoolId) return fallback;
@@ -419,6 +481,7 @@ router.post('/register', adminAuth, async (req, res) => {
     dob,
     admissionDate,
     admissionNumber,
+    admissionType,
     academicYear,
     serialNo,
     status,
@@ -440,6 +503,7 @@ router.post('/register', adminAuth, async (req, res) => {
     guardianName,
     guardianPhone,
     guardianEmail,
+    guardianRelation,
     nationality,
     religion,
     category,
@@ -449,6 +513,7 @@ router.post('/register', adminAuth, async (req, res) => {
     learningDisabilities,
     aadharNumber,
     birthCertificateNo,
+    hasPreviousSchool,
     previousSchoolName,
     previousClass,
     previousPercentage,
@@ -459,8 +524,22 @@ router.post('/register', adminAuth, async (req, res) => {
     applicationDate,
     approvalStatus,
     remarks,
+    documents,
     password: requestedPassword
   } = req.body;
+
+  const sanitizeDocuments = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((d) => d && typeof d === 'object' && typeof d.url === 'string' && /^https?:\/\//i.test(d.url))
+      .slice(0, 20)
+      .map((d) => ({
+        type: String(d.type || 'other').slice(0, 40),
+        label: String(d.label || d.type || 'Document').slice(0, 120),
+        url: d.url,
+        fileName: String(d.fileName || '').slice(0, 200),
+      }));
+  };
 
   try {
     const resolvedSchoolId = req.admin?.schoolId || schoolId || null;
@@ -472,6 +551,20 @@ router.post('/register', adminAuth, async (req, res) => {
 
     const resolvedAdmissionDate = resolveAdmissionDate(admissionDate) || undefined;
     const admissionYear = resolveAdmissionYear(resolvedAdmissionDate || admissionDate);
+
+    // Session code for the login id: active academic year, not the calendar date.
+    let sessionYearDoc = null;
+    const bodyAcademicYearId = req.body?.academicYearId;
+    if (bodyAcademicYearId && mongoose.isValidObjectId(bodyAcademicYearId)) {
+      sessionYearDoc = await AcademicYear.findOne({ _id: bodyAcademicYearId, schoolId: resolvedSchoolId }).lean();
+    }
+    if (!sessionYearDoc && academicYear) {
+      sessionYearDoc = await AcademicYear.findOne({ schoolId: resolvedSchoolId, name: academicYear }).lean();
+    }
+    if (!sessionYearDoc) {
+      sessionYearDoc = await AcademicYear.findOne({ schoolId: resolvedSchoolId, isActive: true }).lean();
+    }
+    const sessionCode = deriveSessionCode(sessionYearDoc, admissionYear);
 
     let password = requestedPassword;
     if (password) {
@@ -486,19 +579,41 @@ router.post('/register', adminAuth, async (req, res) => {
     const resolvedGrade = grade || '';
     const resolvedSection = section || '';
     const resolvedGender = (gender || 'male').toLowerCase();
-    const resolvedRoll = roll || undefined;
     const resolvedMobile = mobile || '';
     const resolvedEmail = email || '';
 
     const prefix = resolveStudentPrefix({
       adminUsername: req.admin?.username,
-      admissionYear,
+      sessionCode,
     });
     const studentCode = await getNextStudentUsername({
       schoolId: resolvedSchoolId,
       campusId: resolvedCampusId,
       prefix,
     });
+
+    // Roll & admission number are auto-generated on save unless explicitly provided.
+    const resolvedRoll = roll
+      ? Number(roll) || undefined
+      : await getNextRollForClass({
+          schoolId: resolvedSchoolId,
+          campusId: resolvedCampusId,
+          grade: resolvedGrade,
+          academicYear,
+        });
+    const resolvedAdmissionNumber = admissionNumber
+      || await getNextAdmissionNumber({
+        schoolId: resolvedSchoolId,
+        campusId: resolvedCampusId,
+        admissionYear,
+      });
+    const resolvedApplicationId = applicationId
+      || await getNextApplicationId({
+        schoolId: resolvedSchoolId,
+        campusId: resolvedCampusId,
+        admissionYear,
+      });
+    const resolvedApplicationDate = applicationDate || new Date().toISOString().slice(0, 10);
 
     const payload = {
       username: studentCode,
@@ -515,7 +630,8 @@ router.post('/register', adminAuth, async (req, res) => {
       gender: resolvedGender,
       dob,
       admissionDate: resolvedAdmissionDate,
-      admissionNumber: admissionNumber || '',
+      admissionNumber: resolvedAdmissionNumber || '',
+      admissionType: admissionType || 'New Admission',
       academicYear: academicYear || '',
       serialNo: serialNo || '',
       status: status || 'Active',
@@ -537,6 +653,7 @@ router.post('/register', adminAuth, async (req, res) => {
       guardianName: guardianName || '',
       guardianPhone: guardianPhone || '',
       guardianEmail: guardianEmail || '',
+      guardianRelation: guardianRelation || '',
       nationality: nationality || '',
       religion: religion || '',
       category: category || '',
@@ -546,16 +663,18 @@ router.post('/register', adminAuth, async (req, res) => {
       learningDisabilities: learningDisabilities || '',
       aadharNumber: aadharNumber || '',
       birthCertificateNo: birthCertificateNo || '',
+      hasPreviousSchool: hasPreviousSchool || '',
       previousSchoolName: previousSchoolName || '',
       previousClass: previousClass || '',
       previousPercentage: previousPercentage || '',
       transferCertificateNo: transferCertificateNo || '',
       transferCertificateDate: transferCertificateDate || '',
       reasonForLeaving: reasonForLeaving || '',
-      applicationId: applicationId || '',
-      applicationDate: applicationDate || '',
-      approvalStatus: approvalStatus || '',
+      applicationId: resolvedApplicationId,
+      applicationDate: resolvedApplicationDate,
+      approvalStatus: approvalStatus || 'Approved',
       remarks: remarks || '',
+      documents: sanitizeDocuments(documents),
       studentCode,
     };
 
@@ -596,7 +715,7 @@ router.post('/register', adminAuth, async (req, res) => {
       if (!parentUser) {
         const parentPrefix = resolveParentPrefix({
           adminUsername: req.admin?.username,
-          admissionYear,
+          sessionCode,
         });
         const parentUsername = await getNextParentUsername({
           schoolId: resolvedSchoolId,
@@ -646,6 +765,9 @@ router.post('/register', adminAuth, async (req, res) => {
       studentCode,
       password,
       userId: studentUser._id,
+      roll: resolvedRoll,
+      admissionNumber: resolvedAdmissionNumber,
+      applicationId: resolvedApplicationId,
       parentCredentials,
     });
     logAuthEvent(req, {
@@ -2469,6 +2591,94 @@ router.get('/system-badges', authStudent, async (req, res) => {
     return res.json({ success: true, data: earned, masteredTopics: masteredCount, attendancePct });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+/* ───────────────────────── Student enrollment drafts (admin) ───────────────────────── */
+
+const resolveDraftScope = (req) => ({
+  schoolId: req.admin?.schoolId || req.schoolId || req.body?.schoolId || null,
+  campusId: req.campusId || req.admin?.campusId || req.body?.campusId || null,
+});
+
+const draftScopeFilter = ({ schoolId, campusId }) => {
+  const filter = { schoolId };
+  if (campusId) filter.campusId = campusId;
+  return filter;
+};
+
+const MAX_DRAFTS_PER_SCOPE = 30;
+
+// List drafts for the current admin's school / campus
+router.get('/enrollment-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const scope = resolveDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const drafts = await StudentEnrollmentDraft.find(draftScopeFilter(scope))
+      .sort({ updatedAt: -1 })
+      .limit(MAX_DRAFTS_PER_SCOPE)
+      .lean();
+    return res.json({ success: true, data: drafts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Create a new draft, or update an existing one when `id` is supplied
+router.post('/enrollment-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const scope = resolveDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const { id, label, className, step, data } = req.body || {};
+    const doc = {
+      label: String(label || '').trim().slice(0, 120) || 'Untitled draft',
+      className: String(className || '').trim().slice(0, 60),
+      step: Number.isFinite(Number(step)) ? Math.max(0, Math.floor(Number(step))) : 0,
+      data: data && typeof data === 'object' ? data : {},
+    };
+
+    if (id && mongoose.isValidObjectId(id)) {
+      const updated = await StudentEnrollmentDraft.findOneAndUpdate(
+        { _id: id, ...draftScopeFilter(scope) },
+        { $set: doc },
+        { new: true }
+      ).lean();
+      if (!updated) return res.status(404).json({ error: 'Draft not found' });
+      return res.json({ success: true, data: updated });
+    }
+
+    const count = await StudentEnrollmentDraft.countDocuments(draftScopeFilter(scope));
+    if (count >= MAX_DRAFTS_PER_SCOPE) {
+      return res.status(400).json({ error: `Draft limit reached (${MAX_DRAFTS_PER_SCOPE}). Delete an old draft first.` });
+    }
+
+    const created = await StudentEnrollmentDraft.create({
+      ...scope,
+      ...doc,
+      createdBy: req.admin?.username || req.admin?.id || '',
+    });
+    return res.status(201).json({ success: true, data: created.toObject() });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete a draft
+router.delete('/enrollment-drafts/:id', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const scope = resolveDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid draft id' });
+    const removed = await StudentEnrollmentDraft.findOneAndDelete({ _id: id, ...draftScopeFilter(scope) }).lean();
+    if (!removed) return res.status(404).json({ error: 'Draft not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 

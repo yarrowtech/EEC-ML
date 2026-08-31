@@ -145,6 +145,16 @@ const attendanceSchema = new mongoose.Schema({
   subject: { type: String }, // Optional, for subject-specific attendance
 });
 
+// Uploaded enrolment document. `type` is wrapped so Mongoose treats it as a
+// field name, not the schema-type keyword.
+const enrolmentDocumentSchema = new mongoose.Schema({
+  type: { type: String }, // birth_certificate | transfer_certificate | aadhar_card | other
+  label: { type: String },
+  url: { type: String },
+  fileName: { type: String },
+  uploadedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const studentUserSchema = new mongoose.Schema({
   username: { type: String, required: true },
   password: { type: String, required: true },
@@ -162,6 +172,7 @@ const studentUserSchema = new mongoose.Schema({
   dob: String,
   admissionDate: Date,
   admissionNumber: String,
+  admissionType: String, // "New Admission" | "Transfer" | "Re-Admission"
   academicYear: String,
   batchCode: String,
   course: String,
@@ -192,12 +203,14 @@ const studentUserSchema = new mongoose.Schema({
   guardianName: String,
   guardianPhone: String,
   guardianEmail: String,
+  guardianRelation: String, // relationship of the login guardian to the student
   knownHealthIssues: String,
   allergies: String,
   immunizationStatus: String,
   learningDisabilities: String,
   aadharNumber: String,
   birthCertificateNo: String,
+  hasPreviousSchool: String, // "yes" | "no" | ""
   previousSchoolName: String,
   previousClass: String,
   previousPercentage: String,
@@ -208,6 +221,8 @@ const studentUserSchema = new mongoose.Schema({
   applicationDate: String,
   approvalStatus: String,
   remarks: String,
+  // Uploaded enrolment documents (birth certificate, TC, Aadhaar, other…).
+  documents: [enrolmentDocumentSchema],
   // DPDP Act 2023 compliance — parental consent for minor data processing
   parentConsentGivenAt: { type: Date, default: null },
   parentConsentGivenBy: { type: String, default: '' }, // name of consenting parent/guardian
