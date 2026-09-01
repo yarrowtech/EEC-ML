@@ -127,7 +127,7 @@ const Students = ({ setShowAdminHeader }) => {
   const navigate = useNavigate(); 
 
   const [studentData, setStudentData] = useState([]);
-  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsLoading, setStudentsLoading] = useState(true); // first paint shows the loader, not the empty state
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -3957,19 +3957,41 @@ const Students = ({ setShowAdminHeader }) => {
                   </colgroup>
                   <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
                     {studentsLoading && studentData.length === 0 ? (
-                      Array.from({ length: 8 }).map((_, i) => (
-                        <tr key={`student-skeleton-${i}`} className="animate-pulse">
-                          <td className="px-2 py-3.5"><div className="h-4 w-4 rounded bg-gray-200" /></td>
-                          <td className="px-2 py-3.5">
-                            <div className="h-3.5 w-3/4 rounded bg-gray-200 mb-2" />
-                            <div className="h-3 w-1/2 rounded bg-gray-100" />
+                      <>
+                        <tr>
+                          <td colSpan={6} className="px-4 pt-16 pb-6">
+                            <div className="flex flex-col items-center justify-center gap-4">
+                              <span className="relative flex h-12 w-12 items-center justify-center">
+                                <span className="absolute inset-0 rounded-full border-[3px] border-amber-100" />
+                                <span className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-amber-500 animate-spin" />
+                                <GraduationCap size={20} className="text-amber-500" />
+                              </span>
+                              <div className="text-center">
+                                <p className="text-sm font-semibold text-gray-700">
+                                  Loading student data
+                                  <span className="loading-dots" />
+                                </p>
+                                <p className="mt-1 text-xs text-gray-400">
+                                  This can take a moment on the first visit
+                                </p>
+                              </div>
+                            </div>
                           </td>
-                          <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-200" /></td>
-                          <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-200" /></td>
-                          <td className="px-2 py-3.5"><div className="h-3.5 w-3/4 rounded bg-gray-200" /></td>
-                          <td className="px-2 py-3.5"><div className="h-3.5 w-1/2 rounded bg-gray-200 mx-auto" /></td>
                         </tr>
-                      ))
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={`student-skeleton-${i}`} className="animate-pulse">
+                            <td className="px-2 py-3.5"><div className="h-4 w-4 rounded bg-gray-100" /></td>
+                            <td className="px-2 py-3.5">
+                              <div className="mb-2 h-3.5 w-3/4 rounded bg-gray-100" />
+                              <div className="h-3 w-1/2 rounded bg-gray-50" />
+                            </td>
+                            <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-100" /></td>
+                            <td className="px-2 py-3.5"><div className="h-3.5 w-2/3 rounded bg-gray-100" /></td>
+                            <td className="px-2 py-3.5"><div className="h-3.5 w-3/4 rounded bg-gray-100" /></td>
+                            <td className="px-2 py-3.5"><div className="mx-auto h-3.5 w-1/2 rounded bg-gray-100" /></td>
+                          </tr>
+                        ))}
+                      </>
                     ) : (
                       <>
                         {paginatedStudents.map((student) => {
