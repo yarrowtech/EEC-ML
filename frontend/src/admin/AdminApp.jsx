@@ -227,7 +227,10 @@ const AdminApp = () => {
         syncScopeFromProfile(profileWithSchool);
       } catch (err) {
         console.error('Failed to load admin profile', err);
-        if (err?.code !== AUTH_NOTICE.EXPIRED) {
+        // Only surface the error when there's nothing to fall back on. If a
+        // cached profile is already on screen (the common case), a transient
+        // failure — e.g. a brief rate-limit blip — stays silent.
+        if (err?.code !== AUTH_NOTICE.EXPIRED && !profileHydratedRef.current) {
           toast.error('Unable to load admin profile. Refresh and try again.');
         }
       } finally {

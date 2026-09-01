@@ -890,36 +890,34 @@ const Students = ({ setShowAdminHeader }) => {
       const token = localStorage.getItem("token");
       if (!token) return;
 
-      const [profileRes, schoolsRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/api/admin/auth/profile`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: `Bearer ${token}`,
-          },
-        }).then((res) => (res.ok ? res.json() : null)),
-        fetch(`${API_BASE}/api/schools`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: `Bearer ${token}`,
-          },
-        }).then((res) => (res.ok ? res.json() : [])),
-      ]);
+      // Only the school name needs a network call here; campusType comes from
+      // the admin-profile cache that AdminApp already populated. (Re-POSTing
+      // /api/admin/auth/profile on every students-page visit was hammering the
+      // strict auth rate limiter.)
+      const schoolsRes = await fetch(`${API_BASE}/api/schools`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+      });
+      const schools = schoolsRes.ok ? await schoolsRes.json().catch(() => []) : [];
+      const firstSchool = Array.isArray(schools) ? schools[0] || null : null;
 
-      const profile =
-        profileRes.status === "fulfilled" && profileRes.value
-          ? profileRes.value
-          : null;
-      const schools =
-        schoolsRes.status === "fulfilled" && Array.isArray(schoolsRes.value)
-          ? schoolsRes.value
-          : [];
-      const firstSchool = schools[0] || null;
+      let campusType = "";
+      try {
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+          const key = sessionStorage.key(i);
+          if (key && key.startsWith("admin_profile_cache_v1:")) {
+            const cached = JSON.parse(sessionStorage.getItem(key) || "{}");
+            if (cached?.campusType) { campusType = cached.campusType; break; }
+          }
+        }
+      } catch { /* cache is best-effort */ }
 
       setEnrollContext({
         schoolName: firstSchool?.name || "NIF",
-        campusType: profile?.campusType || "",
+        campusType,
       });
     } catch (err) {
       console.error("Failed to load school context:", err);
@@ -1261,7 +1259,7 @@ const Students = ({ setShowAdminHeader }) => {
   const pollBulkOpJob = async (statusUrl, mode) => {
     let data;
     while (true) {
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       const res = await fetch(statusUrl, {
         headers: { authorization: `Bearer ${localStorage.getItem("token")}` },
       });
@@ -3582,7 +3580,7 @@ const Students = ({ setShowAdminHeader }) => {
       setImportJob({ total: jobTotal, processed: 0, imported: 0, failed: 0 });
       let data;
       while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         const statusRes = await fetch(
           `${API_BASE}/api/nif/students/bulk/status/${jobId}`,
           { headers: { authorization: `Bearer ${localStorage.getItem("token")}` } }

@@ -26,7 +26,13 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/schools', writeHeavyApiLimiter, adminActionLogger, require('./schoolRoutes'));
   app.use('/api/school-registration', authApiLimiter, require('./schoolRegistrationRoutes'));
   app.use('/api/departments', require('./departmentRoutes'));
-  app.use('/api/nif', authApiLimiter, require('./nifStudentRoutes'));
+  // Student management + long-running bulk jobs whose status the browser polls
+  // every ~1-2s. The strict `authApiLimiter` (meant for brute-force login
+  // protection, shared per-IP with every /api/*/auth route) throttled a single
+  // admin session's polling to 429s, which surfaced as "Unable to load admin
+  // profile" toasts elsewhere. This is routine data traffic, not auth — the
+  // global `/api` general limiter (applied in index.js) still covers it.
+  app.use('/api/nif', require('./nifStudentRoutes'));
 
   // ── Academic ─────────────────────────────────────────────────────────────────
   app.use('/api/teacher/dashboard', requireOrganizationDomain, require('./teacherDashboardRoutes'));
