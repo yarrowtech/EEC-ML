@@ -30,9 +30,31 @@ import {
   ClipboardCheck,
   Pencil,
   CloudCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 /* ─────────────────────────────  config  ───────────────────────────── */
+
+// Fields a fully-completed student record should have. Bulk-imported students
+// commonly lack the photo, documents and some guardian/personal details, so
+// this drives the "action required" warning in the students table and the
+// banner at the top of the edit wizard.
+export const getStudentDataGaps = (s = {}) => {
+  const gaps = [];
+  const has = (v) => String(v ?? "").trim().length > 0;
+  const docs = Array.isArray(s.documents) ? s.documents : [];
+  const hasDoc = (type) => docs.some((d) => (d?.type === type || d?.key === type) && has(d?.url));
+
+  if (!has(s.profilePic) && !has(s.photograph)) gaps.push("Student photograph");
+  if (!has(s.dob)) gaps.push("Date of birth");
+  if (!has(s.address)) gaps.push("Present address");
+  if (!has(s.gender)) gaps.push("Gender");
+  if (!has(s.fatherName) || !has(s.fatherPhone)) gaps.push("Father's name & phone");
+  if (!has(s.motherName) || !has(s.motherPhone)) gaps.push("Mother's name & phone");
+  if (!hasDoc("birth_certificate")) gaps.push("Birth certificate");
+  if (!hasDoc("aadhar_card")) gaps.push("Aadhaar card");
+  return gaps;
+};
 
 const STEPS = [
   { key: "personal", label: "Student Personal Information", hint: "Basic personal details", icon: User },
@@ -1531,6 +1553,7 @@ export default function StudentEnrollWizard({
   }, []);
 
   const isLast = step === STEPS.length - 1;
+  const dataGaps = editing ? getStudentDataGaps(newStudent) : [];
 
   const goTo = (i) => {
     setStep(i);
@@ -1705,6 +1728,19 @@ export default function StudentEnrollWizard({
       {/* Body */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl space-y-5 p-5 lg:p-6">
+          {dataGaps.length > 0 && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-amber-800">
+                  Action required — this student is missing some details
+                </p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  {dataGaps.join(" · ")}
+                </p>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           {/* form card */}
           <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-7">

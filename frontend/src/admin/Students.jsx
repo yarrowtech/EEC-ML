@@ -19,6 +19,7 @@ import {
   MoreVertical,
   Heart,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   IndianRupee,
   Smile,
@@ -43,7 +44,7 @@ import {
   CalendarDays,
   Wallet,
 } from "lucide-react";
-import StudentEnrollWizard, { DocPreviewModal } from "./components/StudentEnrollWizard";
+import StudentEnrollWizard, { DocPreviewModal, getStudentDataGaps } from "./components/StudentEnrollWizard";
 import Swal from "sweetalert2";
 import * as XLSX from "xlsx";
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -295,6 +296,11 @@ const Students = ({ setShowAdminHeader }) => {
   );
   const filteredStudentIds = useMemo(
     () => filteredStudents.map((student) => String(student?._id || student?.id)).filter(Boolean),
+    [filteredStudents]
+  );
+  // How many students on screen have missing details (photo, docs, guardian…).
+  const incompleteStudentCount = useMemo(
+    () => filteredStudents.reduce((n, s) => n + (getStudentDataGaps(s).length > 0 ? 1 : 0), 0),
     [filteredStudents]
   );
   const selectedIdSet = useMemo(
@@ -3962,6 +3968,16 @@ const Students = ({ setShowAdminHeader }) => {
 
           {/* Students Table */}
           <>
+            {incompleteStudentCount > 0 && !studentsLoading && (
+              <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex-shrink-0">
+                <AlertTriangle size={15} className="shrink-0 text-amber-500" />
+                <span>
+                  <span className="font-semibold">Action required</span> — {incompleteStudentCount} student
+                  {incompleteStudentCount === 1 ? "" : "s"} may be missing some data (photo, documents, guardian
+                  details). Open a flagged student to review.
+                </span>
+              </div>
+            )}
             {/* Rounded card clips the corners. Header sits in its own div so the
                 body scrollbar starts *below* the header, not through it. */}
             <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -4091,6 +4107,7 @@ const Students = ({ setShowAdminHeader }) => {
                       if (admissionYear) {
                         prefillValues.joiningYear = admissionYear;
                       }
+                      const studentGaps = getStudentDataGaps(student);
                       return (
                         <tr
                           key={studentKey}
@@ -4120,8 +4137,16 @@ const Students = ({ setShowAdminHeader }) => {
                                 {student.name?.charAt(0) || "?"}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="font-medium text-gray-900 text-xs truncate hover:text-amber-600 transition">
-                                  {student.name}
+                                <div className="font-medium text-gray-900 text-xs truncate hover:text-amber-600 transition flex items-center gap-1">
+                                  {studentGaps.length > 0 && (
+                                    <span
+                                      title={`Action required — some data may be missing:\n• ${studentGaps.join("\n• ")}`}
+                                      className="shrink-0 text-amber-500"
+                                    >
+                                      <AlertTriangle size={13} />
+                                    </span>
+                                  )}
+                                  <span className="truncate">{student.name}</span>
                                 </div>
                                 <div className="text-[11px] text-gray-400 truncate">
                                   {student.admissionNumber ? `Adm: ${student.admissionNumber}` : "No Admission Number"}
