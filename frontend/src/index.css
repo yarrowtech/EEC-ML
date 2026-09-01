@@ -351,6 +351,14 @@ summary:focus-visible,
 .table-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  scrollbar-gutter: stable;
+}
+/* Keeps a separate (non-scrolling) table header aligned with the scrolled body */
+.table-scroll-gutter {
+  padding-right: 8px;
+}
+@supports (scrollbar-gutter: stable) {
+  /* body already reserves the gutter — header just matches with padding above */
 }
 .table-scroll::-webkit-scrollbar {
   width: 8px;

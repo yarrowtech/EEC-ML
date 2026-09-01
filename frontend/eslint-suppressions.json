@@ -2168,7 +2168,7 @@
   },
   "src/admin/components/StudentEnrollWizard.jsx": {
     "react/prop-types": {
-      "count": 406
+      "count": 418
     }
   }
 }

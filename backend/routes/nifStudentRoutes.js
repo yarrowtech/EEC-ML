@@ -5,6 +5,7 @@ const adminAuth = require('../middleware/adminAuth');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const ClassModel = require('../models/Class');
+const AcademicYear = require('../models/AcademicYear');
 const { generatePassword } = require('../utils/generator');
 
 const router = express.Router();
@@ -54,10 +55,62 @@ const normalizeOrgPrefix = (adminUsername) => {
     .replace(/[^A-Z0-9-]/g, '');
   return normalized || 'SCH';
 };
-const resolveStudentPrefix = ({ adminUsername, admissionYear }) =>
-  `${normalizeOrgPrefix(adminUsername)}-STD-${String(admissionYear).slice(-2)}-`;
-const resolveParentPrefix = ({ adminUsername, admissionYear }) =>
-  `${normalizeOrgPrefix(adminUsername)}-PTA-${String(admissionYear).slice(-2)}-`;
+// Session code (2 digits) from the active academic year — stable across the
+// calendar year, matches the single "Add Student" flow.
+const deriveSessionCode = (yearDoc, fallbackYear) => {
+  const name = String(yearDoc?.name || '').trim();
+  const groups = name.match(/\d{2,4}/g);
+  if (groups && groups.length) return groups[groups.length - 1].slice(-2).padStart(2, '0');
+  const d = yearDoc?.endDate || yearDoc?.startDate;
+  if (d && !Number.isNaN(new Date(d).getTime())) return String(new Date(d).getFullYear()).slice(-2);
+  return String(fallbackYear || new Date().getFullYear()).slice(-2);
+};
+const resolveStudentPrefix = ({ adminUsername, sessionCode }) =>
+  `${normalizeOrgPrefix(adminUsername)}-STD-${sessionCode}-`;
+const resolveParentPrefix = ({ adminUsername, sessionCode }) =>
+  `${normalizeOrgPrefix(adminUsername)}-PTA-${sessionCode}-`;
+
+// Highest existing numeric suffix among ADM/<year>/#### admission numbers.
+const getMaxAdmissionSeq = async ({ schoolId, campusId, admissionYear }) => {
+  const prefix = `ADM/${admissionYear}/`;
+  const filter = { schoolId, admissionNumber: { $regex: `^${escapeRegex(prefix)}\\d+$` } };
+  if (campusId) filter.campusId = campusId;
+  const rows = await StudentUser.find(filter).select('admissionNumber').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const m = String(r?.admissionNumber || '').match(/(\d+)$/);
+    const n = m ? Number(m[1]) : 0;
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return max;
+};
+const getMaxApplicationSeq = async ({ schoolId, campusId, admissionYear }) => {
+  const prefix = `APP/${admissionYear}/`;
+  const filter = { schoolId, applicationId: { $regex: `^${escapeRegex(prefix)}\\d+$` } };
+  if (campusId) filter.campusId = campusId;
+  const rows = await StudentUser.find(filter).select('applicationId').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const m = String(r?.applicationId || '').match(/(\d+)$/);
+    const n = m ? Number(m[1]) : 0;
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return max;
+};
+// Highest existing roll across all sections of a class for a session.
+const getMaxRollForClass = async ({ schoolId, campusId, grade, academicYear }) => {
+  if (!grade) return 0;
+  const filter = { schoolId, grade, isArchived: { $ne: true } };
+  if (campusId) filter.campusId = campusId;
+  if (academicYear) filter.academicYear = academicYear;
+  const rows = await StudentUser.find(filter).select('roll').lean();
+  let max = 0;
+  rows.forEach((r) => {
+    const n = Number(r?.roll);
+    if (Number.isFinite(n) && n > max) max = n;
+  });
+  return Math.max(max, rows.length);
+};
 
 const resolveAdmissionDate = (value) => {
   if (!value) return undefined;
@@ -128,19 +181,33 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
         .filter(Boolean)
     );
 
+    // Session for the login-id code & auto numbers: the row's session name if it
+    // matches a real year, else the school's active academic year.
+    const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).lean();
+    const yearByName = new Map();
+    (await AcademicYear.find({ schoolId }).select('name startDate endDate').lean())
+      .forEach((y) => yearByName.set(String(y.name || '').trim().toLowerCase(), y));
+
     const sequenceByPrefix = new Map();
     const parentSequenceByPrefix = new Map();
+    const admissionSeqByYear = new Map(); // year -> next ADM sequence
+    const applicationSeqByYear = new Map();
+    const rollByClassSession = new Map(); // `${grade}::${session}` -> next roll
     const req = { admin, isSuperAdmin, body: { campusName, campusType } };
     const results = job.results;
 
     for (let i = 0; i < students.length; i += 1) {
       const row = students[i] || {};
       try {
-        const admissionDate = resolveAdmissionDate(row.admissionDate);
-        const admissionYear = resolveAdmissionYear(admissionDate || row.admissionDate);
+        const admissionDate = resolveAdmissionDate(row.admissionDate) || new Date();
+        const admissionYear = resolveAdmissionYear(admissionDate);
+        const rowSessionName = String(row.academicYear || row.batchCode || '').trim();
+        const sessionYearDoc = yearByName.get(rowSessionName.toLowerCase()) || activeYear || null;
+        const resolvedSessionName = sessionYearDoc?.name || rowSessionName || activeYear?.name || '';
+        const sessionCode = deriveSessionCode(sessionYearDoc, admissionYear);
         const prefix = resolveStudentPrefix({
           adminUsername: req.admin?.username,
-          admissionYear,
+          sessionCode,
         });
 
         if (!sequenceByPrefix.has(prefix)) {
@@ -179,6 +246,42 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           throw new Error(`Class "${incomingClass || normalizedGrade || normalizedCourse}" is not created for this school`);
         }
 
+        // Auto admission number (ADM/<year>/####) unless the row supplies one.
+        let admissionNumber = String(row.admissionNumber || '').trim();
+        if (!admissionNumber) {
+          if (!admissionSeqByYear.has(admissionYear)) {
+            admissionSeqByYear.set(admissionYear, await getMaxAdmissionSeq({ schoolId, campusId, admissionYear }));
+          }
+          const next = admissionSeqByYear.get(admissionYear) + 1;
+          admissionSeqByYear.set(admissionYear, next);
+          admissionNumber = `ADM/${admissionYear}/${padNumber(next, 4)}`;
+        }
+
+        // Auto application id (APP/<year>/####).
+        let applicationId = String(row.applicationId || '').trim();
+        if (!applicationId) {
+          if (!applicationSeqByYear.has(admissionYear)) {
+            applicationSeqByYear.set(admissionYear, await getMaxApplicationSeq({ schoolId, campusId, admissionYear }));
+          }
+          const nextApp = applicationSeqByYear.get(admissionYear) + 1;
+          applicationSeqByYear.set(admissionYear, nextApp);
+          applicationId = `APP/${admissionYear}/${padNumber(nextApp, 4)}`;
+        }
+
+        // Auto roll — continuous across all sections of the class for the session.
+        let roll = row.roll ? Number(row.roll) : undefined;
+        if (!roll && normalizedGrade) {
+          const rk = `${normalizedGrade}::${resolvedSessionName}`;
+          if (!rollByClassSession.has(rk)) {
+            rollByClassSession.set(rk, await getMaxRollForClass({
+              schoolId, campusId, grade: normalizedGrade, academicYear: resolvedSessionName,
+            }));
+          }
+          const nextRoll = rollByClassSession.get(rk) + 1;
+          rollByClassSession.set(rk, nextRoll);
+          roll = nextRoll;
+        }
+
         const payload = {
           username,
           studentCode: username,
@@ -191,12 +294,13 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           name: row.name || 'Student',
           grade: normalizedGrade,
           section: row.section || '',
-          roll: row.roll ? Number(row.roll) : undefined,
+          roll,
           gender: String(row.gender || 'male').toLowerCase(),
           dob: row.dob || '',
           admissionDate,
-          admissionNumber: row.admissionNumber || row.formNo || '',
-          academicYear: row.academicYear || row.batchCode || '',
+          admissionNumber,
+          admissionType: row.admissionType || 'New Admission',
+          academicYear: resolvedSessionName || row.academicYear || row.batchCode || '',
           batchCode: row.batchCode || '',
           course: normalizedCourse,
           courseId: row.courseId || '',
@@ -205,23 +309,44 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           enrollmentNo: row.enrollmentNo || '',
           serialNo: row.serialNo || '',
           status: row.status || 'Active',
+          approvalStatus: row.approvalStatus || 'Approved',
+          applicationId,
+          applicationDate: row.applicationDate || admissionDate.toISOString().slice(0, 10),
+          remarks: row.remarks || '',
           mobile: row.mobile || '',
           email: row.email || '',
           address: row.address || '',
+          birthPlace: row.birthPlace || '',
+          caste: row.caste || '',
           aadharNumber: row.aadharNumber || row.aadhaarNumber || row.andhaarNumber || '',
+          birthCertificateNo: row.birthCertificateNo || '',
           permanentAddress: row.permanentAddress || '',
           pinCode: row.pincode || row.pinCode || '',
           bloodGroup: row.bloodGroup || '',
+          knownHealthIssues: row.knownHealthIssues || '',
+          allergies: row.allergies || '',
+          immunizationStatus: row.immunizationStatus || '',
+          learningDisabilities: row.learningDisabilities || '',
           nationality: row.nationality || '',
           religion: row.religion || '',
           category: row.category || '',
+          hasPreviousSchool: row.hasPreviousSchool || (row.previousSchoolName ? 'yes' : ''),
+          previousSchoolName: row.previousSchoolName || '',
+          previousClass: row.previousClass || '',
+          previousPercentage: row.previousPercentage || '',
+          transferCertificateNo: row.transferCertificateNo || '',
+          transferCertificateDate: row.transferCertificateDate || '',
+          reasonForLeaving: row.reasonForLeaving || '',
           guardianName: row.guardianName || '',
           guardianPhone: row.guardianPhone || '',
           guardianEmail: row.guardianEmail || '',
+          guardianRelation: row.guardianRelation || '',
           fatherName: row.fatherName || '',
           fatherPhone: row.fatherPhone || '',
+          fatherOccupation: row.fatherOccupation || '',
           motherName: row.motherName || '',
           motherPhone: row.motherPhone || '',
+          motherOccupation: row.motherOccupation || '',
         };
 
         // The next sequence number is computed once per prefix and
@@ -278,7 +403,7 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           if (!parentUser) {
             const parentPrefix = resolveParentPrefix({
               adminUsername: req.admin?.username,
-              admissionYear,
+              sessionCode,
             });
             if (!parentSequenceByPrefix.has(parentPrefix)) {
               const nextSeq = await getNextParentSequenceByPrefix({

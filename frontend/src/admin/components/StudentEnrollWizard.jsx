@@ -123,21 +123,21 @@ function SelectField({ label, name, value, onChange, required, placeholder, opti
   );
 }
 
-// A read-only field for values the backend fills in on save.
-function AutoField({ label, hint }) {
+// A read-only field for values the backend fills in on save (or an existing value when editing).
+function AutoField({ label, hint, value }) {
   return (
     <div>
       <Label>{label}</Label>
       <div className="relative">
         <input
           disabled
-          value=""
+          value={value ? String(value) : ""}
           placeholder="Auto generated after save"
-          className={`${inputBase} cursor-not-allowed bg-gray-50 pr-9 text-gray-500`}
+          className={`${inputBase} cursor-not-allowed bg-gray-50 pr-9 ${value ? "text-gray-700" : "text-gray-500"}`}
         />
         <Lock className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
       </div>
-      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+      {hint && !value && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
     </div>
   );
 }
@@ -850,8 +850,8 @@ function AdmissionStep({ data, onChange, errors = {}, academic, onJumpToStep }) 
         </div>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <AutoField label="Admission Number" />
-          <AutoField label="Roll Number" hint="Continues the class roll sequence across sections" />
+          <AutoField label="Admission Number" value={data.admissionNumber} />
+          <AutoField label="Roll Number" value={data.roll} hint="Continues the class roll sequence across sections" />
           <TextField label="Serial Number" name="serialNo" inputMode="numeric" value={data.serialNo} onChange={onChange} placeholder="Register serial no. (optional)" />
         </div>
 
@@ -1203,8 +1203,8 @@ function OfficeStep({ data, onChange }) {
 
       <div className="space-y-5">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <AutoField label="Application ID" />
-          <AutoField label="Application Date" />
+          <AutoField label="Application ID" value={data.applicationId} />
+          <AutoField label="Application Date" value={data.applicationDate} />
           <SelectField
             label="Approval Status"
             name="approvalStatus"
@@ -1284,7 +1284,8 @@ const StatusPill = ({ ok, children }) => (
   </span>
 );
 
-function ReviewStep({ data, onJumpToStep }) {
+function ReviewStep({ data, onJumpToStep, editing }) {
+  const autoVal = (v) => (editing && v ? String(v) : <span className="text-gray-400">Auto-generated on submit</span>);
   const docs = Array.isArray(data.documents) ? data.documents : [];
   const doc = (t) => docs.find((d) => d.type === t);
   const isTransfer = data.admissionType === "Transfer" || data.hasPreviousSchool === "yes";
@@ -1441,8 +1442,8 @@ function ReviewStep({ data, onJumpToStep }) {
             <RVField label="Academic Session" value={rv(data.academicYear)} />
             <RVField label="Class" value={rv(data.class)} />
             <RVField label="Section" value={rv(data.section)} />
-            <RVField label="Admission Number" value={<span className="text-gray-400">Auto-generated on submit</span>} />
-            <RVField label="Roll Number" value={<span className="text-gray-400">Auto-generated on submit</span>} />
+            <RVField label="Admission Number" value={autoVal(data.admissionNumber)} />
+            <RVField label="Roll Number" value={autoVal(data.roll)} />
             <RVField label="Serial Number" value={rv(data.serialNo)} />
             <RVField label="Admission Type" value={rv(data.admissionType)} />
             <RVField label="Status" value={<StatusPill ok={(data.status || "Active") === "Active"}>{data.status || "Active"}</StatusPill>} />
@@ -1452,8 +1453,8 @@ function ReviewStep({ data, onJumpToStep }) {
         {/* Office */}
         <RVSection icon={Building2} title="Office / Administration" onEdit={() => onJumpToStep(7)}>
           <RVGrid>
-            <RVField label="Application ID" value={<span className="text-gray-400">Auto-generated on submit</span>} />
-            <RVField label="Application Date" value={<span className="text-gray-400">Auto-generated on submit</span>} />
+            <RVField label="Application ID" value={autoVal(data.applicationId)} />
+            <RVField label="Application Date" value={autoVal(data.applicationDate)} />
             <RVField label="Approval Status" value={<StatusPill ok={(data.approvalStatus || "Approved") === "Approved"}>{data.approvalStatus || "Approved"}</StatusPill>} />
             <RVField label="Remarks" value={rv(data.remarks)} />
           </RVGrid>
@@ -1490,6 +1491,7 @@ export default function StudentEnrollWizard({
   initialStep = 0,
   onSaveDraft,
   onUploadFile,
+  editing = false,
 }) {
   const [step, setStep] = useState(initialStep);
   const [maxVisited, setMaxVisited] = useState(initialStep);
@@ -1574,7 +1576,7 @@ export default function StudentEnrollWizard({
       if (!newStudent.class?.trim()) e.class = "Select a class.";
       if (!newStudent.section?.trim()) e.section = "Select a section.";
     }
-    if (step === 6) {
+    if (step === 6 && !editing) {
       const docs = Array.isArray(newStudent.documents) ? newStudent.documents : [];
       const has = (t) => docs.some((d) => d.type === t && d.url);
       if (!has("birth_certificate")) e.birth_certificate = "Upload the birth certificate.";
@@ -1629,8 +1631,9 @@ export default function StudentEnrollWizard({
   const latest = useRef({ newStudent, step, onSaveDraft });
   latest.current = { newStudent, step, onSaveDraft };
 
-  // Auto-save: debounce edits, once there's something worth keeping.
+  // Auto-save: debounce edits, once there's something worth keeping. (New enrolments only.)
   useEffect(() => {
+    if (editing || !onSaveDraft) return undefined;
     const hasContent = (newStudent.name || "").trim().length > 1;
     const snapshot = JSON.stringify({ newStudent, step });
     if (!hasContent || snapshot === lastSnapshot.current) return undefined;
@@ -1640,10 +1643,11 @@ export default function StudentEnrollWizard({
       persistDraft({ silent: true });
     }, 2500);
     return () => autoTimer.current && clearTimeout(autoTimer.current);
-  }, [newStudent, step]);
+  }, [newStudent, step, editing]);
 
   // Flush a pending auto-save when the wizard unmounts (Close / navigate away).
   useEffect(() => () => {
+    if (editing) return;
     const { newStudent: ns, step: st, onSaveDraft: save } = latest.current;
     const hasContent = (ns.name || "").trim().length > 1;
     if (hasContent && JSON.stringify({ newStudent: ns, step: st }) !== lastSnapshot.current) {
@@ -1661,11 +1665,13 @@ export default function StudentEnrollWizard({
             <GraduationCap className="h-6 w-6" />
           </span>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Enroll New Student</h1>
+            <h1 className="text-lg font-bold text-gray-900">{editing ? "Edit Student" : "Enroll New Student"}</h1>
             <p className="text-xs text-gray-500">
-              {enrollContext?.schoolName
-                ? `${enrollContext.schoolName}${enrollContext.campusType ? ` · ${enrollContext.campusType}` : ""} — complete all steps to register`
-                : "Complete all steps to register a new student"}
+              {editing
+                ? `Update ${newStudent.name || "the student"}'s details`
+                : enrollContext?.schoolName
+                  ? `${enrollContext.schoolName}${enrollContext.campusType ? ` · ${enrollContext.campusType}` : ""} — complete all steps to register`
+                  : "Complete all steps to register a new student"}
             </p>
           </div>
         </div>
@@ -1734,7 +1740,7 @@ export default function StudentEnrollWizard({
               />
             )}
             {step === 7 && <OfficeStep data={newStudent} onChange={handleAddStudentChange} />}
-            {step === 8 && <ReviewStep data={newStudent} onJumpToStep={goTo} />}
+            {step === 8 && <ReviewStep data={newStudent} onJumpToStep={goTo} editing={editing} />}
 
             {!isLast && (
               <div className="mt-6 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
@@ -1780,7 +1786,7 @@ export default function StudentEnrollWizard({
           )}
         </div>
         <div className="flex items-center gap-2.5">
-          {autoSavedAt && draftState === "idle" && (
+          {!editing && autoSavedAt && draftState === "idle" && (
             <span className="hidden items-center gap-1.5 text-xs text-gray-400 sm:flex">
               <Check className="h-3.5 w-3.5 text-emerald-500" />
               Auto-saved {new Date(autoSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -1788,6 +1794,7 @@ export default function StudentEnrollWizard({
           )}
           <button
             type="button"
+            hidden={editing}
             onClick={saveDraft}
             disabled={draftState === "saving"}
             className={`flex items-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-70 ${
@@ -1824,11 +1831,11 @@ export default function StudentEnrollWizard({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Enrolling…
+                <Loader2 className="h-4 w-4 animate-spin" /> {editing ? "Saving…" : "Enrolling…"}
               </>
             ) : isLast ? (
               <>
-                <Check className="h-4 w-4" /> Submit Enrollment
+                <Check className="h-4 w-4" /> {editing ? "Save Changes" : "Submit Enrollment"}
               </>
             ) : (
               <>

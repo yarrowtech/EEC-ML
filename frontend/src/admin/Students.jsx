@@ -151,6 +151,8 @@ const Students = ({ setShowAdminHeader }) => {
   const [deleteProgress, setDeleteProgress] = useState(0);
   const deleteProgressTimerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const tableBodyScrollRef = useRef(null);
+  const tableHeaderRef = useRef(null);
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveActionLoading, setArchiveActionLoading] = useState(false);
@@ -187,6 +189,8 @@ const Students = ({ setShowAdminHeader }) => {
   const [viewFees, setViewFees] = useState([]);
   const [viewParent, setViewParent] = useState(null);
   const [docPreview, setDocPreview] = useState(null); // { src, label }
+  const [feeSession, setFeeSession] = useState(""); // selected session id in the Fees tab
+  const [editingStudentId, setEditingStudentId] = useState(null); // set when the wizard is editing an existing student
   const [loadingViewData, setLoadingViewData] = useState(false);
   const [viewTab, setViewTab] = useState("overview");
 
@@ -1395,8 +1399,56 @@ const Students = ({ setShowAdminHeader }) => {
     setSelectedExistingParent(null);
     setParentSearchTerm("");
     setActiveDraftId(null);
+    setEditingStudentId(null);
     setResumeStep(0);
     setEnrollSessionKey((k) => k + 1);
+    setShowAddForm(true);
+  };
+
+  // Open the multi-step wizard pre-filled with an existing student, in edit mode.
+  const openEditWizard = async (student) => {
+    if (!student?._id) return;
+    let src = normalizeStudentForEdit(student);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/get-students`, {
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const fresh = Array.isArray(data) && data.find((s) => String(s?._id) === String(student._id));
+        if (fresh) src = normalizeStudentForEdit(fresh);
+      }
+    } catch { /* use what we have */ }
+
+    setNewStudent({
+      ...INITIAL_NEW_STUDENT,
+      ...src,
+      class: src.class || src.grade || "",
+      pincode: src.pincode || src.pinCode || "",
+      photograph: src.photograph || src.profilePic || "",
+      hasPreviousSchool: src.hasPreviousSchool || (src.previousSchoolName ? "yes" : "no"),
+      guardianType: src.guardianType || "",
+      status: src.status || "Active",
+      approvalStatus: src.approvalStatus || "Approved",
+      admissionType: src.admissionType || "New Admission",
+      documents: Array.isArray(src.documents) ? src.documents : [],
+    });
+
+    const cls = academicClasses.find((c) => String(c?.name || "").trim() === String(src.class || src.grade || "").trim());
+    const yr = academicYears.find((y) => String(y?.name || "").trim() === String(src.academicYear || "").trim());
+    const sec = academicSections.find(
+      (x) => String(x.classId) === (cls ? String(cls._id) : "") && String(x.name || "").trim() === String(src.section || "").trim()
+    );
+    setSelectedAcademicYearId(yr ? String(yr._id) : "");
+    setSelectedClassId(cls ? String(cls._id) : "");
+    setSelectedSectionId(sec ? String(sec._id) : "");
+    setSelectedExistingParent(null);
+    setParentSearchTerm("");
+    setActiveDraftId(null);
+    setEditingStudentId(student._id);
+    setResumeStep(0);
+    setEnrollSessionKey((k) => k + 1);
+    setShowViewModal(false);
     setShowAddForm(true);
   };
 
@@ -1534,6 +1586,27 @@ const Students = ({ setShowAdminHeader }) => {
       payload.academicYearId = selectedAcademicYearId;
       payload.classId = selectedClassId;
       payload.sectionId = selectedSectionId;
+
+      // ── Edit mode: update the existing student instead of registering a new one ──
+      if (editingStudentId) {
+        payload.grade = newStudent.class;
+        const upd = await fetch(`${API_BASE}/api/admin/users/students/${editingStudentId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("token")}` },
+          body: JSON.stringify(payload),
+        });
+        const updData = await upd.json().catch(() => ({}));
+        if (!upd.ok) {
+          await Swal.fire({ icon: "error", title: "Update failed", text: updData.error || updData.message || upd.statusText });
+          return;
+        }
+        await refreshStudents();
+        setShowAddForm(false);
+        setEditingStudentId(null);
+        await Swal.fire({ icon: "success", title: "Student updated", timer: 1800, showConfirmButton: false });
+        return;
+      }
+
       const res = await fetch(`${API_BASE}/api/student/auth/register`, {
         method: "POST",
         headers: {
@@ -2352,6 +2425,7 @@ const Students = ({ setShowAdminHeader }) => {
     setViewAttendance([]);
     setViewFees([]);
     setViewParent(null);
+    setFeeSession("");
     setLoadingViewData(true);
 
     const token = localStorage.getItem("token");
@@ -2683,6 +2757,72 @@ const Students = ({ setShowAdminHeader }) => {
     'religion': 'religion',
     'category': 'category',
 
+    // Personal (extended)
+    'birthplace': 'birthPlace',
+    'placeofbirth': 'birthPlace',
+    'caste': 'caste',
+    'aadhar': 'aadharNumber',
+    'aadhaar': 'aadharNumber',
+    'aadharno': 'aadharNumber',
+    'aadhaarno': 'aadharNumber',
+    'aadharnumber': 'aadharNumber',
+    'aadhaarnumber': 'aadharNumber',
+    'admissionnumber': 'admissionNumber',
+    'admissionno2': 'admissionNumber',
+    'admno': 'admissionNumber',
+    'admissiontype': 'admissionType',
+    'approvalstatus': 'approvalStatus',
+    'applicationid': 'applicationId',
+    'applicationdate': 'applicationDate',
+    'remarks': 'remarks',
+    'birthcertificateno': 'birthCertificateNo',
+    'birthcertificate': 'birthCertificateNo',
+
+    // Father / Mother
+    'fathersname': 'fatherName',
+    'fatherfullname': 'fatherName',
+    'fathersphone': 'fatherPhone',
+    'fathermobile': 'fatherPhone',
+    'fathersmobile': 'fatherPhone',
+    'fatheroccupation': 'fatherOccupation',
+    'fathersoccupation': 'fatherOccupation',
+    'mothersname': 'motherName',
+    'motherfullname': 'motherName',
+    'mothersphone': 'motherPhone',
+    'mothermobile': 'motherPhone',
+    'mothersmobile': 'motherPhone',
+    'motheroccupation': 'motherOccupation',
+    'mothersoccupation': 'motherOccupation',
+    'guardianrelation': 'guardianRelation',
+    'relationship': 'guardianRelation',
+    'relationshipwithstudent': 'guardianRelation',
+    'relationwithstudent': 'guardianRelation',
+
+    // Previous academic
+    'haspreviousschool': 'hasPreviousSchool',
+    'previousschoolname': 'previousSchoolName',
+    'previousschool': 'previousSchoolName',
+    'classlastattended': 'previousClass',
+    'previousclass': 'previousClass',
+    'lastclass': 'previousClass',
+    'previouspercentage': 'previousPercentage',
+    'percentageobtained': 'previousPercentage',
+    'percentage': 'previousPercentage',
+    'tcnumber': 'transferCertificateNo',
+    'tcno': 'transferCertificateNo',
+    'transfercertificateno': 'transferCertificateNo',
+    'tcdate': 'transferCertificateDate',
+    'transfercertificatedate': 'transferCertificateDate',
+    'reasonforleaving': 'reasonForLeaving',
+
+    // Medical
+    'knownhealthissues': 'knownHealthIssues',
+    'healthissues': 'knownHealthIssues',
+    'allergies': 'allergies',
+    'immunizationstatus': 'immunizationStatus',
+    'immunization': 'immunizationStatus',
+    'learningdisabilities': 'learningDisabilities',
+
     // Status
     'status': 'status',
   };
@@ -2918,64 +3058,132 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const downloadStudentDemoTemplate = () => {
-    const rows = [
-      {
-        name: "Aarav Sharma",
-        mobile: "9876543210",
-        gender: "male",
-        batchCode: "2026-27",
-        admissionDate: "2026-04-01",
-        roll: "12",
-        section: "A",
-        class: "10",
-        email: "aarav.sharma@example.com",
-        dob: "2010-05-14",
-        address: "Kolkata",
-        pincode: "700001",
-        guardianName: "Rajesh Sharma",
-        guardianPhone: "9876500000",
-        serialNo: "1001",
-        formNo: "F-2026-011",
-        enrollmentNo: "ENR-2026-011",
-        guardianEmail: "rajesh.sharma@example.com",
-        status: "Active",
-        bloodGroup: "O+",
-        permanentAddress: "Kolkata",
+    // Pull live values so the sample rows use this school's real session / classes.
+    const activeYear =
+      academicYears.find((y) => y.isActive) || academicYears[0] || null;
+    const session = activeYear?.name || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
+    const admissionDate = activeYear?.startDate
+      ? new Date(activeYear.startDate).toISOString().slice(0, 10)
+      : `${new Date().getFullYear()}-04-01`;
+    const admissionYearNum = new Date(admissionDate).getFullYear();
+
+    // Classes that belong to the active session (fall back to all), sorted naturally.
+    const yearClasses = academicClasses
+      .filter((c) => !activeYear || String(c.academicYearId || "") === String(activeYear._id || ""))
+      .slice()
+      .sort((a, b) =>
+        String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { numeric: true, sensitivity: "base" })
+      );
+    const classList = yearClasses.length ? yearClasses : academicClasses.slice();
+    const sectionsOf = (cls) =>
+      academicSections
+        .filter((s) => String(s.classId) === String(cls?._id || ""))
+        .map((s) => s.name)
+        .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+
+    // Build one (class, section) pair for every combination in the database.
+    const pairs = [];
+    if (classList.length) {
+      classList.forEach((cls) => {
+        const secs = sectionsOf(cls);
+        if (secs.length) secs.forEach((sec) => pairs.push({ className: cls.name, section: sec }));
+        else pairs.push({ className: cls.name, section: "" });
+      });
+    } else {
+      // No academic setup yet — still give something usable.
+      ["5", "6", "7", "8"].forEach((c) => ["A", "B"].forEach((sec) => pairs.push({ className: c, section: sec })));
+    }
+
+    // Placeholder names only — not real people.
+    const FIRST = ["John", "Jane", "Sam", "Alex", "Chris", "Pat", "Taylor", "Jordan", "Casey", "Riley", "Morgan", "Jamie"];
+    const LAST = ["Doe", "Roe", "Smith", "Public", "Bloggs", "Sample", "Example", "Test"];
+    const CITIES = [["Sampleton", "100001"], ["Testville", "100002"], ["Democity", "100003"], ["Placeholder", "100004"]];
+
+    const rows = pairs.map((p, i) => {
+      const first = FIRST[i % FIRST.length];
+      const last = LAST[i % LAST.length];
+      const fullName = `${first} ${last}`;
+      const father = `Father ${last}`;
+      const mother = `Mother ${last}`;
+      const [city, pin] = CITIES[i % CITIES.length];
+      const gender = i % 2 === 0 ? "male" : "female";
+      return {
+        name: fullName,
+        mobile: `98${String(76000000 + i).slice(-8)}`,
+        email: `${first.toLowerCase()}.${last.toLowerCase()}${i + 1}@example.com`,
+        gender,
+        dob: `201${2 - (i % 5)}-0${(i % 9) + 1}-1${i % 8}`,
+        birthPlace: city,
         nationality: "Indian",
         religion: "Hindu",
+        caste: "General",
         category: "General",
-      },
-      {
-        name: "Ananya Das",
-        mobile: "9123456780",
-        gender: "female",
-        batchCode: "2026-27",
-        admissionDate: "2026-04-01",
-        roll: "13",
-        section: "A",
-        class: "10",
-        email: "ananya.das@example.com",
-        dob: "2010-08-22",
-        address: "Howrah",
-        pincode: "711101",
-        guardianName: "Sanjay Das",
-        guardianPhone: "9123400000",
-        serialNo: "1002",
-        formNo: "F-2026-012",
-        enrollmentNo: "ENR-2026-012",
-        guardianEmail: "sanjay.das@example.com",
+        aadharNumber: `${100000000000 + i}`,
+        address: `${12 + i}, Lake View Road, ${city}`,
+        permanentAddress: `${12 + i}, Lake View Road, ${city}`,
+        pincode: pin,
+        // Auto-generated on upload if left blank — sample values shown for reference.
+        admissionNumber: `ADM/${admissionYearNum}/${String(i + 1).padStart(4, "0")}`,
+        admissionDate,
+        admissionType: "New Admission",
+        academicYear: session,
+        class: p.className,
+        section: p.section,
+        roll: "",
+        serialNo: `${1001 + i}`,
         status: "Active",
-        bloodGroup: "A+",
-        permanentAddress: "Howrah",
-        nationality: "Indian",
-        religion: "Hindu",
-        category: "General",
-      },
-    ];
+        approvalStatus: "Approved",
+        applicationId: "",
+        applicationDate: admissionDate,
+        // Parent / guardian
+        fatherName: father,
+        fatherPhone: `98${String(76500000 + i).slice(-8)}`,
+        fatherOccupation: "Business",
+        motherName: mother,
+        motherPhone: `91${String(23400000 + i).slice(-8)}`,
+        motherOccupation: "Homemaker",
+        guardianName: father,
+        guardianPhone: `98${String(76500000 + i).slice(-8)}`,
+        guardianEmail: `${father.split(" ")[0].toLowerCase()}${i + 1}@example.com`,
+        guardianRelation: "Father",
+        // Previous academic
+        hasPreviousSchool: "yes",
+        previousSchoolName: "Sample Public School",
+        previousClass: p.className,
+        previousPercentage: `${80 + (i % 15)}%`,
+        transferCertificateNo: `TC/2024/${100 + i}`,
+        transferCertificateDate: "2024-05-10",
+        reasonForLeaving: "Relocated",
+        // Medical
+        bloodGroup: ["O+", "A+", "B+", "AB+", "O-"][i % 5],
+        knownHealthIssues: "None",
+        allergies: "None",
+        immunizationStatus: "Up to date",
+        learningDisabilities: "None",
+        // Documents
+        birthCertificateNo: `BC${123450 + i}`,
+        remarks: "",
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Students");
+
+    // Reference sheet: valid sessions / classes / sections for this school.
+    const refRows = [];
+    refRows.push({ Field: "Active Session", "Valid values": session });
+    academicYears.forEach((y) => refRows.push({ Field: "Session", "Valid values": `${y.name}${y.isActive ? "  (active)" : ""}` }));
+    classList.forEach((c) => {
+      const secs = sectionsOf(c).join(", ") || "—";
+      refRows.push({ Field: "Class", "Valid values": `${c.name}   →  sections: ${secs}` });
+    });
+    refRows.push({ Field: "", "Valid values": "" });
+    refRows.push({ Field: "Rows in template", "Valid values": `${rows.length} (one demo student per class + section)` });
+    refRows.push({ Field: "Note", "Valid values": "Admission Number, Roll Number & Application ID are auto-generated on upload if left blank." });
+    const refSheet = XLSX.utils.json_to_sheet(refRows);
+    XLSX.utils.book_append_sheet(workbook, refSheet, "Reference");
+
     XLSX.writeFile(workbook, "student_bulk_upload_template.xlsx");
   };
 
@@ -3107,13 +3315,12 @@ const Students = ({ setShowAdminHeader }) => {
           }
         }
 
-        // Check required fields (let backend handle validation)
+        // Check required fields (roll / admission number are auto-generated on save).
         if (!student.name || !student.mobile || !student.gender ||
-            !student.batchCode || !student.admissionDate ||
-            !student.roll || !student.section || !student.class) {
+            !student.admissionDate || !student.section || !student.class) {
           skippedRows.push({
             row: r + 1,
-            reason: "Missing required fields"
+            reason: "Missing required fields (name, mobile, gender, admission date, class, section)"
           });
           continue;
         }
@@ -3140,18 +3347,47 @@ const Students = ({ setShowAdminHeader }) => {
           address: student.address || "",
           permanentAddress: student.permanentAddress || "",
           pincode: student.pincode || "",
+          birthPlace: student.birthPlace || "",
+          caste: student.caste || "",
+          aadharNumber: student.aadharNumber || "",
           status: student.status || "Active",
+          admissionType: student.admissionType || "New Admission",
+          approvalStatus: student.approvalStatus || "Approved",
+          applicationId: student.applicationId || "",
+          applicationDate: student.applicationDate || "",
+          remarks: student.remarks || "",
+          birthCertificateNo: student.birthCertificateNo || "",
           guardianName: student.guardianName || "",
           guardianEmail: student.guardianEmail ? student.guardianEmail.toLowerCase() : "",
           guardianPhone: student.guardianPhone || "",
+          guardianRelation: student.guardianRelation || "",
+          fatherName: student.fatherName || "",
+          fatherPhone: student.fatherPhone || "",
+          fatherOccupation: student.fatherOccupation || "",
+          motherName: student.motherName || "",
+          motherPhone: student.motherPhone || "",
+          motherOccupation: student.motherOccupation || "",
+          hasPreviousSchool: student.hasPreviousSchool || (student.previousSchoolName ? "yes" : ""),
+          previousSchoolName: student.previousSchoolName || "",
+          previousClass: student.previousClass || "",
+          previousPercentage: student.previousPercentage || "",
+          transferCertificateNo: student.transferCertificateNo || "",
+          transferCertificateDate: student.transferCertificateDate || "",
+          reasonForLeaving: student.reasonForLeaving || "",
           bloodGroup: student.bloodGroup || "",
+          knownHealthIssues: student.knownHealthIssues || "",
+          allergies: student.allergies || "",
+          immunizationStatus: student.immunizationStatus || "",
+          learningDisabilities: student.learningDisabilities || "",
           nationality: student.nationality || "",
           religion: student.religion || "",
           category: student.category || "",
           serialNo: student.serialNo ? Number(student.serialNo) : undefined,
-          batchCode: student.batchCode,
+          batchCode: student.batchCode || "",
+          academicYear: student.batchCode || "",
           admissionDate,
-          roll: student.roll,
+          admissionNumber: student.admissionNumber || "",
+          roll: student.roll || "",
           grade: student.class || "",
           section: student.section,
           course: student.class || "",
@@ -3534,12 +3770,11 @@ const Students = ({ setShowAdminHeader }) => {
 
           {/* Students Table */}
           <>
-            {/* Outer clips the rounded corners; inner does the scrolling so the
-                scrollbar stays inside the rounded border. */}
-            <div className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="h-full overflow-auto table-scroll">
+            {/* Rounded card clips the corners. Header sits in its own div so the
+                body scrollbar starts *below* the header, not through it. */}
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
               {isImporting && (
-                <div className="sticky top-0 z-20 bg-blue-50/95 border-b border-blue-200">
+                <div className="shrink-0 bg-blue-50/95 border-b border-blue-200">
                   <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700">
                     <Loader2 size={13} className="animate-spin" />
                     Uploading bulk student file... {importProgress}%
@@ -3552,8 +3787,14 @@ const Students = ({ setShowAdminHeader }) => {
                   </div>
                 </div>
               )}
-              <table className="w-full min-w-[980px] border-collapse table-fixed">
-                  <thead className="sticky top-0 z-10">
+              {/* Header (does not scroll vertically; horizontal scroll synced to body) */}
+              <div ref={tableHeaderRef} className="shrink-0 overflow-hidden border-b border-gray-200 table-scroll-gutter">
+                <table className="w-full min-w-[980px] border-collapse table-fixed">
+                  <colgroup>
+                    <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
+                    <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
+                  </colgroup>
+                  <thead>
                     <tr className="bg-gray-50">
                       <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[5%]">
                         <input
@@ -3585,6 +3826,22 @@ const Students = ({ setShowAdminHeader }) => {
                       </th>
                     </tr>
                   </thead>
+                </table>
+              </div>
+
+              {/* Body (this is where the vertical scrollbar lives) */}
+              <div
+                ref={tableBodyScrollRef}
+                onScroll={(e) => {
+                  if (tableHeaderRef.current) tableHeaderRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                }}
+                className="flex-1 overflow-auto table-scroll"
+              >
+                <table className="w-full min-w-[980px] border-collapse table-fixed">
+                  <colgroup>
+                    <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
+                    <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
+                  </colgroup>
                   <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
                     {studentsLoading && studentData.length === 0 ? (
                       Array.from({ length: 8 }).map((_, i) => (
@@ -3653,11 +3910,11 @@ const Students = ({ setShowAdminHeader }) => {
                                   {student.name}
                                 </div>
                                 <div className="text-[11px] text-gray-400 truncate">
-                                  {student.email || "No email"}
+                                  {student.admissionNumber ? `Adm: ${student.admissionNumber}` : "No Admission Number"}
                                 </div>
                                 <div className="text-[11px] text-gray-400 truncate">
                                   ID: {student.username || student.studentCode || student.portalAccess?.username || "-"}
-                                  {student.parent?.username ? ` · Parent: ${student.parent.username}` : ""}
+                                  {/* {student.parent?.username ? ` · Parent: ${student.parent.username}` : ""} */}
                                 </div>
                               </div>
                             </div>
@@ -3706,20 +3963,23 @@ const Students = ({ setShowAdminHeader }) => {
                                 return (
                                   <>
                                     <div className="text-gray-600">
-                                      <div className="font-medium">Session: {sessionLabel}</div>
+                                      <div className="font-medium">Total: {formatCurrency(totalAmount)}</div>
                                       <div className="text-gray-500">
-                                        {formatCurrency(paidAmount)}/{formatCurrency(totalAmount)}
+                                       <span className="font-bold"> Paid: </span> <span className="text-green-600 font-medium">{formatCurrency(paidAmount)}</span>
+                                        {/* {formatCurrency(paidAmount)}/{formatCurrency(totalAmount)} */}
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1 mt-1">
-                                      <span
-                                        className={`inline-flex px-1.5 py-0.5 text-xs rounded ${getFeeStatusClass(status)}`}
-                                      >
-                                        {status}
-                                      </span>
+                                     <span className="font-bold text-gray-500"> Due: </span>
                                       <span className="text-xs text-red-600 font-semibold">
                                         {formatCurrency(balanceAmount)}
                                       </span>
+                                      <span
+                                        className={`inline-flex px-1.5 py-0.5 text-xs rounded-full ${getFeeStatusClass(status)}`}
+                                      >
+                                        {status}
+                                      </span>
+                                      
                                     </div>
                                   </>
                                 );
@@ -3739,12 +3999,12 @@ const Students = ({ setShowAdminHeader }) => {
                                   e.stopPropagation();
                                   handleViewStudentCredentials(student);
                                 }}
-                                className="inline-flex items-center gap-1.5 rounded-md font-medium bg-amber-500 text-white hover:bg-amber-600 transition px-2.5 py-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="inline-flex items-center gap-1.5 rounded-full font-medium bg-amber-500 text-white hover:bg-amber-600 transition px-1 py-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                                 disabled={isCredentialLoading}
                                 title="View Credentials"
                               >
                                 <KeyRound size={13} />
-                                Credentials
+                                {/* Credentials */}
                               </button>
                               {student.studentPortalUser && (
                                 <button
@@ -3779,7 +4039,7 @@ const Students = ({ setShowAdminHeader }) => {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  loadStudentForEdit(student);
+                                  openEditWizard(student);
                                 }}
                                 className="inline-flex items-center px-1.5 py-1 text-gray-500 hover:bg-gray-100 rounded-md text-xs transition"
                                 title="Edit Student"
@@ -3792,7 +4052,7 @@ const Students = ({ setShowAdminHeader }) => {
                                   handleArchiveStudent(student);
                                 }}
                                 disabled={isArchiving}
-                                className="inline-flex items-center px-1.5 py-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 rounded-md text-xs transition disabled:opacity-50"
+                                className="inline-flex items-center px-1.5 py-1 text-green-600 hover:bg-gray-100 hover:text-gray-600 rounded-md text-xs transition disabled:opacity-50"
                                 title="Archive Student"
                               >
                                 <Archive size={14} />
@@ -3803,7 +4063,7 @@ const Students = ({ setShowAdminHeader }) => {
                                   handleDeleteStudent(student);
                                 }}
                                 disabled={!!deletingId}
-                                className="inline-flex items-center px-1.5 py-1 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-md text-xs transition disabled:opacity-50"
+                                className="inline-flex items-center px-1.5 py-1  text-red-600 hover:bg-red-200 rounded-md text-xs transition disabled:opacity-50"
                                 title="Delete Student"
                               >
                                 <Trash2 size={14} />
@@ -3968,11 +4228,12 @@ const Students = ({ setShowAdminHeader }) => {
             newStudent={newStudent}
             handleAddStudentChange={handleAddStudentChange}
             enrollContext={enrollContext}
-            onClose={() => setShowAddForm(false)}
+            editing={!!editingStudentId}
+            onClose={() => { setShowAddForm(false); setEditingStudentId(null); }}
             onSubmit={handleAddStudentSubmit}
             isSubmitting={isSubmitting}
             initialStep={resumeStep}
-            onSaveDraft={saveEnrollDraft}
+            onSaveDraft={editingStudentId ? undefined : saveEnrollDraft}
             onUploadFile={uploadEnrollDocument}
             parentSearchTerm={parentSearchTerm}
             setParentSearchTerm={setParentSearchTerm}
@@ -4428,193 +4689,226 @@ const Students = ({ setShowAdminHeader }) => {
 
                 {/* Fees Tab */}
                 {!loadingViewData && viewTab === "fees" && (
-                  <div className="space-y-4">
-                    {viewFees.length > 0 ? (
-                      <>
-                        {/* Session-wise Fee Summary */}
-                        <div className="space-y-3">
-                          {(() => {
-                            const currentSessionName = String(viewStudent?.academicYear || "").trim();
-                            const currentSessionIds = academicYears
-                              .filter((year) => String(year?.name || "").trim() === currentSessionName)
-                              .map((year) => String(year?._id || "").trim())
-                              .filter(Boolean);
+                  viewFees.length === 0 ? (
+                    <div className="py-12 text-center">
+                      <Wallet size={40} className="mx-auto mb-3 text-gray-300" />
+                      <p className="text-sm text-gray-400">No fee invoices found for this student.</p>
+                    </div>
+                  ) : (
+                    (() => {
+                      const inr = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+                      const sessions = [
+                        ...new Map(
+                          viewFees.map((inv) => {
+                            const id = String(inv?.academicYearId || "unassigned");
+                            return [id, { id, label: getSessionLabel(inv?.academicYearId, viewStudent?.academicYear || "Session") }];
+                          })
+                        ).values(),
+                      ];
+                      const activeId = sessions.some((x) => x.id === feeSession) ? feeSession : sessions[0]?.id || "unassigned";
+                      const activeLabel = sessions.find((x) => x.id === activeId)?.label || "Session";
+                      const rows = viewFees.filter((inv) => String(inv?.academicYearId || "unassigned") === String(activeId));
+                      const totalInvoiced = rows.reduce((s, i) => s + Number(i?.totalAmount || 0), 0);
+                      const totalPaid = rows.reduce((s, i) => s + Number(i?.paidAmount || 0), 0);
+                      const totalBalance = rows.reduce((s, i) => s + Number(i?.balanceAmount || 0), 0);
+                      const first = rows[0] || {};
+                      const heads = Array.isArray(first.feeHeadsSnapshot) ? first.feeHeadsSnapshot : [];
+                      const installments = Array.isArray(first.installmentsSnapshot) ? first.installmentsSnapshot : [];
+                      const className = viewStudent?.class || viewStudent?.grade || "—";
+                      const invoiceTitle = first.title || "Annual Fees";
+                      const dueDate = first.dueDate
+                        ? new Date(first.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—";
+                      const feeStatus = totalInvoiced === 0
+                        ? "N/A"
+                        : totalBalance <= 0
+                          ? "Paid"
+                          : totalPaid > 0
+                            ? "Partial"
+                            : "Due";
+                      const statusCls = feeStatus === "Paid"
+                        ? "bg-green-50 text-green-700"
+                        : feeStatus === "Partial"
+                          ? "bg-amber-50 text-amber-700"
+                          : feeStatus === "Due"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-gray-100 text-gray-600";
+                      const ord = (i) => ["1st", "2nd", "3rd", "4th", "5th", "6th"][i] || `${i + 1}th`;
+                      // No per-installment paid flag in the snapshot — allocate the
+                      // invoice's paid amount across installments in order.
+                      const installmentRows = (() => {
+                        let remaining = totalPaid;
+                        return installments.map((h, i) => {
+                          const amt = Number(h?.amount || 0);
+                          let st;
+                          if (amt > 0 && remaining >= amt) { st = "Paid"; remaining -= amt; }
+                          else if (remaining > 0) { st = "Partial"; remaining = 0; }
+                          else { st = "Unpaid"; }
+                          return { label: h?.label || ord(i), amt, st };
+                        });
+                      })();
 
-                            const grouped = viewFees.reduce((acc, invoice) => {
-                              const sessionId = String(invoice?.academicYearId || "").trim() || "unassigned";
-                              if (!acc.has(sessionId)) {
-                                acc.set(sessionId, {
-                                  sessionId: invoice?.academicYearId || null,
-                                  sessionLabel: getSessionLabel(invoice?.academicYearId, currentSessionName || "Current Session"),
-                                  totalInvoiced: 0,
-                                  totalPaid: 0,
-                                  totalBalance: 0,
-                                  invoices: [],
-                                });
-                              }
-                              const entry = acc.get(sessionId);
-                              entry.totalInvoiced += Number(invoice?.totalAmount || 0);
-                              entry.totalPaid += Number(invoice?.paidAmount || 0);
-                              entry.totalBalance += Number(invoice?.balanceAmount || 0);
-                              entry.invoices.push(invoice);
-                              return acc;
-                            }, new Map());
+                      return (
+                        <div className="space-y-4">
+                          {/* Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="flex items-center gap-2.5 text-base font-bold text-gray-900">
+                              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                <Wallet size={16} />
+                              </span>
+                              Fees
+                            </p>
+                            {sessions.length > 0 && (
+                              <div className="relative">
+                                <select
+                                  value={activeId}
+                                  onChange={(e) => setFeeSession(e.target.value)}
+                                  className="appearance-none rounded-lg border border-gray-300 bg-white py-1.5 pl-3 pr-8 text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                >
+                                  {sessions.map((x) => (
+                                    <option key={x.id} value={x.id}>Session: {x.label}</option>
+                                  ))}
+                                </select>
+                                <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
 
-                            const sessionGroups = Array.from(grouped.values()).sort((a, b) => {
-                              const aMatch = currentSessionIds.includes(String(a.sessionId || ""));
-                              const bMatch = currentSessionIds.includes(String(b.sessionId || ""));
-                              if (aMatch !== bMatch) return aMatch ? -1 : 1;
-                              return String(a.sessionLabel || "").localeCompare(String(b.sessionLabel || ""));
-                            });
+                          {/* Stat cards */}
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                              <p className="text-xs font-medium text-blue-500">Structure Total</p>
+                              <p className="mt-0.5 text-lg font-bold text-blue-700">{inr(totalInvoiced)}</p>
+                            </div>
+                            <div className="rounded-xl border border-green-100 bg-green-50 p-3">
+                              <p className="text-xs font-medium text-green-500">Paid</p>
+                              <p className="mt-0.5 text-lg font-bold text-green-700">{inr(totalPaid)}</p>
+                            </div>
+                            <div className="rounded-xl border border-red-100 bg-red-50 p-3">
+                              <p className="text-xs font-medium text-red-500">Outstanding</p>
+                              <p className="mt-0.5 text-lg font-bold text-red-700">{inr(totalBalance)}</p>
+                            </div>
+                            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                              <p className="text-xs font-medium text-blue-500">Invoices</p>
+                              <p className="mt-0.5 text-lg font-bold text-blue-700">{rows.length}</p>
+                            </div>
+                          </div>
 
-                            if (sessionGroups.length === 0) {
-                              return (
-                                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                                  No session-wise fee structure found for this student.
-                                </div>
-                              );
-                            }
-
-                            return sessionGroups.map((group) => {
-                              const firstInvoice = group.invoices[0] || {};
-                              const heads = Array.isArray(firstInvoice.feeHeadsSnapshot) ? firstInvoice.feeHeadsSnapshot : [];
-                              const installments = Array.isArray(firstInvoice.installmentsSnapshot) ? firstInvoice.installmentsSnapshot : [];
-                              const status = group.totalInvoiced === 0
-                                ? "N/A"
-                                : group.totalBalance <= 0
-                                  ? "paid"
-                                  : group.totalPaid > 0
-                                    ? "partial"
-                                    : "due";
-                              return (
-                                <div key={String(group.sessionId || group.sessionLabel)} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Session</p>
-                                      <h4 className="text-base font-bold text-gray-800">{group.sessionLabel}</h4>
-                                      <p className="mt-0.5 text-xs text-gray-500">
-                                        {group.invoices.length} invoice{group.invoices.length === 1 ? "" : "s"} assigned
-                                      </p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Structure Total</p>
-                                      <p className="text-lg font-bold text-gray-900">₹{group.totalInvoiced.toLocaleString("en-IN")}</p>
-                                      <span className={`mt-1 inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                        status === "paid"
-                                          ? "bg-green-50 text-green-700"
-                                          : status === "partial"
-                                          ? "bg-amber-50 text-amber-700"
-                                          : status === "due"
-                                          ? "bg-red-50 text-red-700"
-                                          : "bg-gray-100 text-gray-600"
-                                      }`}>
-                                        {status}
-                                      </span>
-                                    </div>
+                          {/* Two columns */}
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                            {/* Left */}
+                            <div className="space-y-4">
+                              <div className="rounded-xl border border-gray-200 p-4">
+                                <p className="mb-1 text-sm font-bold text-gray-900">Fee Heads</p>
+                                {heads.length > 0 ? (
+                                  <div className="divide-y divide-gray-50">
+                                    {heads.map((h, i) => (
+                                      <div key={i} className="flex items-center justify-between py-2 text-sm">
+                                        <span className="text-gray-600">{h?.label || "Fee"}</span>
+                                        <span className="font-semibold text-gray-900">{inr(h?.amount)}</span>
+                                      </div>
+                                    ))}
                                   </div>
-
-                                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <div className="rounded-xl bg-green-50 p-3">
-                                      <p className="text-xs text-green-500 font-medium">Paid</p>
-                                      <p className="text-lg font-bold text-green-700">₹{group.totalPaid.toLocaleString("en-IN")}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-red-50 p-3">
-                                      <p className="text-xs text-red-500 font-medium">Outstanding</p>
-                                      <p className="text-lg font-bold text-red-700">₹{group.totalBalance.toLocaleString("en-IN")}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-gray-50 p-3">
-                                      <p className="text-xs text-gray-500 font-medium">Invoices</p>
-                                      <p className="text-lg font-bold text-gray-800">{group.invoices.length}</p>
-                                    </div>
+                                ) : (
+                                  <p className="py-2 text-sm text-gray-400">No fee heads on this invoice.</p>
+                                )}
+                              </div>
+                              <div className="rounded-xl border border-gray-200 p-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <p className="text-xs text-gray-400">Session</p>
+                                    <p className="mt-0.5 text-sm font-medium text-gray-800">{activeLabel}</p>
                                   </div>
-
-                                  {(heads.length > 0 || installments.length > 0) && (
-                                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                                      {heads.length > 0 && (
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-                                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Fee Heads</p>
-                                          <div className="mt-2 space-y-1.5">
-                                            {heads.map((head, idx) => (
-                                              <div key={`${head?.label || "head"}-${idx}`} className="flex items-center justify-between text-xs">
-                                                <span className="text-gray-600">{head?.label || "Head"}</span>
-                                                <span className="font-semibold text-gray-900">₹{Number(head?.amount || 0).toLocaleString("en-IN")}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {installments.length > 0 && (
-                                        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-                                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Installments</p>
-                                          <div className="mt-2 space-y-1.5">
-                                            {installments.map((installment, idx) => (
-                                              <div key={`${installment?.label || "installment"}-${idx}`} className="flex items-center justify-between text-xs">
-                                                <span className="text-gray-600">{installment?.label || "Installment"}</span>
-                                                <span className="font-semibold text-gray-900">₹{Number(installment?.amount || 0).toLocaleString("en-IN")}</span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
+                                  <div>
+                                    <p className="text-xs text-gray-400">Class</p>
+                                    <p className="mt-0.5 text-sm font-medium text-gray-800">{className}</p>
+                                    <p className="text-xs text-gray-400">{invoiceTitle}</p>
+                                  </div>
                                 </div>
-                              );
-                            });
-                          })()}
-                        </div>
+                              </div>
+                            </div>
 
-                        {/* Invoice Table */}
-                        <div className="rounded-xl border border-gray-200 overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-gray-50">
-                                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Session</th>
-                                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Title</th>
-                                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Total</th>
-                                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Paid</th>
-                                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Balance</th>
-                                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Due Date</th>
-                                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {viewFees.map((invoice) => (
-                                <tr key={invoice._id || invoice.invoiceId || `${invoice.title || "invoice"}-${invoice.updatedAt || ""}`} className="hover:bg-gray-50">
-                                  <td className="px-4 py-2.5 text-gray-600">
-                                    {getSessionLabel(invoice.academicYearId, viewStudent?.academicYear || "-")}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-gray-800 font-medium">{invoice.title || "-"}</td>
-                                  <td className="px-4 py-2.5 text-right text-gray-700">₹{(invoice.totalAmount || 0).toLocaleString("en-IN")}</td>
-                                  <td className="px-4 py-2.5 text-right text-green-700">₹{(invoice.paidAmount || 0).toLocaleString("en-IN")}</td>
-                                  <td className="px-4 py-2.5 text-right text-red-700">₹{(invoice.balanceAmount || 0).toLocaleString("en-IN")}</td>
-                                  <td className="px-4 py-2.5 text-gray-500">
-                                    {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-"}
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                      invoice.status === "paid"
-                                        ? "bg-green-50 text-green-700"
-                                        : invoice.status === "partial"
-                                        ? "bg-amber-50 text-amber-700"
-                                        : "bg-red-50 text-red-700"
-                                    }`}>
-                                      {invoice.status || "due"}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                            {/* Right */}
+                            <div className="space-y-4">
+                              <div className="rounded-xl border border-gray-200 p-4">
+                                <p className="mb-1 text-sm font-bold text-gray-900">Installments</p>
+                                {installmentRows.length > 0 ? (
+                                  <div className="divide-y divide-gray-50">
+                                    {installmentRows.map((h, i) => (
+                                      <div key={i} className="flex items-center justify-between gap-2 py-2 text-sm">
+                                        <span className="flex items-center gap-2 text-gray-600">
+                                          {h.label}
+                                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                            h.st === "Paid"
+                                              ? "bg-green-50 text-green-700"
+                                              : h.st === "Partial"
+                                                ? "bg-amber-50 text-amber-700"
+                                                : "bg-gray-100 text-gray-500"
+                                          }`}>
+                                            {h.st === "Partial" ? "Partly paid" : h.st === "Paid" ? "Paid" : "Unpaid"}
+                                          </span>
+                                        </span>
+                                        <span className="font-semibold text-gray-900">{inr(h.amt)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="py-2 text-sm text-gray-400">No installment plan.</p>
+                                )}
+                              </div>
+
+                              <div className="rounded-xl border border-gray-200 p-4">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-bold text-gray-900">Invoices</p>
+                                    <p className="mt-1 text-2xl font-bold text-gray-900">{rows.length}</p>
+                                  </div>
+                                  <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-500">
+                                    <IndianRupee size={18} />
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-gray-200 p-4">
+                                <p className="mb-2 text-sm font-bold text-gray-900">Fee Summary</p>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="border-b border-gray-100 text-left text-gray-400">
+                                        <th className="pb-1.5 pr-3 font-medium">Session</th>
+                                        <th className="pb-1.5 pr-3 font-medium">Class</th>
+                                        <th className="pb-1.5 pr-3 font-medium">Total</th>
+                                        <th className="pb-1.5 pr-3 font-medium">Paid</th>
+                                        <th className="pb-1.5 pr-3 font-medium">Balance</th>
+                                        <th className="pb-1.5 pr-3 font-medium">Due Date</th>
+                                        <th className="pb-1.5 font-medium">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      <tr>
+                                        <td className="py-2 pr-3 text-gray-700">{activeLabel}</td>
+                                        <td className="py-2 pr-3 text-gray-700">
+                                          {className}
+                                          <span className="block text-[10px] text-gray-400">{invoiceTitle}</span>
+                                        </td>
+                                        <td className="py-2 pr-3 text-gray-700">{inr(totalInvoiced)}</td>
+                                        <td className="py-2 pr-3 text-green-700">{inr(totalPaid)}</td>
+                                        <td className="py-2 pr-3 text-red-700">{inr(totalBalance)}</td>
+                                        <td className="py-2 pr-3 text-gray-500">{dueDate}</td>
+                                        <td className="py-2">
+                                          <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold ${statusCls}`}>{feeStatus}</span>
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </>
-                    ) : (
-                      <div className="text-center py-12">
-                        <Wallet size={40} className="mx-auto text-gray-300 mb-3" />
-                        <p className="text-sm text-gray-400">No fee invoices found for this student.</p>
-                      </div>
-                    )}
-                  </div>
+                      );
+                    })()
+                  )
                 )}
               </div>
 
@@ -4622,22 +4916,20 @@ const Students = ({ setShowAdminHeader }) => {
               <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 flex-shrink-0 rounded-b-2xl">
                 <button
                   type="button"
+                  onClick={() => openEditWizard(viewStudent)}
+                  className="px-5 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm rounded-lg hover:from-yellow-600 hover:to-amber-600 flex items-center gap-2 transition"
+                >
+                  <Edit2 size={14} />
+                  Edit
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setShowViewModal(false); setViewStudent(null); }}
                   className="px-5 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition"
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowViewModal(false);
-                    loadStudentForEdit(viewStudent);
-                  }}
-                  className="px-5 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm rounded-lg hover:from-yellow-600 hover:to-amber-600 flex items-center gap-2 transition"
-                >
-                  <Edit2 size={14} />
-                  Edit Student
-                </button>
+                
               </div>
             </div>
           </div>
