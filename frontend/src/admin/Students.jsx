@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
@@ -122,6 +123,53 @@ const shouldHideLeavingStudent = (student) =>
   EXCLUDED_STUDENT_STATUSES.has(String(student?.status || "").trim().toLowerCase());
 
 const STUDENTS_PER_PAGE = 10;
+
+// Full-screen, non-dismissible progress overlay for bulk jobs (import / delete /
+// archive / restore). Rendered through a portal to <body> so it sits above the
+// sidebar + header and isn't clipped by the students page's own transformed,
+// overflow-hidden container. There is deliberately no close affordance — it
+// clears only when the job finishes.
+const BLOCKING_ACCENTS = {
+  amber: { ring: "bg-amber-50", spin: "text-amber-500", bar: "bg-amber-500" },
+  red: { ring: "bg-red-50", spin: "text-red-500", bar: "bg-red-500" },
+  blue: { ring: "bg-blue-50", spin: "text-blue-500", bar: "bg-blue-500" },
+  green: { ring: "bg-green-50", spin: "text-green-500", bar: "bg-green-500" },
+};
+
+const BlockingProgressModal = ({ open, accent = "amber", title, statusText, extraText, percent = 0 }) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
+  if (!open) return null;
+  const a = BLOCKING_ACCENTS[accent] || BLOCKING_ACCENTS.amber;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+        <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${a.ring}`}>
+          <Loader2 className={`h-6 w-6 animate-spin ${a.spin}`} />
+        </div>
+        <h3 className="text-base font-bold text-gray-900">{title}</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          Please wait — do not refresh or close this window.
+        </p>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className={`h-full rounded-full transition-[width] duration-300 ${a.bar}`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <p className="mt-2 text-sm font-semibold text-gray-800">{statusText}</p>
+        {extraText ? <p className="mt-1 text-xs text-red-500">{extraText}</p> : null}
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 const Students = ({ setShowAdminHeader }) => {
   const navigate = useNavigate(); 
@@ -258,6 +306,9 @@ const Students = ({ setShowAdminHeader }) => {
   const isAnyVisibleSelected = visibleStudentIds.some((id) => selectedIdSet.has(id));
   const isAllFilteredSelected =
     filteredStudentIds.length > 0 && filteredStudentIds.every((id) => selectedIdSet.has(id));
+  // A blocking bulk job (import / delete / archive / restore) is in progress —
+  // the toolbar actions must be inert while its overlay is up.
+  const bulkBusy = isImporting || !!deleteJob || !!bulkOpJob;
   const pageNumbers = useMemo(
     () => Array.from({ length: totalPages }, (_, idx) => idx + 1),
     [totalPages]
@@ -805,7 +856,7 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const handleRefreshTableData = async () => {
-    if (tableRefreshing) return;
+    if (tableRefreshing || isImporting || deleteJob || bulkOpJob) return;
     setTableRefreshing(true);
     try {
       await refreshStudents({ useCache: false, showLoader: false });
@@ -1229,12 +1280,17 @@ const Students = ({ setShowAdminHeader }) => {
         if (job.status === "completed" || job.status === "failed") break;
       }
 
+      // Job finished — drop the blocking overlay before any result dialog.
+      setDeleteJob(null);
+      setIsBulkDeleting(false);
+      setDeleteProgress(0);
+
       if (job.status === "failed") {
         throw new Error(job.error || "Bulk delete failed on the server.");
       }
 
       setSelectedStudentIds([]);
-      await refreshStudents();
+      refreshStudents().catch(console.error);
       Swal.fire({
         icon: "success",
         title: "Students Deleted",
@@ -1307,6 +1363,10 @@ const Students = ({ setShowAdminHeader }) => {
         `${API_BASE}/api/nif/students/bulk/archive/status/${startData.jobId}`,
         "archive"
       );
+
+      // Job finished — drop the blocking overlay before any result dialog so it
+      // doesn't sit on top of the Swal.
+      setBulkOpJob(null);
 
       if (data.status === "failed") {
         throw new Error(data.error || "Archive job failed");
@@ -2697,6 +2757,9 @@ const Students = ({ setShowAdminHeader }) => {
         "restore"
       );
 
+      // Job finished — drop the blocking overlay before any result dialog.
+      setBulkOpJob(null);
+
       if (data.status === "failed") {
         throw new Error(data.error || "Restore job failed");
       }
@@ -3612,6 +3675,12 @@ const Students = ({ setShowAdminHeader }) => {
         importProgressTimerRef.current = null;
       }
 
+      // The job is done — tear the blocking overlay down BEFORE any result
+      // dialog, otherwise the full-screen overlay sits on top of the Swal and
+      // the admin can't dismiss it.
+      setImportJob(null);
+      setIsImporting(false);
+
       if (data.status === "failed") {
         await Swal.fire({
           icon: "error",
@@ -3643,8 +3712,13 @@ const Students = ({ setShowAdminHeader }) => {
         confirmButtonText: "OK"
       });
 
-      setCurrentPage(1); // land on the freshest page so newly imported rows are visible immediately
-      await refreshStudents();
+      // Show the full "Loading student data" state while the post-import list
+      // (with all the newly created rows) is fetched — otherwise the table sits
+      // on the stale pre-import data for a beat.
+      setCurrentPage(1);
+      setStudentData([]);
+      setStudentsLoading(true);
+      await refreshStudents({ showLoader: true });
     } catch (e) {
       console.error(e);
       Swal.fire({
@@ -3792,10 +3866,10 @@ const Students = ({ setShowAdminHeader }) => {
             </button>
             <button
               onClick={handleRefreshTableData}
-              disabled={tableRefreshing}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-              title="Refresh students table data"
-            > 
+              disabled={tableRefreshing || bulkBusy}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              title={bulkBusy ? "Unavailable while a bulk job is running" : "Refresh students table data"}
+            >
               {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
               {tableRefreshing ? "Refreshing..." : "Refresh"}
             </button>
@@ -5115,99 +5189,43 @@ const Students = ({ setShowAdminHeader }) => {
           onClose={() => setDocPreview(null)}
         />
 
-        {/* Bulk import progress — blocking, non-dismissible */}
-        {importJob && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
-                <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
-              </div>
-              <h3 className="text-base font-bold text-gray-900">Uploading students…</h3>
-              <p className="mt-1 text-xs text-gray-500">
-                Please wait and do not refresh or close this window.
-              </p>
+        {/* Bulk-job progress overlays — portal to <body>, full screen, non-dismissible */}
+        <BlockingProgressModal
+          open={!!importJob}
+          accent="amber"
+          title="Uploading students…"
+          percent={importJob?.total ? Math.round((importJob.processed / importJob.total) * 100) : 0}
+          statusText={
+            importJob?.processed > 0
+              ? `${importJob.processed} / ${importJob.total} students`
+              : "Preparing records…"
+          }
+          extraText={
+            importJob?.failed > 0
+              ? `${importJob.failed} row${importJob.failed === 1 ? "" : "s"} could not be imported`
+              : ""
+          }
+        />
 
-              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className="h-full rounded-full bg-amber-500 transition-[width] duration-300"
-                  style={{ width: `${importJob.total ? Math.round((importJob.processed / importJob.total) * 100) : 0}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm font-semibold text-gray-800">
-                {importJob.processed > 0
-                  ? `${importJob.processed} / ${importJob.total} students`
-                  : "Preparing records…"}
-              </p>
-              {importJob.failed > 0 && (
-                <p className="mt-1 text-xs text-red-500">
-                  {importJob.failed} row{importJob.failed === 1 ? "" : "s"} could not be imported
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+        <BlockingProgressModal
+          open={!!deleteJob}
+          accent="red"
+          title="Deleting students…"
+          percent={deleteJob?.total ? Math.round((deleteJob.processed / deleteJob.total) * 100) : 0}
+          statusText={
+            deleteJob?.phase === "parents"
+              ? "Cleaning up linked parent accounts…"
+              : `${deleteJob?.processed || 0} / ${deleteJob?.total || 0} students`
+          }
+        />
 
-        {/* Bulk delete progress — blocking, non-dismissible */}
-        {deleteJob && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
-                <Loader2 className="h-6 w-6 animate-spin text-red-500" />
-              </div>
-              <h3 className="text-base font-bold text-gray-900">Deleting students…</h3>
-              <p className="mt-1 text-xs text-gray-500">
-                Please do not refresh or close this window.
-              </p>
-
-              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className="h-full rounded-full bg-red-500 transition-[width] duration-300"
-                  style={{ width: `${deleteJob.total ? Math.round((deleteJob.processed / deleteJob.total) * 100) : 0}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm font-semibold text-gray-800">
-                {deleteJob.phase === "parents"
-                  ? "Cleaning up linked parent accounts…"
-                  : `${deleteJob.processed} / ${deleteJob.total} students`}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Bulk archive/restore progress — blocking, non-dismissible */}
-        {bulkOpJob && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-              <div
-                className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
-                  bulkOpJob.mode === "archive" ? "bg-blue-50" : "bg-green-50"
-                }`}
-              >
-                <Loader2
-                  className={`h-6 w-6 animate-spin ${bulkOpJob.mode === "archive" ? "text-blue-500" : "text-green-500"}`}
-                />
-              </div>
-              <h3 className="text-base font-bold text-gray-900">
-                {bulkOpJob.mode === "archive" ? "Archiving students…" : "Restoring students…"}
-              </h3>
-              <p className="mt-1 text-xs text-gray-500">
-                Please do not refresh or close this window.
-              </p>
-
-              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                <div
-                  className={`h-full rounded-full transition-[width] duration-300 ${
-                    bulkOpJob.mode === "archive" ? "bg-blue-500" : "bg-green-500"
-                  }`}
-                  style={{ width: `${bulkOpJob.total ? Math.round((bulkOpJob.processed / bulkOpJob.total) * 100) : 0}%` }}
-                />
-              </div>
-              <p className="mt-2 text-sm font-semibold text-gray-800">
-                {bulkOpJob.processed} / {bulkOpJob.total} students
-              </p>
-            </div>
-          </div>
-        )}
+        <BlockingProgressModal
+          open={!!bulkOpJob}
+          accent={bulkOpJob?.mode === "archive" ? "blue" : "green"}
+          title={bulkOpJob?.mode === "archive" ? "Archiving students…" : "Restoring students…"}
+          percent={bulkOpJob?.total ? Math.round((bulkOpJob.processed / bulkOpJob.total) * 100) : 0}
+          statusText={`${bulkOpJob?.processed || 0} / ${bulkOpJob?.total || 0} students`}
+        />
 
         {showDetailModal && editingStudent && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
