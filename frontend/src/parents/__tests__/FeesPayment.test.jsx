@@ -155,9 +155,7 @@ describe('FeesPayment', () => {
         expect(screen.getByText(mockParentProfile.children[0].name)).toBeInTheDocument();
       });
 
-      // Find and click dropdown
-      const dropdown = screen.getByRole('combobox') || screen.getByDisplayValue(mockParentProfile.children[0].name);
-      fireEvent.change(dropdown, { target: { value: `id:${mockParentProfile.children[1]._id}` } });
+      fireEvent.click(screen.getByRole('option', { name: new RegExp(mockParentProfile.children[1].name, 'i') }));
 
       // Verify invoice fetch for new child
       await waitFor(() => {
@@ -174,7 +172,7 @@ describe('FeesPayment', () => {
       render(<FeesPayment />);
 
       await waitFor(() => {
-        expect(screen.getByText(/₹5,000/i) || screen.getByText(/5000/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/₹5,000/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -182,7 +180,7 @@ describe('FeesPayment', () => {
       render(<FeesPayment />);
 
       await waitFor(() => {
-        expect(screen.getByText(/paid/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/paid/i).length).toBeGreaterThan(0);
       });
     });
 
@@ -206,6 +204,13 @@ describe('FeesPayment', () => {
   });
 
   describe('Payment Flow Tests', () => {
+    test('renders a mobile sticky payment action for the selected pending invoice', async () => {
+      render(<FeesPayment />);
+
+      const mobilePayButton = await screen.findByRole('button', { name: /pay now.*5,000/i });
+      expect(mobilePayButton.closest('.fees-mobile-pay')).toBeInTheDocument();
+    });
+
     test('pay button is disabled for paid invoices', async () => {
       render(<FeesPayment />);
 

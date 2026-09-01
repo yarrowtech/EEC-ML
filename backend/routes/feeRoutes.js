@@ -1958,6 +1958,45 @@ router.get('/parent/children', authParent, async (req, res) => {
   }
 });
 
+// Portfolio-wide fee summary across all of a parent's children (dashboard tile)
+router.get('/parent/summary', authParent, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  try {
+    const parent = await ParentUser.findById(req.user.id)
+      .select('childrenIds children schoolId campusId')
+      .lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+
+    const schoolId = parent.schoolId || req.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const campusId = parent.campusId || req.campusId || null;
+    const students = await resolveParentStudents({ parent, schoolId, campusId });
+    const studentIds = students.map((s) => s._id);
+
+    if (studentIds.length === 0) {
+      return res.json({ outstandingAmount: 0, openInvoiceCount: 0, totalInvoiceCount: 0, currency: 'INR' });
+    }
+
+    await applyLateFeesForFilter({ schoolId, filter: { studentId: { $in: studentIds } } });
+    const invoices = await FeeInvoice.find({ schoolId, studentId: { $in: studentIds } })
+      .select('balanceAmount status')
+      .lean();
+
+    const openInvoices = invoices.filter((inv) => inv.status !== 'paid' && Number(inv.balanceAmount) > 0);
+    const outstandingAmount = openInvoices.reduce((sum, inv) => sum + Number(inv.balanceAmount || 0), 0);
+
+    res.json({
+      outstandingAmount,
+      openInvoiceCount: openInvoices.length,
+      totalInvoiceCount: invoices.length,
+      currency: 'INR',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load fee summary' });
+  }
+});
+
 router.get('/parent/invoices', authParent, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {

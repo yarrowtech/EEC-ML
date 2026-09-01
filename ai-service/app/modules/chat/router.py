@@ -170,13 +170,15 @@ _TEACHER_MODES = {
     "intervention_recommendation", "curriculum_alignment",
     "intervention_plan", "rubric_generate", "rubric_grade",
     "progress_summary", "worksheet",
+    # Parent-facing generations (called by backend/routes/parentDashboardRoutes.js)
+    "home_support", "progress_digest", "monthly_report",
 }
 
 _TEACHER_LONG_OUTPUT_MODES = {
     "lesson_content", "idoweedo", "differentiated_plan",
     "class_performance_summary", "misconception_report",
     "curriculum_alignment", "rubric_generate", "intervention_plan",
-    "quiz_generate",
+    "quiz_generate", "monthly_report",
 }
 
 
@@ -189,14 +191,17 @@ async def generate_teacher_content(req: TeacherAIRequest) -> dict:
     instruction = MODE_INSTRUCTIONS.get(req.mode, "")
     grade = req.gradeLevel or "school"
 
+    focus = f" with {req.subject}" if req.subject else ""
     system = (
-        f"You are an expert AI assistant helping a {grade} teacher with {req.subject}. "
+        f"You are an expert AI assistant for a {grade} school{focus}. "
         "Follow the task instructions precisely. Be specific, actionable, and professional."
     )
+    subject_line = f"Subject: {req.subject}\n" if req.subject else ""
+    topic_line = f"Topic: {req.topic}\n" if req.topic else ""
     context_block = f"\nContext / Data:\n{req.context}" if req.context else ""
     question_block = f"\nAdditional details:\n{req.question}" if req.question else ""
     user_prompt = (
-        f"Subject: {req.subject}\nTopic: {req.topic}\n"
+        f"{subject_line}{topic_line}"
         f"Task: {instruction}"
         f"{context_block}{question_block}"
     )

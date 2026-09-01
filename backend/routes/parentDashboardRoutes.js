@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const authParent = require('../middleware/authParent');
-const ParentUser = require('../models/ParentUser');
 const StudentUser = require('../models/StudentUser');
 const MasteryScore = require('../models/MasteryScore');
 const ExamResult = require('../models/ExamResult');
@@ -10,25 +9,55 @@ const Exam = require('../models/Exam');
 const StudentObservation = require('../models/StudentObservation');
 const ParentDashboardReport = require('../models/ParentDashboardReport');
 const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
+const { resolveParentChildren, parentOwnsStudent } = require('../utils/parentChildren');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
 
-const callAI = (mode, context) =>
-  axios.post(`${AI_SERVICE_URL}/generate/teacher`, { mode, context }, { timeout: TIMEOUT });
+const callAI = (mode, context, extra = {}) =>
+  axios.post(
+    `${AI_SERVICE_URL}/generate/teacher`,
+    { mode, context, subject: 'Overall Progress', topic: 'Parent Report', ...extra },
+    { timeout: TIMEOUT },
+  );
 
-const getChildIds = async (parentId) => {
-  const parent = await ParentUser.findById(parentId).select('childrenIds').lean();
-  return parent?.childrenIds || [];
+const getChildIds = async (parentId, schoolId) => {
+  const { childIds } = await resolveParentChildren({ parentId, schoolId, select: '_id' });
+  return childIds;
 };
 
-const ownsStudent = (childIds, studentId) =>
-  childIds.some((id) => id.toString() === studentId);
+const ownsStudent = parentOwnsStudent;
+
+// ── Exam result helpers ──────────────────────────────────────────────────────
+// ExamResult stores `marks` (obtained). The exam total lives on Exam.marks.
+const buildExamIndex = async (examIds) => {
+  const ids = [...new Set(examIds.filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const exams = await Exam.find({ _id: { $in: ids } })
+    .select('title subject date marks')
+    .lean();
+  return new Map(exams.map((exam) => [String(exam._id), exam]));
+};
+
+const shapeExamResult = (result, exam) => {
+  const total = Number(exam?.marks) || 0;
+  const obtained = Number(result?.marks) || 0;
+  return {
+    title: exam?.title || 'Exam',
+    subject: exam?.subject || '',
+    date: exam?.date || result?.createdAt || null,
+    marks: obtained,
+    total: total || null,
+    percentage: total > 0 ? Math.round((obtained / total) * 100) : null,
+    grade: result?.grade || '',
+    status: result?.status || 'pass',
+  };
+};
 
 // GET /api/parent-dashboard/weak-areas
 router.get('/weak-areas', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!childIds.length) return res.json({ success: true, data: [] });
 
     const weakAreas = await MasteryScore.find({
@@ -50,7 +79,7 @@ router.get('/weak-areas', authParent, async (req, res) => {
 // GET /api/parent-dashboard/remarks-feed
 router.get('/remarks-feed', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!childIds.length) return res.json({ success: true, data: [] });
 
     const remarks = await StudentObservation.find({
@@ -72,7 +101,7 @@ router.get('/remarks-feed', authParent, async (req, res) => {
 // GET /api/parent-dashboard/home-support/:studentId
 router.get('/home-support/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -105,7 +134,7 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
 // GET /api/parent-dashboard/weekly-digest/:studentId
 router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -128,8 +157,12 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
       StudentUser.findById(req.params.studentId).select('name grade section').lean(),
     ]);
 
+    const weeklyExamIndex = await buildExamIndex(recentExams.map((e) => e.examId));
     const examSummary = recentExams.length
-      ? recentExams.map((e) => `${e.subject}: ${e.marksObtained}/${e.totalMarks}`).join(', ')
+      ? recentExams
+          .map((e) => shapeExamResult(e, weeklyExamIndex.get(String(e.examId))))
+          .map((e) => `${e.subject || e.title}: ${e.marks}/${e.total ?? '?'}`)
+          .join(', ')
       : 'No exams this week';
     const masterySummary = recentMastery.length
       ? recentMastery.map((m) => `${m.subject}/${m.topicTitle}: ${m.score}%`).join(', ')
@@ -155,7 +188,7 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
 // GET /api/parent-dashboard/monthly-report/:studentId
 router.get('/monthly-report/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -185,8 +218,12 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
       StudentUser.findById(req.params.studentId).select('name grade section').lean(),
     ]);
 
+    const monthlyExamIndex = await buildExamIndex(exams.map((e) => e.examId));
     const examSummary = exams.length
-      ? exams.map((e) => `${e.subject}: ${e.marksObtained}/${e.totalMarks}`).join('; ')
+      ? exams
+          .map((e) => shapeExamResult(e, monthlyExamIndex.get(String(e.examId))))
+          .map((e) => `${e.subject || e.title}: ${e.marks}/${e.total ?? '?'} (${e.percentage ?? '?'}%)`)
+          .join('; ')
       : 'No exams this month';
     const masterySummary = mastery.length
       ? mastery.map((m) => `${m.subject}/${m.topicTitle}: ${m.score}%`).join('; ')
@@ -215,7 +252,7 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
 // GET /api/parent-dashboard/analytics/academic/:studentId
 router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -223,9 +260,10 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
 
     const [masteryScores, examResults, student] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
-      ExamResult.find({ studentId: sid }).populate('examId', 'title subject date totalMarks').lean(),
+      ExamResult.find({ studentId: sid }).lean(),
       StudentUser.findById(sid).select('name grade section attendance').lean(),
     ]);
+    const examIndex = await buildExamIndex(examResults.map((r) => r.examId));
 
     // Subject-wise mastery grouped
     const subjectMap = {};
@@ -241,19 +279,10 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
       topics: topics.sort((a, b) => a.score - b.score),
     })).sort((a, b) => b.avg - a.avg);
 
-    // Exam trend (last 12 published results)
+    // Exam trend (last 12 results)
     const examTrend = examResults
-      .filter((r) => r.examId)
-      .map((r) => ({
-        title: r.examId?.title || 'Exam',
-        subject: r.examId?.subject || '',
-        date: r.examId?.date || r.createdAt,
-        marks: r.marks,
-        total: r.examId?.totalMarks || 100,
-        percentage: r.examId?.totalMarks ? Math.round((r.marks / r.examId.totalMarks) * 100) : null,
-        grade: r.grade,
-        status: r.status,
-      }))
+      .filter((r) => examIndex.has(String(r.examId)))
+      .map((r) => shapeExamResult(r, examIndex.get(String(r.examId))))
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .slice(-12);
 
@@ -300,7 +329,7 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
 // GET /api/parent-dashboard/analytics/wellbeing/:studentId
 router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -391,7 +420,7 @@ router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
 // GET /api/parent-dashboard/analytics/skills/:studentId
 router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
   try {
-    const childIds = await getChildIds(req.user.id);
+    const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
@@ -409,9 +438,12 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
       ? Math.round(masteryScores.reduce((a, b) => a + b.score, 0) / masteryScores.length)
       : null;
 
-    const validExams = examResults.filter((e) => e.totalMarks > 0);
-    const examAvg = validExams.length
-      ? Math.round(validExams.reduce((a, b) => a + (b.marksObtained / b.totalMarks) * 100, 0) / validExams.length)
+    const skillsExamIndex = await buildExamIndex(examResults.map((r) => r.examId));
+    const examPercentages = examResults
+      .map((r) => shapeExamResult(r, skillsExamIndex.get(String(r.examId))).percentage)
+      .filter((p) => p != null);
+    const examAvg = examPercentages.length
+      ? Math.round(examPercentages.reduce((a, b) => a + b, 0) / examPercentages.length)
       : null;
 
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];

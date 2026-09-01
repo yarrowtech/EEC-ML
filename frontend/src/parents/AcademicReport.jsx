@@ -18,6 +18,7 @@ import {
 import toast from 'react-hot-toast';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
+import { normalizeReportCard } from './reportCardShape';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -26,7 +27,6 @@ const AcademicReport = () => {
   const [template, setTemplate] = useState(null);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [viewMode, setViewMode] = useState('detailed');
-  const [filterType, setFilterType] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
@@ -53,7 +53,7 @@ const AcademicReport = () => {
           throw new Error(data?.error || 'Unable to load real academic report');
         }
 
-        const cards = Array.isArray(data.reportCards) ? data.reportCards : [];
+        const cards = (Array.isArray(data.reportCards) ? data.reportCards : []).map(normalizeReportCard);
         setReportCards(cards);
         setTemplate(data.template);
 
@@ -74,16 +74,6 @@ const AcademicReport = () => {
     () => reportCards.find((card) => String(card.studentId) === String(selectedStudentId)) || null,
     [reportCards, selectedStudentId]
   );
-
-  const filteredExams = useMemo(() => {
-    if (!selectedReport) return [];
-    // Report cards primarily deal with Exams/Assessments
-    return (selectedReport.exams || []).filter(exam => {
-      if (filterType === 'all') return true;
-      // If we had more categories in the report card data, we would filter here
-      return true; 
-    });
-  }, [selectedReport, filterType]);
 
   const handleExport = async () => {
     if (!selectedReport) {
@@ -152,12 +142,13 @@ const AcademicReport = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <label htmlFor="academic-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
               <User size={14} />
               Select Child
             </label>
             <div className="relative group">
               <select
+                id="academic-student"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
                 className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all cursor-pointer group-hover:bg-white"
@@ -181,18 +172,20 @@ const AcademicReport = () => {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <span id="academic-view-label" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
               <Filter size={14} />
               Report View
-            </label>
-            <div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-200">
+            </span>
+            <div role="group" aria-labelledby="academic-view-label" className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-200">
               {['detailed', 'summary'].map((view) => (
                 <button
                   key={view}
+                  type="button"
                   onClick={() => setViewMode(view)}
+                  aria-pressed={viewMode === view}
                   className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${
-                    viewMode === view 
-                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200' 
+                    viewMode === view
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
@@ -204,7 +197,7 @@ const AcademicReport = () => {
         </div>
 
         {error && (
-          <div className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
+          <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <p className="font-medium">{error}</p>
           </div>

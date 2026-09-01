@@ -4,6 +4,7 @@ import { Calendar, Clock, Video, Phone, Users, Bell, Check, X, ArrowLeftRight, M
 const PTMPortal = () => {
   const [activeTab, setActiveTab] = useState('meetings'); // meetings | requests | video | history
   const [selectedMeeting, setSelectedMeeting] = useState(null);
+  const [modalMode, setModalMode] = useState(null); // 'reschedule' | 'feedback' | null
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -11,11 +12,39 @@ const PTMPortal = () => {
   const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '', reason: '' });
   const [feedbackForm, setFeedbackForm] = useState({ rating: 0, comment: '' });
 
+  const closeModal = () => {
+    setSelectedMeeting(null);
+    setModalMode(null);
+    setError('');
+  };
+
   // Video meeting state (Jitsi embed)
-  const [videoRoom, setVideoRoom] = useState('');
+  const [videoMeetingId, setVideoMeetingId] = useState('');
   const [jitsiActive, setJitsiActive] = useState(false);
-  const jitsiUrl = useMemo(() => (videoRoom ? `https://meet.jit.si/${encodeURIComponent(videoRoom)}` : ''), [videoRoom]);
   const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+  // A stable, hard-to-guess room name derived from the meeting id — the teacher
+  // side derives the same string, so both land in the same room without sharing links.
+  const roomForMeeting = (meeting) => {
+    if (!meeting) return '';
+    if (meeting.meetingLink) return meeting.meetingLink;
+    const id = String(meeting._id || meeting.id || '');
+    return id ? `EEC-PTM-${id}` : '';
+  };
+  const videoMeeting = useMemo(
+    () => meetings.find((m) => String(m._id || m.id) === String(videoMeetingId)) || null,
+    [meetings, videoMeetingId],
+  );
+  const videoRoom = roomForMeeting(videoMeeting);
+  const jitsiUrl = useMemo(() => {
+    if (!videoRoom) return '';
+    if (/^https?:\/\//.test(videoRoom)) return videoRoom;
+    return `https://meet.jit.si/${encodeURIComponent(videoRoom)}`;
+  }, [videoRoom]);
+  const videoEligible = useMemo(
+    () => meetings.filter((m) => ['confirmed', 'scheduled', 'pending'].includes(String(m.status || '').toLowerCase())),
+    [meetings],
+  );
 
   const getMeetingId = (meeting) => meeting?._id || meeting?.id;
   const getTeacherName = (meeting) => meeting?.teacherId?.name || meeting?.teacherName || 'Teacher';
@@ -137,34 +166,89 @@ const PTMPortal = () => {
     }
   };
 
-  const handleResponse = (meeting, response) => {
-    if (response === 'accept') {
-      confirmMeeting(meeting._id || meeting.id);
-      return;
+  const meetingAction = async (meetingId, { method, path, body }) => {
+    const token = localStorage.getItem('token');
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/meeting/parent/${path}/${meetingId}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Request failed');
+      await fetchMeetings();
+      return payload;
+    } catch (err) {
+      setError(err.message || 'Request failed');
+      throw err;
+    } finally {
+      setLoading(false);
     }
-    alert('Please contact the teacher to reschedule or decline this meeting.');
+  };
+
+  const handleResponse = (meeting, response) => {
+    const id = getMeetingId(meeting);
+    if (response === 'accept') {
+      confirmMeeting(id);
+    } else if (response === 'decline') {
+      meetingAction(id, { method: 'PUT', path: 'decline', body: {} }).catch(() => {});
+    }
   };
 
   const handleRescheduleRequest = (meeting) => {
     setSelectedMeeting(meeting);
+    setModalMode('reschedule');
+    setError('');
     setRescheduleForm({ date: '', time: '', reason: '' });
   };
 
-  const submitReschedule = () => {
+  const submitReschedule = async () => {
     if (!selectedMeeting) return;
-    setMeetings(prev => prev.map(m => getMeetingId(m) === getMeetingId(selectedMeeting) ? { ...m, status: 'reschedule_requested', requested: { ...rescheduleForm } } : m));
-    setSelectedMeeting(null);
+    if (!rescheduleForm.reason.trim()) {
+      setError('Please tell the teacher why you need to reschedule.');
+      return;
+    }
+    try {
+      await meetingAction(getMeetingId(selectedMeeting), {
+        method: 'PUT',
+        path: 'reschedule',
+        body: {
+          requestedDate: rescheduleForm.date || undefined,
+          requestedTime: rescheduleForm.time || undefined,
+          reason: rescheduleForm.reason.trim(),
+        },
+      });
+      closeModal();
+    } catch {
+      /* error surfaced via state */
+    }
   };
 
   const openFeedback = (meeting) => {
     setSelectedMeeting(meeting);
+    setModalMode('feedback');
+    setError('');
     setFeedbackForm({ rating: 0, comment: '' });
   };
 
-  const submitFeedback = () => {
+  const submitFeedback = async () => {
     if (!selectedMeeting) return;
-    setMeetings(prev => prev.map(m => getMeetingId(m) === getMeetingId(selectedMeeting) ? { ...m, feedback: feedbackForm } : m));
-    setSelectedMeeting(null);
+    if (!feedbackForm.rating) {
+      setError('Please choose a star rating.');
+      return;
+    }
+    try {
+      await meetingAction(getMeetingId(selectedMeeting), {
+        method: 'POST',
+        path: 'feedback',
+        body: { rating: feedbackForm.rating, comment: feedbackForm.comment.trim() },
+      });
+      closeModal();
+    } catch {
+      /* error surfaced via state */
+    }
   };
 
   const copyToClipboard = async (text) => {
@@ -180,7 +264,7 @@ const PTMPortal = () => {
       </div>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div role="alert" className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           {error}
         </div>
       )}
@@ -269,15 +353,23 @@ const PTMPortal = () => {
                         </div>
 
                         {pending && (
-                          <div className="flex space-x-2">
+                          <div className="flex flex-wrap items-center gap-2 justify-end">
                             <button
                               onClick={() => handleResponse(meeting, 'accept')}
+                              aria-label="Confirm meeting"
                               className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors"
                             >
                               <Check className="w-4 h-4" />
                             </button>
                             <button
+                              onClick={() => handleRescheduleRequest(meeting)}
+                              className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
+                            >
+                              Reschedule
+                            </button>
+                            <button
                               onClick={() => handleResponse(meeting, 'decline')}
+                              aria-label="Decline meeting"
                               className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
                             >
                               <X className="w-4 h-4" />
@@ -290,6 +382,12 @@ const PTMPortal = () => {
                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               Confirmed
                             </span>
+                            <button
+                              onClick={() => handleRescheduleRequest(meeting)}
+                              className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
+                            >
+                              Reschedule
+                            </button>
                           </div>
                         )}
                       </div>
@@ -324,14 +422,18 @@ const PTMPortal = () => {
                             <p className="text-sm text-gray-600">
                               {meetingDateLabel || 'TBA'} at {meetingTimeLabel || 'TBA'} • {meetingType}
                             </p>
-                            {m.requested && (
+                            {m.rescheduleRequest?.requestedAt && (
                               <p className="text-xs text-blue-700 mt-1">
-                                Reschedule requested: {m.requested.date} at {m.requested.time} — {m.requested.reason}
+                                Your reschedule request:
+                                {m.rescheduleRequest.requestedDate ? ` ${formatMeetingDate(m.rescheduleRequest.requestedDate)}` : ' (no date given)'}
+                                {m.rescheduleRequest.requestedTime ? ` at ${m.rescheduleRequest.requestedTime}` : ''}
+                                {m.rescheduleRequest.reason ? ` — ${m.rescheduleRequest.reason}` : ''}
                               </p>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
                             <button onClick={() => handleResponse(m, 'accept')} className="px-3 py-1 rounded-lg bg-green-600 text-white text-sm">Accept</button>
+                            <button onClick={() => handleRescheduleRequest(m)} className="px-3 py-1 rounded-lg border border-blue-300 text-blue-700 text-sm">Reschedule</button>
                             <button onClick={() => handleResponse(m, 'decline')} className="px-3 py-1 rounded-lg bg-red-600 text-white text-sm">Decline</button>
                           </div>
                         </div>
@@ -344,34 +446,66 @@ const PTMPortal = () => {
 
           {activeTab === 'video' && (
             <div className="bg-white rounded-xl shadow-sm p-4">
-              <h2 className="text-lg font-semibold text-gray-800 mb-3">Video Meeting</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                <input placeholder="Enter or generate room name" value={videoRoom} onChange={(e)=>setVideoRoom(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 md:col-span-2" />
-                <div className="flex gap-2">
-                  <button onClick={()=>{ setVideoRoom(`PTM-${Math.random().toString(36).slice(2,8).toUpperCase()}`); setJitsiActive(false); }} className="px-3 py-2 rounded-lg border border-gray-300">Generate</button>
-                  <button onClick={()=>setJitsiActive(true)} disabled={!videoRoom} className={`px-3 py-2 rounded-lg ${videoRoom? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-gray-100 text-gray-400'}`}>Start</button>
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">Video Meeting</h2>
+              <p className="text-xs text-gray-500 mb-3">
+                Pick a scheduled meeting to join its private room. Your child&apos;s teacher joins the same room from their portal.
+              </p>
+              {videoEligible.length === 0 ? (
+                <div className="h-[200px] flex items-center justify-center text-gray-500 text-sm">
+                  You have no scheduled meetings to join.
                 </div>
-              </div>
-              {videoRoom && (
-                <div className="flex items-center gap-2 mb-3">
-                  <button onClick={()=>window.open(jitsiUrl, '_blank')} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
-                    <ExternalLink className="w-4 h-4"/> Open in new tab
-                  </button>
-                  <button onClick={()=>copyToClipboard(jitsiUrl)} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
-                    <Copy className="w-4 h-4"/> Copy link
-                  </button>
-                </div>
-              )}
-              <div className="rounded-lg overflow-hidden border border-gray-200">
-                {jitsiActive && videoRoom ? (
-                  <iframe title="PTM Video Meeting" src={`${jitsiUrl}#config.prejoinConfig.enabled=true`} className="w-full h-[480px]" allow="camera; microphone; fullscreen; display-capture" />
-                ) : (
-                  <div className="h-[240px] flex items-center justify-center text-gray-500 text-sm">
-                    Enter a room name and click Start to join.
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <label htmlFor="ptm-video-meeting" className="sr-only">Select meeting</label>
+                    <select
+                      id="ptm-video-meeting"
+                      value={videoMeetingId}
+                      onChange={(e) => { setVideoMeetingId(e.target.value); setJitsiActive(false); }}
+                      className="border border-gray-300 rounded-lg px-3 py-2 md:col-span-2"
+                    >
+                      <option value="">Select a meeting…</option>
+                      {videoEligible.map((m) => (
+                        <option key={getMeetingId(m)} value={getMeetingId(m)}>
+                          {getTeacherName(m)} — {getMeetingDate(m) || 'TBA'} {getMeetingTime(m)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setJitsiActive(true)}
+                      disabled={!videoRoom}
+                      className={`px-3 py-2 rounded-lg ${videoRoom ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-gray-100 text-gray-400'}`}
+                    >
+                      Join room
+                    </button>
                   </div>
-                )}
-              </div>
-              <p className="mt-2 text-xs text-gray-500">Video meetings are powered by Jitsi Meet. By starting, you agree to Jitsi’s terms of service.</p>
+                  {videoRoom && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <button onClick={() => window.open(jitsiUrl, '_blank', 'noopener')} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
+                        <ExternalLink className="w-4 h-4" /> Open in new tab
+                      </button>
+                      <button onClick={() => copyToClipboard(jitsiUrl)} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
+                        <Copy className="w-4 h-4" /> Copy link
+                      </button>
+                    </div>
+                  )}
+                  <div className="rounded-lg overflow-hidden border border-gray-200">
+                    {jitsiActive && videoRoom ? (
+                      <iframe
+                        title="PTM Video Meeting"
+                        src={`${jitsiUrl}#config.prejoinPageEnabled=true&config.disableInviteFunctions=true`}
+                        className="w-full h-[480px]"
+                        allow="camera; microphone; fullscreen; display-capture"
+                      />
+                    ) : (
+                      <div className="h-[240px] flex items-center justify-center text-gray-500 text-sm">
+                        Select a meeting and click Join room.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              <p className="mt-2 text-xs text-gray-500">Video meetings are powered by Jitsi Meet. By joining, you agree to Jitsi&apos;s terms of service.</p>
             </div>
           )}
 
@@ -390,17 +524,25 @@ const PTMPortal = () => {
                   const meetingTimeLabel = getMeetingTime(m);
                   const subjectLabel = getMeetingSubject(m);
                   const statusLabel = normalizeStatus(m.status).replace(/_/g, ' ');
+                  const isCompleted = normalizeStatus(m.status) === 'completed';
                   return (
                     <div key={meetingId || subjectLabel} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="font-medium text-gray-800">{getTeacherName(m)} • {subjectLabel}</p>
                           <p className="text-sm text-gray-600">{meetingDateLabel || 'TBA'} at {meetingTimeLabel || 'TBA'}</p>
-                          {m.feedback && (
-                            <p className="text-xs text-yellow-700">Your rating: {m.feedback.rating}/5 — {m.feedback.comment}</p>
+                          {m.parentFeedback?.submittedAt && (
+                            <p className="text-xs text-yellow-700">Your rating: {m.parentFeedback.rating}/5{m.parentFeedback.comment ? ` — ${m.parentFeedback.comment}` : ''}</p>
                           )}
                         </div>
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">{statusLabel}</span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">{statusLabel}</span>
+                          {isCompleted && !m.parentFeedback?.submittedAt && (
+                            <button onClick={() => openFeedback(m)} className="text-xs px-3 py-1 rounded-lg border border-yellow-300 text-yellow-700 hover:bg-yellow-50">
+                              Leave feedback
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -474,62 +616,71 @@ const PTMPortal = () => {
       </div>
 
       {/* Reschedule Modal */}
-      {selectedMeeting && rescheduleForm && activeTab !== 'video' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={()=>setSelectedMeeting(null)} />
+      {selectedMeeting && modalMode === 'reschedule' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Request reschedule">
+          <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
           <div className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
             <div className="mb-3">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2"><ArrowLeftRight className="w-5 h-5"/> Request Reschedule</h3>
               <p className="text-sm text-gray-600">{getTeacherName(selectedMeeting)} • {getMeetingSubject(selectedMeeting)}</p>
             </div>
+            {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
-                <label className="text-sm text-gray-700">New Date</label>
-                <input type="date" value={rescheduleForm.date} onChange={e=>setRescheduleForm({...rescheduleForm, date:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
+                <label htmlFor="ptm-rs-date" className="text-sm text-gray-700">Preferred date (optional)</label>
+                <input id="ptm-rs-date" type="date" value={rescheduleForm.date} onChange={e=>setRescheduleForm({...rescheduleForm, date:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
               </div>
               <div>
-                <label className="text-sm text-gray-700">New Time</label>
-                <input type="time" value={rescheduleForm.time} onChange={e=>setRescheduleForm({...rescheduleForm, time:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
+                <label htmlFor="ptm-rs-time" className="text-sm text-gray-700">Preferred time (optional)</label>
+                <input id="ptm-rs-time" type="time" value={rescheduleForm.time} onChange={e=>setRescheduleForm({...rescheduleForm, time:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
               </div>
               <div className="sm:col-span-2">
-                <label className="text-sm text-gray-700">Reason</label>
-                <textarea rows={3} value={rescheduleForm.reason} onChange={e=>setRescheduleForm({...rescheduleForm, reason:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Brief reason for rescheduling"/>
+                <label htmlFor="ptm-rs-reason" className="text-sm text-gray-700">Reason <span className="text-red-500">*</span></label>
+                <textarea id="ptm-rs-reason" rows={3} value={rescheduleForm.reason} onChange={e=>setRescheduleForm({...rescheduleForm, reason:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Brief reason for rescheduling"/>
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={()=>setSelectedMeeting(null)} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
-              <button onClick={submitReschedule} className="px-3 py-2 rounded-lg bg-blue-600 text-white">Submit Request</button>
+              <button onClick={closeModal} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
+              <button onClick={submitReschedule} disabled={loading} className="px-3 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50">Submit Request</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Feedback Modal */}
-      {selectedMeeting && feedbackForm && activeTab !== 'video' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={()=>setSelectedMeeting(null)} />
+      {selectedMeeting && modalMode === 'feedback' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Meeting feedback">
+          <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
           <div className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
             <div className="mb-3">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2"><Star className="w-5 h-5"/> Meeting Feedback</h3>
               <p className="text-sm text-gray-600">{getTeacherName(selectedMeeting)} • {getMeetingSubject(selectedMeeting)}</p>
             </div>
+            {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-1 gap-3 mb-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" role="radiogroup" aria-label="Rating out of 5">
                 <span className="text-sm text-gray-700">Rating:</span>
                 {[1,2,3,4,5].map(r => (
-                  <button key={r} onClick={()=>setFeedbackForm({...feedbackForm, rating: r})} className={`p-1 rounded ${feedbackForm.rating >= r ? 'text-yellow-500' : 'text-gray-300'}`}>
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={()=>setFeedbackForm({...feedbackForm, rating: r})}
+                    aria-label={`${r} star${r > 1 ? 's' : ''}`}
+                    aria-pressed={feedbackForm.rating === r}
+                    className={`p-1 rounded ${feedbackForm.rating >= r ? 'text-yellow-500' : 'text-gray-300'}`}
+                  >
                     <Star className="w-5 h-5 fill-current"/>
                   </button>
                 ))}
               </div>
               <div>
-                <label className="text-sm text-gray-700">Comments</label>
-                <textarea rows={3} value={feedbackForm.comment} onChange={e=>setFeedbackForm({...feedbackForm, comment:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Share your feedback"/>
+                <label htmlFor="ptm-fb-comment" className="text-sm text-gray-700">Comments</label>
+                <textarea id="ptm-fb-comment" rows={3} value={feedbackForm.comment} onChange={e=>setFeedbackForm({...feedbackForm, comment:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Share your feedback"/>
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={()=>setSelectedMeeting(null)} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
-              <button onClick={submitFeedback} className="px-3 py-2 rounded-lg bg-yellow-500 text-black">Submit Feedback</button>
+              <button onClick={closeModal} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
+              <button onClick={submitFeedback} disabled={loading} className="px-3 py-2 rounded-lg bg-yellow-500 text-black disabled:opacity-50">Submit Feedback</button>
             </div>
           </div>
         </div>

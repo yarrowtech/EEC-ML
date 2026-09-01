@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Calendar, Clock, FileText, RefreshCw, User } from 'lucide-react';
+import { parentApiJson } from './parentApi';
 
 const STATUS_CONFIG = {
   approved: {
@@ -33,10 +35,7 @@ const formatDate = (value) => (
 );
 
 const ExcuseLetters = () => {
-  const API_BASE = useMemo(
-    () => (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, ''),
-    []
-  );
+  const navigate = useNavigate();
   const [letters, setLetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,12 +44,7 @@ const ExcuseLetters = () => {
     try {
       setLoading(true);
       setError('');
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/excuse-letters/parent`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json().catch(() => []);
-      if (!response.ok) throw new Error(data?.error || 'Unable to load excuse letters');
+      const data = await parentApiJson('/api/excuse-letters/parent', {}, navigate);
       setLetters(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.message || 'Unable to load excuse letters');
@@ -65,7 +59,8 @@ const ExcuseLetters = () => {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" aria-busy="true" aria-live="polite">
+        <span className="sr-only">Loading excuse letters…</span>
         <div className="h-20 rounded-2xl bg-white animate-pulse" />
         {[1, 2, 3].map((item) => (
           <div key={item} className="h-36 rounded-2xl bg-white animate-pulse" />
@@ -96,7 +91,7 @@ const ExcuseLetters = () => {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle size={15} /> {error}
         </div>
       )}

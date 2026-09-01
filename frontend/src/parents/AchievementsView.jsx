@@ -49,7 +49,10 @@ const AchievementsView = () => {
           throw new Error(data?.error || 'Unable to load achievements');
         }
 
-        const children = Array.isArray(data.children) ? data.children : [];
+        const children = (Array.isArray(data.children) ? data.children : []).map((c) => ({
+          ...c,
+          achievements: Array.isArray(c.achievements) ? c.achievements : [],
+        }));
         setChildrenReports(children);
         
         if (children.length > 0) {
@@ -70,6 +73,24 @@ const AchievementsView = () => {
     [childrenReports, selectedStudentId]
   );
 
+  const ActivityIcon = ({ className }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  );
+
   const getCategoryIcon = (category) => {
     switch (category) {
       case 'Academic':
@@ -82,23 +103,6 @@ const AchievementsView = () => {
         return <Star className="w-5 h-5" />;
     }
   };
-
-  const ActivityIcon = ({ className }) => (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width="24" 
-      height="24" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
-  );
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -120,7 +124,7 @@ const AchievementsView = () => {
       </header>
 
       {error && (
-        <div className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
+        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{error}</p>
         </div>
@@ -129,12 +133,13 @@ const AchievementsView = () => {
       {/* Control Panel */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
+          <label htmlFor="ach-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
             <Users size={14} />
             Select Child
           </label>
           <div className="relative group">
             <select
+              id="ach-student"
               value={selectedStudentId}
               onChange={(e) => setSelectedStudentId(e.target.value)}
               className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-yellow-500/10 focus:border-yellow-500 outline-none transition-all cursor-pointer group-hover:bg-white"

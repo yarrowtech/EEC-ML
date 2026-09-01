@@ -58,8 +58,10 @@ class LearningPathRequest(BaseModel):
 
 class TeacherAIRequest(BaseModel):
     mode: str
-    subject: str
-    topic: str
+    # subject/topic are optional: data-driven modes (parent reports, class
+    # performance, intervention plans) supply everything through `context`.
+    subject: str = ""
+    topic: str = ""
     gradeLevel: str | None = None
     context: str | None = None   # caller-supplied text context (not from RAG)
     question: str | None = None  # extra prompt detail / data blob

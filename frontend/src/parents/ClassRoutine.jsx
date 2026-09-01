@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Calendar, Users } from 'lucide-react';
 import { formatStudentDisplay } from '../utils/studentDisplay';
+import { parentApiFetch } from './parentApi';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const normalizeDay = (value) => {
   if (!value) return null;
@@ -30,6 +31,7 @@ const getTimeLabel = (entry, index) =>
   entry?.time || (entry?.period ? `Period ${entry.period}` : `Slot ${index + 1}`);
 
 const ParentClassRoutine = () => {
+  const navigate = useNavigate();
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -57,12 +59,7 @@ const ParentClassRoutine = () => {
       }
       setError('');
 
-      const res = await fetch(`${API_BASE_URL}/api/parent/auth/routine`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const res = await parentApiFetch('/api/parent/auth/routine', {}, navigate);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || 'Unable to load routine');
@@ -94,7 +91,7 @@ const ParentClassRoutine = () => {
         setIsRefreshing(false);
       }
     }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     fetchRoutine({ initial: true });
@@ -142,7 +139,7 @@ const ParentClassRoutine = () => {
   const todayEntries = schedule[todayName] || [];
 
   if (loading) {
-    return <div className="p-6 text-sm text-gray-600">Loading children routine...</div>;
+    return <div className="p-6 text-sm text-gray-600" aria-busy="true" aria-live="polite">Loading children routine...</div>;
   }
 
   return (
@@ -201,7 +198,7 @@ const ParentClassRoutine = () => {
           </div>
 
           {error && (
-            <div className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div role="alert" className="mt-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               <AlertCircle className="h-4 w-4" />
               {error}
             </div>

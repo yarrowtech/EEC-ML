@@ -5,14 +5,44 @@ import { TextEncoder, TextDecoder } from 'util';
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
-  clear: jest.fn(),
+// localStorage: a real in-memory store wrapped in jest spies. Behaves like the
+// browser API (values round-trip within a test) while still being assertable and
+// per-test overridable (`localStorage.getItem = jest.fn(...)`).
+const createLocalStorageMock = () => {
+  let store = {};
+  return {
+    getItem: jest.fn((key) => (Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null)),
+    setItem: jest.fn((key, value) => {
+      store[String(key)] = String(value);
+    }),
+    removeItem: jest.fn((key) => {
+      delete store[key];
+    }),
+    clear: jest.fn(() => {
+      store = {};
+    }),
+    key: jest.fn((i) => Object.keys(store)[i] ?? null),
+    get length() {
+      return Object.keys(store).length;
+    },
+    __reset() {
+      store = {};
+      this.getItem.mockClear();
+      this.setItem.mockClear();
+      this.removeItem.mockClear();
+      this.clear.mockClear();
+    },
+  };
 };
-global.localStorage = localStorageMock;
+
+let localStorageMock = createLocalStorageMock();
+Object.defineProperty(global, 'localStorage', {
+  configurable: true,
+  get: () => localStorageMock,
+  set: (value) => {
+    localStorageMock = value;
+  },
+});
 
 // Mock window.scrollTo (not implemented in JSDOM)
 window.scrollTo = jest.fn();
@@ -20,12 +50,13 @@ window.scrollTo = jest.fn();
 // Mock window.dispatchEvent
 window.dispatchEvent = jest.fn();
 
-// Reset mocks before each test
+// Reset before each test
 beforeEach(() => {
-  localStorageMock.getItem.mockClear();
-  localStorageMock.setItem.mockClear();
-  localStorageMock.removeItem.mockClear();
-  localStorageMock.clear.mockClear();
+  if (typeof localStorageMock.__reset === 'function') {
+    localStorageMock.__reset();
+  } else {
+    localStorageMock = createLocalStorageMock();
+  }
   window.scrollTo.mockClear();
   window.dispatchEvent.mockClear();
 });

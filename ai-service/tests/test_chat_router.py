@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -143,4 +144,30 @@ def test_unknown_mode_rejected_before_llm_call(monkeypatch):
         lambda req: ([_RICH_CHUNK], []),
     )
     resp = client.post("/generate/tutor", json={**PAYLOAD, "mode": "poetry"})
+    assert resp.status_code == 400
+
+
+import app.modules.chat.router as chat_router
+
+
+class _FakeTeacherChain:
+    def invoke(self, messages):
+        return "Weekly summary for the parent."
+
+
+@pytest.mark.parametrize("mode", ["home_support", "progress_digest", "monthly_report"])
+def test_parent_report_modes_accepted(monkeypatch, mode):
+    """Modes the Node backend sends for the parent dashboard must be accepted."""
+    monkeypatch.setattr(chat_router, "create_chain", lambda *a, **k: _FakeTeacherChain())
+    resp = client.post(
+        "/generate/teacher",
+        json={"mode": mode, "context": "Student: Alice\nExams this week: Maths 8/10"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["content"] == "Weekly summary for the parent."
+
+
+def test_teacher_endpoint_still_rejects_unknown_mode(monkeypatch):
+    monkeypatch.setattr(chat_router, "create_chain", lambda *a, **k: _FakeTeacherChain())
+    resp = client.post("/generate/teacher", json={"mode": "not_a_real_mode", "context": "x"})
     assert resp.status_code == 400

@@ -5,11 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Table of Contents
 1. [Project Overview](#project-overview)
 2. [Tech Stack](#tech-stack)
-3. [Directory Structure](#directory-structure)
+3. [Repository Layout](#repository-layout)
 4. [Common Commands](#common-commands)
-5. [Key Architecture Patterns](#key-architecture-patterns)
-6. [Development Conventions](#development-conventions)
-7. [Testing](#testing)
+5. [Configuration](#configuration)
+6. [Key Architecture Patterns](#key-architecture-patterns)
+7. [AI Service (`/ai-service`)](#ai-service-ai-service)
+8. [AI Tutor Frontend UI](#ai-tutor-frontend-ui-aitutorhomescreenjsx)
+9. [Testing](#testing)
+10. [API Response Format](#api-response-format)
 
 ---
 
@@ -17,55 +20,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Project Name:** EEC (Electronic Educare)
 
-**Purpose:** Multi-role educational management system supporting students, parents, teachers, administrators, principals, and super administrators.
+**Purpose:** Multi-role, multi-tenant educational management SaaS supporting students, parents, teachers, staff, administrators, principals, and super administrators.
 
-**Core Modules:** Academic management, attendance, financial management (payments via Razorpay), real-time chat, notifications, AI tutoring, lesson planning, timetable management, and reporting.
+**Core modules:** Academic management, attendance, exams/assignments/rubrics, timetable & lesson planning, financial management (pluggable payment gateways), real-time chat, push notifications, spaced-repetition practice, mastery/gap analytics, and a RAG-based AI tutor with speech, vision, and assessment features.
 
-**Type:** Full-stack React + Node.js/Express application with MongoDB and Socket.IO for real-time features, plus a Python FastAPI microservice (`/ai-service`) that powers RAG-based AI tutoring (document ingestion, OCR, embeddings, retrieval, LLM generation).
+**Type:** Full-stack **React (Vite)** frontend + **Node.js/Express 5 + MongoDB (Mongoose)** backend with **Socket.IO** (Redis-backed) for real-time, plus a **Python FastAPI microservice** (`/ai-service`) that owns all AI work — document ingestion, OCR, vision, embeddings, vector retrieval, LLM generation, speech transcription/pronunciation, and answer evaluation.
+
+**Multi-tenancy:** Each school is an `Organization` served on its own subdomain (`<slug>.<ROOT_DOMAIN>`). Tenant isolation is enforced at the Mongoose layer, not per-query — see [Multi-tenancy](#multi-tenancy-organizations).
 
 ---
 
 ## Tech Stack
 
-**Frontend:** React 18, Vite, TailwindCSS, React Router, Hooks + Context API, Socket.IO, Chart.js, Recharts, Three.js, Quill editor, Framer Motion, ShadCN UI components
+**Frontend:** React 18, Vite 6, TailwindCSS **v4** (`@tailwindcss/vite`, no `tailwind.config` — theme in CSS), React Router **v7**, Hooks + Context API, `socket.io-client`, Chart.js + Recharts, Three.js, **mermaid** (diagram rendering), **Jodit** + Quill rich-text editors, jsPDF + html2canvas (PDF export), Framer Motion, Radix UI + `class-variance-authority` (shadcn-style components), Phosphor + Lucide icons, `react-hot-toast` + SweetAlert2.
 
-**Backend:** Node.js, Express 5, MongoDB (Mongoose), JWT auth, bcryptjs, Socket.IO, Nodemailer, Multer, Cloudinary, Razorpay, Pino logging
+**Backend:** Node.js, Express 5, MongoDB (Mongoose 8), JWT auth, bcryptjs, Socket.IO 4 + `@socket.io/redis-adapter`, Redis (`redis` v6 — adapter, rate limiting, caching), Helmet, `express-mongo-sanitize`, `express-rate-limit`, `isomorphic-dompurify`, Nodemailer, Multer, Cloudinary, `web-push`, `node-cron`, Pino logging, `swagger-autogen`, `xlsx`.
 
-**AI Service:** Python 3.11, FastAPI, LangChain (ChatOllama, RecursiveCharacterTextSplitter), Ollama (chat/summary/embedding models), Qdrant (vector store), MongoDB (motor), PyMuPDF, pytesseract/pdf2image (OCR), python-docx/python-pptx
+**AI Service:** **Python 3.14**, FastAPI, LangChain (`langchain-ollama`, `langchain-openai`, `RecursiveCharacterTextSplitter`), Ollama (chat / summary / embedding / vision / diagram / assessment models), **OpenRouter** (fallback LLM), Qdrant (vector store, `qdrant-client`), MongoDB (`motor`), PyMuPDF, `pytesseract`/`pdf2image` (OCR), `faster-whisper` (`large-v3-turbo` transcription), `torchaudio` + wav2vec2 (pronunciation scoring), python-docx/python-pptx.
 
-**Testing:** Jest (both frontend and backend), Supertest for API testing, @testing-library/react, pytest (ai-service)
+**Testing:** Jest 30 (frontend + backend), Supertest (API), `@testing-library/react`, `pytest` (ai-service, fully mocked).
 
 ---
 
-## Directory Structure
+## Repository Layout
 
-### Key Backend Paths
-- **Routes:** `/backend/routes/` (47 role-based route files)
-- **Models:** `/backend/models/` (57 Mongoose schemas for all entities)
-- **Middleware:** `/backend/middleware/` (role-based auth, logging, rate limiting)
-- **Utilities:** `/backend/utils/` (logger, mailer, payments, file uploads, notifications)
-- **Tests:** `/backend/__tests__/`
+Top-level dirs that matter: `backend/`, `frontend/`, `ai-service/`, `docs/`. Everything else in the repo root (`*.md`, `*.xlsx`, `*.csv`, `Ref/`, `scripts/`) is research/planning material and **not** application code. The root `package.json` only pulls in `opencode-ai` and is not part of any app.
 
-### Key Frontend Paths
-- **Shared components:** `/frontend/src/components/`
-- **Role portals:** `/frontend/src/{admin,teachers,parents,principal,Super Admin}/`
-- **Theme context:** `/frontend/src/contexts/ThemeContext.jsx`
-- **Custom hooks:** `/frontend/src/hooks/` (notifications, feedback)
-- **Tests:** `/frontend/src/__tests__/`
-- **AI Tutor UI:** `/frontend/src/components/AITutorHomeScreen.jsx` (2300+ lines, all mode UIs live here)
+### Backend (`/backend`)
+- **`index.js`** — app bootstrap: production-config guard → Pino → Redis connect → middleware chain → `routes/index.js` → Socket.IO. The Razorpay/webhook route is mounted here *before* `express.json()` so it receives the raw body.
+- **`routes/`** (73 files) + **`routes/index.js`** — the single route registry; `registerRoutes(app, { ...limiters, adminActionLogger, requireOrganizationDomain })` mounts every `/api/*` path grouped by domain, attaching the right rate limiter and the org-domain guard per group.
+- **`models/`** (95 Mongoose schemas). All get `organizationId` + tenant scoping via the global plugin unless `schema.options.skipTenantScope` is set.
+- **`middleware/`** — role auth (`authStudent`, `authTeacher`, `authParent`, `authStaff`, `adminAuth`, `principalAuth`, `superAdminAuth`, `authAnyUser`, `internalAuth`), `authFactory` (builds role middleware), `tenantResolver`, `validateTokenTenant`, `paymentGatewayResolver`, `rateLimit`, `requestLogger`, `tokenReplayTelemetry`, `adminActionLogger`, `portalActionLogger`.
+- **`services/`** — cross-cutting engines: `masteryEngine` / `masteryRouter`, `gapDetectionEngine`, `recommendationEngine`, `engagementScorer`, `mlEngine`, `developmentProfileService`, `errorClassifier`, `feeService`, `paymentLifecycleService`, `organizationProvisioningService`.
+- **`controllers/`** — only where logic is large (`paymentWebhookController`, `paymentSettingsController`, `wellbeingController`); most routes keep handlers inline.
+- **`plugins/tenantPlugin.js`**, **`utils/registerTenantPlugin.js`** — global Mongoose tenant enforcement (required at the very top of `index.js`).
+- **`utils/tenantContext.js`** — `AsyncLocalStorage`-based tenant context (`runWithTenant`, `getTenantContext`).
+- **`config/`** — `database.js`, `socketServer.js`, `workflowThresholds.js`.
+- **`schedulers/spacedRepetitionCron.js`**, **`errors/AppError.js`**, **`__tests__/`**, **`uploads/`**, **`logs/`**, **`docs/`** (Swagger output).
 
-### Key AI Service Paths (`/ai-service`)
-- **App entry:** `app/main.py` (FastAPI app; root `main.py` re-exports it for uvicorn)
-- **Settings:** `app/core/config.py` (pydantic-settings, reads `ai-service/.env`)
-- **Feature modules:** `app/modules/{documents,parser,embeddings,retrieval,chat,summaries}/` — each with `router.py` / `service.py` / `schemas.py` as applicable
-- **Maintenance scripts:** `scripts/` (e.g., `reingest_materials.py`)
-- **Tests:** `tests/`
+### Frontend (`/frontend/src`)
+- **Role portals:** `admin/`, `teachers/`, `parents/`, `principal/`, `Super Admin/` (note the space), plus `pages/`, `404/`, `games/`, `tryout/` (experiments).
+- **`components/`** — shared UI; **`components/tutor/`** holds extracted AI-tutor pieces (`MermaidBlock`, `TutorMessageContent`, `QuizUI`, `FlashcardUI`, `MindMapUI`, `NotesUI`, `HomeworkHelpUI`, `TutorGeneratedVisuals`, `TutorVisualSources`, `TutorAnswerActions`).
+- **`components/AITutorHomeScreen.jsx`** — 5700+ lines; still contains its own copies of the mode renderers and `TutorResponseRenderer` dispatcher (see [AI Tutor Frontend UI](#ai-tutor-frontend-ui-aitutorhomescreenjsx)).
+- **`context/TenantContext.jsx`** (subdomain → organization) and **`contexts/ThemeContext.jsx`** (theme) — two directories, do not confuse them.
+- **`hooks/`**, **`lib/`**, **`utils/`**, **`config/`**, **`__tests__/`**.
 
-### Documentation
-- `/docs/` - API endpoint maps for each role
-- `TESTING_GUIDE.md` - Test writing standards
-- `AGENTS.md` - Developer conventions
-- `/ai-service/Docs/AI_Tutor_SaaS_Knowledge_Base.txt` - AI tutor vision/design doc
+### AI Service (`/ai-service`) — see [dedicated section](#ai-service-ai-service)
+
+### Docs
+- `/docs/` — per-role API endpoint maps.
+- `AGENTS.md` — developer conventions (some parts aspirational; trust the code where it differs).
+- `TESTING_GUIDE.md`, `TEACHER_PORTAL_TESTING_GUIDE.md`, `MANUAL_TESTING_COMMANDS.md`.
+- `ai-service/Docs/AI_Tutor_SaaS_Knowledge_Base.txt` — AI tutor vision/design doc.
 
 ---
 
@@ -73,194 +79,171 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Backend (`cd backend`)
 ```bash
-npm run dev              # Development server (auto-reload via nodemon)
-npm start               # Production server
-npm test                # Run all tests
-npm run test:watch      # Watch mode for tests
-npm test -- path/to/file.test.js  # Run single test file
-npm run test:coverage   # Coverage report
-npm run swagger:gen     # Generate API docs (http://localhost:5000/api/docs)
-npm run security:suite  # Security testing
-npm run push:keys       # Generate VAPID keys for web push notifications
+npm run dev                       # nodemon dev server (default port 5000)
+npm start                         # production server
+npm test                          # Jest (testEnvironment: node, 10s timeout)
+npm test -- path/to/file.test.js  # single test file
+npm run test:watch                # watch mode
+npm run test:coverage             # coverage report
+npm run swagger:gen               # regenerate swagger-output.json  → /api/docs
+npm run security:suite            # productionSecurityAttackSuite.js
+npm run push:keys                 # generate VAPID keys for web push
+
+# Data migrations (dry-run first, then :apply to write)
+npm run tenant:migrate            # backfill Organization docs from schools
+npm run payments:migrate          # migrate to pluggable payment gateways
+npm run payments:migrate-modes    # payment gateway test/live modes
+npm run assignments:migrate-sessions  # backfill assignment academic years
 ```
 
 ### Frontend (`cd frontend`)
 ```bash
-npm run dev             # Dev server (port 5173, Vite)
-npm run build           # Production build (outputs to dist/)
-npm run preview         # Preview production build
-npm run lint            # ESLint
-npm test                # Run all tests
-npm run test:watch      # Watch mode for tests
-npm test -- path/to/Component.test.jsx  # Run single test file
-npm run test:coverage   # Coverage report
+npm run dev                       # Vite dev server (port 5173, HTTPS via basic-ssl)
+npm run build                     # production build → dist/
+npm run preview                   # preview production build
+npm run lint                      # ESLint (flat config, eslint.config.js)
+npm test                          # Jest (jsdom, babel-jest, "@/" → src/)
+npm test -- path/to/Component.test.jsx
+npm run test:coverage
 ```
 
 ### AI Service (`cd ai-service`)
 ```bash
-.venv/bin/uvicorn main:app --reload --port 8000   # Development server
-.venv/bin/pytest                                   # Run all tests (mocked; no services needed)
-.venv/bin/pytest tests/test_chunker.py             # Run single test file
-RUN_AI_EVALS=1 .venv/bin/pytest -m eval            # Live RAG eval vs golden set (needs Ollama+Qdrant and tests/golden/golden_set.json)
-.venv/bin/python scripts/reingest_materials.py     # Re-ingest all Qdrant materials after parser/chunker changes
+.venv/bin/uvicorn main:app --reload --port 8000   # dev server (main.py re-exports app.main:app)
+.venv/bin/pytest                                   # all tests (fully mocked — no Ollama/Qdrant needed)
+.venv/bin/pytest tests/test_chunker.py             # single test file
+RUN_AI_EVALS=1 .venv/bin/pytest -m eval            # live RAG eval vs tests/golden/golden_set.json (needs Ollama + Qdrant)
+.venv/bin/python scripts/reingest_materials.py     # re-ingest all Qdrant materials after parser/chunker changes
 ```
-Dependencies live in a local venv: `.venv/bin/pip install -r requirements.txt`. Requires Ollama running locally (chat + embedding models) and a reachable Qdrant instance.
+Deps live in a local venv: `.venv/bin/pip install -r requirements.txt` (Python 3.14). Running the service (not the tests) requires Ollama (chat + embed + vision models pulled) and a reachable Qdrant. `hf_xet` is force-disabled (`HF_HUB_DISABLE_XET=1`) because its wheel is incompatible with 3.14.
 
 ---
 
 ## Configuration
 
-### Backend `.env` (essential variables)
+Never commit `.env` files. `.env.example` exists for `backend/` and `ai-service/`.
+
+### Backend `.env` (essentials)
 ```env
-MONGODB_URL=mongodb+srv://[user]:[password]@cluster.mongodb.net/
-JWT_SECRET=<32-char hex key>
+MONGODB_URL=mongodb+srv://...
+JWT_SECRET=<>=32 chars; must be a real secret in production>
 JWT_EXPIRES_IN=24H
 PORT=5000
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...
-CLOUDINARY_API_SECRET=...
-RAZORPAY_KEY_ID=rzp_test_...
-RAZORPAY_KEY_SECRET=...
+NODE_ENV=development
+ROOT_DOMAIN=electroniceducare.com   # tenant subdomains resolve against this
 CORS_ORIGINS=http://localhost:5173,...
+CORS_ALLOW_LAN=true                 # dev-only: allow 10.x/192.168.x/172.16-31 origins
+REDIS_URL=redis://localhost:6379
+PAYMENT_ENCRYPTION_KEY=<required in production; encrypts stored gateway keys>
+CLOUDINARY_CLOUD_NAME=... / CLOUDINARY_API_KEY=... / CLOUDINARY_API_SECRET=...
+RAZORPAY_KEY_ID=rzp_test_... / RAZORPAY_KEY_SECRET=...   # default gateway; others stored per-org
+AI_SERVICE_URL=http://localhost:8000
 ```
+`index.js` hard-fails on boot in `NODE_ENV=production` if `JWT_SECRET` is weak/placeholder or `PAYMENT_ENCRYPTION_KEY` is unset.
 
-### Frontend `.env` (Vite variables prefixed with `VITE_`)
+### Frontend `.env` (Vite — `VITE_` prefix)
 ```env
 VITE_API_URL=http://localhost:5000
 VITE_RAZORPAY_KEY_ID=rzp_test_...
 ```
 
 ### AI Service `.env` (defaults in `app/core/config.py`)
+Model IDs drift — **read `ai-service/.env` for the actual runtime models**; the `.env` has historically carried duplicate keys (last one wins). Config surface:
 ```env
 OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:3b            # Tutor chat/quiz/flashcard/homework model
-OLLAMA_EMBED_MODEL=nomic-embed-text # 768-dim embeddings
+OLLAMA_MODEL=llama3.2:3b                 # tutor chat / quiz / flashcards / homework
+OLLAMA_EMBED_MODEL=nomic-embed-text      # 768-dim
 OLLAMA_SUMMARY_MODEL=qwen2.5:14b
-QDRANT_URL=...                      # Qdrant Cloud or local
-QDRANT_API_KEY=...
-QDRANT_COLLECTION=teacher_documents
-MONGO_URI=mongodb://localhost:27017
+OLLAMA_CLEAN_MODEL / OLLAMA_QUERY_REWRITE_MODEL=llama3.2:3b
+OLLAMA_DIAGRAM_MODEL=qwen2.5-coder:7b    # renders mermaid; planner: OLLAMA_DIAGRAM_PLANNER_MODEL
+OLLAMA_VISION_MODEL=qwen2.5vl:7b         # reads labels/formulas/layout in teacher PDFs
+OLLAMA_ASSESS_MODEL=qwen3:8b             # reading/writing evaluation
+WHISPER_MODEL_SIZE=large-v3-turbo / WHISPER_DEVICE=cuda / WHISPER_COMPUTE_TYPE=float16
+QDRANT_URL=... / QDRANT_API_KEY=... / QDRANT_COLLECTION=teacher_documents
+QDRANT_LANGUAGE_COLLECTION=student_language_memory
+MONGO_URI=mongodb://localhost:27017 / MONGO_DATABASE=eec_ai
+OPENROUTER_API_KEY=... / OPENROUTER_MODEL=google/gemini-flash-1.5
 ```
-
-The Node backend reaches the AI service via `AI_SERVICE_URL` (defaults to `http://localhost:8000`).
-
-Note: Never commit `.env` files; keep them locally only.
-
----
-
-## Development Conventions
-
-### Naming & Style
-- **Frontend components:** PascalCase (e.g., `StudentDashboard.jsx`)
-- **Frontend hooks:** camelCase with `use` prefix (e.g., `useAdminAuth.js`)
-- **Backend routes:** `resourceRoute.js` or `resourceRoutes.js`
-- **Backend models:** PascalCase (e.g., `StudentUser.js`)
-- **Backend middleware:** Descriptive names (e.g., `authStudent.js`)
-- **General:** Use `const`, arrow functions, async/await, template literals
-
-### Git Workflow
-- **Branch naming:** `feature/name`, `fix/description`, `hotfix/critical-issue`
-- **Commits:** Use imperative mood ("Add feature" not "Added"), 50-char first line, reference issues
-
-### Authentication & Authorization
-The system uses **role-based JWT authentication** with role-specific middleware:
-- Routes are protected by middleware: `authStudent`, `authTeacher`, `authParent`, `adminAuth`, `principalAuth`, `superAdminAuth`
-- JWT tokens contain: `userId`, `role` (student|teacher|parent|admin|principal|superadmin), `schoolId`
-- Every protected route has auth middleware that populates `req.userId` and `req.schoolId`
-
-### Database Conventions
-- **Collections:** Pluralized PascalCase (e.g., `StudentUsers`)
-- **Fields:** camelCase (e.g., `firstName`)
-- **References:** Use Mongoose ObjectId with `ref` for relationships
-- **Indexes:** Add unique indexes for usernames/emails, compound indexes for frequent queries
-
-### Logging Strategy
-- Use **Pino** (structured JSON logging) via `/backend/utils/logger.js`
-- Separate loggers: `securityEventLogger`, `authEventLogger`, `businessEventLogger`, `studentPortalLogger`
-- Log security events (unauthorized access, failed logins); never log passwords/tokens
-- All requests include correlation IDs for tracing
 
 ---
 
 ## Key Architecture Patterns
 
-### API Route Base Paths
-```
-/api/admin/auth        - Admin authentication
-/api/admin/users       - Admin user management
-/api/admin/feedback    - Admin feedback handling
-/api/student/auth      - Student authentication
-/api/student           - Student-specific operations
-/api/teacher/auth      - Teacher authentication
-/api/teacher/dashboard - Teacher dashboard
-/api/parent/auth       - Parent authentication
-/api/principal/auth    - Principal authentication
-/api/principal         - Principal dashboard
-/api/auth              - Unified auth (cross-role)
-/api/attendance        - Attendance tracking
-/api/exam              - Exam management
-/api/assignment        - Assignments
-/api/chat              - Real-time chat
-/api/notifications     - Push notifications
-/api/fees              - Fee management
-/api/timetable         - Timetable management
-/api/lesson-plans      - Lesson planning
-/api/docs              - Swagger UI documentation
-```
+### Multi-tenancy (Organizations)
+- **Every request:** `tenantResolver` middleware derives the tenant. On a tenant subdomain it resolves the `Organization` by slug; on the main/API host it reads the org from the authenticated token scope. It then wraps the request in `runWithTenant(org, next)`.
+- **Every DB query:** `plugins/tenantPlugin.js` (registered globally via `utils/registerTenantPlugin` — the first `require` in `index.js`) adds `organizationId` to every schema, auto-filters all reads, stamps it on all writes via `$setOnInsert`, and throws `TENANT_SCOPE_VIOLATION` (403) if code tries to change or cross it. The tenant comes from `AsyncLocalStorage` (`utils/tenantContext.js`), so handlers never pass `organizationId` manually.
+- **Opt out** with `schema.options.skipTenantScope = true` (global collections: `Organization`, super-admin data, etc.).
+- **`requireOrganizationDomain`** guards portal routes so they only work on a real tenant subdomain.
+- `services/organizationProvisioningService.js` + `npm run tenant:migrate` backfill orgs from legacy `schoolId`-only data. JWTs still carry `schoolId`; `organizationId` is the authority.
 
-### Request Flow
-```
-Request → Auth middleware (validates JWT, sets req.userId/schoolId)
-        → Route handler
-        → Database query via Mongoose
-        → Response { success: bool, data, message }
-```
+### Route registry & rate limiting
+`routes/index.js` is the map of the whole API. Handlers are mounted with a named limiter: `generalApiLimiter`, `authApiLimiter`, `aiApiLimiter`, `uploadApiLimiter`, `writeHeavyApiLimiter` (all Redis-backed via `middleware/rateLimit.js`). To add an endpoint, add the route file and one `app.use(...)` line in the right domain group.
 
-Protected routes require corresponding middleware: `router.get('/path', authStudent, handler)`
+### Authentication & Authorization
+Role-based JWT. Tokens contain `userId`, `role` (`student|teacher|parent|staff|admin|principal|superadmin`), `schoolId`, and org scope. Role middleware (`authStudent`, `adminAuth`, …) populates `req.userId` / `req.schoolId`; `validateTokenTenant` / `tokenReplayTelemetry` add tenant-binding and replay checks. Frontend stores the JWT in `localStorage` per portal; an Axios response interceptor redirects to login on 401.
 
-### Frontend State Management
-- **Auth:** JWT stored in `localStorage`, managed via custom hooks per role portal
-- **Theme:** Global theme via `ThemeContext.jsx`
-- **UI state:** Component-level hooks (useState, useEffect)
-- **API calls:** Axios with interceptor that redirects to login on 401
+### Real-time (Socket.IO)
+`config/socketServer.js` sets up the server with the **Redis adapter** so multiple backend instances share rooms. Clients emit `join_chat` / `send_message` and listen for `new_message`; connection URL is `VITE_API_URL`.
 
-### Real-time Communication (Socket.IO)
-- **Server:** Listens for socket events and broadcasts to joined rooms (e.g., chat threads)
-- **Client:** Emits events like `join_chat`, `send_message`; listens for `new_message` to update UI
-- Both use connection URL from `process.env.VITE_API_URL`
+### Payments (pluggable gateways)
+Razorpay is the built-in default, but each organization can configure its own gateway + mode (test/live) via `/api/settings/payment`. Stored gateway credentials are encrypted with `PAYMENT_ENCRYPTION_KEY`. `middleware/paymentGatewayResolver.js` picks the active gateway per request; `controllers/paymentWebhookController.js` (raw-body route, mounted before `express.json()`) verifies webhook signatures; `services/paymentLifecycleService.js` owns order/payment state. Amounts are in paise (×100).
 
-### File Uploads
-- **Local:** Multer stores files in `/backend/uploads/`
-- **Cloud:** Cloudinary integration via `/backend/utils/cloudinaryUpload.js`
+### Frontend state
+Auth via per-portal custom hooks over `localStorage`; theme via `contexts/ThemeContext.jsx`; tenant via `context/TenantContext.jsx`; everything else is component-level `useState`/`useEffect`. API calls go through Axios with the 401 interceptor.
 
-### Payment Processing (Razorpay)
-- **Backend:** Create order with `razorpay.orders.create()`, convert amount to paise (multiply by 100)
-- **Frontend:** Pass order details to Razorpay widget, handle response callback
+### File uploads
+Multer → `backend/uploads/` for local; `utils/cloudinaryUpload.js` for cloud. Teaching materials are uploaded to Cloudinary, then their URL is handed to the AI service for ingestion.
 
-### Error Handling
-- **Backend:** Centralized error middleware + try-catch in async routes
-- **Frontend:** Axios response interceptor for global error handling (401 → redirect to login)
+### Error handling
+Backend: `errors/AppError.js` + centralized error middleware + try/catch in async handlers. Frontend: global Axios interceptor.
 
-### AI Tutor (RAG pipeline via `/ai-service`)
-The Node backend proxies AI work to the FastAPI service; the Python service owns OCR, embeddings, vector search, and LLM calls, while mastery/gap/curriculum logic stays in Node.
+---
 
-**AI service endpoints:**
-```
-POST   /ingest/material              - Download, parse, chunk, embed, upsert into Qdrant
-DELETE /ingest/material/{id}         - Remove a material's chunks from Qdrant
-POST   /generate/tutor               - RAG tutor answer (retrieval + Ollama chat)
-POST   /ocr                          - OCR an uploaded file
-POST   /ocr/summarize                - OCR + summary
-GET    /health                       - Service/model status
-```
+## AI Service (`/ai-service`)
 
-**Ingestion flow** (`app/modules/documents/service.py`): backend uploads teaching material to Cloudinary, then calls `/ingest/material` with the URL and metadata (`teachingMaterialRoutes.js`). The service downloads the file, picks a parser — PyMuPDF `get_text("text")` for text PDFs, Tesseract OCR for scanned PDFs (`is_text_pdf()` decides), python-docx/pptx for office files — then chunks via `chunk_text_with_offsets` (LangChain `RecursiveCharacterTextSplitter` with `add_start_index=True`), embeds via Ollama `nomic-embed-text`, and upserts to Qdrant with payload metadata (`school_id`, `class_id`, `section_id`, `subject_name`, `chapter_title`, `topic_title`, `material_id`, `start_char`).
+The Node backend proxies **all** AI work to this FastAPI service. Mastery / gap / curriculum / recommendation logic stays in Node (`backend/services/`); OCR, vision, embeddings, vector search, LLM calls, speech, and evaluation live here.
 
-**Retrieval flow** (`app/modules/retrieval/service.py`): tutor questions are embedded and searched in Qdrant with payload filters (school/class/section/subject, then chapter-scoped first with fallback to subject-wide + relevance threshold). Retrieved chunks are passed through `_strip_teacher_notes()` in `chat/router.py` before reaching the LLM — this sanitises old and new chunks alike without re-ingestion. An in-memory/lexical fallback in `chat/service.py` is used only when no `school_id` is present. Deleting a material in the backend also fire-and-forgets `DELETE /ingest/material/{id}` so Qdrant stays in sync.
+### Layout
+- **`main.py`** — one line: `from app.main import app` (uvicorn target).
+- **`app/main.py`** — `FastAPI(title="EEC AI Service", version="2.0.0")`; a `lifespan` hook warms Whisper + wav2vec2 into GPU memory at startup; includes all module routers.
+- **`app/core/`** — `config.py` (pydantic-settings), `llm.py`, `logger.py`, `mongodb.py`, `qdrant.py`.
+- **`app/modules/`** — one dir per feature, each with `router.py` / `service.py` / `schemas.py` as applicable:
+  | Module | Purpose |
+  |---|---|
+  | `orchestrator` | **single unified entry point** — `POST /orchestrate` |
+  | `documents` | ingest / delete teaching material (`POST /ingest/material`, `POST /ingest/material-page`, `DELETE /ingest/material/{id}`) |
+  | `parser` | `pdf`, `ocr`, `office`, `chunker`, `cleaner` (teacher-note stripping) |
+  | `embeddings` | Ollama `nomic-embed-text` |
+  | `retrieval` | Qdrant search with payload filters (`repository`, `service`) |
+  | `chat` | RAG tutor generation, all modes (`POST /generate/tutor`, `/generate/teacher`, `/generate/learning-path`, `/generate/summarize-session`) |
+  | `summaries` | `POST /ocr`, `POST /ocr/summarize` |
+  | `speech` | `POST /speech/transcribe` (faster-whisper), `POST /speech/pronunciation` (wav2vec2) |
+  | `vision` | `POST /vision/explain-image` + PDF-page vision during ingestion (`client.py`) |
+  | `assessment` | `POST /reading/evaluate`, `POST /writing/evaluate` (no prefix) |
+  | `evaluator` | `POST /evaluate/answer` — MCQ / written answer scoring |
+  | `language_memory` | `POST /memory/store` + `POST /memory/retrieve` (Qdrant `student_language_memory`) |
+  | `classifier` | `bloom.py`, `outcomes.py`, `topic.py` (no router — imported by other modules) |
+  | `stem` | `service.py` + `verifier.py` — math answer verification (no router) |
+  | `quiz`, `flashcards` | mode-specific helpers (no router) |
+  | `admin` | `POST /generate/admin-insights` |
+- **`app/workers/`** — background job workers.
+- **`prompts/`** — file-based prompt library (`loader.py`), grouped by feature (`chat/`, `evaluation/`, `flashcards/`, `mindmap/`, `question_generation/`, `recommendation/`, `summary/`). A matching file here **overrides** the hardcoded `MODE_INSTRUCTIONS` in `chat/service.py`.
+- **`scripts/`** — maintenance (`reingest_materials.py`, …). **`tests/`** — pytest, all mocked; `tests/golden/` for live evals.
 
-**Teacher note stripping** (`app/modules/parser/cleaner.py`): `_strip_teacher_notes(text)` uses a line-by-line state machine. It triggers on any line matching `"Note to (the )?Teacher"` (handles plain text and Markdown headings like `## Note to the Teacher` or `**Note to the Teacher**`) and skips lines until the next recognisable section heading. Applied in `chat/router.py` on the joined context string so it works for chunks ingested before and after the fix.
+### The Orchestrator
+`POST /orchestrate` with `{ task_type, payload }` is how Node calls the service. `orchestrator/service.py::dispatch()` routes to the right module and returns the underlying endpoint's response shape unchanged. `task_type` ∈ `generate` (RAG tutor, all modes), `generate_questions` (teacher question gen with difficulty), `evaluate` (MCQ/written), `summarize_session` (rolling memory), `class_performance` (AI narrative report). Other endpoints (ingest, OCR, speech, vision) are still called directly.
 
-**LLM generation** (`app/modules/chat/router.py`): uses LangChain `ChatOllama` via `_create_chain(mode)`. Each mode has a dedicated temperature to balance variety vs. consistency, plus a random `seed` per request to bust Ollama's KV-cache and ensure different outputs each call:
+### Ingestion flow (`documents/service.py`)
+Download from Cloudinary → pick a parser (`is_text_pdf()` decides PyMuPDF text vs Tesseract OCR; vision model reads diagram-heavy pages up to `OLLAMA_VISION_MAX_PAGES`; python-docx/pptx for office) → `chunk_text_with_offsets` (LangChain `RecursiveCharacterTextSplitter`, `add_start_index=True`) → embed via `nomic-embed-text` → upsert to Qdrant with payload (`school_id`, `class_id`, `section_id`, `subject_name`, `chapter_title`, `topic_title`, `material_id`, `start_char`). Deleting a material in Node fire-and-forgets `DELETE /ingest/material/{id}`.
+
+### Retrieval flow (`retrieval/service.py`)
+Embed the question → Qdrant search with payload filters (school/class/section/subject; chapter-scoped first, fallback to subject-wide + relevance threshold). Retrieved chunks pass through `_strip_teacher_notes()` and `_strip_injection_attempts()` in `chat/service.py` before reaching the LLM (sanitises old and new chunks without re-ingestion). A lexical fallback in `chat/service.py` is used only when no `school_id` is present.
+
+### Teacher-note stripping (`parser/cleaner.py`)
+`_strip_teacher_notes(text)` is a line-by-line state machine: triggers on any line matching `Note to (the )?Teacher` (plain text or Markdown headings like `## Note to the Teacher` / `**Note to the Teacher**`), skips until the next recognisable section heading. Applied to the joined context string in `chat/service.py` so it covers chunks ingested before and after the fix.
+
+### LLM generation (`app/core/llm.py`)
+`create_chain(mode, temperature=None, model=None)` builds a LangChain `ChatOllama` chain. Each mode has a dedicated temperature from `MODE_TEMPERATURE` (fallback `DEFAULT_TEMPERATURE = 0.7`) plus a random per-request `seed` to bust Ollama's KV-cache and vary outputs. `LONG_OUTPUT_MODES` get the extended token budget.
 
 | Mode | Temperature | Token budget |
 |------|-------------|--------------|
@@ -272,15 +255,17 @@ GET    /health                       - Service/model status
 | `notes` | 0.3 | extended |
 | `mind_map` | 0.3 | extended |
 
-**Socratic homework help** (`app/modules/chat/service.py`): `MODE_INSTRUCTIONS["homework_help"]` enforces 7 explicit Socratic rules (never state the answer; always end with exactly one guiding question; give a clue on "I don't know"; confirm only after student states the answer). The constraint is also embedded in the system prompt as a `CRITICAL OVERRIDE` so it operates at both system and task levels.
+Extended budget = `OLLAMA_NUM_PREDICT_EXTENDED` (3000) vs standard `OLLAMA_NUM_PREDICT` (1500).
+
+### Socratic homework help (`chat/service.py`)
+`MODE_INSTRUCTIONS["homework_help"]` enforces 7 explicit Socratic rules (never state the answer; always end with exactly one guiding question; give a clue on "I don't know"; confirm only after the student states the answer). Also embedded in the system prompt as a `CRITICAL OVERRIDE` so it binds at both system and task level.
 
 ---
 
 ## AI Tutor Frontend UI (`AITutorHomeScreen.jsx`)
 
-All mode-specific renderers live in `/frontend/src/components/AITutorHomeScreen.jsx`. After streaming completes, `TutorResponseRenderer` dispatches to the correct component based on `msg.mode`.
+After streaming completes, `TutorResponseRenderer({ text, mode })` dispatches to the mode component. The renderers exist both inline in `AITutorHomeScreen.jsx` and as standalone files under `components/tutor/` — when editing, check which one the screen actually imports.
 
-### Response dispatcher
 ```
 TutorResponseRenderer({ text, mode })
   → quiz          → QuizUI
@@ -288,97 +273,50 @@ TutorResponseRenderer({ text, mode })
   → mind_map      → MindMapUI
   → notes         → NotesUI
   → homework_help → HomeworkHelpUI
-  → (default)     → TutorMessageContent
+  → (default)     → TutorMessageContent   (markdown + ```mermaid``` fenced blocks via MermaidBlock)
 ```
 
-### QuizUI
-- Parses `"1. Question\nA) ...\nAnswer: A"` format via `parseQuiz()`
-- 5 MCQ questions with A–D options; animated progress dots (green=correct, red=wrong)
-- `AnimatePresence` question transitions; "Check Answer" reveals highlighting; score screen with "Try Again"
-
-### FlashcardUI
-- Parses `"Q: ...\nA: ..."` format via `parseFlashcards()`
-- 3D CSS flip card (`perspective`, `rotateY`, `backfaceVisibility`, `transformStyle: preserve-3d`)
-- Keyboard nav: `←` / `→` to navigate, `Space` to flip
-- "Got it! / Still learning" rating buttons appear after flip (via `AnimatePresence`)
-- Known count tracker displayed in header; clickable progress dots
-
-### MindMapUI
-- Parses via `parseMindMap()`: detects `"Mind Map — Title"` header for root, 0-indent lines as branch headings, indented lines (any depth ≥1 space) as items — handles space-indented RAG output (no bullets required)
-- 8-colour `BRANCH_PALETTE`; root displayed as dark rounded card at top
-- Branch cards in 2-column grid with coloured title bars and scrollable item lists (max 6 items, overflow shown as `+N more…`)
-- SVG cubic bezier paths connect root → each branch card, calculated via `getBoundingClientRect` + `ResizeObserver`; animated with `Motion.path` `pathLength` (staggered per branch); SVG uses CSS `width/height: 100%` + `overflow: visible` so lines never clip
-- `recalc` fires 420ms after mount/branch change to let framer-motion entrance animations settle; also wired to `window resize`
-
-### HomeworkHelpUI
-- Parses via `parseHomeworkHelp()`: finds the last `?` in the response, walks back to the sentence boundary, splits into `{ content, question }`
-- Main hint text fades in; guiding question springs in as a warm amber card 220ms later
-- Amber gradient header bar with pulsing 💭 emoji; three bouncing dots nudge student to respond
-- Bubble gets `border-amber-100 bg-amber-50/50` styling to visually distinguish from regular chat
-
-### NotesUI
-- Parses `**Heading**:` markers into sections, each rendered in a rotating 5-colour card palette with `Motion.div` staggered fade-in
+- **QuizUI** — parses `"1. Q\nA) ...\nAnswer: A"` via `parseQuiz()`; 5 MCQs, A–D, animated progress dots (green/red), `AnimatePresence` transitions, score screen with retry.
+- **FlashcardUI** — parses `"Q: ...\nA: ..."` via `parseFlashcards()`; 3D CSS flip card; keyboard nav (`←`/`→`, `Space` to flip); "Got it / Still learning" rating; known-count tracker.
+- **MindMapUI** — `parseMindMap()` detects `"Mind Map — Title"` header, 0-indent lines as branches, indented lines as items (handles space-indented RAG output, no bullets needed); 8-colour `BRANCH_PALETTE`; 2-column branch cards; SVG cubic-bezier root→branch connectors via `getBoundingClientRect` + `ResizeObserver`, animated `Motion.path` `pathLength`; `recalc` fires ~420ms after mount and on window resize.
+- **HomeworkHelpUI** — `parseHomeworkHelp()` finds the last `?`, walks back to the sentence boundary, splits into `{ content, question }`; hint fades in, guiding question springs in as an amber card ~220ms later; pulsing 💭 header, bouncing dots.
+- **NotesUI** — parses `**Heading**:` markers into sections, each in a rotating 5-colour card with staggered `Motion.div` fade-in.
+- **MermaidBlock** — renders ```mermaid``` fences natively; `TutorGeneratedVisuals` / `TutorVisualSources` show AI-generated diagrams and their source chunks.
 
 ---
 
 ## Testing
 
-### Running Tests
 ```bash
-# Backend
-cd backend && npm test
-npm run test:watch          # Watch mode
-npm run test:coverage       # Coverage report
-
-# Frontend
-cd frontend && npm test
-npm run test:watch          # Watch mode
-npm run test:coverage       # Coverage report
-
-# AI service
-cd ai-service && .venv/bin/pytest
+cd backend    && npm test                 # Jest, testEnvironment: node
+cd frontend   && npm test                 # Jest, jsdom, "@/" alias, CSS→identity-obj-proxy, images→fileMock
+cd ai-service && .venv/bin/pytest          # pytest, all mocked
 ```
 
-### Test File Locations
-- Backend tests: `/backend/__tests__/` (API tests use Supertest)
-- Frontend tests: `/frontend/src/**/__tests__/` (Components use Testing Library)
-- AI service tests: `/ai-service/tests/` (pytest; all mocked — no live Ollama/Qdrant needed)
-
-### Coverage Targets
-- General code: 70-80%
-- Critical paths (auth, payments, data): 90%+
-
-See `TESTING_GUIDE.md` for detailed patterns and examples.
+- **Backend tests:** `/backend/__tests__/` — API tests use Supertest; 10s default timeout.
+- **Frontend tests:** `/frontend/src/**/__tests__/` and `components/tutor/__tests__/` — Testing Library, assert user-visible behavior.
+- **AI service tests:** `/ai-service/tests/` — no live Ollama/Qdrant; `RUN_AI_EVALS=1 pytest -m eval` runs the golden-set RAG eval against real services.
+- **Coverage targets:** general 70–80%; auth / payments / tenant isolation / data 90%+.
+- Follow Arrange-Act-Assert; see `TESTING_GUIDE.md`.
 
 ---
 
 ## API Response Format
 
-All API responses follow this structure:
 ```json
-{
-  "success": true|false,
-  "data": { ... },
-  "message": "Optional string"
-}
+{ "success": true, "data": { }, "message": "optional" }
 ```
-
-**Common headers:**
-```
-Authorization: Bearer <JWT_TOKEN>
-Content-Type: application/json
-```
-
-**Swagger docs:** `http://localhost:5000/api/docs` (auto-generated from code annotations)
+Headers: `Authorization: Bearer <JWT>`, `Content-Type: application/json`. Swagger UI at `http://localhost:5000/api/docs` (run `npm run swagger:gen` after changing annotated routes).
 
 ---
 
-## Additional Resources
+## Development Conventions
 
-- **API Maps:** `/docs/` (student, teacher, admin, super-admin endpoint documentation)
-- **Testing Guides:** `TESTING_GUIDE.md`, `TEACHER_PORTAL_TESTING_GUIDE.md`, `MANUAL_TESTING_COMMANDS.md`
-- **Developer Conventions:** `AGENTS.md`
+- **Frontend:** components PascalCase (`StudentDashboard.jsx`), hooks camelCase `use*`. ESLint flat config; no unused vars except `UPPER_SNAKE_CASE` constants.
+- **Backend:** CommonJS, 2-space indent, `const` + arrow + async/await, filenames mirror exports (`attendanceRoutes.js`). Route logging goes through `utils/logger.js` (Pino) — never `console` directly (it's bound to the logger anyway). Separate loggers: `securityEventLogger`, `authEventLogger`, `businessEventLogger`, `studentPortalLogger`. Never log passwords/tokens.
+- **DB:** collections pluralized PascalCase, fields camelCase, ObjectId refs with `ref`, unique indexes on usernames/emails, compound indexes for hot queries. Do **not** add `organizationId` filters by hand — the plugin does it.
+- **Git:** branches `feature/…`, `fix/…`, `hotfix/…`; commits in imperative mood, short subject, mention the touched surface; call out new `.env` keys in PRs.
 
 ---
 
-**Last Updated:** 2026-07-09
+**Last Updated:** 2026-09-01

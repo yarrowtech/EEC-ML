@@ -260,7 +260,7 @@ const ParentObservationNonAcademic = () => {
       </header>
 
       {error && (
-        <div className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-2xl p-4 animate-in fade-in slide-in-from-top-1">
+        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-2xl p-4 animate-in fade-in slide-in-from-top-1">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{error}</p>
         </div>
@@ -288,11 +288,12 @@ const ParentObservationNonAcademic = () => {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Academic Year</label>
+                    <label htmlFor="obs-session" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Academic Year</label>
                     <div className="relative group">
-                      <select 
-                        value={selectedSession} 
-                        onChange={(e) => setSelectedSession(e.target.value)} 
+                      <select
+                        id="obs-session"
+                        value={selectedSession}
+                        onChange={(e) => setSelectedSession(e.target.value)}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Years</option>
@@ -302,11 +303,12 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Class</label>
+                    <label htmlFor="obs-class" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Class</label>
                     <div className="relative group">
-                      <select 
-                        value={selectedClass} 
-                        onChange={(e) => setSelectedClass(e.target.value)} 
+                      <select
+                        id="obs-class"
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value)}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Classes</option>
@@ -316,11 +318,12 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Section</label>
+                    <label htmlFor="obs-section" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Section</label>
                     <div className="relative group">
-                      <select 
-                        value={selectedSection} 
-                        onChange={(e) => setSelectedSection(e.target.value)} 
+                      <select
+                        id="obs-section"
+                        value={selectedSection}
+                        onChange={(e) => setSelectedSection(e.target.value)}
                         className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Sections</option>
@@ -330,12 +333,13 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Report Date</label>
-                    <input 
-                      type="date" 
-                      value={date} 
-                      onChange={(e) => setDate(e.target.value)} 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all" 
+                    <label htmlFor="obs-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Report Date</label>
+                    <input
+                      id="obs-date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
                     />
                   </div>
                 </div>
@@ -362,13 +366,13 @@ const ParentObservationNonAcademic = () => {
                       <p className="text-sm">No children found matching these filters.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar" role="radiogroup" aria-label="Select child for this observation">
                       {filteredChildren.map((child) => (
                         <label
                           key={child.id}
-                          className={`flex items-center gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-all hover:shadow-sm ${
-                            String(studentId) === String(child.id) 
-                              ? 'border-blue-500 bg-white ring-2 ring-blue-500/10 shadow-md' 
+                          className={`flex items-center gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-all hover:shadow-sm focus-within:ring-2 focus-within:ring-blue-500 ${
+                            String(studentId) === String(child.id)
+                              ? 'border-blue-500 bg-white ring-2 ring-blue-500/10 shadow-md'
                               : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
@@ -391,7 +395,7 @@ const ParentObservationNonAcademic = () => {
                             value={child.id}
                             checked={String(studentId) === String(child.id)}
                             onChange={(e) => setStudentId(e.target.value)}
-                            className="hidden"
+                            className="sr-only"
                           />
                         </label>
                       ))}
@@ -434,31 +438,33 @@ const ParentObservationNonAcademic = () => {
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
                       {section.fields.map((f) => (
-                        <div key={f.label} className="space-y-3 group">
-                          <label className="block text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">
+                        <fieldset key={f.label} className="space-y-3 group border-0 p-0 m-0">
+                          <legend className="block text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">
                             {f.label}
-                          </label>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          </legend>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label={f.label}>
                             {f.options.map((opt) => {
                               const active = ratings[f.label] === opt;
                               return (
-                                <button 
-                                  key={opt} 
-                                  type="button" 
-                                  onClick={() => setRatings((prev) => ({ ...prev, [f.label]: opt }))} 
-                                  className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all active:scale-95 ${
-                                    active 
-                                      ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-500' 
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={active}
+                                  onClick={() => setRatings((prev) => ({ ...prev, [f.label]: opt }))}
+                                  className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                    active
+                                      ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-500'
                                       : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'
                                   }`}
                                 >
-                                  <span className="text-xl mb-1">{getEmoji(opt)}</span>
+                                  <span className="text-xl mb-1" aria-hidden="true">{getEmoji(opt)}</span>
                                   <span className="text-[10px] font-bold text-center leading-tight uppercase tracking-tighter">{opt}</span>
                                 </button>
                               );
                             })}
                           </div>
-                        </div>
+                        </fieldset>
                       ))}
                     </div>
                   </div>
@@ -478,13 +484,14 @@ const ParentObservationNonAcademic = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {REMARK_FIELDS.map((f) => (
+                  {REMARK_FIELDS.map((f, idx) => (
                     <div key={f} className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">{f}</label>
-                      <textarea 
-                        rows={4} 
-                        value={remarks[f]} 
-                        onChange={(e) => setRemarks((prev) => ({ ...prev, [f]: e.target.value }))} 
+                      <label htmlFor={`obs-remark-${idx}`} className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">{f}</label>
+                      <textarea
+                        id={`obs-remark-${idx}`}
+                        rows={4}
+                        value={remarks[f]}
+                        onChange={(e) => setRemarks((prev) => ({ ...prev, [f]: e.target.value }))}
                         className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all resize-none placeholder:text-slate-400"
                         placeholder={`Share your thoughts on ${f.toLowerCase()}...`}
                       />

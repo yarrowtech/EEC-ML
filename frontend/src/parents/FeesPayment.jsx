@@ -1,35 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
-  Bus,
-  CalendarDays,
   CheckCircle2,
-  ChevronDown,
-  CreditCard,
   Download,
   DownloadIcon,
   FileText,
-  GraduationCap,
-  Layers,
   Loader2,
   Lock,
-  Palette,
   RefreshCw,
-  RotateCcw,
-  ShieldCheck,
-  User,
   X,
-  Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { downloadFeeReceiptPdf } from '../utils/feeReceiptPdf';
 import { downloadFeesStructurePdf } from '../utils/feesStructurePdf';
+import './FeesPayment.css';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
-const AVATAR_COLORS = [
-  'bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-fuchsia-500',
-  'bg-teal-500', 'bg-orange-500', 'bg-pink-500', 'bg-blue-500',
+const AVATAR_STYLES = [
+  'from-purple-100 to-purple-200 text-purple-700',
+  'from-emerald-100 to-emerald-200 text-emerald-700',
+  'from-amber-100 to-amber-200 text-amber-700',
+  'from-sky-100 to-sky-200 text-sky-700',
+  'from-rose-100 to-rose-200 text-rose-700',
 ];
 
 const DEFAULT_PDF_SCHOOL = {
@@ -41,46 +34,93 @@ const DEFAULT_PDF_SCHOOL = {
   accentColor: '#0f172a',
 };
 
-const formatCurrency = (value) => {
+const toAmount = (value) => {
   const amount = Number(value || 0);
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return Number.isFinite(amount) ? amount : 0;
 };
 
+const getInvoiceTitle = (invoice) => invoice?.title || invoice?.description || 'Fee Invoice';
+const getInvoiceTotal = (invoice) => toAmount(invoice?.totalAmount ?? invoice?.amount);
+const getInvoicePaid = (invoice) => toAmount(invoice?.paidAmount);
+const getInvoiceBalance = (invoice) => {
+  if (invoice?.balanceAmount !== undefined && invoice?.balanceAmount !== null) {
+    return Math.max(0, toAmount(invoice.balanceAmount));
+  }
+  return Math.max(0, getInvoiceTotal(invoice) - getInvoicePaid(invoice));
+};
+
+const formatCurrency = (value) => new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+}).format(toAmount(value));
+
 const formatDate = (value) => {
-  if (!value) return '-';
+  if (!value) return '—';
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '-';
+  if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const formatShortDate = (value) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+};
+
+const isPastDue = (value) => {
+  if (!value) return false;
+  const due = new Date(value);
+  if (Number.isNaN(due.getTime())) return false;
+  const today = new Date();
+  due.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return due < today;
+};
+
+const getRelativeDueLabel = (date) => {
+  if (!date) return 'All settled';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(date);
+  due.setHours(0, 0, 0, 0);
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
+  if (days === 0) return 'Due today';
+  if (days === 1) return 'Due tomorrow';
+  return `In ${days} days`;
 };
 
 const getInvoiceSessionLabel = (invoice) => {
   const year = invoice?.academicYearId;
   if (year && typeof year === 'object' && year.name) return year.name;
-  return 'Other Session';
+  return invoice?.session || 'Other Session';
 };
 
-// FeePayment records only carry a lump amount against the invoice, not a
-// specific installment, so "which installment is paid" is derived here by
-// walking installmentsSnapshot in order and consuming invoice.paidAmount
-// cumulatively. An installment unlocks only once every prior one is fully paid.
-// `paymentsAsc` (oldest first) is walked the same way to attribute the payment
-// that completed each installment, purely so a receipt can be offered for it.
+const getInitials = (name) => {
+  const parts = String(name || 'Child').trim().split(/\s+/).filter(Boolean);
+  return `${parts[0]?.[0] || 'C'}${parts.length > 1 ? parts[parts.length - 1][0] : ''}`.toUpperCase();
+};
+
+const getChildClass = (child) => child?.grade || child?.class || '';
+const buildChildKey = (child) => (child?.id || child?._id
+  ? `id:${child.id || child._id}`
+  : `name:${child?.name || ''}`);
+const getChildId = (child) => child?.id || child?._id || '';
+
 const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
   const installments = Array.isArray(invoice?.installmentsSnapshot) ? invoice.installmentsSnapshot : [];
   if (!installments.length) return [];
 
-  let remainingPaid = Number(invoice.paidAmount || 0);
+  let remainingPaid = getInvoicePaid(invoice);
   let priorFullyPaid = true;
   let cumulativeThreshold = 0;
   let runningPaymentTotal = 0;
   let paymentPtr = 0;
 
   return installments.map((installment, index) => {
-    const amount = Number(installment?.amount || 0);
+    const amount = toAmount(installment?.amount);
     const paidTowards = Math.max(0, Math.min(amount, remainingPaid));
     const isPaid = amount > 0 && paidTowards >= amount;
     const isLocked = !priorFullyPaid;
@@ -93,7 +133,7 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
     let receiptPayment = null;
     if (isPaid) {
       while (paymentPtr < paymentsAsc.length && runningPaymentTotal < cumulativeThreshold) {
-        runningPaymentTotal += Number(paymentsAsc[paymentPtr]?.amount || 0);
+        runningPaymentTotal += toAmount(paymentsAsc[paymentPtr]?.amount);
         receiptPayment = paymentsAsc[paymentPtr];
         paymentPtr += 1;
       }
@@ -105,7 +145,6 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
       label: installment?.label || `Installment ${index + 1}`,
       amount,
       dueDate: installment?.dueDate,
-      paidTowards,
       remaining: Math.max(0, amount - paidTowards),
       isPaid,
       isLocked,
@@ -115,27 +154,18 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
   });
 };
 
-const feeIconFor = (title = '') => {
-  const t = title.toLowerCase();
-  if (t.includes('transport') || t.includes('bus')) return Bus;
-  if (t.includes('activity') || t.includes('art') || t.includes('craft')) return Palette;
-  if (t.includes('tuition')) return GraduationCap;
-  return FileText;
-};
-
-const loadRazorpayScript = () =>
-  new Promise((resolve) => {
-    if (window?.Razorpay) {
-      resolve(true);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
+const loadRazorpayScript = () => new Promise((resolve) => {
+  if (window?.Razorpay) {
+    resolve(true);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+  script.async = true;
+  script.onload = () => resolve(true);
+  script.onerror = () => resolve(false);
+  document.body.appendChild(script);
+});
 
 const getStoredToken = () => {
   try {
@@ -144,74 +174,26 @@ const getStoredToken = () => {
       if (token) return token;
     }
   } catch {
-    // ignore storage access errors
+    // Continue to the browser storage fallback.
   }
   try {
-    if (typeof window !== 'undefined' && window.localStorage?.getItem) {
-      const token = window.localStorage.getItem('token') || '';
-      if (token) return token;
-    }
+    const token = window.localStorage?.getItem('token') || '';
+    if (token) return token;
   } catch {
-    // ignore storage access errors
-  }
-  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
-    return 'test-token';
+    // Treat storage access errors as a signed-out session.
   }
   return '';
 };
 
-const ChildAvatar = ({ name, size = 'md' }) => {
-  const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-  const color = AVATAR_COLORS[(name || '').charCodeAt(0) % AVATAR_COLORS.length || 0];
-  const dimensions = size === 'sm' ? 'h-8 w-8 text-xs' : 'h-10 w-10 text-sm';
-  return (
-    <span className={`inline-flex ${dimensions} shrink-0 items-center justify-center rounded-full ${color} font-bold text-white`}>
-      {initial}
-    </span>
-  );
-};
-
-const StatTile = ({ icon, label, value, subtitle, subtitleAction, iconColor, iconBg }) => {
-  const Icon = icon;
-  return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-          <Icon className={`h-5 w-5 ${iconColor}`} />
-        </span>
-        <span className="text-sm text-gray-500">{label}</span>
-      </div>
-      <p className="mt-3 text-2xl font-bold text-gray-900">{value}</p>
-      {subtitleAction ? (
-        <button type="button" onClick={subtitleAction.onClick} className="mt-1 text-xs font-semibold text-amber-600 hover:text-amber-700">
-          {subtitle}
-        </button>
-      ) : (
-        <p className="mt-1 text-xs text-gray-400">{subtitle}</p>
-      )}
-    </div>
-  );
-};
-
-const InfoTile = ({ icon, title, copy, iconColor, iconBg }) => {
-  const Icon = icon;
-  return (
-    <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        <Icon className={`h-4.5 w-4.5 ${iconColor}`} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-gray-800">{title}</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{copy}</p>
-      </div>
-    </div>
-  );
-};
+const ChildAvatar = ({ child, index }) => (
+  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold ${AVATAR_STYLES[index % AVATAR_STYLES.length]}`}>
+    {getInitials(child?.name)}
+  </span>
+);
 
 const FeesPayment = () => {
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('');
-  const [childPickerOpen, setChildPickerOpen] = useState(false);
   const [loadingChildren, setLoadingChildren] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState('');
@@ -226,9 +208,11 @@ const FeesPayment = () => {
   const [pdfSchool, setPdfSchool] = useState(DEFAULT_PDF_SCHOOL);
   const [downloadingFeesCardId, setDownloadingFeesCardId] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const childPickerRef = useRef(null);
 
-  const buildChildKey = (child) => (child.id ? `id:${child.id}` : `name:${child.name || ''}`);
+  const selectedChild = useMemo(
+    () => children.find((child) => buildChildKey(child) === selectedChildId) || null,
+    [children, selectedChildId]
+  );
 
   const showError = (message) => {
     const text = message || 'Something went wrong';
@@ -236,28 +220,13 @@ const FeesPayment = () => {
     toast.error(text);
   };
 
-  const selectedChild = useMemo(
-    () => children.find((child) => buildChildKey(child) === selectedChildId) || null,
-    [children, selectedChildId]
-  );
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (childPickerRef.current && !childPickerRef.current.contains(event.target)) {
-        setChildPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const fetchChildren = async () => {
     const token = getStoredToken();
-
     setLoadingChildren(true);
     setError('');
     setSuccessMessage('');
     try {
+      if (!token) throw new Error('Login required. Please sign in again.');
       const res = await fetch(`${API_BASE}/api/fees/parent/children`, {
         headers: {
           'Content-Type': 'application/json',
@@ -265,15 +234,15 @@ const FeesPayment = () => {
         },
       });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load children');
-      }
+      if (!res.ok) throw new Error(data?.error || 'Failed to load children');
       const list = Array.isArray(data.children) ? data.children : [];
       setChildren(list);
-      if (list.length > 0) {
-        setSelectedChildId(buildChildKey(list[0]));
-      }
+      setSelectedChildId((current) => (
+        list.some((child) => buildChildKey(child) === current) ? current : (list[0] ? buildChildKey(list[0]) : '')
+      ));
     } catch (err) {
+      setChildren([]);
+      setSelectedChildId('');
       showError(err.message || 'Unable to load children');
     } finally {
       setLoadingChildren(false);
@@ -291,6 +260,7 @@ const FeesPayment = () => {
     setError('');
     setSuccessMessage('');
     try {
+      if (!token) throw new Error('Login required. Please sign in again.');
       const res = await fetch(`${API_BASE}/api/fees/parent/invoices?studentId=${childId}`, {
         headers: {
           'Content-Type': 'application/json',
@@ -298,64 +268,29 @@ const FeesPayment = () => {
         },
       });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load invoices');
-      }
+      if (!res.ok) throw new Error(data?.error || 'Failed to load invoices');
       const list = Array.isArray(data.invoices) ? data.invoices : [];
       setInvoices(list);
       setPaymentsByInvoice(data.paymentsByInvoice || {});
-      const nextAmounts = {};
-      list.forEach((invoice) => {
-        nextAmounts[invoice._id] = Number(invoice.balanceAmount || 0);
-      });
-      setAmounts(nextAmounts);
+      setAmounts(Object.fromEntries(list.map((invoice) => [invoice._id, getInvoiceBalance(invoice)])));
     } catch (err) {
+      setInvoices([]);
+      setPaymentsByInvoice({});
       showError(err.message || 'Unable to load invoices');
     } finally {
       setLoadingInvoices(false);
     }
   };
 
-  const handleDownloadReceipt = async (payment, invoice) => {
-    const token = getStoredToken();
-    if (!payment?._id) {
-      showError('Receipt not available for this payment');
-      return;
-    }
-
-    setDownloadingReceiptId(payment._id);
-    setError('');
-    setSuccessMessage('');
-    try {
-      const res = await fetch(`${API_BASE}/api/fees/parent/payments/${payment._id}/receipt`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to load receipt');
-      }
-
-      await downloadFeeReceiptPdf({
-        invoice: data.invoice || invoice,
-        student: data.student || selectedChild,
-        payment: data.payment || payment,
-        receipt: data.receipt || null,
-        school: data.school || null,
-        schoolName: data.school?.name || 'School',
-      });
-      setSuccessMessage('Receipt downloaded successfully.');
-    } catch (err) {
-      showError(err.message || 'Unable to download receipt');
-    } finally {
-      setDownloadingReceiptId('');
-    }
+  const handleRefresh = async () => {
+    await fetchChildren();
+    const childId = getChildId(selectedChild);
+    if (childId) await fetchInvoices(childId);
   };
 
   const fetchPdfSchool = async () => {
     const token = getStoredToken();
+    if (!token) return;
     try {
       const res = await fetch(`${API_BASE}/api/reports/report-cards/parent`, {
         headers: {
@@ -376,7 +311,50 @@ const FeesPayment = () => {
         });
       }
     } catch {
-      // Keep default branding if the template can't be loaded.
+      // The fee card can still use its default branding.
+    }
+  };
+
+  useEffect(() => {
+    fetchChildren();
+    fetchPdfSchool();
+  }, []);
+
+  useEffect(() => {
+    fetchInvoices(getChildId(selectedChild));
+  }, [selectedChildId]);
+
+  const handleDownloadReceipt = async (payment, invoice) => {
+    const token = getStoredToken();
+    if (!payment?._id) {
+      showError('Receipt not available for this payment');
+      return;
+    }
+    setDownloadingReceiptId(payment._id);
+    setError('');
+    setSuccessMessage('');
+    try {
+      const res = await fetch(`${API_BASE}/api/fees/parent/payments/${payment._id}/receipt`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to load receipt');
+      await downloadFeeReceiptPdf({
+        invoice: data.invoice || invoice,
+        student: data.student || selectedChild,
+        payment: data.payment || payment,
+        receipt: data.receipt || null,
+        school: data.school || null,
+        schoolName: data.school?.name || 'School',
+      });
+      setSuccessMessage('Receipt downloaded successfully.');
+    } catch (err) {
+      showError(err.message || 'Unable to download receipt');
+    } finally {
+      setDownloadingReceiptId('');
     }
   };
 
@@ -388,13 +366,13 @@ const FeesPayment = () => {
     try {
       await downloadFeesStructurePdf({
         structure: {
-          className: invoice.className || selectedChild?.grade || '',
+          className: invoice.className || getChildClass(selectedChild),
           board: 'GENERAL',
           academicYearName: getInvoiceSessionLabel(invoice),
-          name: invoice.title || 'Fee Invoice',
+          name: getInvoiceTitle(invoice),
           feeHeads: Array.isArray(invoice.feeHeadsSnapshot) ? invoice.feeHeadsSnapshot : [],
           installments: Array.isArray(invoice.installmentsSnapshot) ? invoice.installmentsSnapshot : [],
-          totalAmount: invoice.totalAmount,
+          totalAmount: getInvoiceTotal(invoice),
           lateFeeAmount: invoice.lateFeeRuleSnapshot?.amount || 0,
         },
         school: pdfSchool,
@@ -407,63 +385,38 @@ const FeesPayment = () => {
     }
   };
 
-  useEffect(() => {
-    fetchChildren();
-    fetchPdfSchool();
-  }, []);
-
-  useEffect(() => {
-    if (selectedChild?.id) {
-      fetchInvoices(selectedChild.id);
-    } else {
-      setInvoices([]);
-      setPaymentsByInvoice({});
-    }
-  }, [selectedChild?.id]);
-
   const handlePayNow = async (invoice, amountOverride) => {
     const token = getStoredToken();
+    const paymentAmount = Number(amountOverride ?? amounts[invoice._id] ?? getInvoiceBalance(invoice));
     setProcessingInvoiceId(invoice._id);
     setError('');
     setSuccessMessage('');
     try {
-      const paymentAmount = Number(amountOverride ?? amounts[invoice._id]);
-      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
-        throw new Error('Enter a valid amount');
-      }
-
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('Enter a valid amount');
+      if (paymentAmount > getInvoiceBalance(invoice)) throw new Error('Amount cannot exceed the outstanding balance');
       const orderRes = await fetch(`${API_BASE}/api/fees/${invoice._id}/pay`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          amount: paymentAmount,
-        }),
+        body: JSON.stringify({ amount: paymentAmount }),
       });
       const orderData = await orderRes.json();
-      if (!orderRes.ok) {
-        throw new Error(orderData?.error || 'Failed to create payment order');
-      }
+      if (!orderRes.ok) throw new Error(orderData?.error || 'Failed to create payment order');
+      if (!await loadRazorpayScript()) throw new Error('Unable to load Razorpay');
+      if (!orderData.keyId) throw new Error('Razorpay key is missing');
 
-      const scriptLoaded = await loadRazorpayScript();
-      if (!scriptLoaded) {
-        throw new Error('Unable to load Razorpay');
-      }
-
-      const razorpayKey = orderData.keyId;
-      if (!razorpayKey) {
-        throw new Error('Razorpay key is missing');
-      }
-
-      const options = {
-        key: razorpayKey,
+      const razorpay = new window.Razorpay({
+        key: orderData.keyId,
         amount: orderData.order?.amount,
         currency: orderData.order?.currency || 'INR',
         name: 'School Fees',
-        description: invoice.title || 'Fee Payment',
+        description: getInvoiceTitle(invoice),
         order_id: orderData.order?.id,
+        prefill: { name: selectedChild?.name || 'Parent' },
+        theme: { color: '#8b5cf6' },
+        modal: { ondismiss: () => setProcessingInvoiceId('') },
         handler: async (response) => {
           try {
             const verifyRes = await fetch(`${API_BASE}/api/fees/payments/razorpay/verify`, {
@@ -479,39 +432,23 @@ const FeesPayment = () => {
               }),
             });
             const verifyData = await verifyRes.json();
-            if (!verifyRes.ok) {
-              throw new Error(verifyData?.error || 'Payment verification failed');
-            }
+            if (!verifyRes.ok) throw new Error(verifyData?.error || 'Payment verification failed');
             setSuccessMessage('Payment successful. Invoice updated.');
-            await fetchInvoices(selectedChild.id);
-          } catch (verifyErr) {
-            showError(verifyErr.message || 'Unable to verify payment');
+            await fetchInvoices(getChildId(selectedChild));
+          } catch (verifyError) {
+            showError(verifyError.message || 'Unable to verify payment');
           } finally {
             setProcessingInvoiceId('');
           }
         },
-        modal: {
-          ondismiss: () => setProcessingInvoiceId(''),
-        },
-        prefill: {
-          name: selectedChild?.name || 'Parent',
-        },
-        theme: {
-          color: '#f59e0b',
-        },
-      };
-
-      const razorpay = new window.Razorpay(options);
+      });
       razorpay.open();
-    } catch (err) {
-      showError(err.message || 'Payment failed');
+    } catch (payError) {
+      showError(payError.message || 'Payment failed');
       setProcessingInvoiceId('');
     }
   };
 
-  // Sessions come from each invoice's academic year, so fees never get lumped
-  // into one cross-year total — the parent picks a session and only that
-  // session's invoices feed the totals, list, and payment panel below.
   const sessionOptions = useMemo(() => {
     const map = new Map();
     invoices.forEach((invoice) => {
@@ -533,10 +470,8 @@ const FeesPayment = () => {
       setSessionFilter('');
       return;
     }
-    const stillValid = sessionOptions.some((option) => option.label === sessionFilter);
-    if (!stillValid) {
-      const active = sessionOptions.find((option) => option.isActive);
-      setSessionFilter(active?.label || sessionOptions[0].label);
+    if (!sessionOptions.some((option) => option.label === sessionFilter)) {
+      setSessionFilter(sessionOptions.find((option) => option.isActive)?.label || sessionOptions[0].label);
     }
   }, [sessionOptions, sessionFilter]);
 
@@ -546,36 +481,30 @@ const FeesPayment = () => {
   );
 
   useEffect(() => {
-    const firstPending = sessionInvoices.find((invoice) => Number(invoice.balanceAmount || 0) > 0);
+    const firstPending = sessionInvoices.find((invoice) => getInvoiceBalance(invoice) > 0);
     setSelectedInvoiceId(firstPending?._id || sessionInvoices[0]?._id || '');
   }, [sessionInvoices]);
 
-  const totals = useMemo(() => {
-    return sessionInvoices.reduce(
-      (acc, invoice) => {
-        acc.total += Number(invoice.totalAmount || 0);
-        acc.paid += Number(invoice.paidAmount || 0);
-        acc.balance += Number(invoice.balanceAmount || 0);
-        return acc;
-      },
-      { total: 0, paid: 0, balance: 0 }
-    );
-  }, [sessionInvoices]);
+  const totals = useMemo(() => sessionInvoices.reduce(
+    (acc, invoice) => ({
+      total: acc.total + getInvoiceTotal(invoice),
+      paid: acc.paid + getInvoicePaid(invoice),
+      balance: acc.balance + getInvoiceBalance(invoice),
+    }),
+    { total: 0, paid: 0, balance: 0 }
+  ), [sessionInvoices]);
 
   const pendingInvoices = useMemo(
-    () => sessionInvoices.filter((invoice) => Number(invoice.balanceAmount || 0) > 0),
+    () => sessionInvoices.filter((invoice) => getInvoiceBalance(invoice) > 0),
     [sessionInvoices]
   );
 
-  const nearestDueDate = useMemo(() => {
-    const dated = pendingInvoices
-      .map((invoice) => invoice.dueDate)
-      .filter(Boolean)
-      .map((value) => new Date(value))
-      .filter((date) => !Number.isNaN(date.getTime()))
-      .sort((a, b) => a - b);
-    return dated[0] || null;
-  }, [pendingInvoices]);
+  const nearestDueDate = useMemo(() => pendingInvoices
+    .map((invoice) => invoice.dueDate)
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((a, b) => a - b)[0] || null, [pendingInvoices]);
 
   const selectedInvoice = useMemo(
     () => sessionInvoices.find((invoice) => invoice._id === selectedInvoiceId) || null,
@@ -584,638 +513,212 @@ const FeesPayment = () => {
 
   const installmentBreakdown = useMemo(() => {
     if (!selectedInvoice) return [];
-    // paymentsByInvoice is sorted newest-first (for the Recent Payments list);
-    // installment attribution needs oldest-first to walk amounts in order.
     const paymentsAsc = [...(paymentsByInvoice[selectedInvoice._id] || [])].reverse();
     return getInstallmentBreakdown(selectedInvoice, paymentsAsc);
   }, [selectedInvoice, paymentsByInvoice]);
-  const hasInstallments = installmentBreakdown.length > 0;
 
-  useEffect(() => {
-    setShowFeeBreakdown(false);
-  }, [selectedInvoiceId]);
+  useEffect(() => setShowFeeBreakdown(false), [selectedInvoiceId]);
 
-  const handlePayInstallment = (invoice, installment) => {
-    setAmounts((prev) => ({ ...prev, [invoice._id]: installment.remaining }));
-    handlePayNow(invoice, installment.remaining);
-  };
-
+  const activeInstallment = installmentBreakdown.find((installment) => !installment.isPaid && !installment.isLocked);
+  const selectedBalance = getInvoiceBalance(selectedInvoice);
   const isProcessingSelected = selectedInvoice && processingInvoiceId === selectedInvoice._id;
-  const selectedAmount = selectedInvoice ? Number(amounts[selectedInvoice._id] ?? selectedInvoice.balanceAmount ?? 0) : 0;
-  const canPaySelected = Boolean(selectedInvoice) && selectedAmount > 0;
 
   return (
-    <div className="w-full space-y-5 p-3 pb-8 sm:p-4 md:p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Make a Payment</h1>
-        <p className="mt-1 text-sm text-gray-500">Select a child and choose the fees you want to pay</p>
-      </div>
-
-      {/* Select Child */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`fees-dashboard-page w-full px-4 py-4 md:p-6 ${selectedBalance > 0 ? 'pb-28 md:pb-6' : ''}`}>
+      <section className="fees-glass-card mx-auto w-full max-w-6xl p-5 sm:p-6 md:p-8" aria-labelledby="fees-dashboard-title">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-amber-900">Select Child</h3>
-              <button
-                onClick={fetchChildren}
-                className="ml-1 flex items-center gap-1 text-[11px] font-medium text-amber-700/80 hover:text-amber-900"
-                type="button"
+            <h1 id="fees-dashboard-title" className="text-2xl font-bold tracking-tight text-slate-800">
+              Fee Dashboard <span className="sr-only">Fees Payment</span>
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">Overview of your children&apos;s fee status and payment history</p>
+          </div>
+          {sessionOptions.length > 0 && (
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500" htmlFor="fees-session-filter">
+              Session
+              <select
+                id="fees-session-filter"
+                value={sessionFilter}
+                onChange={(event) => setSessionFilter(event.target.value)}
+                className="rounded-full border border-white/70 bg-white/60 px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-purple-300 focus:ring-2 focus:ring-purple-100"
               >
-                <RefreshCw className="h-3 w-3" /> Refresh
-              </button>
-            </div>
-            <p className="mt-0.5 text-xs text-amber-700/80">Choose a child to view their pending fees</p>
-          </div>
-
-          <div className="relative w-full sm:w-72" ref={childPickerRef}>
-            <button
-              type="button"
-              disabled={loadingChildren || children.length === 0}
-              onClick={() => setChildPickerOpen((open) => !open)}
-              className="flex w-full items-center gap-3 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {selectedChild ? (
-                <>
-                  <ChildAvatar name={selectedChild.name} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-gray-800">{selectedChild.name || 'Child'}</span>
-                    <span className="block truncate text-xs text-gray-500">
-                      {selectedChild.grade ? `Class ${selectedChild.grade}${selectedChild.section ? ` - ${selectedChild.section}` : ''}` : 'Not linked'}
-                    </span>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-400">
-                    <User className="h-5 w-5" />
-                  </span>
-                  <span className="flex-1 text-sm text-gray-500">
-                    {loadingChildren ? 'Loading children…' : 'Select a child'}
-                  </span>
-                </>
-              )}
-              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${childPickerOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {childPickerOpen && children.length > 0 && (
-              <div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg">
-                {children.map((child) => (
-                  <button
-                    key={buildChildKey(child)}
-                    type="button"
-                    onClick={() => {
-                      setSelectedChildId(buildChildKey(child));
-                      setChildPickerOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-amber-50 ${
-                      buildChildKey(child) === selectedChildId ? 'bg-amber-50' : ''
-                    }`}
-                  >
-                    <ChildAvatar name={child.name} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-gray-800">{child.name || 'Child'}</span>
-                      <span className="block truncate text-xs text-gray-500">
-                        {child.grade ? `Class ${child.grade}${child.section ? ` - ${child.section}` : ''}` : 'Not linked'}
-                      </span>
-                    </span>
-                  </button>
+                {sessionOptions.map((option) => (
+                  <option key={option.label} value={option.label}>
+                    {option.label}{option.isActive ? ' (Active)' : ''}
+                  </option>
                 ))}
-              </div>
-            )}
-          </div>
-        </div>
+              </select>
+            </label>
+          )}
+        </header>
 
-        {selectedChild && !selectedChild.id && (
-          <p className="mt-3 text-sm text-amber-700">
-            This child is not linked to a student record yet. Please contact the school office.
-          </p>
-        )}
-        {error && (
-          <p className="mt-3 flex items-center gap-1.5 text-sm text-red-600">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
-          </p>
-        )}
-        {successMessage && <p className="mt-3 text-sm text-emerald-700">{successMessage}</p>}
-      </div>
-
-      {selectedChild?.id ? (
-        <>
-          {/* Stat tiles */}
-          <div className="grid gap-3 sm:grid-cols-3">
-            <StatTile
-              icon={GraduationCap}
-              iconColor="text-blue-600"
-              iconBg="bg-blue-50"
-              label="Total Pending"
-              value={formatCurrency(totals.balance)}
-              subtitle={`${pendingInvoices.length} pending fee${pendingInvoices.length === 1 ? '' : 's'}`}
-            />
-            <StatTile
-              icon={CalendarDays}
-              iconColor="text-amber-600"
-              iconBg="bg-amber-50"
-              label="Due Date"
-              value={nearestDueDate ? formatDate(nearestDueDate) : 'No dues'}
-              subtitle={nearestDueDate ? 'Upcoming deadline' : 'All fees settled'}
-            />
-            <StatTile
-              icon={CheckCircle2}
-              iconColor="text-emerald-600"
-              iconBg="bg-emerald-50"
-              label="Total Paid"
-              value={formatCurrency(totals.paid)}
-              subtitle="Across all fees"
-            />
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-3">
-            {/* Pending Fees */}
-            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5 lg:col-span-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-bold text-gray-800 sm:text-lg">Fees Overview</h3>
-                  <p className="mt-0.5 text-xs text-gray-500">Upcoming fees and past payments for this session</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  {loadingInvoices && (
-                    <span className="flex items-center gap-2 text-xs text-gray-500">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-                    </span>
-                  )}
-                  {sessionOptions.length > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <label htmlFor="fees-session-filter" className="text-xs font-semibold text-gray-500">
-                        Session
-                      </label>
-                      <select
-                        id="fees-session-filter"
-                        value={sessionFilter}
-                        onChange={(e) => setSessionFilter(e.target.value)}
-                        className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                      >
-                        {sessionOptions.map((option) => (
-                          <option key={option.label} value={option.label}>
-                            {option.label}
-                            {option.isActive ? ' (Active)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <aside className="space-y-4 lg:col-span-1">
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">Select Child</span>
+                <button type="button" onClick={handleRefresh} disabled={loadingChildren || loadingInvoices} className="flex items-center gap-1.5 rounded-full border border-purple-100/60 bg-purple-50/80 px-3 py-1.5 text-xs font-medium text-purple-700 transition hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-60">
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingChildren || loadingInvoices ? 'animate-spin' : ''}`} /> Refresh
+                </button>
               </div>
 
-              {sessionInvoices.length === 0 && !loadingInvoices ? (
-                <div className="py-8 text-center text-sm text-gray-500">
-                  {invoices.length === 0 ? 'No invoices found for this student.' : 'No fees found for this session.'}
-                </div>
-              ) : (
-                <div className="mt-3 divide-y divide-gray-100">
-                  {sessionInvoices.map((invoice) => {
-                    const balance = Number(invoice.balanceAmount || 0);
-                    const isPending = balance > 0;
-                    const isPaid = !isPending;
-                    const isPartial = isPending && Number(invoice.paidAmount || 0) > 0;
-                    const isOverdue = isPending && invoice.dueDate && new Date(invoice.dueDate) < new Date();
-                    const latestPayment = (paymentsByInvoice[invoice._id] || [])[0] || null;
-                    const Icon = feeIconFor(invoice.title);
-                    const isSelected = selectedInvoiceId === invoice._id;
-                    const badge = isPaid
-                      ? { label: 'Paid', className: 'bg-emerald-50 text-emerald-700' }
-                      : isOverdue
-                      ? { label: 'Overdue', className: 'bg-red-50 text-red-600' }
-                      : isPartial
-                      ? { label: 'Partial', className: 'bg-amber-50 text-amber-700' }
-                      : { label: 'Upcoming', className: 'bg-blue-50 text-blue-600' };
-                    return (
-                      <div
-                        key={invoice._id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setSelectedInvoiceId(invoice._id)}
-                        onKeyDown={(e) => (e.key === 'Enter' ? setSelectedInvoiceId(invoice._id) : null)}
-                        className={`flex w-full cursor-pointer items-center gap-3 rounded-lg py-3 text-left transition hover:bg-amber-50/60 ${
-                          isSelected ? 'bg-amber-50/80' : ''
-                        } -mx-1 px-1`}
-                      >
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                            isSelected ? 'border-amber-500 bg-amber-500' : 'border-gray-300'
-                          }`}
-                        >
-                          {isSelected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                        </span>
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gray-500">
-                          <Icon className="h-4 w-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <span className="truncate text-sm font-semibold text-gray-800">{invoice.title || 'Fee Invoice'}</span>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}>
-                              {badge.label}
-                            </span>
-                          </span>
-                          <span className="block truncate text-xs text-gray-500">
-                            {invoice.className ? `Class ${invoice.className}${invoice.section ? ` - ${invoice.section}` : ''}` : (isPaid ? 'Fully paid' : 'Due soon')}
-                          </span>
-                          {isSelected && (
-                            <span
-                              className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {Array.isArray(invoice.feeHeadsSnapshot) && invoice.feeHeadsSnapshot.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setShowFeeBreakdown(true)}
-                                  className="text-xs font-semibold text-amber-700 underline-offset-2 hover:underline"
-                                >
-                                  View Fees Breakdown
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadFeesCard(invoice)}
-                                disabled={downloadingFeesCardId === invoice._id}
-                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {downloadingFeesCardId === invoice._id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <DownloadIcon className="h-3 w-3" />
-                                )}
-                                Download Fees Card
-                              </button>
-                            </span>
-                          )}
-                        </span>
-                        <span className="hidden shrink-0 text-xs text-gray-500 sm:block">
-                          {isPaid ? 'Paid on' : 'Due'} {formatDate(isPaid ? (latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt) : invoice.dueDate)}
-                        </span>
-                        <span className={`shrink-0 text-sm font-bold ${isPending ? 'text-gray-900' : 'text-emerald-600'}`}>
-                          {formatCurrency(isPending ? balance : invoice.totalAmount)}
-                        </span>
+              <div className="fees-child-list -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:block lg:space-y-2 lg:px-0 lg:pb-0" role="listbox" aria-label="Children">
+                {loadingChildren && children.length === 0 ? (
+                  <div className="fees-child-card flex w-full items-center gap-3 rounded-xl p-3 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-purple-500" /> Loading children…</div>
+                ) : children.length === 0 ? (
+                  <div className="fees-child-card w-full rounded-xl p-4 text-center text-sm text-slate-500">No students found.</div>
+                ) : children.map((child, index) => {
+                  const childKey = buildChildKey(child);
+                  const isActive = childKey === selectedChildId;
+                  const childClass = getChildClass(child);
+                  return (
+                    <button key={childKey} type="button" role="option" aria-selected={isActive} onClick={() => setSelectedChildId(childKey)} className={`fees-child-card flex w-[min(280px,calc(100vw-3.5rem))] shrink-0 snap-start items-center gap-3 rounded-xl p-4 text-left lg:w-full lg:p-3 ${isActive ? 'is-active' : ''}`}>
+                      <ChildAvatar child={child} index={index} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-slate-800">{child.name || 'Child'}</span>
+                        <span className="block truncate text-xs text-slate-400">{childClass ? `Class ${childClass}${child.section ? ` · Section ${child.section}` : ''}` : 'Not linked to a class'}</span>
+                      </span>
+                      {isActive && <span className="h-2 w-2 shrink-0 rounded-full bg-purple-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-center text-xs text-slate-400 lg:mt-3 lg:text-left">Select a child to view their fee details</p>
+            </div>
+
+            {selectedChild && !getChildId(selectedChild) && <p className="rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-xs text-amber-700">This child is not linked to a student record. Please contact the school office.</p>}
+            {error && <p className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-600" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</p>}
+            {successMessage && <p className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs text-emerald-700" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> {successMessage}</p>}
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-1 lg:gap-2" aria-label="Fee summary">
+              <div className="fees-stat-glass col-span-2 flex items-end justify-between rounded-xl p-4 lg:col-span-1 lg:items-center lg:p-3">
+                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Pending</p><p className="text-xl font-bold text-slate-800">{formatCurrency(totals.balance)}</p></div>
+                <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-600">{pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}</span>
+              </div>
+              <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
+                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Upcoming Due</p><p className="text-sm font-semibold text-amber-600">{nearestDueDate ? formatDate(nearestDueDate) : 'No dues'}</p></div>
+                <span className="self-end text-xs text-slate-400">{getRelativeDueLabel(nearestDueDate)}</span>
+              </div>
+              <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
+                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Paid</p><p className="text-xl font-bold text-slate-800">{formatCurrency(totals.paid)}</p></div>
+                <span className="self-end text-xs font-medium text-emerald-600">This session</span>
+              </div>
+            </div>
+          </aside>
+
+          <main className="min-w-0 lg:col-span-2">
+            <div className="mb-4">
+              <div><h2 className="text-base font-semibold text-slate-700 lg:text-sm">Transaction History &amp; Dues</h2><p className="mt-0.5 text-xs text-slate-400">All invoices for the selected academic session</p></div>
+              <div className="mt-3 flex items-center justify-end gap-3 text-xs text-slate-400 lg:mt-2 lg:gap-1.5" aria-label="Status legend">
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Paid</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Due</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> Overdue</span>
+              </div>
+            </div>
+
+            <div className="fees-scrollable max-h-[480px] space-y-2 overflow-y-auto pr-1">
+              {loadingInvoices ? (
+                <div className="fees-invoice-item flex min-h-28 items-center justify-center gap-2 rounded-xl p-4 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-purple-500" /> Loading fees…</div>
+              ) : !selectedChild ? (
+                <div className="fees-invoice-item flex min-h-28 items-center justify-center rounded-xl p-4 text-center text-sm text-slate-500">Select a child to view fee details.</div>
+              ) : sessionInvoices.length === 0 ? (
+                <div className="fees-invoice-item flex min-h-28 flex-col items-center justify-center rounded-xl p-4 text-center text-sm text-slate-500"><FileText className="mb-2 h-7 w-7 text-slate-300" />{invoices.length === 0 ? 'No invoices found for this student.' : 'No fees found for this session.'}</div>
+              ) : sessionInvoices.map((invoice, index) => {
+                const balance = getInvoiceBalance(invoice);
+                const isPaid = balance <= 0;
+                const isPartial = balance > 0 && getInvoicePaid(invoice) > 0;
+                const isOverdue = balance > 0 && isPastDue(invoice.dueDate);
+                const latestPayment = (paymentsByInvoice[invoice._id] || [])[0] || null;
+                const isSelected = selectedInvoiceId === invoice._id;
+                const status = isPaid ? 'Paid' : isOverdue ? 'Overdue' : isPartial ? 'Partial' : 'Due';
+                const statusClass = isPaid ? 'is-paid' : isOverdue ? 'is-overdue' : 'is-due';
+                return (
+                  <article key={invoice._id} className={`fees-invoice-item fees-stagger ${statusClass} rounded-xl p-4 ${isSelected ? 'is-selected' : ''}`} style={{ animationDelay: `${Math.min(index, 7) * 50 + 50}ms` }}>
+                    <button type="button" onClick={() => setSelectedInvoiceId(invoice._id)} className="fees-invoice-summary w-full text-left" aria-expanded={isSelected}>
+                      <span className="fees-invoice-identity min-w-0">
+                        <span className="block text-sm font-semibold text-slate-800">{getInvoiceTitle(invoice)}</span>
+                        <span className="block text-xs text-slate-400">{selectedChild?.name || 'Student'}{getChildClass(selectedChild) ? ` · Class ${getChildClass(selectedChild)}` : ''}</span>
+                      </span>
+                      <span className="fees-invoice-amount text-sm font-semibold text-slate-800">{formatCurrency(isPaid ? getInvoiceTotal(invoice) : balance)}</span>
+                      <span className={`fees-status-pill fees-invoice-status ${statusClass}`}>{status}</span>
+                      <span className={`fees-invoice-date text-xs ${isOverdue ? 'text-red-400' : 'text-slate-400'}`}>{isPaid ? 'Paid' : 'Due'}: {formatShortDate(isPaid ? (latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt) : invoice.dueDate)}</span>
+                    </button>
+
+                    {isSelected && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/70 pt-3">
+                        {Array.isArray(invoice.feeHeadsSnapshot) && invoice.feeHeadsSnapshot.length > 0 && <button type="button" onClick={() => setShowFeeBreakdown(true)} className="fees-secondary-action">View breakdown</button>}
+                        <button type="button" onClick={() => handleDownloadFeesCard(invoice)} disabled={downloadingFeesCardId === invoice._id} className="fees-secondary-action">
+                          {downloadingFeesCardId === invoice._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadIcon className="h-3.5 w-3.5" />} Fees card
+                        </button>
                         {isPaid && latestPayment && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadReceipt(latestPayment, invoice);
-                            }}
-                            disabled={downloadingReceiptId === latestPayment._id}
-                            className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            title="Download receipt"
-                          >
-                            {downloadingReceiptId === latestPayment._id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Download className="h-3 w-3" />
-                            )}
-                            <span className="hidden sm:inline">Receipt</span>
+                          <button type="button" onClick={() => handleDownloadReceipt(latestPayment, invoice)} disabled={downloadingReceiptId === latestPayment._id} className="fees-secondary-action fees-receipt-action">
+                            {downloadingReceiptId === latestPayment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Receipt
+                          </button>
+                        )}
+                        {balance > 0 && (
+                          <button type="button" onClick={() => handlePayNow(invoice, activeInstallment?.remaining || balance)} disabled={isProcessingSelected} className="ml-auto hidden items-center gap-1.5 rounded-full bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex">
+                            {isProcessingSelected ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />} Pay now
                           </button>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {selectedInvoice && (
-                <div
-                  className={`mt-4 rounded-xl border px-4 py-3 ${
-                    selectedInvoice.balanceAmount > 0 ? 'border-amber-100 bg-amber-50' : 'border-emerald-100 bg-emerald-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm font-semibold ${selectedInvoice.balanceAmount > 0 ? 'text-amber-900' : 'text-emerald-800'}`}>
-                      {selectedInvoice.balanceAmount > 0 ? 'Total Amount Due' : 'Amount Paid'}
-                    </span>
-                    <span className={`text-lg font-bold ${selectedInvoice.balanceAmount > 0 ? 'text-amber-900' : 'text-emerald-800'}`}>
-                      {formatCurrency(selectedInvoice.balanceAmount > 0 ? selectedAmount : selectedInvoice.totalAmount)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Installment breakdown for the selected invoice */}
-              {hasInstallments && (
-                <div className="mt-4">
-                  <p className="mb-2 text-xs font-semibold text-gray-600">Installment Breakdown</p>
-                  <div className="space-y-3">
-                    {installmentBreakdown.map((installment) => {
-                      const isCurrent = !installment.isPaid && !installment.isLocked;
-                      const cardColor = installment.isPaid
-                        ? 'border-emerald-100 bg-emerald-50/50'
-                        : installment.isLocked
-                        ? 'border-gray-100 bg-gray-50/60'
-                        : 'border-amber-200 bg-amber-50/50';
-                      const badgeColor = installment.isPaid
-                        ? 'bg-emerald-500 text-white'
-                        : installment.isLocked
-                        ? 'bg-gray-300 text-white'
-                        : 'bg-amber-500 text-white';
-                      const barColor = installment.isPaid ? 'bg-emerald-500' : 'bg-amber-500';
-                      const isProcessingThis = processingInvoiceId === selectedInvoice._id && isCurrent;
-                      return (
-                        <div key={installment.id} className={`rounded-xl border p-3.5 sm:p-4 ${cardColor}`}>
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-2.5">
-                              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${badgeColor}`}>
-                                {installment.isPaid ? <CheckCircle2 className="h-4 w-4" /> : installment.isLocked ? <Lock className="h-3.5 w-3.5" /> : installment.index + 1}
-                              </span>
-                              <div>
-                                <p className="text-sm font-bold text-gray-800">{installment.label}</p>
-                                <p className="text-xs text-gray-500">Due: {formatDate(installment.dueDate)}</p>
-                              </div>
-                            </div>
-                            <p className="shrink-0 text-sm font-bold text-gray-900">{formatCurrency(installment.amount)}</p>
-                          </div>
-
-                          {installment.isLocked ? (
-                            <p className="mt-3 text-xs font-medium text-gray-400">
-                              Locked until {installmentBreakdown[installment.index - 1]?.label || 'the previous installment'} is paid
-                            </p>
-                          ) : (
-                            <>
-                              <div className="mt-3">
-                                <div className="flex items-center justify-between text-[11px] text-gray-500">
-                                  <span>Progress</span>
-                                  <span>{installment.progressPct}%</span>
-                                </div>
-                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white">
-                                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${installment.progressPct}%` }} />
-                                </div>
-                              </div>
-
-                              {isCurrent && (
-                                <div className="mt-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePayInstallment(selectedInvoice, installment)}
-                                    disabled={isProcessingThis}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {isProcessingThis ? (
-                                      <>
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing…
-                                      </>
-                                    ) : (
-                                      <>Pay {formatCurrency(installment.remaining)}</>
-                                    )}
-                                  </button>
-                                </div>
-                              )}
-
-                              {installment.isPaid && installment.receiptPayment && (
-                                <div className="mt-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDownloadReceipt(installment.receiptPayment, selectedInvoice)}
-                                    disabled={downloadingReceiptId === installment.receiptPayment._id}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {downloadingReceiptId === installment.receiptPayment._id ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Download className="h-3.5 w-3.5" />
-                                    )}
-                                    Download Receipt
-                                  </button>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {(() => {
-                    const totalAmount = Number(selectedInvoice.totalAmount || 0);
-                    const paidAmount = Number(selectedInvoice.paidAmount || 0);
-                    const paidPct = totalAmount > 0 ? Math.min(100, Math.round((paidAmount / totalAmount) * 100)) : 0;
-                    return (
-                      <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-semibold text-gray-700">Amount Paid</span>
-                          <span className="font-bold text-gray-900">
-                            {formatCurrency(paidAmount)} <span className="font-medium text-gray-400">of {formatCurrency(totalAmount)}</span>
-                          </span>
-                        </div>
-                        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidPct}%` }} />
-                        </div>
-                        <p className="mt-1 text-right text-[11px] text-gray-400">{paidPct}% paid</p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Recent payments for the selected invoice */}
-              {/* {selectedInvoice && (paymentsByInvoice[selectedInvoice._id] || []).length > 0 && (
-                <div className="mt-4">
-                  <p className="mb-2 text-xs font-semibold text-gray-600">Recent Payments</p>
-                  <div className="space-y-2">
-                    {(paymentsByInvoice[selectedInvoice._id] || []).slice(0, 3).map((payment) => (
-                      <div
-                        key={payment._id}
-                        className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2 text-xs text-gray-600"
-                      >
-                        <div className="min-w-0">
-                          <span className="block truncate">
-                            {new Date(payment.paidOn || payment.createdAt).toLocaleDateString()}
-                            {' - '}
-                            {payment.method || 'cash'}
-                            {payment.transactionId ? ` - Ref ${payment.transactionId}` : ''}
-                          </span>
-                          <span className="mt-0.5 block font-semibold text-gray-800">{formatCurrency(payment.amount)}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadReceipt(payment, selectedInvoice)}
-                          disabled={downloadingReceiptId === payment._id}
-                          className="ml-3 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          title="Download receipt"
-                        >
-                          {downloadingReceiptId === payment._id ? (
-                            <>
-                              <Loader2 className="h-3 w-3 animate-spin" /> PDF
-                            </>
-                          ) : (
-                            <>
-                              <Download className="h-3 w-3" /> Receipt
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )} */}
+                    )}
+                  </article>
+                );
+              })}
             </div>
 
-            {/* Payment summary / pay action */}
-            {/* <div className="h-fit rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
-              <h3 className="text-base font-bold text-gray-800">Payment Summary</h3>
-              <p className="mt-0.5 text-xs text-gray-500">Choose your payment option on the secure checkout screen</p>
-
-              {selectedInvoice && selectedInvoice.balanceAmount <= 0 ? (
-                <div className="mt-4 flex flex-col items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-6 text-center">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                  <p className="text-sm font-bold text-emerald-800">Fully Paid</p>
-                  <p className="text-xs text-emerald-700">{selectedInvoice.title}</p>
-                  <p className="text-lg font-bold text-emerald-900">{formatCurrency(selectedInvoice.totalAmount)}</p>
-                  {(paymentsByInvoice[selectedInvoice._id] || [])[0] && (
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadReceipt((paymentsByInvoice[selectedInvoice._id] || [])[0], selectedInvoice)}
-                      disabled={downloadingReceiptId === (paymentsByInvoice[selectedInvoice._id] || [])[0]?._id}
-                      className="mt-2 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {downloadingReceiptId === (paymentsByInvoice[selectedInvoice._id] || [])[0]?._id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
-                      Download Receipt
-                    </button>
-                  )}
+            {selectedInvoice && installmentBreakdown.length > 0 && (
+              <section className="mt-3 rounded-xl border border-white/70 bg-white/35 p-4" aria-label="Installment breakdown">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div><h3 className="text-xs font-semibold text-slate-700">Installment plan</h3><p className="text-[11px] text-slate-400">Installments unlock in payment order</p></div>
+                  <span className="text-sm font-bold text-slate-800">{formatCurrency(selectedBalance)} due</span>
                 </div>
-              ) : selectedInvoice && hasInstallments ? (
-                <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/60 p-4 text-center">
-                  <p className="text-sm font-semibold text-amber-900">This fee is split into installments</p>
-                  <p className="mt-1 text-xs leading-relaxed text-amber-700">
-                    Pay each installment in order from the breakdown on the left. Balance due: {formatCurrency(selectedInvoice.balanceAmount)}
-                  </p>
-                </div>
-              ) : selectedInvoice ? (
-                <>
-                  <div className="mt-4 space-y-2 rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Fee</span>
-                      <span className="max-w-[60%] truncate text-right font-medium text-gray-800">{selectedInvoice.title}</span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {installmentBreakdown.map((installment) => (
+                    <div key={installment.id} className={`rounded-lg border p-3 ${installment.isPaid ? 'border-emerald-100 bg-emerald-50/60' : installment.isLocked ? 'border-slate-100 bg-white/40' : 'border-purple-100 bg-purple-50/60'}`}>
+                      <div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-slate-700">{installment.label}</span><span className="text-xs font-bold text-slate-800">{formatCurrency(installment.amount)}</span></div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${installment.isPaid ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${installment.progressPct}%` }} /></div>
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400"><span>{installment.isPaid ? 'Paid' : installment.isLocked ? 'Locked' : `Due ${formatShortDate(installment.dueDate)}`}</span><span>{installment.progressPct}%</span></div>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">Due Date</span>
-                      <span className="font-medium text-gray-800">{formatDate(selectedInvoice.dueDate)}</span>
-                    </div>
-                  </div>
-
-                  <label className="mt-3 block text-xs font-semibold text-gray-500">Amount to pay</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    max={selectedInvoice.balanceAmount}
-                    value={amounts[selectedInvoice._id] ?? ''}
-                    onChange={(e) =>
-                      setAmounts((prev) => ({
-                        ...prev,
-                        [selectedInvoice._id]: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => handlePayNow(selectedInvoice)}
-                    disabled={!canPaySelected || isProcessingSelected}
-                    className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition ${
-                      canPaySelected
-                        ? 'bg-amber-500 text-white shadow-sm shadow-amber-200 hover:bg-amber-600'
-                        : 'cursor-not-allowed bg-gray-200 text-gray-500'
-                    }`}
-                  >
-                    {isProcessingSelected ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Processing…
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="h-3.5 w-3.5" /> Pay {formatCurrency(selectedAmount)}
-                      </>
-                    )}
-                  </button>
-                  <p className="mt-2 text-center text-[11px] text-gray-400">
-                    You'll be redirected to a secure Razorpay checkout page.
-                  </p>
-                </>
-              ) : (
-                <div className="mt-6 flex flex-col items-center gap-2 py-6 text-center text-sm text-gray-400">
-                  <CreditCard className="h-8 w-8 text-gray-300" />
-                  {sessionInvoices.length === 0 ? 'No fees for this session.' : 'All fees are fully paid. Nothing due.'}
+                  ))}
                 </div>
-              )}
-            </div> */}
-          </div>
-        </>
-      ) : (
-        <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center text-gray-500 shadow-sm">
-          Please select a child to view fee details.
+              </section>
+            )}
+          </main>
+        </div>
+      </section>
+
+      {selectedInvoice && selectedBalance > 0 && (
+        <div className="fees-mobile-pay fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[#fef7ff] via-[#fef7ff]/95 to-transparent px-4 pb-4 pt-8 md:hidden">
+          <button
+            type="button"
+            onClick={() => handlePayNow(selectedInvoice, activeInstallment?.remaining || selectedBalance)}
+            disabled={isProcessingSelected}
+            className="mx-auto flex w-full max-w-md items-center justify-between rounded-xl bg-purple-700 px-6 py-4 text-base font-bold text-white shadow-[0_10px_30px_rgba(99,14,212,0.28)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="flex items-center gap-2">
+              {isProcessingSelected ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-4 w-4" />}
+              Pay Now
+            </span>
+            <span>{formatCurrency(activeInstallment?.remaining || selectedBalance)}</span>
+          </button>
         </div>
       )}
 
-      {/* Info strip */}
-      {/* <div className="grid gap-3 sm:grid-cols-3">
-        <InfoTile
-          icon={ShieldCheck}
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-50"
-          title="Safe & Secure"
-          copy="Your payments are protected with 256-bit encryption."
-        />
-        <InfoTile
-          icon={Zap}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-50"
-          title="Instant Confirmation"
-          copy="Get an instant receipt after successful payment."
-        />
-        <InfoTile
-          icon={RotateCcw}
-          iconColor="text-violet-600"
-          iconBg="bg-violet-50"
-          title="Easy Refunds"
-          copy="Refunds are processed quickly and easily."
-        />
-      </div> */}
-
       {showFeeBreakdown && selectedInvoice && Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowFeeBreakdown(false)} />
-          <div className="relative w-full max-w-md rounded-2xl border border-gray-100 bg-white p-5 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="fees-breakdown-title">
+          <button type="button" className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowFeeBreakdown(false)} aria-label="Close breakdown" />
+          <div className="relative w-full max-w-md rounded-2xl border border-white/80 bg-white/95 p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-bold text-gray-800">Fees Breakdown</h3>
-                <p className="mt-0.5 text-xs text-gray-500">{selectedInvoice.title || 'Fee Invoice'}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFeeBreakdown(false)}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div><h3 id="fees-breakdown-title" className="text-base font-bold text-slate-800">Fees Breakdown</h3><p className="mt-0.5 text-xs text-slate-500">{getInvoiceTitle(selectedInvoice)}</p></div>
+              <button type="button" onClick={() => setShowFeeBreakdown(false)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600" aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
-
             <div className="mt-4 space-y-1.5">
-              {selectedInvoice.feeHeadsSnapshot.map((head, headIdx) => (
-                <div
-                  key={`${head.label}-${headIdx}`}
-                  className="flex items-center justify-between rounded-lg bg-gray-50/60 px-3 py-2 text-sm text-gray-600"
-                >
-                  <span>{head.label}</span>
-                  <span className="font-semibold text-gray-800">{formatCurrency(head.amount)}</span>
-                </div>
+              {selectedInvoice.feeHeadsSnapshot.map((head, index) => (
+                <div key={`${head.label}-${index}`} className="flex items-center justify-between rounded-lg bg-slate-50/80 px-3 py-2 text-sm text-slate-600"><span>{head.label}</span><span className="font-semibold text-slate-800">{formatCurrency(head.amount)}</span></div>
               ))}
             </div>
-
-            <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-base font-bold text-gray-900">{formatCurrency(selectedInvoice.totalAmount)}</span>
-            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3"><span className="text-sm font-semibold text-slate-700">Total</span><span className="text-base font-bold text-slate-900">{formatCurrency(getInvoiceTotal(selectedInvoice))}</span></div>
           </div>
         </div>
       )}

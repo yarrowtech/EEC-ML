@@ -14,6 +14,40 @@ const {
   studentIsWithinTeacherScope,
 } = require('../utils/teacherAllocationScope');
 
+const formatMeetingDay = (value) => {
+  if (!value) return 'TBA';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
+};
+
+// Fire-and-forget notification to the meeting's teacher (parent-initiated changes).
+const notifyTeacherOfMeetingChange = async (meeting, req, { title, message }) => {
+  try {
+    let parentName = req.user?.name;
+    if (!parentName) {
+      const parent = await ParentUser.findById(req.user?.id).select('name').lean();
+      parentName = parent?.name || 'A parent';
+    }
+    await Notification.create({
+      schoolId: meeting.schoolId,
+      campusId: meeting.campusId || null,
+      title,
+      message: `${message} (${parentName})`,
+      audience: 'Teacher',
+      targetUserIds: [meeting.teacherId],
+      createdByType: 'parent',
+      createdByParentId: req.user?.id || null,
+      createdByName: parentName,
+      type: 'meeting',
+      typeLabel: 'parent_teacher_meeting',
+      category: 'general',
+      priority: 'high',
+    });
+  } catch (notifErr) {
+    console.error('Failed to notify teacher of meeting change:', notifErr);
+  }
+};
+
 // ========== TEACHER ROUTES ==========
 
 // Get students for teacher (to schedule meetings with their parents)
@@ -429,9 +463,125 @@ router.put('/parent/confirm/:id', authParent, async (req, res) => {
     meeting.status = 'confirmed';
     await meeting.save();
 
+    await notifyTeacherOfMeetingChange(meeting, req, {
+      title: 'Meeting Confirmed by Parent',
+      message: `The parent confirmed the meeting on ${formatMeetingDay(meeting.meetingDate)} at ${meeting.meetingTime}.`,
+    });
+
     res.json({ message: 'Meeting confirmed successfully', meeting });
   } catch (err) {
     console.error('Confirm meeting error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Parent requests a reschedule
+router.put('/parent/reschedule/:id', authParent, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const parentId = req.user?.id;
+    if (!parentId) return res.status(400).json({ error: 'parentId is required' });
+
+    const { requestedDate, requestedTime, reason } = req.body || {};
+    if (!reason || !String(reason).trim()) {
+      return res.status(400).json({ error: 'A reason for the reschedule request is required' });
+    }
+
+    const meeting = await ParentMeeting.findOne({ _id: id, schoolId, parentId });
+    if (!meeting) return res.status(404).json({ error: 'Meeting not found or unauthorized' });
+    if (['completed', 'cancelled'].includes(meeting.status)) {
+      return res.status(409).json({ error: `Cannot reschedule a ${meeting.status} meeting` });
+    }
+
+    meeting.status = 'reschedule_requested';
+    meeting.rescheduleRequest = {
+      requestedDate: requestedDate ? new Date(requestedDate) : null,
+      requestedTime: String(requestedTime || '').trim(),
+      reason: String(reason).trim(),
+      requestedAt: new Date(),
+    };
+    await meeting.save();
+
+    await notifyTeacherOfMeetingChange(meeting, req, {
+      title: 'Reschedule Requested by Parent',
+      message: `The parent asked to reschedule the meeting (currently ${formatMeetingDay(meeting.meetingDate)} at ${meeting.meetingTime}). Reason: ${meeting.rescheduleRequest.reason}`,
+    });
+
+    res.json({ message: 'Reschedule request sent to the teacher', meeting });
+  } catch (err) {
+    console.error('Parent reschedule request error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Parent declines a meeting
+router.put('/parent/decline/:id', authParent, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const parentId = req.user?.id;
+    if (!parentId) return res.status(400).json({ error: 'parentId is required' });
+
+    const meeting = await ParentMeeting.findOne({ _id: id, schoolId, parentId });
+    if (!meeting) return res.status(404).json({ error: 'Meeting not found or unauthorized' });
+    if (['completed', 'cancelled'].includes(meeting.status)) {
+      return res.status(409).json({ error: `Cannot decline a ${meeting.status} meeting` });
+    }
+
+    meeting.status = 'declined';
+    if (req.body?.reason) meeting.notes = String(req.body.reason).trim();
+    await meeting.save();
+
+    await notifyTeacherOfMeetingChange(meeting, req, {
+      title: 'Meeting Declined by Parent',
+      message: `The parent declined the meeting on ${formatMeetingDay(meeting.meetingDate)} at ${meeting.meetingTime}.${meeting.notes ? ` Note: ${meeting.notes}` : ''}`,
+    });
+
+    res.json({ message: 'Meeting declined', meeting });
+  } catch (err) {
+    console.error('Parent decline meeting error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Parent submits feedback for a completed meeting
+router.post('/parent/feedback/:id', authParent, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const parentId = req.user?.id;
+    if (!parentId) return res.status(400).json({ error: 'parentId is required' });
+
+    const rating = Number(req.body?.rating);
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+    }
+
+    const meeting = await ParentMeeting.findOne({ _id: id, schoolId, parentId });
+    if (!meeting) return res.status(404).json({ error: 'Meeting not found or unauthorized' });
+
+    meeting.parentFeedback = {
+      rating,
+      comment: String(req.body?.comment || '').trim(),
+      submittedAt: new Date(),
+    };
+    await meeting.save();
+
+    await notifyTeacherOfMeetingChange(meeting, req, {
+      title: 'Meeting Feedback Received',
+      message: `The parent rated the meeting ${rating}/5${meeting.parentFeedback.comment ? `: "${meeting.parentFeedback.comment}"` : '.'}`,
+    });
+
+    res.json({ message: 'Thank you for your feedback', meeting });
+  } catch (err) {
+    console.error('Parent meeting feedback error:', err);
     res.status(500).json({ error: err.message });
   }
 });

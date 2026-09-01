@@ -1,182 +1,262 @@
-import React from 'react';
-import { Activity, Calendar, Download, Heart, Thermometer, Weight, Ruler, AlertCircle } from 'lucide-react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
+import {
+  Activity,
+  AlertCircle,
+  Calendar,
+  Droplet,
+  Heart,
+  Loader2,
+  Phone,
+  ShieldAlert,
+  Sparkles,
+  Syringe,
+  User,
+} from 'lucide-react';
+import { formatStudentDisplay } from '../utils/studentDisplay';
+import { parentApiJson } from './parentApi';
+
+const MOOD_LABELS = {
+  excellent: 'Excellent',
+  good: 'Good',
+  neutral: 'Neutral',
+  concerning: 'Needs attention',
+  critical: 'Critical',
+};
+
+const Chips = ({ items, tone = 'slate', empty }) => {
+  if (!items || items.length === 0) {
+    return <p className="text-sm text-slate-400">{empty}</p>;
+  }
+  const toneClass =
+    tone === 'rose'
+      ? 'bg-rose-100 text-rose-700'
+      : tone === 'amber'
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-slate-100 text-slate-700';
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {items.map((item, i) => (
+        <li key={`${item}-${i}`} className={`rounded-full px-3 py-1 text-sm font-medium ${toneClass}`}>
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 const HealthReport = () => {
-  const healthData = {
-    studentName: "Koushik Bala",
-    class: "10-A",
-    age: 15,
-    bloodGroup: "B+",
-    height: "165 cm",
-    weight: "52 kg",
-    bmi: "19.1",
-    lastCheckup: "2024-02-15",
-    medicalHistory: [
-      {
-        date: "2024-02-15",
-        type: "Regular Checkup",
-        findings: "Normal",
-        doctor: "Dr. Johnson",
-        recommendations: "Continue regular exercise"
-      },
-      {
-        date: "2024-01-10",
-        type: "Vaccination",
-        findings: "Flu Shot",
-        doctor: "Dr. Smith",
-        recommendations: "Next dose due in 6 months"
+  const selectId = useId();
+  const [children, setChildren] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const data = await parentApiJson('/api/parent/auth/health');
+        if (!active) return;
+        const list = Array.isArray(data?.children) ? data.children : [];
+        setChildren(list);
+        if (list.length > 0) setSelectedId(String(list[0].studentId));
+      } catch (err) {
+        if (active) setError(err.message || 'Unable to load the health report.');
+      } finally {
+        if (active) setLoading(false);
       }
-    ],
-    allergies: ["Peanuts", "Dust"],
-    medications: ["None"],
-    emergencyContact: {
-      name: "John Smith",
-      relation: "Father",
-      phone: "+1 234-567-8900"
-    }
-  };
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const child = useMemo(
+    () => children.find((c) => String(c.studentId) === String(selectedId)) || children[0] || null,
+    [children, selectedId],
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-slate-500" aria-live="polite" aria-busy="true">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        <p className="text-sm font-medium">Loading health records…</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-6 mb-6 text-white">
-        <h1 className="text-3xl font-bold mb-2">Health Report</h1>
-        <p className="text-yellow-100">View student health records and history</p>
-      </div>
-
-      {/* Student Info & Vitals */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Student Info</h3>
-          <div className="space-y-2">
-            <p className="text-gray-600">Name: {healthData.studentName}</p>
-            <p className="text-gray-600">Class: {healthData.class}</p>
-            <p className="text-gray-600">Age: {healthData.age} years</p>
-            <p className="text-gray-600">Blood Group: {healthData.bloodGroup}</p>
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-5xl mx-auto">
+      <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-50 rounded-full -mr-32 -mt-32" />
+        <div className="relative space-y-2">
+          <div className="inline-flex items-center gap-2 bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <Heart size={14} />
+            <span>Health &amp; Wellbeing</span>
           </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Health Report</h1>
+          <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
+            Medical information recorded during enrolment, plus wellbeing notes from the school counsellor.
+            Contact the school office to update any of these details.
+          </p>
         </div>
+      </header>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Height & Weight</h3>
-            <Activity className="w-6 h-6 text-yellow-500" />
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Ruler className="w-5 h-5 text-gray-500 mr-2" />
-                <span className="text-gray-600">Height</span>
-              </div>
-              <span className="font-medium text-gray-800">{healthData.height}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Weight className="w-5 h-5 text-gray-500 mr-2" />
-                <span className="text-gray-600">Weight</span>
-              </div>
-              <span className="font-medium text-gray-800">{healthData.weight}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Activity className="w-5 h-5 text-gray-500 mr-2" />
-                <span className="text-gray-600">BMI</span>
-              </div>
-              <span className="font-medium text-gray-800">{healthData.bmi}</span>
-            </div>
-          </div>
+      {error && (
+        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <p className="font-medium">{error}</p>
         </div>
+      )}
 
-        <div className="bg-white rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Allergies</h3>
-            <AlertCircle className="w-6 h-6 text-red-500" />
-          </div>
-          <div className="space-y-2">
-            {healthData.allergies.map((allergy, index) => (
-              <div key={index} className="inline-block px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm mr-2">
-                {allergy}
-              </div>
-            ))}
-          </div>
+      {!error && children.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
+          <Heart size={28} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-sm font-medium text-slate-500">No health records available yet</p>
+          <p className="mt-1 text-xs text-slate-400">The school has not added medical details for your children.</p>
         </div>
+      )}
 
-        <div className="bg-white rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Emergency Contact</h3>
-            <Heart className="w-6 h-6 text-red-500" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-gray-600">Name: {healthData.emergencyContact.name}</p>
-            <p className="text-gray-600">Relation: {healthData.emergencyContact.relation}</p>
-            <p className="text-gray-600">Phone: {healthData.emergencyContact.phone}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Calendar className="w-5 h-5 text-gray-500" />
-              <span className="text-gray-600">Last Checkup: {new Date(healthData.lastCheckup).toLocaleDateString()}</span>
-            </div>
-          </div>
-
-          <button className="flex items-center space-x-2 bg-yellow-500 text-black px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors">
-            <Download className="w-4 h-4" />
-            <span>Download Report</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Medical History */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-800">Medical History</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Date</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Type</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Findings</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Doctor</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500">Recommendations</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {healthData.medicalHistory.map((record, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center text-sm text-gray-900">
-                      <Calendar className="w-4 h-4 mr-2 text-gray-500" />
-                      {new Date(record.date).toLocaleDateString()}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
-                      {record.type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{record.findings}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{record.doctor}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-600">{record.recommendations}</div>
-                  </td>
-                </tr>
+      {children.length > 0 && (
+        <>
+          <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <label htmlFor={selectId} className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
+              Select child
+            </label>
+            <select
+              id={selectId}
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="w-full sm:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none"
+            >
+              {children.map((c) => (
+                <option key={c.studentId} value={c.studentId}>
+                  {formatStudentDisplay({ studentName: c.name, roll: c.roll, section: c.className })}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </select>
+          </section>
+
+          {child && (
+            <>
+              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                {[
+                  { label: 'Student', value: child.name, icon: User, hint: child.className || '—' },
+                  { label: 'Age', value: child.age != null ? `${child.age} yrs` : '—', icon: Calendar, hint: 'From date of birth' },
+                  { label: 'Blood Group', value: child.bloodGroup || '—', icon: Droplet, hint: 'On file' },
+                  {
+                    label: 'Wellbeing',
+                    value: child.wellbeing?.mood ? (MOOD_LABELS[child.wellbeing.mood] || child.wellbeing.mood) : '—',
+                    icon: Sparkles,
+                    hint: child.wellbeing?.lastAssessment
+                      ? `Reviewed ${new Date(child.wellbeing.lastAssessment).toLocaleDateString()}`
+                      : 'Not assessed',
+                  },
+                ].map((stat) => (
+                  <div key={stat.label} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                    <div className="p-3 rounded-xl bg-rose-50 text-rose-600 w-fit mb-4">
+                      <stat.icon size={20} aria-hidden="true" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
+                    <p className="text-xl font-bold text-slate-900">{stat.value}</p>
+                    <p className="text-[11px] text-slate-500 mt-2">{stat.hint}</p>
+                  </div>
+                ))}
+              </section>
+
+              <section className="grid gap-6 md:grid-cols-2">
+                <article className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 space-y-3">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <ShieldAlert size={18} className="text-rose-500" aria-hidden="true" /> Allergies
+                  </h2>
+                  <Chips items={child.allergies} tone="rose" empty="No known allergies recorded." />
+                </article>
+
+                <article className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 space-y-3">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <Activity size={18} className="text-amber-500" aria-hidden="true" /> Known health conditions
+                  </h2>
+                  <Chips items={child.knownHealthIssues} tone="amber" empty="No health conditions recorded." />
+                </article>
+
+                <article className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 space-y-3">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <Sparkles size={18} className="text-indigo-500" aria-hidden="true" /> Learning support needs
+                  </h2>
+                  <Chips items={child.learningDisabilities} empty="No learning support needs recorded." />
+                </article>
+
+                <article className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 space-y-3">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <Syringe size={18} className="text-emerald-500" aria-hidden="true" /> Immunisation
+                  </h2>
+                  <p className="text-sm text-slate-700">{child.immunizationStatus || 'No immunisation status on file.'}</p>
+                </article>
+              </section>
+
+              {child.wellbeing && (
+                <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-6 space-y-4">
+                  <h2 className="text-lg font-bold text-slate-900">Counsellor wellbeing notes</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900">{child.wellbeing.academicStress ?? '—'}<span className="text-sm text-slate-400">/10</span></p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Academic stress</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900">{child.wellbeing.socialEngagement ?? '—'}<span className="text-sm text-slate-400">/10</span></p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Social engagement</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900">{child.wellbeing.counselingSessions ?? 0}</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Counselling sessions</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-900">{MOOD_LABELS[child.wellbeing.mood] || '—'}</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Overall mood</p>
+                    </div>
+                  </div>
+                  {child.wellbeing.notes && (
+                    <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-4">{child.wellbeing.notes}</p>
+                  )}
+                </section>
+              )}
+
+              <section className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100">
+                  <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                    <Phone size={18} className="text-slate-500" aria-hidden="true" /> Emergency contacts
+                  </h2>
+                </div>
+                {child.emergencyContacts.length === 0 ? (
+                  <p className="p-6 text-sm text-slate-400">No emergency contacts on file. Please contact the school office.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {child.emergencyContacts.map((c, i) => (
+                      <li key={`${c.name}-${i}`} className="px-6 py-4 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{c.name}</p>
+                          <p className="text-xs text-slate-500">{c.relation}</p>
+                        </div>
+                        {c.phone ? (
+                          <a href={`tel:${c.phone}`} className="text-sm font-semibold text-amber-600 hover:text-amber-700">
+                            {c.phone}
+                          </a>
+                        ) : (
+                          <span className="text-sm text-slate-400">No number</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 };
 
-export default HealthReport; 
+export default HealthReport;

@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { 
-  FileText, 
-  Download, 
-  Award, 
-  TrendingUp, 
-  Calendar, 
-  User, 
+import {
+  FileText,
+  Download,
+  Award,
+  TrendingUp,
+  Calendar,
+  User,
   ChevronRight,
   Filter,
   BarChart3,
@@ -13,11 +13,13 @@ import {
   XCircle,
   Loader2,
   Star,
-  BookOpen
+  BookOpen,
+  AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { formatStudentDisplay } from '../utils/studentDisplay';
+import { normalizeReportCard } from './reportCardShape';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -50,7 +52,7 @@ const ResultsView = () => {
           throw new Error(payload?.error || 'Unable to load results');
         }
         const payload = await res.json();
-        const cards = Array.isArray(payload?.reportCards) ? payload.reportCards : [];
+        const cards = (Array.isArray(payload?.reportCards) ? payload.reportCards : []).map(normalizeReportCard);
         setReportCards(cards);
         setTemplate(payload.template);
         if (cards.length > 0) {
@@ -135,7 +137,7 @@ const ResultsView = () => {
       </header>
 
       {error && (
-        <div className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
+        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{error}</p>
         </div>
@@ -145,12 +147,13 @@ const ResultsView = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <label htmlFor="results-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
               <User size={14} />
               Select Student
             </label>
             <div className="relative group">
               <select
+                id="results-student"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
                 className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all cursor-pointer group-hover:bg-white"
@@ -194,31 +197,31 @@ const ResultsView = () => {
       {/* Summary Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {[
-          { 
-            label: 'Overall Average', 
-            value: selectedReport ? `${selectedReport.totals.percentage}%` : '—', 
-            icon: TrendingUp, 
+          {
+            label: 'Overall Average',
+            value: selectedReport?.totals ? `${selectedReport.totals.percentage}%` : '—',
+            icon: TrendingUp,
             color: 'bg-emerald-50 text-emerald-600',
             trend: 'Performance Level'
           },
-          { 
-            label: 'Aggregate Marks', 
-            value: selectedReport ? `${selectedReport.totals.obtainedMarks} / ${selectedReport.totals.totalMarks}` : '—', 
-            icon: BarChart3, 
+          {
+            label: 'Aggregate Marks',
+            value: selectedReport?.totals ? `${selectedReport.totals.obtainedMarks} / ${selectedReport.totals.totalMarks}` : '—',
+            icon: BarChart3,
             color: 'bg-amber-50 text-amber-600',
             trend: 'Total Score'
           },
-          { 
-            label: 'Final Grade', 
-            value: selectedReport ? selectedReport.totals.grade : '—', 
-            icon: Award, 
+          {
+            label: 'Final Grade',
+            value: selectedReport?.totals?.grade || '—',
+            icon: Award,
             color: 'bg-indigo-50 text-indigo-600',
             trend: 'Certification Level'
           },
-          { 
-            label: 'Assessment Count', 
-            value: selectedReport ? selectedReport.exams.length : '0', 
-            icon: BookOpen, 
+          {
+            label: 'Assessment Count',
+            value: selectedReport ? (selectedReport.exams?.length ?? 0) : '0',
+            icon: BookOpen,
             color: 'bg-cyan-50 text-cyan-600',
             trend: 'Total Components'
           },

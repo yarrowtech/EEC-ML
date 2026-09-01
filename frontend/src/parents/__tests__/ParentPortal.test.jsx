@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import ParentPortal from '../ParentPortal';
@@ -161,19 +161,28 @@ describe('ParentPortal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Dashboard')).toBeInTheDocument();
-        expect(screen.getByText('Attendance Report')).toBeInTheDocument();
-        expect(screen.getByText('Academic Report')).toBeInTheDocument();
-        expect(screen.getByText('Fees Payment')).toBeInTheDocument();
-        expect(screen.getByText('Health Report')).toBeInTheDocument();
-        expect(screen.getByText('Chat')).toBeInTheDocument();
-        expect(screen.getByText('Complaints')).toBeInTheDocument();
-        expect(screen.getByText('Parent-Teacher Meetings')).toBeInTheDocument();
-        expect(screen.getByText('Class Routine')).toBeInTheDocument();
-        expect(screen.getByText('Holiday List')).toBeInTheDocument();
-        expect(screen.getByText('Parent Observation')).toBeInTheDocument();
-        expect(screen.getByText('Results')).toBeInTheDocument();
-        expect(screen.getByText('Achievements')).toBeInTheDocument();
+        expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
+      });
+
+      const nav = within(screen.getByLabelText('Sidebar navigation'));
+      [
+        'Dashboard',
+        'Growth Analytics',
+        'Attendance Report',
+        'Academic Report',
+        'Fees Payment',
+        'Health Report',
+        'Chat',
+        'Complaints',
+        'Parent-Teacher Meetings',
+        'Class Routine',
+        'Holiday List',
+        'Parent Observation',
+        'Excuse Letters',
+        'Results',
+        'Achievements',
+      ].forEach((label) => {
+        expect(nav.getByText(label)).toBeInTheDocument();
       });
     });
   });
@@ -524,7 +533,7 @@ describe('ParentPortal', () => {
       });
     });
 
-    test('clicking logout calls logoutAndRedirect', async () => {
+    test('clicking logout opens a confirmation, then calls logoutAndRedirect', async () => {
       const { logoutAndRedirect } = require('../../utils/authSession');
 
       render(
@@ -539,8 +548,12 @@ describe('ParentPortal', () => {
         expect(screen.getByText('Logout')).toBeInTheDocument();
       });
 
-      const logoutButton = screen.getByText('Logout');
-      fireEvent.click(logoutButton);
+      // Sidebar "Logout" opens the confirmation dialog — it does not log out immediately.
+      fireEvent.click(screen.getByText('Logout'));
+      expect(logoutAndRedirect).not.toHaveBeenCalled();
+
+      const dialog = within(screen.getByText('Confirm Logout').closest('div'));
+      fireEvent.click(dialog.getByRole('button', { name: 'Logout' }));
 
       expect(logoutAndRedirect).toHaveBeenCalled();
     });

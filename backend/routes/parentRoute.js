@@ -20,6 +20,8 @@ const { generateUsername, generatePassword } = require('../utils/generator');
 const rateLimit = require('../middleware/rateLimit');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logAuthEvent } = require('../utils/authEventLogger');
+const { resolveParentChildren } = require('../utils/parentChildren');
+const Wellbeing = require('../models/Wellbeing');
 
 const normalizeKey = (value) =>
   String(value || '')
@@ -1105,6 +1107,88 @@ router.get('/achievements', authParent, async (req, res) => {
   } catch (err) {
     console.error('Fetch parent achievements error:', err);
     res.status(500).json({ error: err.message || 'Unable to load achievements' });
+  }
+});
+
+// Health & medical record for each linked child (from the enrolment record + wellbeing).
+const parseAge = (dob) => {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return null;
+  const diff = Date.now() - birth.getTime();
+  const age = Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+  return age >= 0 && age < 120 ? age : null;
+};
+
+router.get('/health', authParent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    const { students } = await resolveParentChildren({
+      parentId: req.user.id,
+      schoolId,
+      campusId: req.campusId,
+      select:
+        'name grade section roll studentCode username dob bloodGroup knownHealthIssues allergies '
+        + 'immunizationStatus learningDisabilities fatherName fatherPhone motherName motherPhone '
+        + 'guardianName guardianPhone guardianRelation',
+    });
+
+    if (!students.length) {
+      return res.json({ children: [] });
+    }
+
+    const wellbeingByStudent = new Map();
+    const wb = await Wellbeing.find({
+      schoolId,
+      student: { $in: students.map((s) => s._id) },
+    }).lean();
+    wb.forEach((entry) => wellbeingByStudent.set(String(entry.student), entry));
+
+    const listValue = (value) =>
+      String(value || '')
+        .split(/[,;\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    const children = students.map((student) => {
+      const wellbeing = wellbeingByStudent.get(String(student._id)) || null;
+      return {
+        studentId: student._id,
+        name: student.name || 'Student',
+        className: [student.grade, student.section].filter(Boolean).join('-'),
+        roll: student.roll || null,
+        age: parseAge(student.dob),
+        bloodGroup: student.bloodGroup || '',
+        knownHealthIssues: listValue(student.knownHealthIssues),
+        allergies: listValue(student.allergies),
+        immunizationStatus: student.immunizationStatus || '',
+        learningDisabilities: listValue(student.learningDisabilities),
+        emergencyContacts: [
+          student.fatherName && { name: student.fatherName, relation: 'Father', phone: student.fatherPhone || '' },
+          student.motherName && { name: student.motherName, relation: 'Mother', phone: student.motherPhone || '' },
+          student.guardianName && {
+            name: student.guardianName,
+            relation: student.guardianRelation || 'Guardian',
+            phone: student.guardianPhone || '',
+          },
+        ].filter(Boolean),
+        wellbeing: wellbeing
+          ? {
+              mood: wellbeing.mood,
+              academicStress: wellbeing.academicStress,
+              socialEngagement: wellbeing.socialEngagement,
+              counselingSessions: wellbeing.counselingSessions,
+              lastAssessment: wellbeing.lastAssessment,
+              notes: wellbeing.notes || '',
+            }
+          : null,
+      };
+    });
+
+    res.json({ children });
+  } catch (err) {
+    console.error('Fetch parent health report error:', err);
+    res.status(500).json({ error: err.message || 'Unable to load health report' });
   }
 });
 

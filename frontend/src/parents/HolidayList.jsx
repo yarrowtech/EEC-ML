@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { CalendarDays, Download, Loader2 } from 'lucide-react';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+import { parentApiFetch } from './parentApi';
 
 const formatDate = (value) => {
   const dt = new Date(value);
@@ -72,6 +72,7 @@ const isPastHoliday = (startValue, endValue) => {
 };
 
 const HolidayList = () => {
+  const navigate = useNavigate();
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -83,12 +84,7 @@ const HolidayList = () => {
       setLoading(true);
       setError('');
       try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/holidays/parent`, {
-          headers: {
-            authorization: `Bearer ${token}`,
-          },
-        });
+        const res = await parentApiFetch('/api/holidays/parent', {}, navigate);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data?.error || 'Unable to load holidays');

@@ -101,7 +101,7 @@ const AttendanceReport = () => {
       </header>
 
       {error && (
-        <div className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
+        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{error}</p>
         </div>
@@ -111,12 +111,13 @@ const AttendanceReport = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
+            <label htmlFor="att-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
               <User size={14} />
               Select Student
             </label>
             <div className="relative group">
               <select
+                id="att-student"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
                 className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all cursor-pointer group-hover:bg-white"
@@ -139,11 +140,12 @@ const AttendanceReport = () => {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
+            <label htmlFor="att-month" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
               <Calendar size={14} />
               Viewing Month
             </label>
             <input
+              id="att-month"
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}

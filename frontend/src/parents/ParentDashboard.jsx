@@ -171,14 +171,20 @@ const HomeSupportCard = ({ studentId, studentName }) => {
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (!studentId) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/parent-dashboard/home-support/${studentId}`, { headers: authHeader() })
-      .then((r) => r.json())
-      .then((d) => setContent(d.data?.content || ''))
-      .catch(() => {})
-      .finally(() => { setLoading(false); setFetched(true); });
+    try {
+      const r = await fetch(`${API_BASE}/api/parent-dashboard/home-support/${studentId}`, { headers: authHeader() });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || 'Could not load tips');
+      setContent(d.data?.content || '');
+    } catch {
+      setContent('');
+    } finally {
+      setLoading(false);
+      setFetched(true);
+    }
   }, [studentId]);
 
   const lines = content.split('\n').filter(Boolean);
@@ -207,7 +213,7 @@ const HomeSupportCard = ({ studentId, studentName }) => {
         </div>
       )}
       {!content && !loading && fetched && (
-        <p className="text-xs text-amber-700 mt-2">Could not load tips. Please try again.</p>
+        <p role="alert" className="text-xs text-amber-700 mt-2">Could not load tips. Please try again.</p>
       )}
       {!fetched && !loading && (
         <p className="text-[11px] text-amber-700 mt-1">Click "Get Tips" to see AI-generated home support suggestions for this student.</p>
@@ -222,20 +228,30 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
   const [generatedAt, setGeneratedAt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const endpoint = type === 'weekly' ? 'weekly-digest' : 'monthly-report';
   const label = type === 'weekly' ? 'Weekly Digest' : 'Monthly Report';
   const Icon = type === 'weekly' ? TrendingUp : FileText;
   const color = type === 'weekly' ? 'indigo' : 'purple';
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (!studentId) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/parent-dashboard/${endpoint}/${studentId}`, { headers: authHeader() })
-      .then((r) => r.json())
-      .then((d) => { setContent(d.data?.content || ''); setGeneratedAt(d.data?.generatedAt); })
-      .catch(() => {})
-      .finally(() => { setLoading(false); setFetched(true); });
+    setLoadError('');
+    try {
+      const r = await fetch(`${API_BASE}/api/parent-dashboard/${endpoint}/${studentId}`, { headers: authHeader() });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error || 'The report could not be generated right now.');
+      setContent(d.data?.content || '');
+      setGeneratedAt(d.data?.generatedAt);
+      if (!d.data?.content) setLoadError('No report content was returned. Please try again.');
+    } catch (err) {
+      setLoadError(err.message || 'The report could not be generated right now.');
+    } finally {
+      setLoading(false);
+      setFetched(true);
+    }
   }, [studentId, endpoint]);
 
   const lines = content.split('\n').filter(Boolean);
@@ -276,6 +292,9 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
       {!content && !loading && !fetched && (
         <p className={`text-[11px] mt-1 ${colorMap.body}`}>Click "Generate" to create an AI-powered {label.toLowerCase()} for this student.</p>
       )}
+      {loadError && !loading && (
+        <p role="alert" className="text-[11px] mt-1 text-rose-600">{loadError}</p>
+      )}
     </div>
   );
 };
@@ -284,6 +303,7 @@ const ParentDashboard = ({ parentName }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [childrenData, setChildrenData] = useState([]);
   const [meetings, setMeetings] = useState([]);
+  const [feeSummary, setFeeSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -300,29 +320,34 @@ const ParentDashboard = ({ parentName }) => {
         const token = localStorage.getItem('token');
         if (!token) throw new Error('Auth token missing');
 
-        const [attendanceRes, meetingsRes, profileRes] = await Promise.all([
+        const [attendanceRes, meetingsRes, feeRes] = await Promise.all([
           fetch(`${API_BASE}/api/attendance/parent/children`, { headers: authHeader() }),
           fetch(`${API_BASE}/api/meeting/parent/my-meetings`, { headers: authHeader() }),
-          fetch(`${API_BASE}/api/parent/auth/profile`, { headers: authHeader() }),
+          fetch(`${API_BASE}/api/fees/parent/summary`, { headers: authHeader() }),
         ]);
 
-        if (attendanceRes.ok && profileRes.ok) {
+        if (attendanceRes.ok) {
           const attendance = await attendanceRes.json();
-          const profile = await profileRes.json();
-          
+
           // Merge data to get rich child info
           const children = (attendance.children || []).map(c => ({
             ...c.student,
             attendancePercentage: c.summary?.attendancePercentage || 0,
-            presentDays: c.summary?.present || 0,
-            totalDays: c.summary?.total || 0,
+            presentDays: c.summary?.presentDays || 0,
+            totalDays: c.summary?.totalClasses || 0,
           }));
           setChildrenData(children);
+        } else {
+          throw new Error('attendance');
         }
 
         if (meetingsRes.ok) {
           const data = await meetingsRes.json();
           setMeetings(Array.isArray(data) ? data : []);
+        }
+
+        if (feeRes.ok) {
+          setFeeSummary(await feeRes.json());
         }
       } catch (err) {
         console.error('Dashboard fetch error:', err);
@@ -422,9 +447,17 @@ const ParentDashboard = ({ parentName }) => {
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {[
           { label: 'Avg Attendance', value: `${avgAttendance}%`, icon: Calendar, color: 'bg-emerald-50 text-emerald-600', sub: 'Across all wards' },
-          { label: 'Upcoming PTMs', value: upcomingMeetings.length, icon: Video, color: 'bg-blue-50 text-blue-600', sub: 'Next 7 days' },
+          { label: 'Upcoming PTMs', value: upcomingMeetings.length, icon: Video, color: 'bg-blue-50 text-blue-600', sub: 'Scheduled ahead' },
           { label: 'Linked Children', value: childrenData.length, icon: Users, color: 'bg-indigo-50 text-indigo-600', sub: 'Active profiles' },
-          { label: 'Open Invoices', value: 'None', icon: CreditCard, color: 'bg-amber-50 text-amber-600', sub: 'Fee status' },
+          {
+            label: 'Open Invoices',
+            value: feeSummary ? feeSummary.openInvoiceCount : '—',
+            icon: CreditCard,
+            color: feeSummary?.openInvoiceCount ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600',
+            sub: feeSummary?.openInvoiceCount
+              ? `₹${Number(feeSummary.outstandingAmount || 0).toLocaleString('en-IN')} due`
+              : 'All fees cleared',
+          },
         ].map((stat, i) => (
           <div key={i} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group border-b-4 border-b-transparent hover:border-b-slate-900">
             <div className="flex justify-between items-start mb-4">
@@ -489,8 +522,15 @@ const ParentDashboard = ({ parentName }) => {
                             </span>
                             <span className="text-sm font-black text-slate-900">{child.attendancePercentage}%</span>
                           </div>
-                          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                            <div 
+                          <div
+                            className="w-full h-2 bg-slate-200 rounded-full overflow-hidden"
+                            role="progressbar"
+                            aria-valuenow={Math.round(child.attendancePercentage)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`${child.name} attendance`}
+                          >
+                            <div
                               className={`h-full rounded-full transition-all duration-1000 ${
                                 child.attendancePercentage >= 85 ? 'bg-emerald-500' : 'bg-amber-500'
                               }`}
@@ -550,7 +590,7 @@ const ParentDashboard = ({ parentName }) => {
                       <span className={`absolute top-4 right-4 text-[8px] font-black px-2 py-0.5 rounded-full border ${
                         meeting.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'
                       }`}>
-                        {meeting.status.toUpperCase()}
+                        {String(meeting.status || 'pending').replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </div>
                   ))}

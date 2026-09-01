@@ -60,12 +60,25 @@ const parentMeetingSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['scheduled', 'pending', 'confirmed', 'cancelled', 'completed'],
+    enum: ['scheduled', 'pending', 'confirmed', 'reschedule_requested', 'declined', 'cancelled', 'completed'],
     default: 'scheduled'
   },
   notes: {
     type: String,
     default: ''
+  },
+  // Parent-initiated reschedule request (teacher acts on it via /teacher/update)
+  rescheduleRequest: {
+    requestedDate: { type: Date, default: null },
+    requestedTime: { type: String, default: '' },
+    reason: { type: String, default: '' },
+    requestedAt: { type: Date, default: null },
+  },
+  // Parent feedback after a completed meeting
+  parentFeedback: {
+    rating: { type: Number, min: 0, max: 5, default: null },
+    comment: { type: String, default: '' },
+    submittedAt: { type: Date, default: null },
   },
   createdAt: {
     type: Date,
