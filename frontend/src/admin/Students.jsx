@@ -156,12 +156,14 @@ const Students = ({ setShowAdminHeader }) => {
   const tableBodyScrollRef = useRef(null);
   const tableHeaderRef = useRef(null);
   const editRequestTokenRef = useRef(0); // guards the background "fresh copy" fetch in openEditWizard
+  const refreshRequestTokenRef = useRef(0); // guards against an older refreshStudents() overwriting a newer one
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveActionLoading, setArchiveActionLoading] = useState(false);
   const [restoringStudentId, setRestoringStudentId] = useState(null); // row-level "Restoring…" state
   const [selectedArchivedStudentIds, setSelectedArchivedStudentIds] = useState([]);
   const [isArchiving, setIsArchiving] = useState(false);
+  const [bulkOpJob, setBulkOpJob] = useState(null); // { mode: 'archive' | 'restore', total, processed } while a bulk archive/restore job runs
   const [deletingId, setDeletingId] = useState(null);
   const [credentialLoadingId, setCredentialLoadingId] = useState(null);
   const [credentialStatus, setCredentialStatus] = useState({});
@@ -620,6 +622,12 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const refreshStudents = async ({ useCache = false, showLoader = false } = {}) => {
+    // refreshStudents() is fired from many places (import, archive, restore,
+    // edit, delete, the manual Refresh button); without this, an older call
+    // that's still in flight can resolve after a newer one and silently
+    // overwrite fresh data with stale data (e.g. new imports "disappearing"
+    // until a hard page refresh).
+    const requestToken = ++refreshRequestTokenRef.current;
     if (showLoader) setStudentsLoading(true);
     let servedFromCache = false;
     if (useCache) {
@@ -657,6 +665,11 @@ const Students = ({ setShowAdminHeader }) => {
         },
       }).then((res) => (res.ok ? res.json() : [])),
     ]);
+
+    // A newer refreshStudents() call started (and possibly already finished)
+    // while this one was in flight — applying this stale response now would
+    // clobber the fresher data, so drop it.
+    if (refreshRequestTokenRef.current !== requestToken) return;
 
     const students =
       studentsResult.status === "fulfilled" && Array.isArray(studentsResult.value)
@@ -1243,6 +1256,24 @@ const Students = ({ setShowAdminHeader }) => {
     }
   };
 
+  // Polls a bulk archive/restore job until it finishes, updating `bulkOpJob`
+  // with real server-side progress (not a client-side fake timer).
+  const pollBulkOpJob = async (statusUrl, mode) => {
+    let data;
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const res = await fetch(statusUrl, {
+        headers: { authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!res.ok) continue;
+      data = await res.json().catch(() => null);
+      if (!data) continue;
+      setBulkOpJob({ mode, total: data.total || 0, processed: data.processed || 0 });
+      if (data.status === "completed" || data.status === "failed") break;
+    }
+    return data;
+  };
+
   const handleBulkArchiveStudents = async () => {
     if (!selectedStudentIds.length || isArchiving) return;
 
@@ -1258,45 +1289,51 @@ const Students = ({ setShowAdminHeader }) => {
     if (!confirm.isConfirmed) return;
 
     setIsArchiving(true);
+    const archivedIds = selectedStudentIds;
     try {
-      const results = await Promise.allSettled(
-        selectedStudentIds.map((id) =>
-          fetch(`${API_BASE}/api/nif/students/${id}/archive`, {
-            method: "PUT",
-            headers: {
-              authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          }).then(async (res) => {
-            if (!res.ok) {
-              const data = await res.json().catch(() => ({}));
-              throw new Error(data.error || data.message || res.statusText);
-            }
-            return true;
-          })
-        )
+      const startRes = await fetch(`${API_BASE}/api/nif/students/bulk/archive`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ ids: archivedIds }),
+      });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData.error || startData.message || "Failed to start archive job");
+      }
+
+      setBulkOpJob({ mode: "archive", total: startData.total || archivedIds.length, processed: 0 });
+      const data = await pollBulkOpJob(
+        `${API_BASE}/api/nif/students/bulk/archive/status/${startData.jobId}`,
+        "archive"
       );
 
-      const failed = results.filter((r) => r.status === "rejected");
-      const successCount = results.length - failed.length;
+      if (data.status === "failed") {
+        throw new Error(data.error || "Archive job failed");
+      }
 
       setSelectedStudentIds([]);
-      await refreshStudents();
-      await refreshArchivedStudents();
+      // Drop the now-archived rows from the active table immediately; the
+      // full reload (with fee/session enrichment) happens in the background.
+      setStudentData((prev) => prev.filter((s) => !archivedIds.includes(String(s?._id || s?.id))));
+      refreshStudents().catch(console.error);
+      refreshArchivedStudents().catch(console.error);
 
-      if (failed.length) {
+      if (data.skipped > 0) {
         Swal.fire({
           icon: "warning",
           title: "Bulk Archive Completed",
-          html: `<p><strong>${successCount}</strong> archived, <strong>${failed.length}</strong> failed.</p>`,
+          html: `<p><strong>${data.archived}</strong> archived, <strong>${data.skipped}</strong> skipped.</p>`,
         });
-        return;
+      } else {
+        Swal.fire({
+          icon: "success",
+          title: "Students Archived",
+          text: `${data.archived} student(s) archived successfully.`,
+        });
       }
-
-      Swal.fire({
-        icon: "success",
-        title: "Students Archived",
-        text: `${successCount} student(s) archived successfully.`,
-      });
     } catch (err) {
       console.error(err);
       Swal.fire({
@@ -1306,6 +1343,7 @@ const Students = ({ setShowAdminHeader }) => {
       });
     } finally {
       setIsArchiving(false);
+      setBulkOpJob(null);
     }
   };
 
@@ -1499,16 +1537,16 @@ const Students = ({ setShowAdminHeader }) => {
     if (showAddForm || showDraftsModal) loadEnrollDrafts();
   }, [showAddForm, showDraftsModal, loadEnrollDrafts]);
 
-  // Warn before leaving while a bulk delete / import is running.
+  // Warn before leaving while a bulk delete / import / archive / restore is running.
   useEffect(() => {
-    if (!deleteJob && !isImporting) return undefined;
+    if (!deleteJob && !isImporting && !bulkOpJob) return undefined;
     const warn = (e) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [deleteJob, isImporting]);
+  }, [deleteJob, isImporting, bulkOpJob]);
 
   // Lock the page behind the drafts modal so only the modal scrolls.
   useEffect(() => {
@@ -2639,55 +2677,52 @@ const Students = ({ setShowAdminHeader }) => {
     });
     if (!confirm.isConfirmed) return;
 
+    setArchiveActionLoading(true);
+    const restoreIds = selectedArchivedStudentIds;
     try {
-      setArchiveActionLoading(true);
-      const results = await Promise.allSettled(
-        selectedArchivedStudentIds.map((studentId) =>
-          fetch(`${API_BASE}/api/nif/students/${studentId}/unarchive`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-          }).then(async (res) => {
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              throw new Error(data.message || "Failed to restore student");
-            }
-            return studentId;
-          })
-        )
+      const startRes = await fetch(`${API_BASE}/api/nif/students/bulk/unarchive`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ ids: restoreIds }),
+      });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData.error || startData.message || "Failed to start restore job");
+      }
+
+      setBulkOpJob({ mode: "restore", total: startData.total || restoreIds.length, processed: 0 });
+      const data = await pollBulkOpJob(
+        `${API_BASE}/api/nif/students/bulk/unarchive/status/${startData.jobId}`,
+        "restore"
       );
 
-      const restoredIds = new Set(
-        results
-          .filter((item) => item.status === "fulfilled")
-          .map((item) => String(item.value))
-      );
-      const failed = results.filter((item) => item.status === "rejected");
-      const successCount = results.length - failed.length;
+      if (data.status === "failed") {
+        throw new Error(data.error || "Restore job failed");
+      }
 
       setSelectedArchivedStudentIds([]);
       // Drop the restored rows immediately; reconcile fully in the background
       // instead of blocking the UI on a full students+parents+invoices reload.
-      setArchivedStudents((prev) => prev.filter((s) => !restoredIds.has(String(s?._id))));
+      setArchivedStudents((prev) => prev.filter((s) => !restoreIds.includes(String(s?._id))));
       refreshStudents().catch(console.error);
       refreshArchivedStudents().catch(console.error);
 
-      if (failed.length) {
+      if (data.skipped > 0) {
         Swal.fire({
           icon: "warning",
           title: "Bulk Restore Completed",
-          html: `<p><strong>${successCount}</strong> restored, <strong>${failed.length}</strong> failed.</p>`,
+          html: `<p><strong>${data.restored}</strong> restored, <strong>${data.skipped}</strong> skipped.</p>`,
         });
-        return;
+      } else {
+        Swal.fire({
+          icon: "success",
+          title: "Students restored",
+          text: `${data.restored} student(s) restored successfully.`,
+        });
       }
-
-      Swal.fire({
-        icon: "success",
-        title: "Students restored",
-        text: `${successCount} student(s) restored successfully.`,
-      });
     } catch (err) {
       console.error(err);
       Swal.fire({
@@ -2697,6 +2732,7 @@ const Students = ({ setShowAdminHeader }) => {
       });
     } finally {
       setArchiveActionLoading(false);
+      setBulkOpJob(null);
     }
   };
 
@@ -3604,6 +3640,7 @@ const Students = ({ setShowAdminHeader }) => {
         confirmButtonText: "OK"
       });
 
+      setCurrentPage(1); // land on the freshest page so newly imported rows are visible immediately
       await refreshStudents();
     } catch (e) {
       console.error(e);
@@ -5107,6 +5144,41 @@ const Students = ({ setShowAdminHeader }) => {
                 {deleteJob.phase === "parents"
                   ? "Cleaning up linked parent accounts…"
                   : `${deleteJob.processed} / ${deleteJob.total} students`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk archive/restore progress — blocking, non-dismissible */}
+        {bulkOpJob && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+              <div
+                className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${
+                  bulkOpJob.mode === "archive" ? "bg-blue-50" : "bg-green-50"
+                }`}
+              >
+                <Loader2
+                  className={`h-6 w-6 animate-spin ${bulkOpJob.mode === "archive" ? "text-blue-500" : "text-green-500"}`}
+                />
+              </div>
+              <h3 className="text-base font-bold text-gray-900">
+                {bulkOpJob.mode === "archive" ? "Archiving students…" : "Restoring students…"}
+              </h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Please do not refresh or close this window.
+              </p>
+
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className={`h-full rounded-full transition-[width] duration-300 ${
+                    bulkOpJob.mode === "archive" ? "bg-blue-500" : "bg-green-500"
+                  }`}
+                  style={{ width: `${bulkOpJob.total ? Math.round((bulkOpJob.processed / bulkOpJob.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm font-semibold text-gray-800">
+                {bulkOpJob.processed} / {bulkOpJob.total} students
               </p>
             </div>
           </div>

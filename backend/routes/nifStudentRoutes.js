@@ -24,6 +24,19 @@ const pruneBulkImportJob = (jobId) => {
   setTimeout(() => bulkImportJobs.delete(jobId), BULK_IMPORT_JOB_TTL_MS).unref?.();
 };
 
+// Same background-job pattern for bulk archive/restore: selecting hundreds of
+// rows in the admin table and archiving/restoring them used to fire one
+// PUT/PATCH per student from the browser (slow, and gave only a client-side
+// "Archiving..." label). These jobs batch the writes server-side with
+// bulkWrite and report real progress via polling.
+const bulkArchiveJobs = new Map();
+const BULK_ARCHIVE_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const BULK_ARCHIVE_BATCH = 200;
+
+const pruneBulkArchiveJob = (jobId) => {
+  setTimeout(() => bulkArchiveJobs.delete(jobId), BULK_ARCHIVE_JOB_TTL_MS).unref?.();
+};
+
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
   if (!schoolId) {
@@ -639,6 +652,259 @@ router.get('/students/archived/export', adminAuth, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ error: 'Unable to export archived students' });
   }
+});
+
+const runBulkArchiveJob = async (jobId, { ids, schoolId, campusId }) => {
+  const job = bulkArchiveJobs.get(jobId);
+  if (!job) return;
+  try {
+    const filter = { _id: { $in: ids }, schoolId, isArchived: { $ne: true } };
+    if (campusId) filter.campusId = campusId;
+    const docs = await StudentUser.find(filter).select('grade section roll status').lean();
+
+    // ids that don't match (already archived / not found / wrong school) are
+    // counted as processed immediately so the progress bar still completes.
+    const skippedCount = ids.length - docs.length;
+    if (skippedCount > 0) {
+      job.results.skipped += skippedCount;
+      job.processed += skippedCount;
+    }
+
+    for (let start = 0; start < docs.length; start += BULK_ARCHIVE_BATCH) {
+      const batch = docs.slice(start, start + BULK_ARCHIVE_BATCH);
+      const ops = batch.map((doc) => ({
+        updateOne: {
+          filter: { _id: doc._id },
+          update: {
+            $set: {
+              isArchived: true,
+              archivedAt: new Date(),
+              status: 'Archived',
+              grade: '',
+              section: '',
+              archivedPlacement: {
+                grade: doc.grade || '',
+                section: doc.section || '',
+                roll: Number.isFinite(Number(doc.roll)) ? Number(doc.roll) : null,
+                previousStatus: doc.status || 'Active',
+              },
+            },
+            $unset: { roll: '' },
+          },
+        },
+      }));
+      const result = await StudentUser.bulkWrite(ops, { ordered: false });
+      job.results.archived += result.modifiedCount || 0;
+      job.processed += batch.length;
+    }
+
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Unable to archive students';
+  } finally {
+    job.finishedAt = Date.now();
+    pruneBulkArchiveJob(jobId);
+  }
+};
+
+router.put('/students/bulk/archive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+
+    const { ids } = req.body || {};
+    const validIds = (Array.isArray(ids) ? ids : []).filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const jobId = crypto.randomUUID();
+    bulkArchiveJobs.set(jobId, {
+      type: 'archive',
+      schoolId: String(schoolId),
+      status: 'processing',
+      total: validIds.length,
+      processed: 0,
+      results: { archived: 0, skipped: 0, errors: [] },
+      createdAt: Date.now(),
+    });
+
+    runBulkArchiveJob(jobId, { ids: validIds, schoolId, campusId }).catch((err) => {
+      const job = bulkArchiveJobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+        job.error = err.message || 'Unable to archive students';
+        job.finishedAt = Date.now();
+      }
+    });
+
+    return res.status(202).json({ jobId, total: validIds.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to archive students' });
+  }
+});
+
+router.get('/students/bulk/archive/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Students']
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return;
+
+  const job = bulkArchiveJobs.get(req.params.jobId);
+  if (!job || job.schoolId !== String(schoolId)) {
+    return res.status(404).json({ error: 'Archive job not found' });
+  }
+
+  return res.status(200).json({
+    status: job.status,
+    total: job.total,
+    processed: job.processed,
+    archived: job.results.archived,
+    skipped: job.results.skipped,
+    errors: job.status === 'completed' || job.status === 'failed' ? job.results.errors : [],
+    error: job.error,
+  });
+});
+
+const runBulkUnarchiveJob = async (jobId, { ids, schoolId, campusId }) => {
+  const job = bulkArchiveJobs.get(jobId);
+  if (!job) return;
+  try {
+    const filter = { _id: { $in: ids }, schoolId, isArchived: true };
+    if (campusId) filter.campusId = campusId;
+    const docs = await StudentUser.find(filter).select('archivedPlacement').lean();
+
+    const skippedCount = ids.length - docs.length;
+    if (skippedCount > 0) {
+      job.results.skipped += skippedCount;
+      job.processed += skippedCount;
+    }
+
+    // Pre-load every occupied (grade|section|roll) seat among active students
+    // once, instead of one findOne-per-row conflict check — this single query
+    // is what makes bulk restore fast.
+    const activeFilter = { schoolId, isArchived: { $ne: true } };
+    if (campusId) activeFilter.campusId = campusId;
+    const activeSeats = await StudentUser.find(activeFilter).select('grade section roll').lean();
+    const occupied = new Set(
+      activeSeats
+        .filter((s) => s.grade && s.section && Number.isFinite(Number(s.roll)))
+        .map((s) => `${s.grade}|${s.section}|${Number(s.roll)}`)
+    );
+
+    for (let start = 0; start < docs.length; start += BULK_ARCHIVE_BATCH) {
+      const batch = docs.slice(start, start + BULK_ARCHIVE_BATCH);
+      const ops = [];
+      batch.forEach((doc) => {
+        const placement = doc.archivedPlacement || {};
+        const grade = String(placement.grade || '').trim();
+        const section = String(placement.section || '').trim();
+        const hasRoll = placement.roll !== null && placement.roll !== undefined && placement.roll !== '';
+        const roll = hasRoll ? Number(placement.roll) : null;
+        const seatKey = grade && section && Number.isFinite(roll) ? `${grade}|${section}|${roll}` : null;
+
+        if (seatKey && occupied.has(seatKey)) {
+          job.results.errors.push({ message: `Seat ${grade}-${section} roll ${roll} is already taken — skipped` });
+          job.results.skipped += 1;
+          return;
+        }
+        if (seatKey) occupied.add(seatKey); // claim it so another row in this batch can't collide
+
+        ops.push({
+          updateOne: {
+            filter: { _id: doc._id },
+            update: {
+              $set: {
+                isArchived: false,
+                archivedAt: null,
+                grade,
+                section,
+                status: placement.previousStatus || 'Active',
+                ...(Number.isFinite(roll) ? { roll } : {}),
+              },
+              $unset: { archivedPlacement: '' },
+            },
+          },
+        });
+      });
+
+      if (ops.length) {
+        const result = await StudentUser.bulkWrite(ops, { ordered: false });
+        job.results.restored += result.modifiedCount || 0;
+      }
+      job.processed += batch.length;
+    }
+
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Unable to restore students';
+  } finally {
+    job.finishedAt = Date.now();
+    pruneBulkArchiveJob(jobId);
+  }
+};
+
+router.patch('/students/bulk/unarchive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Students']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+
+    const { ids } = req.body || {};
+    const validIds = (Array.isArray(ids) ? ids : []).filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const jobId = crypto.randomUUID();
+    bulkArchiveJobs.set(jobId, {
+      type: 'unarchive',
+      schoolId: String(schoolId),
+      status: 'processing',
+      total: validIds.length,
+      processed: 0,
+      results: { restored: 0, skipped: 0, errors: [] },
+      createdAt: Date.now(),
+    });
+
+    runBulkUnarchiveJob(jobId, { ids: validIds, schoolId, campusId }).catch((err) => {
+      const job = bulkArchiveJobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+        job.error = err.message || 'Unable to restore students';
+        job.finishedAt = Date.now();
+      }
+    });
+
+    return res.status(202).json({ jobId, total: validIds.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to restore students' });
+  }
+});
+
+router.get('/students/bulk/unarchive/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Students']
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return;
+
+  const job = bulkArchiveJobs.get(req.params.jobId);
+  if (!job || job.schoolId !== String(schoolId)) {
+    return res.status(404).json({ error: 'Restore job not found' });
+  }
+
+  return res.status(200).json({
+    status: job.status,
+    total: job.total,
+    processed: job.processed,
+    restored: job.results.restored,
+    skipped: job.results.skipped,
+    errors: job.status === 'completed' || job.status === 'failed' ? job.results.errors : [],
+    error: job.error,
+  });
 });
 
 router.put('/students/:id/archive', adminAuth, async (req, res) => {
