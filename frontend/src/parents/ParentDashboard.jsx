@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   Calendar,
   CreditCard,
@@ -6,13 +7,10 @@ import {
   Clock,
   Users,
   Sparkles,
-  Star,
-  Sun,
   TrendingUp,
   Award,
   Bell,
   ChevronRight,
-  ArrowRight,
   Loader2,
   CheckCircle2,
   User as UserIcon,
@@ -300,6 +298,7 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
 };
 
 const ParentDashboard = ({ parentName }) => {
+  const prefersReducedMotion = useReducedMotion();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [childrenData, setChildrenData] = useState([]);
   const [meetings, setMeetings] = useState([]);
@@ -380,11 +379,82 @@ const ParentDashboard = ({ parentName }) => {
     [meetings]
   );
 
-  const formatMeetingDate = (dateStr) => {
+  const formatMeetingDate = useCallback((dateStr) => {
     if (!dateStr) return 'N/A';
     return new Date(dateStr).toLocaleDateString('en-US', {
       weekday: 'short', month: 'short', day: 'numeric',
     });
+  }, []);
+
+  const academicSession = useMemo(() => {
+    const year = currentTime.getFullYear();
+    const startYear = currentTime.getMonth() >= 3 ? year : year - 1;
+    return `${startYear}–${startYear + 1} Session`;
+  }, [currentTime]);
+
+  const statsData = useMemo(() => {
+    const nextMeeting = upcomingMeetings[0];
+    const openInvoices = Number(feeSummary?.openInvoiceCount || 0);
+    const pendingAmount = Number(feeSummary?.outstandingAmount || 0);
+
+    return [
+      {
+        id: 'attendance',
+        label: 'Avg Attendance',
+        value: `${avgAttendance}%`,
+        sub: 'Across all wards',
+        icon: Calendar,
+        iconClass: 'bg-emerald-100/80 text-emerald-600',
+      },
+      {
+        id: 'ptms',
+        label: 'Upcoming PTMs',
+        value: nextMeeting ? 'Scheduled ahead' : 'No meetings',
+        sub: nextMeeting ? `Next: ${formatMeetingDate(nextMeeting.meetingDate)}` : 'Nothing scheduled',
+        icon: Video,
+        iconClass: 'bg-amber-100/80 text-amber-600',
+        valueClass: nextMeeting ? 'text-amber-600' : 'text-slate-700',
+      },
+      {
+        id: 'children',
+        label: 'Linked Children',
+        value: childrenData.length ? 'Active profiles' : 'No profiles',
+        sub: `${childrenData.length} ${childrenData.length === 1 ? 'child' : 'children'} linked`,
+        icon: Users,
+        iconClass: 'bg-emerald-100/80 text-emerald-600',
+        valueClass: childrenData.length ? 'text-emerald-600' : 'text-slate-700',
+      },
+      {
+        id: 'invoices',
+        label: 'Open Invoices',
+        value: openInvoices ? `${openInvoices} open` : 'All fees cleared',
+        sub: openInvoices ? `₹${pendingAmount.toLocaleString('en-IN')} pending` : '₹0 pending',
+        icon: CreditCard,
+        iconClass: openInvoices ? 'bg-rose-100/80 text-rose-600' : 'bg-emerald-100/80 text-emerald-600',
+        valueClass: openInvoices ? 'text-rose-600' : 'text-emerald-600',
+      },
+    ];
+  }, [avgAttendance, childrenData.length, feeSummary, formatMeetingDate, upcomingMeetings]);
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: prefersReducedMotion
+        ? { duration: 0 }
+        : { staggerChildren: 0.08, delayChildren: 0.2 },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 18 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: prefersReducedMotion
+        ? { duration: 0 }
+        : { type: 'spring', stiffness: 300, damping: 24 },
+    },
   };
 
   if (loading && childrenData.length === 0) {
@@ -397,81 +467,124 @@ const ParentDashboard = ({ parentName }) => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
-      {/* Welcome Hero */}
-      <section className="relative overflow-hidden bg-slate-900 rounded-[2.5rem] p-8 sm:p-12 text-white shadow-2xl group">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-full -mr-32 -mt-32 blur-3xl transition-transform group-hover:scale-110 duration-1000" />
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-blue-500/10 to-indigo-500/10 rounded-full -ml-32 -mb-32 blur-2xl" />
-        
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-12">
-          <div className="space-y-6 max-w-3xl">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-indigo-200">
-              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-              Portal Active • {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-            </div>
-            
-            <div className="space-y-2">
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-tight">
-                {getGreeting()},<br />
-                <span className="bg-gradient-to-r from-indigo-300 via-purple-300 to-blue-300 bg-clip-text text-transparent">
-                  {parentName || 'Parent Account'}
-                </span>
-              </h1>
-              <p className="text-slate-400 text-lg sm:text-xl font-medium leading-relaxed max-w-xl">
-                Track academic progress, monitor wellbeing, and stay connected with the institution.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-4 pt-4">
-              <Link to="/parents/academic" className="bg-white text-slate-900 px-6 py-3 rounded-2xl font-bold hover:bg-indigo-50 transition-all active:scale-95 flex items-center gap-2 shadow-lg shadow-white/5">
-                Academic Report <ArrowRight size={18} />
-              </Link>
-              <Link to="/parents/chat" className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-6 py-3 rounded-2xl font-bold hover:bg-white/20 transition-all active:scale-95 flex items-center gap-2">
-                Staff Chat <MessageCircle size={18} />
-              </Link>
-            </div>
-          </div>
-
-          <div className="hidden lg:block relative">
-            <div className="w-48 h-48 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-[3rem] rotate-12 flex items-center justify-center shadow-2xl relative z-10">
-              <Sparkles size={64} className="text-white animate-pulse -rotate-12" />
-            </div>
-            <div className="absolute -top-4 -right-4 w-20 h-20 bg-yellow-400 rounded-2xl -rotate-12 flex items-center justify-center shadow-xl">
-              <Star size={32} className="text-slate-900 fill-slate-900" />
-            </div>
-          </div>
+    <div className="min-h-screen bg-slate-50/50 p-2 sm:p-4 lg:p-6 space-y-8 max-w-7xl mx-auto">
+      <section className="relative isolate overflow-hidden rounded-[2rem] bg-slate-50 p-2 sm:p-4 lg:p-6">
+        <div className="absolute inset-0 -z-10 pointer-events-none" aria-hidden="true">
+          <motion.div
+            className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-300/30 blur-3xl sm:h-96 sm:w-96"
+            animate={prefersReducedMotion ? undefined : { x: [0, -32, 0], y: [0, 24, 0] }}
+            transition={{ repeat: Infinity, duration: 10, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl sm:h-80 sm:w-80"
+            animate={prefersReducedMotion ? undefined : { x: [0, 32, 0], y: [0, -24, 0] }}
+            transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut', delay: 2 }}
+          />
         </div>
-      </section>
 
-      {/* Global Stats Grid */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        {[
-          { label: 'Avg Attendance', value: `${avgAttendance}%`, icon: Calendar, color: 'bg-emerald-50 text-emerald-600', sub: 'Across all wards' },
-          { label: 'Upcoming PTMs', value: upcomingMeetings.length, icon: Video, color: 'bg-blue-50 text-blue-600', sub: 'Scheduled ahead' },
-          { label: 'Linked Children', value: childrenData.length, icon: Users, color: 'bg-indigo-50 text-indigo-600', sub: 'Active profiles' },
-          {
-            label: 'Open Invoices',
-            value: feeSummary ? feeSummary.openInvoiceCount : '—',
-            icon: CreditCard,
-            color: feeSummary?.openInvoiceCount ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600',
-            sub: feeSummary?.openInvoiceCount
-              ? `₹${Number(feeSummary.outstandingAmount || 0).toLocaleString('en-IN')} due`
-              : 'All fees cleared',
-          },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all group border-b-4 border-b-transparent hover:border-b-slate-900">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl ${stat.color} transition-transform group-hover:scale-110`}>
-                <stat.icon size={20} />
+        <motion.div
+          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
+          className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
+        >
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600 sm:text-xs">
+                <motion.span
+                  className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30"
+                  animate={prefersReducedMotion ? undefined : { scale: [1, 1.3, 1] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+                />
+                Portal Active
               </div>
+              <span className="text-xs text-slate-300">·</span>
+              <span className="text-[11px] font-medium text-slate-500 sm:text-xs">
+                {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+              </span>
             </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-              <h2 className="text-3xl font-black text-slate-900">{stat.value}</h2>
-              <p className="text-[10px] font-bold text-slate-500 mt-2">{stat.sub}</p>
+            <div className="flex items-center gap-1.5 rounded-full border border-white/70 bg-white/50 px-3 py-1.5 text-[11px] font-medium text-slate-500 shadow-sm backdrop-blur-sm sm:px-4 sm:text-xs">
+              <Calendar size={14} aria-hidden="true" /> {academicSession}
             </div>
           </div>
-        ))}
+
+          <div className="mb-7 sm:mb-8">
+            <motion.h1
+              initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: prefersReducedMotion ? 0 : 0.15, duration: prefersReducedMotion ? 0 : 0.5 }}
+              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl"
+            >
+              {getGreeting()}, <span className="text-purple-600">{parentName || 'Parent Account'}</span>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.5 }}
+              className="mt-1 max-w-xl text-sm text-slate-500 sm:text-base"
+            >
+              Track academic progress, monitor wellbeing, and stay connected with the institution.
+            </motion.p>
+          </div>
+
+          {error && (
+            <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
+          >
+            <motion.div
+              variants={itemVariants}
+              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+              className="flex min-h-[140px] flex-col justify-between rounded-2xl border border-purple-200/60 bg-purple-50/60 p-5 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md"
+            >
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100/80 text-purple-600">
+                  <MessageCircle size={19} aria-hidden="true" />
+                </span>
+                Staff Chat
+              </div>
+              <div>
+                <p className="mb-2 text-sm text-slate-500">Connect with teachers</p>
+                <Link
+                  to="/parents/chat"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:bg-purple-700 active:scale-95"
+                >
+                  Open <ChevronRight size={14} aria-hidden="true" />
+                </Link>
+              </div>
+            </motion.div>
+
+            {statsData.map((item) => {
+              const Icon = item.icon;
+              return (
+                <motion.div
+                  key={item.id}
+                  variants={itemVariants}
+                  whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+                  className="flex min-h-[140px] flex-col justify-between rounded-2xl border border-white/70 bg-white/45 p-5 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md"
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.iconClass}`}>
+                      <Icon size={19} aria-hidden="true" />
+                    </span>
+                    {item.label}
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold leading-tight ${item.valueClass || 'text-slate-800'}`}>{item.value}</p>
+                    <p className="mt-1 text-sm text-slate-500">{item.sub}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        </motion.div>
       </section>
 
       <div className="grid gap-8 lg:grid-cols-12">
