@@ -254,34 +254,46 @@ const Students = ({ setShowAdminHeader }) => {
   const [currentPage, setCurrentPage] = useState(1);
 
   /* -------------------- Derived -------------------- */
-  const filteredStudents = useMemo(
-    () =>
-      studentData.filter((student) => {
-        const matchesSearch = [
-          student.name,
-          student.roll,
-          student.email,
-          student.username,
-          student.studentCode,
-          student.parent?.username,
-        ]
-          .filter(Boolean)
-          .some((v) =>
-            String(v).toLowerCase().includes(searchTerm.toLowerCase())
-          );
-        if (!matchesSearch) return false;
+  const filteredStudents = useMemo(() => {
+    const rows = studentData.filter((student) => {
+      const matchesSearch = [
+        student.name,
+        student.roll,
+        student.email,
+        student.username,
+        student.studentCode,
+        student.parent?.username,
+      ]
+        .filter(Boolean)
+        .some((v) =>
+          String(v).toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      if (!matchesSearch) return false;
 
-        const studentSession = String(student.academicYear || "").trim();
-        const studentClass = String(student.class || student.grade || "").trim();
-        const studentSection = String(student.section || "").trim();
+      const studentSession = String(student.academicYear || "").trim();
+      const studentClass = String(student.class || student.grade || "").trim();
+      const studentSection = String(student.section || "").trim();
 
-        if (sessionFilter && studentSession !== sessionFilter) return false;
-        if (classFilter && studentClass !== classFilter) return false;
-        if (sectionFilter && studentSection !== sectionFilter) return false;
-        return true;
-      }),
-    [studentData, searchTerm, sessionFilter, classFilter, sectionFilter]
-  );
+      if (sessionFilter && studentSession !== sessionFilter) return false;
+      if (classFilter && studentClass !== classFilter) return false;
+      if (sectionFilter && studentSection !== sectionFilter) return false;
+      return true;
+    });
+
+    // Ascending by student ID (GSBV-7414-STD-001, -002, …), then roll, then name.
+    const codeOf = (s) => String(s.username || s.studentCode || "").trim();
+    const rollOf = (s) => {
+      const n = Number(s.roll);
+      return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+    };
+    return rows.sort((a, b) => {
+      const byCode = codeOf(a).localeCompare(codeOf(b), undefined, { numeric: true, sensitivity: "base" });
+      if (byCode !== 0) return byCode;
+      const byRoll = rollOf(a) - rollOf(b);
+      if (byRoll !== 0) return byRoll;
+      return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+    });
+  }, [studentData, searchTerm, sessionFilter, classFilter, sectionFilter]);
   const totalPages = Math.max(
     1,
     Math.ceil(filteredStudents.length / STUDENTS_PER_PAGE)
