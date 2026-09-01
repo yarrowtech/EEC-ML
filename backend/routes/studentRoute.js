@@ -27,6 +27,7 @@ const jwt = require('jsonwebtoken');
 const adminAuth = require('../middleware/adminAuth');
 const { generatePassword } = require('../utils/generator');
 const { logger } = require('../utils/logger');
+const { buildRollAllocator } = require('../utils/rollAllocator');
 const extractPopulatedDoc = (doc) => {
   if (doc && typeof doc.toJSON === 'function') {
     return doc.toJSON();
@@ -228,21 +229,6 @@ const getNextApplicationId = async ({ schoolId, campusId, admissionYear }) => {
   return `${prefix}${padNumber(max + 1, 4)}`;
 };
 
-// Auto roll number: continuous across all sections of a class for a session.
-// e.g. Class 5 / Sec A holds 1-30, Sec B continues 31-60, the next student = 61.
-const getNextRollForClass = async ({ schoolId, campusId, grade, academicYear }) => {
-  if (!grade) return undefined;
-  const filter = { schoolId, grade, isArchived: { $ne: true } };
-  if (campusId) filter.campusId = campusId;
-  if (academicYear) filter.academicYear = academicYear;
-  const rows = await StudentUser.find(filter).select('roll').lean();
-  let max = 0;
-  rows.forEach((r) => {
-    const n = Number(r?.roll);
-    if (Number.isFinite(n) && n > max) max = n;
-  });
-  return Math.max(max, rows.length) + 1;
-};
 
 const buildTeacherFeedbackContext = async (studentDoc = null) => {
   const fallback = { classDoc: null, contexts: [] };
@@ -592,15 +578,21 @@ router.post('/register', adminAuth, async (req, res) => {
       prefix,
     });
 
-    // Roll & admission number are auto-generated on save unless explicitly provided.
-    const resolvedRoll = roll
-      ? Number(roll) || undefined
-      : await getNextRollForClass({
-          schoolId: resolvedSchoolId,
-          campusId: resolvedCampusId,
-          grade: resolvedGrade,
-          academicYear,
-        });
+    // Roll: class-wide + continuous per session. An explicitly supplied roll is
+    // honoured only if it's still free — otherwise it's bumped to the next open
+    // number so a manual entry can't collide with an existing student.
+    let resolvedRoll;
+    if (resolvedGrade) {
+      const rollAlloc = await buildRollAllocator({
+        schoolId: resolvedSchoolId,
+        campusId: resolvedCampusId,
+        grade: resolvedGrade,
+        academicYear,
+      });
+      resolvedRoll = rollAlloc.claim(roll).roll;
+    } else {
+      resolvedRoll = roll ? Number(roll) || undefined : undefined;
+    }
     const resolvedAdmissionNumber = admissionNumber
       || await getNextAdmissionNumber({
         schoolId: resolvedSchoolId,

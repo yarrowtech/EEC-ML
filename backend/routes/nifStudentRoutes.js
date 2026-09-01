@@ -8,6 +8,7 @@ const ClassModel = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const { generatePassword } = require('../utils/generator');
 const { hashPasswordsBulk } = require('../utils/passwordHash');
+const { buildRollAllocator } = require('../utils/rollAllocator');
 
 const router = express.Router();
 
@@ -111,21 +112,6 @@ const getMaxApplicationSeq = async ({ schoolId, campusId, admissionYear }) => {
   });
   return max;
 };
-// Highest existing roll across all sections of a class for a session.
-const getMaxRollForClass = async ({ schoolId, campusId, grade, academicYear }) => {
-  if (!grade) return 0;
-  const filter = { schoolId, grade, isArchived: { $ne: true } };
-  if (campusId) filter.campusId = campusId;
-  if (academicYear) filter.academicYear = academicYear;
-  const rows = await StudentUser.find(filter).select('roll').lean();
-  let max = 0;
-  rows.forEach((r) => {
-    const n = Number(r?.roll);
-    if (Number.isFinite(n) && n > max) max = n;
-  });
-  return Math.max(max, rows.length);
-};
-
 const resolveAdmissionDate = (value) => {
   if (!value) return undefined;
   const parsed = new Date(value);
@@ -206,7 +192,7 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
     const parentSequenceByPrefix = new Map();
     const admissionSeqByYear = new Map(); // year -> next ADM sequence
     const applicationSeqByYear = new Map();
-    const rollByClassSession = new Map(); // `${grade}::${session}` -> next roll
+    const rollAllocatorByClassSession = new Map(); // `${grade}::${session}` -> roll allocator
     const req = { admin, isSuperAdmin, body: { campusName, campusType } };
     const results = job.results;
 
@@ -287,18 +273,27 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           applicationId = `APP/${admissionYear}/${padNumber(nextApp, 4)}`;
         }
 
-        // Auto roll — continuous across all sections of the class for the session.
-        let roll = row.roll ? Number(row.roll) : undefined;
-        if (!roll && normalizedGrade) {
+        // Roll — class-wide + continuous per session. An explicit roll from the
+        // sheet is honoured only if it's still free; otherwise it's reassigned
+        // to the next open number (and the admin is told). This is what stops a
+        // "Roll No: 1" row from colliding with a student who already has roll 1.
+        let roll;
+        if (normalizedGrade) {
           const rk = `${normalizedGrade}::${resolvedSessionName}`;
-          if (!rollByClassSession.has(rk)) {
-            rollByClassSession.set(rk, await getMaxRollForClass({
+          if (!rollAllocatorByClassSession.has(rk)) {
+            rollAllocatorByClassSession.set(rk, await buildRollAllocator({
               schoolId, campusId, grade: normalizedGrade, academicYear: resolvedSessionName,
             }));
           }
-          const nextRoll = rollByClassSession.get(rk) + 1;
-          rollByClassSession.set(rk, nextRoll);
-          roll = nextRoll;
+          const { roll: claimedRoll, reassignedFrom } = rollAllocatorByClassSession.get(rk).claim(row.roll);
+          roll = claimedRoll;
+          if (reassignedFrom != null) {
+            results.warnings.push(
+              `Row ${i + 1} (${row.name || 'student'}): roll ${reassignedFrom} was already taken in ${normalizedGrade} — assigned ${claimedRoll} instead.`
+            );
+          }
+        } else {
+          roll = row.roll ? Number(row.roll) : undefined;
         }
 
         const payload = {
@@ -560,7 +555,7 @@ router.post('/students/bulk', adminAuth, async (req, res) => {
       status: 'processing',
       total: students.length,
       processed: 0,
-      results: { imported: 0, failed: 0, errors: [] },
+      results: { imported: 0, failed: 0, errors: [], warnings: [] },
       createdAt: Date.now(),
     });
 
@@ -604,6 +599,7 @@ router.get('/students/bulk/status/:jobId', adminAuth, (req, res) => {
     imported: job.results.imported,
     failed: job.results.failed,
     errors: job.status === 'completed' || job.status === 'failed' ? job.results.errors : [],
+    warnings: job.status === 'completed' || job.status === 'failed' ? (job.results.warnings || []) : [],
     error: job.error,
   });
 });

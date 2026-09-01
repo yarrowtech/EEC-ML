@@ -981,7 +981,7 @@ export function DocPreviewModal({ open, src, label, onClose }) {
           transition={{ duration: 0.18 }}
         >
       <Motion.div
-        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
+        className="flex max-h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
         onClick={(e) => e.stopPropagation()}
         initial={{ opacity: 0, y: 16, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -991,9 +991,9 @@ export function DocPreviewModal({ open, src, label, onClose }) {
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <p className="truncate text-sm font-semibold text-gray-800">{label || "Preview"}</p>
           <div className="flex items-center gap-1">
-            <a href={src} target="_blank" rel="noreferrer" className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50">
+            {/* <a href={src} target="_blank" rel="noreferrer" className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50">
               Open in new tab
-            </a>
+            </a> */}
             <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
               <X className="h-4 w-4" />
             </button>
@@ -1005,11 +1005,11 @@ export function DocPreviewModal({ open, src, label, onClose }) {
           ) : pdf && state.status === "ready" ? (
             <iframe title={label || "document"} src={`${state.url}#toolbar=0&navpanes=0`} className="h-[78vh] w-full rounded-lg border border-gray-200 bg-white" />
           ) : pdf && state.status === "loading" ? (
-            <div className="flex h-[78vh] items-center justify-center text-sm text-gray-500">
+            <div className="flex h-[30vh] items-center justify-center text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading preview…
             </div>
           ) : (
-            <div className="flex h-[78vh] flex-col items-center justify-center gap-2 text-sm text-gray-500">
+            <div className="flex h-[30vh] flex-col items-center justify-center gap-2 text-sm text-gray-500">
               <FileText className="h-8 w-8 text-gray-300" />
               {pdf ? "Could not load the preview." : "This file type can’t be previewed here."}
               <a href={src} target="_blank" rel="noreferrer" className="font-semibold text-blue-600">Open in a new tab</a>

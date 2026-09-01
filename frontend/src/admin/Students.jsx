@@ -3726,6 +3726,13 @@ const Students = ({ setShowAdminHeader }) => {
                ${data.errors.length > 10 ? `<li>...and ${data.errors.length - 10} more errors</li>` : ''}
              </ul>`
             : ''}
+          ${data.warnings && data.warnings.length > 0 ?
+            `<p style="margin-top: 10px;"><strong>Roll numbers adjusted:</strong></p>
+             <ul style="max-height: 160px; overflow-y: auto; text-align: left;">
+               ${data.warnings.slice(0, 10).map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+               ${data.warnings.length > 10 ? `<li>...and ${data.warnings.length - 10} more</li>` : ''}
+             </ul>`
+            : ''}
         </div>`,
         confirmButtonText: "OK"
       });
