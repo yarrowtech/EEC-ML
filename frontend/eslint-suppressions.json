@@ -380,7 +380,7 @@
       "count": 2
     },
     "react/react-in-jsx-scope": {
-      "count": 90
+      "count": 92
     }
   },
   "src/admin/AdminDashboard.jsx": {
@@ -412,10 +412,13 @@
   },
   "src/admin/AdminSidebar.jsx": {
     "react/prop-types": {
-      "count": 21
+      "count": 22
     },
     "react/react-in-jsx-scope": {
-      "count": 55
+      "count": 57
+    },
+    "no-unused-vars": {
+      "count": 1
     }
   },
   "src/admin/Analytics.jsx": {

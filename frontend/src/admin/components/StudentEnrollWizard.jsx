@@ -205,7 +205,7 @@ function StepRail({ step, maxVisited, onJump }) {
             <li key={s.key} className="relative">
               {i < STEPS.length - 1 && (
                 <span
-                  className={`absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px ${
+                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${
                     i < step ? "bg-blue-300" : "bg-gray-200"
                   }`}
                 />
@@ -215,15 +215,15 @@ function StepRail({ step, maxVisited, onJump }) {
                 disabled={!reachable}
                 onClick={() => reachable && onJump(i)}
                 className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
-                  state === "active" ? "bg-blue-50" : reachable ? "hover:bg-gray-50" : "cursor-default"
+                  state === "active" ? "bg-yellow-50" : reachable ? "hover:bg-gray-50" : "cursor-default"
                 }`}
               >
                 <span
                   className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
                     state === "done"
-                      ? "bg-blue-600 text-white"
+                      ? "bg-green-600 text-white"
                       : state === "active"
-                      ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                      ? "bg-amber-600 text-white ring-4 ring-amber-100"
                       : "border border-gray-300 bg-white text-gray-400"
                   }`}
                 >
@@ -1657,11 +1657,11 @@ export default function StudentEnrollWizard({
 
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">
+    <div className="animate-sheet-in fixed inset-0 z-50 flex flex-col bg-slate-50">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3.5">
+      <header className="flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-yellow-50 to-amber-50 px-6 py-3.5">
         <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-yellow-500 text-white">
             <GraduationCap className="h-6 w-6" />
           </span>
           <div>
@@ -1678,9 +1678,9 @@ export default function StudentEnrollWizard({
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+          className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
         >
-          <X className="h-4 w-4" /> Close
+          <X className="h-4 w-4" />
         </button>
       </header>
 
@@ -1797,7 +1797,7 @@ export default function StudentEnrollWizard({
             hidden={editing}
             onClick={saveDraft}
             disabled={draftState === "saving"}
-            className={`flex items-center gap-1.5 rounded-lg border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-70 ${
+            className={`flex items-center gap-1.5 rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-70 ${
               draftState === "saved"
                 ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                 : draftState === "error"
@@ -1827,7 +1827,7 @@ export default function StudentEnrollWizard({
             type="button"
             onClick={next}
             disabled={isSubmitting}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-full bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? (
               <>

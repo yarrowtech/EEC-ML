@@ -1071,6 +1071,78 @@ router.put('/students/:id', adminAuth, async (req, res) => {
   }
 });
 
+// ── Bulk student delete runs as a background job so a 500-row delete doesn't
+//    hold one HTTP request open past the proxy timeout; the client polls
+//    /students/bulk/status/:jobId for real per-batch progress. ──
+const bulkDeleteJobs = new Map();
+const BULK_DELETE_JOB_TTL_MS = 15 * 60 * 1000;
+const BULK_DELETE_BATCH = 100;
+
+const runBulkDeleteJob = async (jobId, { studentDocs, campusId }) => {
+  const job = bulkDeleteJobs.get(jobId);
+  if (!job) return;
+  try {
+    job.phase = 'students';
+    const allIds = studentDocs.map((s) => s._id);
+
+    // 1. Delete the students in batches so progress advances.
+    for (let i = 0; i < allIds.length; i += BULK_DELETE_BATCH) {
+      const chunk = allIds.slice(i, i + BULK_DELETE_BATCH);
+      const r = await StudentUser.deleteMany({ _id: { $in: chunk } });
+      job.results.deleted += r?.deletedCount || 0;
+      job.processed = Math.min(allIds.length, i + chunk.length);
+    }
+
+    // 2. Clean up linked parents in a single pass (was O(n) round trips before).
+    job.phase = 'parents';
+    const removedIdStrs = new Set(allIds.map(String));
+    const removedNames = [...new Set(studentDocs.map((s) => String(s.name || '').trim()).filter(Boolean))];
+    const removedGrades = new Set(studentDocs.map((s) => String(s.grade || '').trim()).filter(Boolean));
+    const schoolId = studentDocs[0]?.schoolId;
+
+    const parentScope = { schoolId };
+    if (campusId) {
+      parentScope.$or = [{ campusId }, { campusId: { $exists: false } }, { campusId: null }];
+    }
+    const linkedParents = await ParentUser.find({
+      ...parentScope,
+      $or: [
+        { childrenIds: { $in: allIds } },
+        ...(removedNames.length ? [{ children: { $in: removedNames } }] : []),
+      ],
+    }).lean();
+
+    const parentOps = [];
+    const parentDeleteIds = [];
+    for (const parent of linkedParents) {
+      const childIds = (parent.childrenIds || []).filter((id) => !removedIdStrs.has(String(id)));
+      const children = (parent.children || []).filter((n) => !removedNames.includes(String(n || '').trim()));
+      const grade = (parent.grade || []).filter((g) => !removedGrades.has(String(g || '').trim()));
+      if (childIds.length === 0 && children.length === 0) {
+        parentDeleteIds.push(parent._id);
+      } else {
+        parentOps.push({ updateOne: { filter: { _id: parent._id }, update: { $set: { childrenIds: childIds, children, grade } } } });
+      }
+    }
+    if (parentOps.length) {
+      await ParentUser.bulkWrite(parentOps);
+      job.results.updatedParents = parentOps.length;
+    }
+    if (parentDeleteIds.length) {
+      await ParentUser.deleteMany({ _id: { $in: parentDeleteIds } });
+      job.results.deletedParents = parentDeleteIds.length;
+    }
+
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Bulk delete failed';
+  } finally {
+    job.finishedAt = Date.now();
+    setTimeout(() => bulkDeleteJobs.delete(jobId), BULK_DELETE_JOB_TTL_MS).unref?.();
+  }
+};
+
 router.delete('/students/bulk', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
@@ -1083,83 +1155,46 @@ router.delete('/students/bulk', adminAuth, async (req, res) => {
     const filter = buildScopedFilter(req);
     filter._id = { $in: validIds };
 
-    const studentsToRemove = await StudentUser.find(filter).lean();
-    if (!studentsToRemove.length) {
+    const studentDocs = await StudentUser.find(filter).select('name grade schoolId').lean();
+    if (!studentDocs.length) {
       return res.status(404).json({ error: 'No matching students found' });
     }
 
-    await StudentUser.deleteMany({ _id: { $in: studentsToRemove.map((s) => s._id) } });
-
-    let deletedParents = 0;
-    let updatedParents = 0;
-
-    for (const removedStudent of studentsToRemove) {
-      const studentId = String(removedStudent._id);
-      const studentName = String(removedStudent.name || '').trim();
-      const studentGrade = String(removedStudent.grade || '').trim();
-
-      const parentScope = { schoolId: removedStudent.schoolId };
-      if (req.campusId) {
-        parentScope.$or = [
-          { campusId: req.campusId },
-          { campusId: { $exists: false } },
-          { campusId: null },
-        ];
-      }
-
-      const linkedParents = await ParentUser.find({
-        ...parentScope,
-        $or: [
-          { childrenIds: removedStudent._id },
-          ...(studentName ? [{ children: studentName }] : []),
-        ],
-      });
-
-      for (const parent of linkedParents) {
-        parent.childrenIds = Array.isArray(parent.childrenIds)
-          ? parent.childrenIds.filter((id) => String(id) !== studentId)
-          : [];
-
-        if (studentName) {
-          parent.children = Array.isArray(parent.children)
-            ? parent.children.filter((name) => String(name || '').trim() !== studentName)
-            : [];
-        }
-
-        if (studentGrade) {
-          parent.grade = Array.isArray(parent.grade)
-            ? parent.grade.filter((grade) => String(grade || '').trim() !== studentGrade)
-            : [];
-        }
-
-        const remainingChildIds = Array.isArray(parent.childrenIds) ? parent.childrenIds.length : 0;
-        const remainingChildNames = Array.isArray(parent.children) ? parent.children.length : 0;
-        if (remainingChildIds === 0 && remainingChildNames === 0) {
-          await ParentUser.deleteOne({ _id: parent._id });
-          deletedParents += 1;
-        } else {
-          await parent.save();
-          updatedParents += 1;
-        }
-      }
-    }
-
-    const deletedIds = studentsToRemove.map((s) => String(s._id));
-    const failedIds = validIds
-      .map((id) => String(id))
-      .filter((id) => !deletedIds.includes(id));
-
-    return res.json({
-      message: 'Deleted successfully',
-      deletedCount: deletedIds.length,
-      deletedStudentIds: deletedIds,
-      failedIds,
-      deletedParents,
-      updatedParents,
+    const jobId = require('crypto').randomUUID();
+    bulkDeleteJobs.set(jobId, {
+      status: 'processing',
+      phase: 'students',
+      total: studentDocs.length,
+      processed: 0,
+      results: { deleted: 0, deletedParents: 0, updatedParents: 0 },
+      createdAt: Date.now(),
     });
+
+    runBulkDeleteJob(jobId, { studentDocs, campusId: req.campusId }).catch((err) => {
+      const job = bulkDeleteJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; job.finishedAt = Date.now(); }
+    });
+
+    return res.status(202).json({ jobId, total: studentDocs.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.get('/students/bulk/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  const job = bulkDeleteJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  return res.json({
+    status: job.status,
+    phase: job.phase,
+    total: job.total,
+    processed: job.processed,
+    deletedCount: job.results.deleted,
+    deletedParents: job.results.deletedParents,
+    updatedParents: job.results.updatedParents,
+    error: job.error || null,
+  });
 });
 
 router.delete('/students/:id', adminAuth, async (req, res) => {

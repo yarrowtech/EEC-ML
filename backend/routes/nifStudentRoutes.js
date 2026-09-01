@@ -7,6 +7,7 @@ const ParentUser = require('../models/ParentUser');
 const ClassModel = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const { generatePassword } = require('../utils/generator');
+const { hashPasswordsBulk } = require('../utils/passwordHash');
 
 const router = express.Router();
 
@@ -196,6 +197,11 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
     const req = { admin, isSuperAdmin, body: { campusName, campusType } };
     const results = job.results;
 
+    // ── Phase 1: allocate identifiers & build payloads ────────────────────
+    // Runs sequentially (so the in-memory sequence counters stay collision
+    // free) but does no per-row writes, so it is cheap. The expensive work —
+    // password hashing and DB writes — happens in the concurrent phases below.
+    const prepared = [];
     for (let i = 0; i < students.length; i += 1) {
       const row = students[i] || {};
       try {
@@ -349,10 +355,133 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           motherOccupation: row.motherOccupation || '',
         };
 
-        // The next sequence number is computed once per prefix and
-        // incremented in memory, so it can collide with a username created
-        // concurrently (e.g. another bulk-import job still finishing).
-        // Retry with the next number instead of failing the whole row.
+        // Parent identity — allocated here so the concurrent write phase does
+        // no awaits for username sequencing.
+        const parentName =
+          row.guardianName ||
+          row.fatherName ||
+          row.motherName ||
+          (row.name ? `Parent of ${row.name}` : '');
+        const parentMobile = row.guardianPhone || row.fatherPhone || row.motherPhone || '';
+        const parentEmail = row.guardianEmail || '';
+        let parent = null;
+        if (parentName && (parentMobile || parentEmail)) {
+          const parentPrefix = resolveParentPrefix({
+            adminUsername: req.admin?.username,
+            sessionCode,
+          });
+          if (!parentSequenceByPrefix.has(parentPrefix)) {
+            parentSequenceByPrefix.set(
+              parentPrefix,
+              await getNextParentSequenceByPrefix({ schoolId, campusId, prefix: parentPrefix })
+            );
+          }
+          parent = {
+            name: parentName,
+            mobile: parentMobile,
+            email: parentEmail,
+            prefix: parentPrefix,
+            plainPassword: generatePassword(),
+          };
+        }
+
+        prepared.push({ index: i, row, payload, prefix, parent });
+      } catch (err) {
+        results.failed += 1;
+        results.errors.push({ index: i, message: err.message || 'Failed to import row' });
+        job.processed += 1;
+      }
+    }
+
+    // ── Phase 2: hash every password up front, in parallel across CPU cores ─
+    const pwJobs = [];
+    prepared.forEach((p) => {
+      p.pwIndex = pwJobs.push(p.payload.password) - 1;
+      if (p.parent) p.parent.pwIndex = pwJobs.push(p.parent.plainPassword) - 1;
+    });
+    const pwHashes = await hashPasswordsBulk(pwJobs, 10);
+    prepared.forEach((p) => {
+      // Pre-hashed: the model pre-save hook detects the bcrypt digest and skips
+      // re-hashing, so this stays the student's real login password.
+      p.payload.initialPassword = pwJobs[p.pwIndex];
+      p.payload.password = pwHashes[p.pwIndex];
+      if (p.parent) p.parent.passwordHash = pwHashes[p.parent.pwIndex];
+    });
+
+    // ── Phase 3: create students + link parents (concurrent, batched) ──────
+    const CONCURRENCY = 12;
+    // Same-parent operations run in series (a promise chain per contact) so two
+    // rows sharing a guardian never race to create duplicate parent accounts.
+    const parentChain = new Map();
+    const parentKeyOf = (email, mobile) =>
+      `${String(email || '').trim().toLowerCase()}|${String(mobile || '').trim()}`;
+
+    const linkParent = async (studentUser, row, payload, parent) => {
+      let parentUser = null;
+      const parentLookupFilter = ParentUser.buildContactLookupFilter({
+        email: parent.email,
+        mobile: parent.mobile,
+      });
+      if (parentLookupFilter) {
+        parentUser = await ParentUser.findOne({ schoolId, ...parentLookupFilter });
+      }
+      if (!parentUser) {
+        const legacyPlainFilter = {
+          schoolId,
+          $or: [
+            parent.email ? { email: parent.email } : null,
+            parent.mobile ? { mobile: parent.mobile } : null,
+          ].filter(Boolean),
+        };
+        if (legacyPlainFilter.$or.length) {
+          parentUser = await ParentUser.findOne(legacyPlainFilter);
+        }
+      }
+      if (!parentUser) {
+        const parentPayload = {
+          password: parent.passwordHash,
+          initialPassword: parent.plainPassword,
+          schoolId,
+          campusId,
+          name: parent.name,
+          mobile: parent.mobile,
+          email: parent.email,
+          childrenIds: [studentUser._id],
+          children: [row.name || payload.name],
+          grade: [payload.grade || ''],
+        };
+        for (let attempt = 0; ; attempt += 1) {
+          const nextParentSeq = parentSequenceByPrefix.get(parent.prefix);
+          parentPayload.username = `${parent.prefix}${padNumber(nextParentSeq)}`;
+          parentSequenceByPrefix.set(parent.prefix, nextParentSeq + 1);
+          try {
+            await ParentUser.create(parentPayload);
+            break;
+          } catch (createErr) {
+            const isDuplicateUsername = createErr?.code === 11000 && createErr?.keyPattern?.username;
+            if (!isDuplicateUsername || attempt >= 5) throw createErr;
+          }
+        }
+      } else {
+        const existingIds = new Set((parentUser.childrenIds || []).map((id) => String(id)));
+        if (!existingIds.has(String(studentUser._id))) {
+          parentUser.childrenIds = [...(parentUser.childrenIds || []), studentUser._id];
+        }
+        const existingChildren = new Set(parentUser.children || []);
+        const childName = row.name || payload.name;
+        if (childName && !existingChildren.has(childName)) {
+          parentUser.children = [...(parentUser.children || []), childName];
+        }
+        const existingGrades = new Set(parentUser.grade || []);
+        if (payload.grade && !existingGrades.has(payload.grade)) {
+          parentUser.grade = [...(parentUser.grade || []), payload.grade];
+        }
+        await parentUser.save();
+      }
+    };
+
+    const processPrepared = async ({ index, row, payload, prefix, parent }) => {
+      try {
         let studentUser;
         for (let attempt = 0; ; attempt += 1) {
           try {
@@ -362,108 +491,30 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
             const isDuplicateUsername = createErr?.code === 11000 && createErr?.keyPattern?.username;
             if (!isDuplicateUsername || attempt >= 5) throw createErr;
             const retrySequence = sequenceByPrefix.get(prefix);
-            const retryUsername = `${prefix}${padNumber(retrySequence)}`;
+            payload.username = `${prefix}${padNumber(retrySequence)}`;
+            payload.studentCode = payload.username;
             sequenceByPrefix.set(prefix, retrySequence + 1);
-            payload.username = retryUsername;
-            payload.studentCode = retryUsername;
           }
         }
 
-        const parentName =
-          row.guardianName ||
-          row.fatherName ||
-          row.motherName ||
-          (row.name ? `Parent of ${row.name}` : '');
-        const parentMobile = row.guardianPhone || row.fatherPhone || row.motherPhone || '';
-        const parentEmail = row.guardianEmail || '';
-        if (parentName && (parentMobile || parentEmail)) {
-          let parentUser = null;
-          const parentLookupFilter = ParentUser.buildContactLookupFilter({
-            email: parentEmail,
-            mobile: parentMobile,
-          });
-          if (parentLookupFilter) {
-            parentUser = await ParentUser.findOne({
-              schoolId,
-              ...parentLookupFilter,
-            });
-          }
-          if (!parentUser) {
-            const legacyPlainFilter = {
-              schoolId,
-              $or: [
-                parentEmail ? { email: parentEmail } : null,
-                parentMobile ? { mobile: parentMobile } : null,
-              ].filter(Boolean),
-            };
-            if (legacyPlainFilter.$or.length) {
-              parentUser = await ParentUser.findOne(legacyPlainFilter);
-            }
-          }
-          if (!parentUser) {
-            const parentPrefix = resolveParentPrefix({
-              adminUsername: req.admin?.username,
-              sessionCode,
-            });
-            if (!parentSequenceByPrefix.has(parentPrefix)) {
-              const nextSeq = await getNextParentSequenceByPrefix({
-                schoolId,
-                campusId,
-                prefix: parentPrefix,
-              });
-              parentSequenceByPrefix.set(parentPrefix, nextSeq);
-            }
-            const parentPassword = generatePassword();
-            const parentPayload = {
-              password: parentPassword,
-              initialPassword: parentPassword,
-              schoolId,
-              campusId,
-              name: parentName,
-              mobile: parentMobile,
-              email: parentEmail,
-              childrenIds: [studentUser._id],
-              children: [row.name || payload.name],
-              grade: [payload.grade || ''],
-            };
-            for (let attempt = 0; ; attempt += 1) {
-              const nextParentSeq = parentSequenceByPrefix.get(parentPrefix);
-              parentPayload.username = `${parentPrefix}${padNumber(nextParentSeq)}`;
-              parentSequenceByPrefix.set(parentPrefix, nextParentSeq + 1);
-              try {
-                parentUser = await ParentUser.create(parentPayload);
-                break;
-              } catch (createErr) {
-                const isDuplicateUsername = createErr?.code === 11000 && createErr?.keyPattern?.username;
-                if (!isDuplicateUsername || attempt >= 5) throw createErr;
-              }
-            }
-          } else {
-            const existingIds = new Set((parentUser.childrenIds || []).map((id) => String(id)));
-            if (!existingIds.has(String(studentUser._id))) {
-              parentUser.childrenIds = [...(parentUser.childrenIds || []), studentUser._id];
-            }
-            const existingChildren = new Set(parentUser.children || []);
-            const childName = row.name || payload.name;
-            if (childName && !existingChildren.has(childName)) {
-              parentUser.children = [...(parentUser.children || []), childName];
-            }
-            const existingGrades = new Set(parentUser.grade || []);
-            if (payload.grade && !existingGrades.has(payload.grade)) {
-              parentUser.grade = [...(parentUser.grade || []), payload.grade];
-            }
-            await parentUser.save();
-          }
+        if (parent) {
+          const key = parentKeyOf(parent.email, parent.mobile);
+          const prev = parentChain.get(key) || Promise.resolve();
+          const run = prev.then(() => linkParent(studentUser, row, payload, parent));
+          parentChain.set(key, run.catch(() => {}));
+          await run;
         }
         results.imported += 1;
       } catch (err) {
         results.failed += 1;
-        results.errors.push({
-          index: i,
-          message: err.message || 'Failed to import row',
-        });
+        results.errors.push({ index, message: err.message || 'Failed to import row' });
+      } finally {
+        job.processed += 1;
       }
-      job.processed = i + 1;
+    };
+
+    for (let s = 0; s < prepared.length; s += CONCURRENCY) {
+      await Promise.all(prepared.slice(s, s + CONCURRENCY).map(processPrepared));
     }
 
     job.status = 'completed';

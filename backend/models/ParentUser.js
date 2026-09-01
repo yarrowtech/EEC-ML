@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { looksHashed } = require('../utils/passwordHash');
 
 const ENCRYPTED_PREFIX = 'enc:v1';
 const PARENT_SENSITIVE_FIELDS = ['mobile', 'email', 'address'];
@@ -180,7 +181,7 @@ const parentUserSchema = new mongoose.Schema({
 parentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
 
 parentUserSchema.pre('save', async function (next) {
-  if (this.isModified('password')) {
+  if (this.isModified('password') && !looksHashed(this.password)) {
     this.password = await bcrypt.hash(this.password, 10);
   }
 

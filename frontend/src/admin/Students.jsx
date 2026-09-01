@@ -146,16 +146,18 @@ const Students = ({ setShowAdminHeader }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [importJob, setImportJob] = useState(null); // { total, processed, imported, failed } while a bulk import runs
   const importProgressTimerRef = useRef(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState(0);
-  const deleteProgressTimerRef = useRef(null);
+  const [deleteJob, setDeleteJob] = useState(null); // { total, processed, phase, deleted } while a bulk delete runs
   const fileInputRef = useRef(null);
   const tableBodyScrollRef = useRef(null);
   const tableHeaderRef = useRef(null);
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveActionLoading, setArchiveActionLoading] = useState(false);
+  const [restoringStudentId, setRestoringStudentId] = useState(null); // row-level "Restoring…" state
   const [selectedArchivedStudentIds, setSelectedArchivedStudentIds] = useState([]);
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -1151,19 +1153,12 @@ const Students = ({ setShowAdminHeader }) => {
     });
     if (!confirm.isConfirmed) return;
 
+    const total = selectedStudentIds.length;
     setIsBulkDeleting(true);
-    setDeleteProgress(20);
-    if (deleteProgressTimerRef.current) clearInterval(deleteProgressTimerRef.current);
-    deleteProgressTimerRef.current = setInterval(() => {
-      setDeleteProgress((prev) => {
-        if (prev >= 90) return prev;
-        const step = prev < 50 ? 8 : prev < 75 ? 4 : 2;
-        return Math.min(90, prev + step);
-      });
-    }, 200);
+    setDeleteJob({ total, processed: 0, phase: "students", deleted: 0 });
 
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/students/bulk`, {
+      const startRes = await fetch(`${API_BASE}/api/admin/users/students/bulk`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -1171,38 +1166,43 @@ const Students = ({ setShowAdminHeader }) => {
         },
         body: JSON.stringify({ ids: selectedStudentIds }),
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || data.message || res.statusText);
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData.error || startData.message || startRes.statusText);
       }
 
-      if (deleteProgressTimerRef.current) {
-        clearInterval(deleteProgressTimerRef.current);
-        deleteProgressTimerRef.current = null;
+      // Poll the server for real progress.
+      const jobId = startData.jobId;
+      let job;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const stRes = await fetch(`${API_BASE}/api/admin/users/students/bulk/status/${jobId}`, {
+          headers: { authorization: `Bearer ${localStorage.getItem("token")}` },
+        });
+        if (!stRes.ok) continue;
+        job = await stRes.json().catch(() => null);
+        if (!job) continue;
+        setDeleteJob({
+          total: job.total ?? total,
+          processed: job.processed ?? 0,
+          phase: job.phase || "students",
+          deleted: job.deletedCount ?? 0,
+        });
+        setDeleteProgress(job.total ? Math.round(((job.processed ?? 0) / job.total) * 100) : 0);
+        if (job.status === "completed" || job.status === "failed") break;
       }
-      setDeleteProgress(100);
-      await new Promise((resolve) => setTimeout(resolve, 400));
 
-      const successCount = data.deletedCount || 0;
-      const failedCount = Array.isArray(data.failedIds) ? data.failedIds.length : 0;
+      if (job.status === "failed") {
+        throw new Error(job.error || "Bulk delete failed on the server.");
+      }
 
       setSelectedStudentIds([]);
       await refreshStudents();
-
-      if (failedCount) {
-        Swal.fire({
-          icon: "warning",
-          title: "Bulk Delete Completed",
-          html: `<p><strong>${successCount}</strong> deleted, <strong>${failedCount}</strong> failed.</p>`,
-        });
-        return;
-      }
-
       Swal.fire({
         icon: "success",
         title: "Students Deleted",
-        text: `${successCount} student(s) deleted successfully.`,
+        text: `${job.deletedCount || total} student(s) deleted successfully${job.deletedParents ? `, ${job.deletedParents} parent account(s) removed` : ""}.`,
+        timer: 2500,
       });
     } catch (err) {
       Swal.fire({
@@ -1211,11 +1211,8 @@ const Students = ({ setShowAdminHeader }) => {
         text: err.message || "Unable to delete selected students.",
       });
     } finally {
-      if (deleteProgressTimerRef.current) {
-        clearInterval(deleteProgressTimerRef.current);
-        deleteProgressTimerRef.current = null;
-      }
       setIsBulkDeleting(false);
+      setDeleteJob(null);
       setDeleteProgress(0);
     }
   };
@@ -1459,6 +1456,17 @@ const Students = ({ setShowAdminHeader }) => {
   useEffect(() => {
     if (showAddForm || showDraftsModal) loadEnrollDrafts();
   }, [showAddForm, showDraftsModal, loadEnrollDrafts]);
+
+  // Warn before leaving while a bulk delete / import is running.
+  useEffect(() => {
+    if (!deleteJob && !isImporting) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [deleteJob, isImporting]);
 
   // Lock the page behind the drafts modal so only the modal scrolls.
   useEffect(() => {
@@ -2502,6 +2510,7 @@ const Students = ({ setShowAdminHeader }) => {
     if (!confirm.isConfirmed) return;
     try {
       setArchiveActionLoading(true);
+      setRestoringStudentId(String(studentId));
       const res = await fetch(
         `${API_BASE}/api/nif/students/${studentId}/unarchive`,
         {
@@ -2535,6 +2544,7 @@ const Students = ({ setShowAdminHeader }) => {
       });
     } finally {
       setArchiveActionLoading(false);
+      setRestoringStudentId(null);
     }
   };
 
@@ -3478,9 +3488,11 @@ const Students = ({ setShowAdminHeader }) => {
       // request would outlive hosting-provider proxy timeouts), so poll
       // for progress instead of waiting on the original request.
       const jobId = startData.jobId;
+      const jobTotal = startData.total || payload.length;
+      setImportJob({ total: jobTotal, processed: 0, imported: 0, failed: 0 });
       let data;
       while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1200));
         const statusRes = await fetch(
           `${API_BASE}/api/nif/students/bulk/status/${jobId}`,
           { headers: { authorization: `Bearer ${localStorage.getItem("token")}` } }
@@ -3489,6 +3501,12 @@ const Students = ({ setShowAdminHeader }) => {
         data = await statusRes.json().catch(() => null);
         if (!data) continue;
 
+        setImportJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          imported: data.imported || 0,
+          failed: data.failed || 0,
+        });
         setImportProgress(
           data.total ? Math.min(99, Math.round((data.processed / data.total) * 100)) : importProgress
         );
@@ -3547,6 +3565,7 @@ const Students = ({ setShowAdminHeader }) => {
       }
       setIsImporting(false);
       setImportProgress(0);
+      setImportJob(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -3557,7 +3576,7 @@ const Students = ({ setShowAdminHeader }) => {
     // container instead of the whole page scrolling.
     // ── Adjust the table area height here: bump the subtracted px to make it
     //    shorter (63.4px = AdminHeader; the extra ~30px leaves a bottom gap).
-    <div className="flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
@@ -4316,8 +4335,8 @@ const Students = ({ setShowAdminHeader }) => {
 
         {/* Student View Modal */}
         {showViewModal && viewStudent && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[80vh]">
+          <div className="animate-overlay-fade fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="animate-modal-pop bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[80vh]">
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -4941,6 +4960,65 @@ const Students = ({ setShowAdminHeader }) => {
           label={docPreview?.label}
           onClose={() => setDocPreview(null)}
         />
+
+        {/* Bulk import progress — blocking, non-dismissible */}
+        {importJob && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
+                <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
+              </div>
+              <h3 className="text-base font-bold text-gray-900">Uploading students…</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Please wait and do not refresh or close this window.
+              </p>
+
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-[width] duration-300"
+                  style={{ width: `${importJob.total ? Math.round((importJob.processed / importJob.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm font-semibold text-gray-800">
+                {importJob.processed > 0
+                  ? `${importJob.processed} / ${importJob.total} students`
+                  : "Preparing records…"}
+              </p>
+              {importJob.failed > 0 && (
+                <p className="mt-1 text-xs text-red-500">
+                  {importJob.failed} row{importJob.failed === 1 ? "" : "s"} could not be imported
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Bulk delete progress — blocking, non-dismissible */}
+        {deleteJob && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                <Loader2 className="h-6 w-6 animate-spin text-red-500" />
+              </div>
+              <h3 className="text-base font-bold text-gray-900">Deleting students…</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Please do not refresh or close this window.
+              </p>
+
+              <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full rounded-full bg-red-500 transition-[width] duration-300"
+                  style={{ width: `${deleteJob.total ? Math.round((deleteJob.processed / deleteJob.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm font-semibold text-gray-800">
+                {deleteJob.phase === "parents"
+                  ? "Cleaning up linked parent accounts…"
+                  : `${deleteJob.processed} / ${deleteJob.total} students`}
+              </p>
+            </div>
+          </div>
+        )}
 
         {showDetailModal && editingStudent && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -5661,8 +5739,8 @@ const Students = ({ setShowAdminHeader }) => {
         )}
 
         {showArchiveModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] max-h-[80vh] overflow-hidden border border-gray-200 flex flex-col">
+          <div className="animate-overlay-fade fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="animate-modal-pop bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] max-h-[80vh] overflow-hidden border border-gray-200 flex flex-col">
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <h3 className="text-xl font-semibold text-gray-900">Archived Students</h3>
                 <div className="flex items-center gap-2">
@@ -5670,12 +5748,13 @@ const Students = ({ setShowAdminHeader }) => {
                     <button
                       onClick={handleBulkUnarchiveStudents}
                       disabled={archiveActionLoading}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-0.5 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50"
                     >
                       <RotateCcw size={14} />
                       {archiveActionLoading
                         ? "Restoring..."
-                        : `Restore Selected (${selectedArchivedStudentIds.length})`}
+                        // : `Restore Selected (${selectedArchivedStudentIds.length})`}
+                        : `Restore All`}
                     </button>
                   )}
                   <button
@@ -5706,8 +5785,8 @@ const Students = ({ setShowAdminHeader }) => {
                       </th>
                       <th className="px-4 py-3 text-left">Name</th>
                       <th className="px-4 py-3 text-left">Roll</th>
-                      <th className="px-4 py-3 text-left">Program</th>
-                      <th className="px-4 py-3 text-left">Course</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Session</th>
                       <th className="px-4 py-3 text-left">Phone</th>
                       <th className="px-4 py-3 text-right">Outstanding</th>
                       <th className="px-4 py-3 text-center">Action</th>
@@ -5729,16 +5808,21 @@ const Students = ({ setShowAdminHeader }) => {
                           {student.name || student.studentName || '-'}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
-                          {student.roll}
+                          {student.roll ?? student.rollNumber ?? student.rollNo ?? "—"}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
-                          {student.grade}
+                          {(() => {
+                            const cls = student.class || student.grade || student.course || "";
+                            if (!cls) return "—";
+                            return `${cls}${student.section ? ` - ${student.section}` : ""}`;
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
-                          {student.course}
+                          {student.academicYear ||
+                            getSessionLabel(student.academicYearId, "—")}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
-                          {student.mobile}
+                          {student.mobile || "—"}
                         </td>
                         <td className="px-4 py-3 text-right text-red-600 font-semibold">
                           {formatCurrency(student.feeSummary?.totalDue)}
@@ -5747,10 +5831,19 @@ const Students = ({ setShowAdminHeader }) => {
                           <button
                             onClick={() => handleUnarchiveStudent(student._id)}
                             disabled={archiveActionLoading}
-                            className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50"
+                            className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed min-w-[104px] justify-center"
                           >
-                            <RotateCcw size={14} />
-                            Restore
+                            {restoringStudentId === String(student._id) ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" />
+                                Restoring…
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={14} />
+                                Restore
+                              </>
+                            )}
                           </button>
                         </td>
                       </tr>
