@@ -2824,9 +2824,14 @@ const Students = ({ setShowAdminHeader }) => {
     'guardianname': 'guardianName',
     'guardian': 'guardianName',
     'parentname': 'guardianName',
-    'fathername': 'guardianName',
-    'mothername': 'guardianName',
     'guardianloginname': 'guardianName',
+    // Father / Mother name columns must land on their own fields — NOT
+    // guardianName — otherwise the demo template's fatherName/motherName
+    // columns silently get folded into the guardian and never saved.
+    // (The backend still derives the parent account from father/mother
+    // when no explicit guardian column is present.)
+    'fathername': 'fatherName',
+    'mothername': 'motherName',
     'father': 'fatherName',
     'mother': 'motherName',
     'guardianemail': 'guardianEmail',
@@ -2840,10 +2845,10 @@ const Students = ({ setShowAdminHeader }) => {
     'guardiancontact': 'guardianPhone',
     'parentphone': 'guardianPhone',
     'parentmobile': 'guardianPhone',
-    'fatherphone': 'guardianPhone',
-    'motherphone': 'guardianPhone',
-    'fathercontact': 'guardianPhone',
-    'mothercontact': 'guardianPhone',
+    'fatherphone': 'fatherPhone',
+    'motherphone': 'motherPhone',
+    'fathercontact': 'fatherPhone',
+    'mothercontact': 'motherPhone',
     'guardianloginphone': 'guardianPhone',
     'bloodgroup': 'bloodGroup',
     'bloodgrp': 'bloodGroup',

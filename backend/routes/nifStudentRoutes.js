@@ -356,10 +356,12 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           transferCertificateNo: row.transferCertificateNo || '',
           transferCertificateDate: row.transferCertificateDate || '',
           reasonForLeaving: row.reasonForLeaving || '',
-          guardianName: row.guardianName || '',
-          guardianPhone: row.guardianPhone || '',
+          // Fall back to father/mother so the student's guardian fields aren't
+          // blank when the upload only had father/mother columns.
+          guardianName: row.guardianName || row.fatherName || row.motherName || '',
+          guardianPhone: row.guardianPhone || row.fatherPhone || row.motherPhone || '',
           guardianEmail: row.guardianEmail || '',
-          guardianRelation: row.guardianRelation || '',
+          guardianRelation: row.guardianRelation || (row.fatherName ? 'Father' : row.motherName ? 'Mother' : ''),
           fatherName: row.fatherName || '',
           fatherPhone: row.fatherPhone || '',
           fatherOccupation: row.fatherOccupation || '',
