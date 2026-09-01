@@ -10,7 +10,6 @@ import {
   Sparkles,
   TrendingUp,
   Award,
-  Bell,
   ChevronRight,
   Loader2,
   CheckCircle2,
@@ -306,11 +305,7 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
 
 const ParentDashboard = ({
   parentName,
-  parentInitials,
-  unreadCount = 0,
   onOpenSidebar,
-  onToggleNotifications,
-  onToggleProfile,
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -407,18 +402,6 @@ const ParentDashboard = ({
     const startYear = currentTime.getMonth() >= 3 ? year : year - 1;
     return `${startYear}–${startYear + 1} Session`;
   }, [currentTime]);
-
-  const profileInitials = useMemo(() => {
-    if (parentInitials) return parentInitials;
-    const parts = String(parentName || 'Parent Account').trim().split(/\s+/).filter(Boolean);
-    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : parts[0]?.[0] || 'P').toUpperCase();
-  }, [parentInitials, parentName]);
-
-  const shortParentName = useMemo(() => {
-    const parts = String(parentName || 'Parent').trim().split(/\s+/).filter(Boolean);
-    if (parts.length < 2) return parts[0] || 'Parent';
-    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
-  }, [parentName]);
 
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) return loading ? 'Refreshing now' : 'Update unavailable';
@@ -555,34 +538,6 @@ const ParentDashboard = ({
                   {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 </span>
               </div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <motion.button
-                type="button"
-                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
-                onClick={onToggleNotifications}
-                className="relative rounded-full border border-white/60 bg-white/40 p-2 text-slate-400 backdrop-blur-sm transition hover:text-slate-600"
-                aria-label={`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`}
-              >
-                <Bell size={19} />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-purple-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </motion.button>
-              <button
-                type="button"
-                onClick={onToggleProfile}
-                className="flex items-center gap-2.5 rounded-full border border-white/60 bg-white/40 px-2 py-1.5 pr-3 backdrop-blur-sm transition hover:bg-white/70"
-                aria-label="Open parent profile menu"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-sm font-bold text-white shadow-md shadow-purple-500/20">
-                  {profileInitials}
-                </span>
-                <span className="hidden text-xs font-medium text-slate-700 sm:block">{shortParentName}</span>
-              </button>
             </div>
           </div>
 

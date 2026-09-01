@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Users,
@@ -67,6 +68,7 @@ const MENU_ITEMS = [
 ];
 
 const ParentPortal = () => {
+  const prefersReducedMotion = useReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -534,47 +536,69 @@ const ParentPortal = () => {
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col h-screen bg-gray-50">
-        <header className="sticky top-0 z-20 w-full bg-white/80 backdrop-blur-xl border-b border-gray-100">
-          <div className="px-3 sm:px-5">
-            <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <header className="sticky top-0 z-20 w-full bg-gray-50/85 px-2 py-2 backdrop-blur-xl sm:px-4 sm:py-3">
+          <motion.div
+            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.5, ease: 'easeOut' }}
+            whileHover={prefersReducedMotion ? undefined : { y: -2, boxShadow: '0 24px 60px -16px rgba(0,0,0,0.08)' }}
+            className="relative mx-auto w-full max-w-[calc(80rem-3rem)] rounded-[1.75rem] bg-gradient-to-r from-cyan-300/30 via-white/80 to-purple-300/30 p-[2px] shadow-2xl shadow-slate-900/10"
+          >
+            <div className="pointer-events-none absolute inset-[2px] overflow-hidden rounded-[calc(1.75rem-2px)]" aria-hidden="true">
+              <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-300/90 blur-3xl sm:h-96 sm:w-96" />
+              <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-300/90 blur-3xl sm:h-80 sm:w-80" />
+            </div>
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 rounded-[calc(1.75rem-2px)] border border-white/80 bg-white/60 px-3 py-2.5 backdrop-blur-xl transition-colors duration-200 hover:bg-white/70 sm:px-5 sm:py-3.5">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
+                  className="rounded-xl p-2 transition-all hover:bg-white/70 active:scale-95 lg:hidden"
                   aria-label="Open sidebar"
                 >
-                  <Menu size={20} className="text-gray-600" />
+                  <Menu size={20} className="text-slate-600" />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
-                    {greeting}, <span className="text-amber-600">{firstName}</span>
-                  </p>
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                    <Calendar size={12} />
-                    <span>{dateLabel}</span>
-                    <span className="text-gray-300">|</span>
-                    <span className="truncate">{activePageTitle}</span>
-                  </div>
+                  <motion.p
+                    initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 0.1, duration: prefersReducedMotion ? 0 : 0.4 }}
+                    className="truncate text-base font-semibold tracking-tight text-slate-900 sm:text-xl"
+                  >
+                    {greeting}, <span className="bg-gradient-to-r from-violet-600 to-purple-500 bg-clip-text text-transparent">{firstName}</span>
+                  </motion.p>
+                  <motion.div
+                    initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 0.2, duration: prefersReducedMotion ? 0 : 0.4 }}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 sm:text-sm"
+                  >
+                    <Calendar size={12} className="shrink-0" />
+                    <span className="truncate">{dateLabel}</span>
+                    <span className="text-slate-300">|</span>
+                    <span className="truncate border-b border-dashed border-transparent font-semibold text-slate-600">{activePageTitle}</span>
+                  </motion.div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <div className="relative" ref={notificationsRef}>
-                  <button
+                  <motion.button
                     onClick={handleToggleNotifications}
-                    className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 border border-gray-100 transition-all"
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
+                    whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-white/35 text-slate-500 transition-all hover:bg-white/70"
                     aria-label="Notifications"
                   >
                     <Bell size={18} />
                     {unreadCount > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">
+                      <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-purple-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
-                  </button>
+                  </motion.button>
 
                   {showNotifications && (
-                    <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden">
+                    <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-xl backdrop-blur-xl">
                       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                         <div className="flex items-center gap-2">
                           <Bell size={14} className="text-amber-500" />
@@ -645,23 +669,27 @@ const ParentPortal = () => {
                 </div>
 
                 <div className="relative" ref={profileRef}>
-                  <button
-                    className="flex items-center gap-2 rounded-xl p-1.5 hover:bg-gray-100 active:scale-95 transition-all"
+                  <motion.button
+                    initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 0.3, duration: prefersReducedMotion ? 0 : 0.4, type: 'spring', stiffness: 200 }}
+                    whileHover={prefersReducedMotion ? undefined : { scale: 1.02 }}
+                    className="flex items-center gap-3 rounded-full border border-white/40 bg-white/35 py-1.5 pl-1.5 pr-3 transition-all duration-200 hover:bg-white/60 sm:pr-4"
                     onClick={() => {
                       setShowNotifications(false);
                       toggleProfile();
                     }}
                     aria-label="Profile menu"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-yellow-500 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-400 text-sm font-semibold text-white shadow-sm sm:h-11 sm:w-11">
                       {initials}
                     </div>
-                    <div className="hidden md:block text-left">
-                      <p className="text-xs font-semibold text-gray-800 leading-tight">{parentName}</p>
-                      <p className="text-[10px] text-gray-400">Parent</p>
+                    <div className="hidden text-left sm:block">
+                      <p className="max-w-32 truncate text-sm font-semibold leading-tight text-slate-900">{parentName}</p>
+                      <p className="text-xs font-medium text-slate-500">Parent</p>
                     </div>
-                    <ChevronDown size={14} className={`hidden md:block text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
-                  </button>
+                    <ChevronDown size={14} className={`hidden text-slate-400 transition-transform duration-200 sm:block ${profileOpen ? 'rotate-180' : ''}`} />
+                  </motion.button>
 
                   {profileOpen && (
                     <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
@@ -700,7 +728,7 @@ const ParentPortal = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-2 sm:p-3">
@@ -710,15 +738,8 @@ const ParentPortal = () => {
               element={
                 <ParentDashboard
                   parentName={parentProfile?.name}
-                  parentInitials={initials}
                   childrenNames={Array.isArray(parentProfile?.children) ? parentProfile.children : []}
-                  unreadCount={unreadCount}
                   onOpenSidebar={() => setSidebarOpen(true)}
-                  onToggleNotifications={handleToggleNotifications}
-                  onToggleProfile={() => {
-                    setShowNotifications(false);
-                    setProfileOpen(true);
-                  }}
                 />
               }
             />

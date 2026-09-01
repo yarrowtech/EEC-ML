@@ -7,7 +7,46 @@
 
 > ⚠️ The running app was **not** exercised against a live DB. "Working / not working" below is determined by whether the endpoint exists, whether the frontend calls it with the shape the handler expects, and whether cross-service contracts hold. Items marked **VERIFY** need a runtime check.
 
-> ✅ **2026-09-01 — remediation applied.** All CHANGE SUGGESTIONS below (C1–C11) have been implemented. See the [Resolution Log](#resolution-log-2026-09-01) at the end for the exact changes, new endpoints, and test results.
+> ✅ **2026-09-01 — core remediation applied.** The primary defects in C1–C8 and the frontend/test portion of C10 have been implemented. C9, backend cleanup in C10, C11 privacy hardening, and runtime QA still have open work. See the checklist below and the [Resolution Log](#resolution-log-2026-09-01).
+
+> **Reading note:** Sections 1–4 preserve the original pre-remediation audit findings for history. Use the checklist below and the [Resolution Log](#resolution-log-2026-09-01) for current status.
+
+## CURRENT REMEDIATION CHECKLIST
+
+Checked against the current repository on 2026-09-01. A checked box means the implementation is present in source. An unchecked box means work or runtime verification is still required.
+
+### Completed implementation
+
+- [x] **C1 — AI parent report modes:** `home_support`, `progress_digest`, and `monthly_report` are registered, with mode instructions present.
+- [x] **C2 — Results error crash:** `AlertCircle` is imported and report-card totals are normalized/guarded.
+- [x] **C3 — Child resolution:** dashboard routes use the shared ID-to-name fallback in `backend/utils/parentChildren.js`.
+- [x] **C4 — Health report:** mock medical data was removed and the screen uses `GET /api/parent/auth/health`.
+- [x] **C5 — PTM persistence:** reschedule, decline, and feedback endpoints exist and the frontend calls them.
+- [x] **C6 — Exam-result fields:** dashboard analytics shape results using `ExamResult.marks` and the linked exam total.
+- [x] **C7 — Dashboard data:** fee summary, attendance field names, safe meeting status, AI errors, and attendance progress semantics are implemented.
+- [x] **C8 — Accessibility baseline:** major label associations, alerts, loading announcements, observation controls, PTM dialog semantics, and progress semantics are present.
+- [x] **C10 — Frontend cleanup and parent tests:** obsolete parent components/backups were removed and both current parent Jest suites pass.
+
+### Partially complete or outstanding
+
+- [x] **C9 — Shared session wrapper created:** `parentApiFetch`/`parentApiJson` exist and are used by `ClassRoutine`, `HealthReport`, `ExcuseLetters`, and `HolidayList`.
+- [ ] **C9 — Complete migration:** move the remaining parent screens from raw `fetch` to the shared parent API wrapper.
+- [x] **C10 — Dead frontend code removed:** unused components, backup files, and Academic Report dead filtering code are gone.
+- [ ] **C10 — Orphan backend cleanup:** remove or formally retain/document `/api/parent/auth/academics` and `/api/fees/parent/razorpay/*`.
+- [x] **C11 — Safer Jitsi room selection:** parents select scheduled meetings; invite functions are disabled and prejoin is enabled.
+- [ ] **C11 — Meeting privacy completion:** add an actual lobby/authenticated admission policy or move to a school-controlled provider. `EEC-PTM-<meetingId>` alone is not an access-control boundary.
+- [ ] **Accessibility completion:** run axe-core and keyboard/focus testing across every parent route; remediate remaining contrast, focus-trap, heading, and modal issues.
+
+### Verification gates
+
+- [x] **Parent Jest suites:** 2 suites passed; 45 tests passed, 9 skipped, 0 failed (`npm test -- --runInBand src/parents`).
+- [x] **Frontend production build:** recorded as passing in the resolution log and subsequent parent-portal UI work.
+- [x] **AI-service tests:** resolution log records 157 passed, including four new parent-mode cases.
+- [ ] **Live database walkthrough:** exercise all 15 parent routes with ID-linked and name-linked parents against representative school data.
+- [ ] **Payment sandbox walkthrough:** verify Razorpay order, checkout, signature verification, receipt, retry, and failure handling.
+- [ ] **Notification walkthrough:** verify PTM actions generate the intended teacher notifications and read states persist.
+- [ ] **AI report quality review:** generate Home Support, Weekly Digest, and Monthly Report for representative learners and have a teacher review accuracy and safety.
+- [ ] **Cross-browser/mobile QA:** verify narrow mobile, tablet, desktop, keyboard-only, and reduced-motion behavior.
 
 ---
 
