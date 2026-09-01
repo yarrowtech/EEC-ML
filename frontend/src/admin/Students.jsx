@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import {
   Mail,
   Phone,
@@ -154,6 +155,7 @@ const Students = ({ setShowAdminHeader }) => {
   const fileInputRef = useRef(null);
   const tableBodyScrollRef = useRef(null);
   const tableHeaderRef = useRef(null);
+  const editRequestTokenRef = useRef(0); // guards the background "fresh copy" fetch in openEditWizard
   const [archivedStudents, setArchivedStudents] = useState([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiveActionLoading, setArchiveActionLoading] = useState(false);
@@ -953,20 +955,44 @@ const Students = ({ setShowAdminHeader }) => {
     }
   };
 
-  // Fetch archived students from backend
+  // Fetch archived students from backend (plus their outstanding fee balance)
   const refreshArchivedStudents = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_BASE}/api/nif/students/archived`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          authorization: `Bearer ${token}`,
-        },
-      });
+      const headers = {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${token}`,
+      };
+      const [res, invoicesRes] = await Promise.all([
+        fetch(`${API_BASE}/api/nif/students/archived`, { method: "GET", headers }),
+        fetch(`${API_BASE}/api/fees/invoices`, { method: "GET", headers }).catch(() => null),
+      ]);
       if (res.ok) {
         const data = await res.json();
-        setArchivedStudents(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+
+        // Sum each student's invoice balances so the "Outstanding" column
+        // reflects real dues (archived docs don't carry a feeSummary).
+        const dueByStudentId = new Map();
+        if (invoicesRes && invoicesRes.ok) {
+          const invoices = await invoicesRes.json().catch(() => []);
+          (Array.isArray(invoices) ? invoices : []).forEach((invoice) => {
+            const key = String(invoice?.studentId || "");
+            if (!key) return;
+            const balance = Number(invoice?.balanceAmount || 0);
+            dueByStudentId.set(key, (dueByStudentId.get(key) || 0) + (Number.isFinite(balance) ? balance : 0));
+          });
+        }
+
+        setArchivedStudents(
+          list.map((student) => ({
+            ...student,
+            feeSummary: {
+              ...(student.feeSummary || {}),
+              totalDue: dueByStudentId.get(String(student?._id || "")) || 0,
+            },
+          }))
+        );
       } else {
         const errorText = await res.text();
         console.error("Failed to fetch archived students:", res.status, errorText);
@@ -1389,6 +1415,7 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   const startNewEnrollment = () => {
+    editRequestTokenRef.current += 1; // invalidate any in-flight "fresh copy" fetch from a prior edit
     setNewStudent({ ...INITIAL_NEW_STUDENT });
     setSelectedAcademicYearId("");
     setSelectedClassId("");
@@ -1403,22 +1430,10 @@ const Students = ({ setShowAdminHeader }) => {
   };
 
   // Open the multi-step wizard pre-filled with an existing student, in edit mode.
-  const openEditWizard = async (student) => {
-    if (!student?._id) return;
-    let src = normalizeStudentForEdit(student);
-    try {
-      const res = await fetch(`${API_BASE}/api/admin/users/get-students`, {
-        headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const fresh = Array.isArray(data) && data.find((s) => String(s?._id) === String(student._id));
-        if (fresh) src = normalizeStudentForEdit(fresh);
-      }
-    } catch { /* use what we have */ }
-
-    setNewStudent({
-      ...INITIAL_NEW_STUDENT,
+  // Applies a normalized student record into the wizard's form + selector state.
+  const applyEditSource = useCallback((src) => {
+    setNewStudent((prev) => ({
+      ...prev,
       ...src,
       class: src.class || src.grade || "",
       pincode: src.pincode || src.pinCode || "",
@@ -1429,7 +1444,7 @@ const Students = ({ setShowAdminHeader }) => {
       approvalStatus: src.approvalStatus || "Approved",
       admissionType: src.admissionType || "New Admission",
       documents: Array.isArray(src.documents) ? src.documents : [],
-    });
+    }));
 
     const cls = academicClasses.find((c) => String(c?.name || "").trim() === String(src.class || src.grade || "").trim());
     const yr = academicYears.find((y) => String(y?.name || "").trim() === String(src.academicYear || "").trim());
@@ -1439,6 +1454,17 @@ const Students = ({ setShowAdminHeader }) => {
     setSelectedAcademicYearId(yr ? String(yr._id) : "");
     setSelectedClassId(cls ? String(cls._id) : "");
     setSelectedSectionId(sec ? String(sec._id) : "");
+  }, [academicClasses, academicYears, academicSections]);
+
+  const openEditWizard = (student) => {
+    if (!student?._id) return;
+
+    // Open instantly with whatever's already on screen (the row/view data),
+    // then quietly patch in a freshly-fetched copy in the background instead
+    // of blocking the wizard open on a full student-list round trip.
+    const src = normalizeStudentForEdit(student);
+    setNewStudent({ ...INITIAL_NEW_STUDENT, ...src });
+    applyEditSource(src);
     setSelectedExistingParent(null);
     setParentSearchTerm("");
     setActiveDraftId(null);
@@ -1447,6 +1473,22 @@ const Students = ({ setShowAdminHeader }) => {
     setEnrollSessionKey((k) => k + 1);
     setShowViewModal(false);
     setShowAddForm(true);
+
+    const requestToken = ++editRequestTokenRef.current;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/users/get-students`, {
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${localStorage.getItem("token")}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const fresh = Array.isArray(data) && data.find((s) => String(s?._id) === String(student._id));
+        // Bail if the admin has since closed the wizard or opened a different
+        // record — don't clobber whatever is on screen now.
+        if (!fresh || editRequestTokenRef.current !== requestToken) return;
+        applyEditSource(normalizeStudentForEdit(fresh));
+      } catch { /* keep what we already showed */ }
+    })();
   };
 
   useEffect(() => {
@@ -2525,8 +2567,10 @@ const Students = ({ setShowAdminHeader }) => {
       if (!res.ok) {
         throw new Error(data.message || "Failed to restore student");
       }
-      await refreshStudents();
-      await refreshArchivedStudents();
+      // Drop it from the archived list immediately instead of waiting on a
+      // full students+parents+invoices reload — that round trip happens in
+      // the background and is what made restoring feel slow before.
+      setArchivedStudents((prev) => prev.filter((s) => String(s?._id) !== String(studentId)));
       Swal.fire({
         icon: "success",
         title: "Student restored",
@@ -2535,6 +2579,8 @@ const Students = ({ setShowAdminHeader }) => {
         showConfirmButton: false,
         timer: 1500,
       });
+      refreshStudents().catch(console.error);
+      refreshArchivedStudents().catch(console.error);
     } catch (err) {
       console.error(err);
       await Swal.fire({
@@ -2608,17 +2654,25 @@ const Students = ({ setShowAdminHeader }) => {
             if (!res.ok) {
               throw new Error(data.message || "Failed to restore student");
             }
-            return true;
+            return studentId;
           })
         )
       );
 
+      const restoredIds = new Set(
+        results
+          .filter((item) => item.status === "fulfilled")
+          .map((item) => String(item.value))
+      );
       const failed = results.filter((item) => item.status === "rejected");
       const successCount = results.length - failed.length;
 
       setSelectedArchivedStudentIds([]);
-      await refreshStudents();
-      await refreshArchivedStudents();
+      // Drop the restored rows immediately; reconcile fully in the background
+      // instead of blocking the UI on a full students+parents+invoices reload.
+      setArchivedStudents((prev) => prev.filter((s) => !restoredIds.has(String(s?._id))));
+      refreshStudents().catch(console.error);
+      refreshArchivedStudents().catch(console.error);
 
       if (failed.length) {
         Swal.fire({
@@ -3581,10 +3635,10 @@ const Students = ({ setShowAdminHeader }) => {
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 text-center">
               Student Management
             </h1>
-            <p className="text-gray-500 mt-1 text-sm">
+            <p className="text-gray-500 mt-1 text-sm text-center">
               Manage and monitor all enrolled students
             </p>
           </div>
@@ -3677,9 +3731,14 @@ const Students = ({ setShowAdminHeader }) => {
             </button>
             <button
               onClick={() => setShowArchiveModal(true)}
-              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
               <Archive size={15} /> Archived
+              {archivedStudents.length > 0 && (
+                <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-semibold text-blue-700">
+                  {archivedStudents.length}
+                </span>
+              )}
             </button>
              <button
               onClick={toggleSelectAllFiltered}
@@ -3982,13 +4041,14 @@ const Students = ({ setShowAdminHeader }) => {
                                 return (
                                   <>
                                     <div className="text-gray-600">
-                                      <div className="font-medium">Total: {formatCurrency(totalAmount)}</div>
+                                      <div className="font-medium">
+                                        <span className="font-bold"> Total: </span> <span className="font-medium"> {formatCurrency(totalAmount)} </span></div>
                                       <div className="text-gray-500">
                                        <span className="font-bold"> Paid: </span> <span className="text-green-600 font-medium">{formatCurrency(paidAmount)}</span>
                                         {/* {formatCurrency(paidAmount)}/{formatCurrency(totalAmount)} */}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1 mt-1">
+                                    <div className="flex items-center gap-1">
                                      <span className="font-bold text-gray-500"> Due: </span>
                                       <span className="text-xs text-red-600 font-semibold">
                                         {formatCurrency(balanceAmount)}
@@ -4241,6 +4301,7 @@ const Students = ({ setShowAdminHeader }) => {
         </div>
 
         {/* Enroll New Student — full-screen wizard */}
+        <AnimatePresence>
         {showAddForm && (
           <StudentEnrollWizard
             key={`enroll-${enrollSessionKey}`}
@@ -4248,7 +4309,7 @@ const Students = ({ setShowAdminHeader }) => {
             handleAddStudentChange={handleAddStudentChange}
             enrollContext={enrollContext}
             editing={!!editingStudentId}
-            onClose={() => { setShowAddForm(false); setEditingStudentId(null); }}
+            onClose={() => { editRequestTokenRef.current += 1; setShowAddForm(false); setEditingStudentId(null); }}
             onSubmit={handleAddStudentSubmit}
             isSubmitting={isSubmitting}
             initialStep={resumeStep}
@@ -4270,14 +4331,30 @@ const Students = ({ setShowAdminHeader }) => {
             setSelectedSectionId={setSelectedSectionId}
           />
         )}
+        </AnimatePresence>
 
         {/* Enrollment Drafts modal */}
+        <AnimatePresence>
         {showDraftsModal && (
-          <div className="animate-overlay-fade fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDraftsModal(false)}>
-            <div className="animate-modal-pop flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <Motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShowDraftsModal(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <Motion.div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, y: 20, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
+            >
               <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-amber-600">
                     <FileClock size={18} />
                   </span>
                   <div>
@@ -4311,7 +4388,7 @@ const Students = ({ setShowAdminHeader }) => {
                         <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => resumeEnrollDraft(d)}
-                            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                            className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
                           >
                             <RotateCcw size={13} /> Resume
                           </button>
@@ -4329,14 +4406,28 @@ const Students = ({ setShowAdminHeader }) => {
                   </ul>
                 )}
               </div>
-            </div>
-          </div>
+            </Motion.div>
+          </Motion.div>
         )}
+        </AnimatePresence>
 
         {/* Student View Modal */}
+        <AnimatePresence>
         {showViewModal && viewStudent && (
-          <div className="animate-overlay-fade fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="animate-modal-pop bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[80vh]">
+          <Motion.div
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <Motion.div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8 border border-gray-200 flex flex-col max-h-[80vh]"
+              initial={{ opacity: 0, y: 20, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
+            >
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-t-2xl flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -4948,11 +5039,12 @@ const Students = ({ setShowAdminHeader }) => {
                 >
                   Close
                 </button>
-                
+
               </div>
-            </div>
-          </div>
+            </Motion.div>
+          </Motion.div>
         )}
+        </AnimatePresence>
 
         <DocPreviewModal
           open={!!docPreview}
@@ -5738,9 +5830,22 @@ const Students = ({ setShowAdminHeader }) => {
           </div>
         )}
 
+        <AnimatePresence>
         {showArchiveModal && (
-          <div className="animate-overlay-fade fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="animate-modal-pop bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] max-h-[80vh] overflow-hidden border border-gray-200 flex flex-col">
+          <Motion.div
+            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <Motion.div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] max-h-[80vh] overflow-hidden border border-gray-200 flex flex-col"
+              initial={{ opacity: 0, y: 20, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
+            >
               <div className="px-6 py-4 border-b flex items-center justify-between flex-shrink-0">
                 <h3 className="text-xl font-semibold text-gray-900">Archived Students</h3>
                 <div className="flex items-center gap-2">
@@ -5748,7 +5853,7 @@ const Students = ({ setShowAdminHeader }) => {
                     <button
                       onClick={handleBulkUnarchiveStudents}
                       disabled={archiveActionLoading}
-                      className="inline-flex items-center gap-2 px-0.5 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50"
+                      className="inline-flex items-center gap-2 px-3 py-0.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 text-sm disabled:opacity-50"
                     >
                       <RotateCcw size={14} />
                       {archiveActionLoading
@@ -5784,11 +5889,11 @@ const Students = ({ setShowAdminHeader }) => {
                         />
                       </th>
                       <th className="px-4 py-3 text-left">Name</th>
-                      <th className="px-4 py-3 text-left">Roll</th>
-                      <th className="px-4 py-3 text-left">Class</th>
                       <th className="px-4 py-3 text-left">Session</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Roll</th>
                       <th className="px-4 py-3 text-left">Phone</th>
-                      <th className="px-4 py-3 text-right">Outstanding</th>
+                      <th className="px-4 py-3 text-right">Due</th>
                       <th className="px-4 py-3 text-center">Action</th>
                     </tr>
                   </thead>
@@ -5808,24 +5913,57 @@ const Students = ({ setShowAdminHeader }) => {
                           {student.name || student.studentName || '-'}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
-                          {student.roll ?? student.rollNumber ?? student.rollNo ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">
-                          {(() => {
-                            const cls = student.class || student.grade || student.course || "";
-                            if (!cls) return "—";
-                            return `${cls}${student.section ? ` - ${student.section}` : ""}`;
-                          })()}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">
                           {student.academicYear ||
                             getSessionLabel(student.academicYearId, "—")}
                         </td>
                         <td className="px-4 py-3 text-gray-600">
+                          {(() => {
+                            const cls =
+                              student.archivedPlacement?.grade ||
+                              student.class ||
+                              student.grade ||
+                              student.course ||
+                              "";
+                            const sec =
+                              student.archivedPlacement?.section || student.section || "";
+                            if (!cls) return "—";
+                            return `${cls}${sec ? ` - ${sec}` : ""}`;
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">
+                          {/* grade/section/roll are moved to archivedPlacement on archive, so the live fields are blank */}
+                          {student.archivedPlacement?.roll ??
+                            student.roll ??
+                            student.rollNumber ??
+                            "—"}
+                        </td>
+                        {/* <td className="px-4 py-3 text-gray-600">
+                          {(() => {
+                            const cls =
+                              student.archivedPlacement?.grade ||
+                              student.class ||
+                              student.grade ||
+                              student.course ||
+                              "";
+                            const sec =
+                              student.archivedPlacement?.section || student.section || "";
+                            if (!cls) return "—";
+                            return `${cls}${sec ? ` - ${sec}` : ""}`;
+                          })()}
+                        </td> */}
+                        {/* <td className="px-4 py-3 text-gray-600">
+                          {student.academicYear ||
+                            getSessionLabel(student.academicYearId, "—")}
+                        </td> */}
+                        <td className="px-4 py-3 text-gray-600">
                           {student.mobile || "—"}
                         </td>
-                        <td className="px-4 py-3 text-right text-red-600 font-semibold">
-                          {formatCurrency(student.feeSummary?.totalDue)}
+                        <td
+                          className={`px-4 py-3 text-right font-semibold ${
+                            Number(student.feeSummary?.totalDue) > 0 ? "text-red-600" : "text-gray-400"
+                          }`}
+                        >
+                          {formatCurrency(student.feeSummary?.totalDue || 0)}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <button
@@ -5869,9 +6007,10 @@ const Students = ({ setShowAdminHeader }) => {
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+            </Motion.div>
+          </Motion.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -238,7 +238,11 @@ summary:focus-visible,
 [contenteditable]:focus-visible {
   outline: 2px solid var(--focus) !important;
   outline-offset: 2px !important;
-  border-radius: 4px;
+  /* No fixed radius here — an explicit value (e.g. 4px) overrode every
+     element's own Tailwind rounding (rounded-full pill inputs included,
+     e.g. the search bar and login fields), so the focus ring looked
+     square/less-rounded than the control itself. Modern browsers already
+     curve the outline to match the element's actual border-radius. */
 }
 
 /*

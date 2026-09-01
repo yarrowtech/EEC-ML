@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { motion as Motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import {
   GraduationCap,
@@ -28,6 +29,7 @@ import {
   Building2,
   ClipboardCheck,
   Pencil,
+  CloudCheck,
 } from "lucide-react";
 
 /* ─────────────────────────────  config  ───────────────────────────── */
@@ -945,11 +947,25 @@ export function DocPreviewModal({ open, src, label, onClose }) {
     };
   }, [open, src, pdf]);
 
-  if (!open || !src) return null;
-
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(e) => e.stopPropagation()}>
+    <AnimatePresence>
+      {open && src && (
+        <Motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+      <Motion.div
+        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
+        onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.97 }}
+        transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
+      >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <p className="truncate text-sm font-semibold text-gray-800">{label || "Preview"}</p>
           <div className="flex items-center gap-1">
@@ -978,8 +994,10 @@ export function DocPreviewModal({ open, src, label, onClose }) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Motion.div>
+        </Motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1497,7 +1515,7 @@ export default function StudentEnrollWizard({
   const [maxVisited, setMaxVisited] = useState(initialStep);
   const [errors, setErrors] = useState({});
   const [photoError, setPhotoError] = useState("");
-  const [draftState, setDraftState] = useState("idle"); // idle | saving | saved | error
+  const [draftState, setDraftState] = useState("idle"); // idle | pending | saving | saved | error
   const [autoSavedAt, setAutoSavedAt] = useState(null);
   const scrollRef = useRef(null);
   const autoTimer = useRef(null);
@@ -1603,25 +1621,16 @@ export default function StudentEnrollWizard({
 
   const persistDraft = async ({ silent }) => {
     if (!onSaveDraft) return;
-    if (silent) {
-      try {
-        await onSaveDraft({ step, silent: true });
-        setAutoSavedAt(Date.now());
-      } catch {
-        /* keep trying on next change */
-      }
-      return;
-    }
     if (draftState === "saving") return;
     setDraftState("saving");
     try {
-      await onSaveDraft({ step });
+      await onSaveDraft({ step, silent });
       setAutoSavedAt(Date.now());
       setDraftState("saved");
       setTimeout(() => setDraftState("idle"), 2500);
     } catch {
       setDraftState("error");
-      setTimeout(() => setDraftState("idle"), 3000);
+      setTimeout(() => setDraftState("idle"), silent ? 2500 : 3000);
     }
   };
 
@@ -1637,6 +1646,9 @@ export default function StudentEnrollWizard({
     const hasContent = (newStudent.name || "").trim().length > 1;
     const snapshot = JSON.stringify({ newStudent, step });
     if (!hasContent || snapshot === lastSnapshot.current) return undefined;
+    // Show a "Saving…" cue the moment they type, not just once the debounced
+    // save actually kicks off — otherwise the field looks unresponsive.
+    setDraftState((prev) => (prev === "saving" ? prev : "pending"));
     if (autoTimer.current) clearTimeout(autoTimer.current);
     autoTimer.current = setTimeout(() => {
       lastSnapshot.current = snapshot;
@@ -1657,7 +1669,13 @@ export default function StudentEnrollWizard({
 
 
   return (
-    <div className="animate-sheet-in fixed inset-0 z-50 flex flex-col bg-slate-50">
+    <Motion.div
+      className="fixed inset-0 z-50 flex flex-col bg-slate-50"
+      initial={{ opacity: 0, y: 14, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 14, scale: 0.985 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+    >
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-yellow-50 to-amber-50 px-6 py-3.5">
         <div className="flex items-center gap-3">
@@ -1678,7 +1696,7 @@ export default function StudentEnrollWizard({
         <button
           type="button"
           onClick={onClose}
-          className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+          className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white p-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
         >
           <X className="h-4 w-4" />
         </button>
@@ -1786,9 +1804,15 @@ export default function StudentEnrollWizard({
           )}
         </div>
         <div className="flex items-center gap-2.5">
+          {!editing && (draftState === "pending" || draftState === "saving") && (
+            <span className="hidden items-center gap-1.5 text-xs font-medium text-gray-500 sm:flex">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+              Saving…
+            </span>
+          )}
           {!editing && autoSavedAt && draftState === "idle" && (
             <span className="hidden items-center gap-1.5 text-xs text-gray-400 sm:flex">
-              <Check className="h-3.5 w-3.5 text-emerald-500" />
+              <CloudCheck className="h-3.5 w-3.5 text-emerald-500" />
               Auto-saved {new Date(autoSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
@@ -1845,6 +1869,6 @@ export default function StudentEnrollWizard({
           </button>
         </div>
       </footer>
-    </div>
+    </Motion.div>
   );
 }
