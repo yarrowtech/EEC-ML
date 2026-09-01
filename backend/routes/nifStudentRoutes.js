@@ -192,7 +192,7 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
     const parentSequenceByPrefix = new Map();
     const admissionSeqByYear = new Map(); // year -> next ADM sequence
     const applicationSeqByYear = new Map();
-    const rollAllocatorByClassSession = new Map(); // `${grade}::${session}` -> roll allocator
+    const rollAllocatorByClassSection = new Map(); // `${grade}::${section}` -> roll allocator
     const req = { admin, isSuperAdmin, body: { campusName, campusType } };
     const results = job.results;
 
@@ -273,23 +273,24 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           applicationId = `APP/${admissionYear}/${padNumber(nextApp, 4)}`;
         }
 
-        // Roll — class-wide + continuous per session. An explicit roll from the
-        // sheet is honoured only if it's still free; otherwise it's reassigned
-        // to the next open number (and the admin is told). This is what stops a
-        // "Roll No: 1" row from colliding with a student who already has roll 1.
+        // Roll — unique per class + section. An explicit roll from the sheet is
+        // honoured only if it's still free; otherwise it's reassigned to the
+        // next open number (and the admin is told). This is what stops a
+        // "Roll No: 1" row from colliding with a student who already has roll 1
+        // in the same class + section.
         let roll;
         if (normalizedGrade) {
-          const rk = `${normalizedGrade}::${resolvedSessionName}`;
-          if (!rollAllocatorByClassSession.has(rk)) {
-            rollAllocatorByClassSession.set(rk, await buildRollAllocator({
-              schoolId, campusId, grade: normalizedGrade, academicYear: resolvedSessionName,
+          const rk = `${normalizedGrade}::${normalizedSection}`;
+          if (!rollAllocatorByClassSection.has(rk)) {
+            rollAllocatorByClassSection.set(rk, await buildRollAllocator({
+              schoolId, campusId, grade: normalizedGrade, section: normalizedSection,
             }));
           }
-          const { roll: claimedRoll, reassignedFrom } = rollAllocatorByClassSession.get(rk).claim(row.roll);
+          const { roll: claimedRoll, reassignedFrom } = rollAllocatorByClassSection.get(rk).claim(row.roll);
           roll = claimedRoll;
           if (reassignedFrom != null) {
             results.warnings.push(
-              `Row ${i + 1} (${row.name || 'student'}): roll ${reassignedFrom} was already taken in ${normalizedGrade} — assigned ${claimedRoll} instead.`
+              `Row ${i + 1} (${row.name || 'student'}): roll ${reassignedFrom} was already taken in ${normalizedGrade}${normalizedSection ? `-${normalizedSection}` : ''} — assigned ${claimedRoll} instead.`
             );
           }
         } else {

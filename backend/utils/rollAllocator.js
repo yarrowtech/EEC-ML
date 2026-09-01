@@ -3,26 +3,54 @@
 const StudentUser = require('../models/StudentUser');
 
 /**
- * Roll numbers in EEC are class-wide and continuous within an academic year
- * (sections do not restart the numbering). Both the bulk import and the single
- * "register student" flow build an allocator through this helper so they cannot
- * drift apart, and so a roll that is supplied explicitly (e.g. a "Roll No"
- * column in an uploaded sheet) but already taken gets reassigned to the next
+ * Roll numbers in EEC are unique per class + section among the students
+ * currently sitting in that class+section (promotion moves a student to a new
+ * grade, archiving unsets the roll, so both drop out of the check naturally —
+ * which is why no academic-year filter is needed here).
+ *
+ * Both the bulk import and the single "register student" flow build an
+ * allocator through this helper so they cannot drift apart, and so a roll that
+ * is supplied explicitly (a "Roll No" column in an uploaded sheet, or a value
+ * typed into the manual form) but already taken gets reassigned to the next
  * free number instead of silently colliding with an existing student.
  *
  * Usage:
- *   const alloc = await buildRollAllocator({ schoolId, campusId, grade, academicYear });
- *   const { roll, reassignedFrom } = alloc.claim(row.roll); // row.roll may be blank
+ *   const alloc = await buildRollAllocator({ schoolId, campusId, grade, section });
+ *   const { roll, reassignedFrom } = alloc.claim(desiredRoll); // may be blank
  */
-const buildRollAllocator = async ({ schoolId, campusId, grade, academicYear }) => {
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// "Class 5" / "class-5" / "CLASS 5" / "5" all normalise to "5" so the two
+// registration paths (one stores the raw class name, the other a normalised
+// one) still recognise each other's students when checking for taken rolls.
+const normalizeGrade = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const m = raw.match(/^class[\s\-_:]*([a-z0-9]+)$/i);
+  return (m ? m[1] : raw).toUpperCase();
+};
+
+const buildRollAllocator = async ({ schoolId, campusId, grade, section }) => {
   const taken = new Set();
   let maxRoll = 0;
   let count = 0;
 
-  if (grade) {
-    const filter = { schoolId, grade, isArchived: { $ne: true } };
+  const normGrade = normalizeGrade(grade);
+  const normSection = String(section || '').trim();
+
+  if (normGrade) {
+    const filter = {
+      schoolId,
+      isArchived: { $ne: true },
+      // Match the class regardless of how the name is stored ("5" vs "Class 5").
+      grade: { $regex: `^(class[\\s\\-_:]*)?${escapeRegex(normGrade)}$`, $options: 'i' },
+    };
     if (campusId) filter.campusId = campusId;
-    if (academicYear) filter.academicYear = academicYear;
+    if (normSection) {
+      filter.section = { $regex: `^${escapeRegex(normSection)}$`, $options: 'i' };
+    }
+
     const rows = await StudentUser.find(filter).select('roll').lean();
     count = rows.length;
     rows.forEach((r) => {
@@ -34,10 +62,9 @@ const buildRollAllocator = async ({ schoolId, campusId, grade, academicYear }) =
     });
   }
 
-  // Auto-assigned rolls continue from the top of the class (historical
-  // behaviour — numbering doesn't restart low just because some rolls are
-  // missing). Explicitly-claimed rolls don't move this high-water mark; the
-  // scan below simply skips any number that has since been taken.
+  // Auto-assigned rolls continue from the top of the section (numbering doesn't
+  // restart low just because some rolls are missing). Explicitly-claimed rolls
+  // don't move this high-water mark; the scan below skips any taken number.
   let nextAuto = Math.max(maxRoll, count) + 1;
 
   return {

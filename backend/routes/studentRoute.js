@@ -578,16 +578,17 @@ router.post('/register', adminAuth, async (req, res) => {
       prefix,
     });
 
-    // Roll: class-wide + continuous per session. An explicitly supplied roll is
-    // honoured only if it's still free — otherwise it's bumped to the next open
-    // number so a manual entry can't collide with an existing student.
+    // Roll: unique per class + section. An explicitly supplied roll is honoured
+    // only if it's still free — otherwise it's bumped to the next open number so
+    // a manual entry can't collide with an existing student (or with one that's
+    // about to be bulk-imported).
     let resolvedRoll;
     if (resolvedGrade) {
       const rollAlloc = await buildRollAllocator({
         schoolId: resolvedSchoolId,
         campusId: resolvedCampusId,
         grade: resolvedGrade,
-        academicYear,
+        section: resolvedSection,
       });
       resolvedRoll = rollAlloc.claim(roll).roll;
     } else {
