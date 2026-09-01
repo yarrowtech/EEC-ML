@@ -144,6 +144,21 @@ const AdminSidebar = ({
         {/* ── Navigation ── */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-0.5">
           {menuItems.map((item, idx) => {
+            // Section header row
+            if (item.heading) {
+              if (collapsed) {
+                return <div key={`sec-${idx}`} className="my-2 mx-3 border-t border-gray-100" />;
+              }
+              return (
+                <p
+                  key={`sec-${idx}`}
+                  className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 select-none"
+                >
+                  {item.heading}
+                </p>
+              );
+            }
+
             const Icon = item.icon;
             const hasActiveSubroute = Boolean(item.hasSubmenu) && (
               isRouteActive(item.path) || (item.submenu || []).some((sub) => isRouteActive(sub.path))

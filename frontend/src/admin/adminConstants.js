@@ -75,14 +75,14 @@ export const ADMIN_MENU_ITEMS = [
     hasSubmenu: true,
     submenu: [
       {
-        icon: Plus,
-        label: 'Post Notice',
-        path: '/admin/notices/post'
-      },
-      {
         icon: Eye,
         label: 'View Notices',
         path: '/admin/notices/view'
+      },
+      {
+        icon: Plus,
+        label: 'Post Notice',
+        path: '/admin/notices/post'
       }
     ]
   },
@@ -194,6 +194,24 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/school-admins',
     scope: 'super'
   },
+];
+
+// School-admin sidebar layout: ordered sections, each a list of item labels.
+// Labels resolve against ADMIN_MENU_ITEMS (top-level items and submenu children).
+export const ADMIN_MENU_SECTIONS = [
+  { items: ['Dashboard'] },
+  { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
+  {
+    section: 'ACADEMIC MANAGEMENT',
+    items: ['Academic Setup', 'Teachers', 'Teacher Feedback', 'Routine', 'Lesson Plan', 'Exam Management', 'Result Management', 'Report Cards'],
+  },
+  { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
+  { section: 'FEES MANAGEMENT', items: ['Fees Dashboard', 'Fees Manage', 'Fees Collection'] },
+  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
+  { section: 'CAMPUS', items: ['Floor & Rooms'] },
+  { section: 'HUMAN RESOURCES', items: ['HR'] },
+  { section: 'SUPPORT', items: ['Support'] },
+  { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
 ];
 
 export const ADMIN_EMPLOYEE_DATA = [

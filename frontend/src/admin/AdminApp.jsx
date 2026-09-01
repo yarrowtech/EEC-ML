@@ -36,7 +36,7 @@ import HolidayList from './pages/HolidayList';
 import TeacherFeedbackOverview from './pages/TeacherFeedbackOverview';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ADMIN_MENU_ITEMS } from './adminConstants';
+import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
 import { syncScopeFromProfile } from './utils/adminScope';
 import { apiFetch, AUTH_NOTICE } from '../utils/authSession';
 import toast from 'react-hot-toast';
@@ -245,56 +245,30 @@ const AdminApp = () => {
   }, [adminProfile]);
 
   const isSuperAdmin = adminProfile?.role === 'super_admin';
-  const schoolAdminMenuOrder = useMemo(
-    () => [
-      'Dashboard',
-      'Analytics',
-      'Activity Log',
-      'Academic Setup',
-      // 'Subjects',
-      'Teachers',
-      'Teacher Feedback',
-      'Routine',
-      'Students',
-      'Promotion & Leave',
-      'Parents',
-      'Floor & Rooms',
-      'Lesson Plan',
-      'Exam Management',
-      'Result Management',
-      'Report Cards',
-      'Fees Management',
-      'Notices',
-      'Holiday List',
-      'HR',
-      'Support',
-      'Settings',
-    ],
-    []
-  );
 
   const menuItems = useMemo(() => {
     if (isSuperAdmin) return ADMIN_MENU_ITEMS.filter((item) => item.scope !== 'school');
-    const filteredMenuItems = ADMIN_MENU_ITEMS.filter(
-      (item) =>
-        item.scope !== 'super' &&
-        item.label !== 'Student Attendance' &&
-        item.path !== '/admin/attendance'
-    );
-    const orderIndexByLabel = new Map(
-      schoolAdminMenuOrder.map((label, index) => [label, index])
-    );
 
-    return [...filteredMenuItems].sort((a, b) => {
-      const indexA = orderIndexByLabel.has(a.label)
-        ? orderIndexByLabel.get(a.label)
-        : Number.MAX_SAFE_INTEGER;
-      const indexB = orderIndexByLabel.has(b.label)
-        ? orderIndexByLabel.get(b.label)
-        : Number.MAX_SAFE_INTEGER;
-      return indexA - indexB;
+    // Resolve every label (top-level item or a submenu child) to its definition.
+    const byLabel = new Map();
+    ADMIN_MENU_ITEMS.forEach((item) => {
+      if (item.scope === 'super') return;
+      byLabel.set(item.label, item);
+      (item.submenu || []).forEach((sub) => byLabel.set(sub.label, sub));
     });
-  }, [isSuperAdmin, schoolAdminMenuOrder]);
+
+    const out = [];
+    ADMIN_MENU_SECTIONS.forEach((group) => {
+      const resolved = group.items
+        .map((label) => byLabel.get(label))
+        .filter(Boolean)
+        .filter((it) => it.label !== 'Student Attendance' && it.path !== '/admin/attendance');
+      if (!resolved.length) return;
+      if (group.section) out.push({ heading: group.section });
+      out.push(...resolved);
+    });
+    return out;
+  }, [isSuperAdmin]);
 
   const adminUser = {
     id: adminProfile?._id || adminProfile?.id || adminProfile?.adminId || '',
