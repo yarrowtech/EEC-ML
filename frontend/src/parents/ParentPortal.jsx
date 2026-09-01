@@ -710,7 +710,15 @@ const ParentPortal = () => {
               element={
                 <ParentDashboard
                   parentName={parentProfile?.name}
+                  parentInitials={initials}
                   childrenNames={Array.isArray(parentProfile?.children) ? parentProfile.children : []}
+                  unreadCount={unreadCount}
+                  onOpenSidebar={() => setSidebarOpen(true)}
+                  onToggleNotifications={handleToggleNotifications}
+                  onToggleProfile={() => {
+                    setShowNotifications(false);
+                    setProfileOpen(true);
+                  }}
                 />
               }
             />

@@ -4,6 +4,7 @@ import {
   Calendar,
   CreditCard,
   Video,
+  Menu,
   Clock,
   Users,
   Sparkles,
@@ -23,6 +24,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  LifeBuoy,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatStudentDisplay } from '../utils/studentDisplay';
@@ -33,6 +35,14 @@ const authHeader = () => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${localStorage.getItem('token')}`,
 });
+
+const getInitials = (name) => String(name || 'Student')
+  .trim()
+  .split(/\s+/)
+  .slice(0, 2)
+  .map((part) => part[0])
+  .join('')
+  .toUpperCase();
 
 // ── Weak Areas Card ───────────────────────────────────────────────────────────
 const WeakAreasCard = () => {
@@ -54,33 +64,32 @@ const WeakAreasCard = () => {
   };
 
   return (
-    <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3 bg-red-50/40">
-        <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center text-red-600">
-          <AlertTriangle size={18} />
-        </div>
-        <div>
-          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">Weak Areas</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Topics scoring below 60%</p>
-        </div>
+    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-white/60 bg-white/40 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+        <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <AlertTriangle size={14} className="text-amber-500" /> Weak Areas
+        </h2>
+        <span className="rounded-full border border-amber-200/60 bg-amber-50/70 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
+          Topics below 60%
+        </span>
       </div>
-      <div className="p-6">
+      <div className="flex-1 px-4 pb-4 pt-1">
         {loading ? (
-          <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+          <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
         ) : items.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
-            <CheckCircle2 size={32} className="mx-auto mb-2 text-emerald-400" />
-            <p className="text-xs font-bold uppercase tracking-widest">All topics on track!</p>
+          <div className="rounded-lg border border-dashed border-emerald-200/60 bg-emerald-50/30 py-6 text-center text-slate-400">
+            <CheckCircle2 size={26} className="mx-auto mb-2 text-emerald-400" />
+            <p className="text-xs font-semibold">All topics on track</p>
           </div>
         ) : (
-          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+          <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
             {items.map((item, i) => (
-              <div key={i} className={`flex items-center justify-between rounded-xl px-4 py-3 border ${concernColor(item.score)}`}>
+              <div key={i} className="flex items-center justify-between border-b border-slate-100/60 py-2 last:border-0">
                 <div className="min-w-0 mr-3">
-                  <p className="text-xs font-bold truncate">{item.topicTitle}</p>
-                  <p className="text-[10px] font-semibold opacity-70">{item.subject} · {item.studentId?.name || 'Student'}</p>
+                  <p className="truncate text-sm font-medium text-slate-700">{item.topicTitle}</p>
+                  <p className="text-[10px] text-slate-400">{item.subject} · {item.studentId?.name || 'Student'}</p>
                 </div>
-                <span className="text-sm font-black flex-shrink-0">{item.score}%</span>
+                <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${concernColor(item.score)}`}>{item.score}%</span>
               </div>
             ))}
           </div>
@@ -92,6 +101,7 @@ const WeakAreasCard = () => {
 
 // ── Teacher Remarks Feed ──────────────────────────────────────────────────────
 const RemarksFeedCard = () => {
+  const prefersReducedMotion = useReducedMotion();
   const [remarks, setRemarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -112,31 +122,28 @@ const RemarksFeedCard = () => {
   };
 
   return (
-    <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
-          <BookOpen size={18} />
-        </div>
-        <div>
-          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">Teacher Remarks</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Latest observations from teachers</p>
-        </div>
+    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-white/60 bg-white/40 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
+        <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <BookOpen size={14} className="text-blue-500" /> Teacher Remarks
+        </h2>
+        <span className="rounded-full border border-emerald-200/60 bg-emerald-50/70 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">Latest</span>
       </div>
-      <div className="p-6">
+      <div className="flex-1 px-4 pb-4 pt-1">
         {loading ? (
-          <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-slate-300" /></div>
+          <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
         ) : remarks.length === 0 ? (
-          <div className="text-center py-8 text-slate-400">
-            <MessageCircle size={32} className="mx-auto mb-2 opacity-20" />
-            <p className="text-xs font-bold uppercase tracking-widest">No remarks yet</p>
+          <div className="rounded-lg border border-dashed border-slate-200/60 bg-white/20 py-6 text-center text-slate-400">
+            <MessageCircle size={26} className="mx-auto mb-2 opacity-30" />
+            <p className="text-xs font-semibold">No remarks yet</p>
           </div>
         ) : (
-          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+          <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
             {remarks.map((r, i) => (
-              <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+              <motion.div key={i} whileHover={prefersReducedMotion ? undefined : { x: 3 }} className="rounded-lg border border-white/50 bg-white/30 p-2.5 transition hover:bg-white/60">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{r.studentName}</p>
+                    <p className="text-xs font-semibold text-slate-700">{r.studentName}</p>
                     <p className="text-[10px] text-slate-400">{new Date(r.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -148,13 +155,13 @@ const RemarksFeedCard = () => {
                     )}
                   </div>
                 </div>
-                <p className={`text-xs text-slate-700 leading-relaxed ${expanded === i ? '' : 'line-clamp-2'}`}>{r.observationText}</p>
+                <p className={`text-xs leading-relaxed text-slate-600 ${expanded === i ? '' : 'line-clamp-2'}`}>{r.observationText}</p>
                 {r.observationText?.length > 100 && (
                   <button onClick={() => setExpanded(expanded === i ? null : i)} className="mt-1 text-[10px] font-bold text-indigo-500 flex items-center gap-0.5">
                     {expanded === i ? <><ChevronUp size={10} /> Less</> : <><ChevronDown size={10} /> More</>}
                   </button>
                 )}
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
@@ -188,16 +195,16 @@ const HomeSupportCard = ({ studentId, studentName }) => {
   const lines = content.split('\n').filter(Boolean);
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
-      <div className="flex items-center justify-between mb-3">
+    <div aria-label={`Home support for ${studentName}`} className="rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 transition hover:bg-amber-50/80 hover:shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Home size={16} className="text-amber-600" />
-          <p className="text-xs font-black text-amber-900 uppercase tracking-wider">Home Support — {studentName}</p>
+          <Home size={15} className="text-amber-600" />
+          <p className="text-xs font-semibold text-slate-700">Home Support</p>
         </div>
         <button
           onClick={load}
           disabled={loading}
-          className="flex items-center gap-1 text-[10px] font-black text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-3 py-1 hover:bg-amber-200 transition disabled:opacity-50"
+          className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-200 disabled:opacity-50"
         >
           {loading ? <Loader2 size={10} className="animate-spin" /> : <Lightbulb size={10} />}
           {fetched ? 'Refresh' : 'Get Tips'}
@@ -260,19 +267,19 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
   }[color];
 
   return (
-    <div className={`rounded-2xl border ${colorMap.border} ${colorMap.bg} p-5`}>
-      <div className="flex items-center justify-between mb-3">
+    <div aria-label={`${label} for ${studentName}`} className={`rounded-lg border ${colorMap.border} ${colorMap.bg} p-3 transition hover:shadow-sm`}>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon size={16} className={colorMap.icon} />
           <div>
-            <p className={`text-xs font-black uppercase tracking-wider ${colorMap.heading}`}>{label} — {studentName}</p>
+            <p className={`text-xs font-semibold ${colorMap.heading}`}>{label}</p>
             {generatedAt && <p className="text-[9px] text-slate-400">Generated {new Date(generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
           </div>
         </div>
         <button
           onClick={load}
           disabled={loading}
-          className={`flex items-center gap-1 text-[10px] font-black border rounded-full px-3 py-1 transition disabled:opacity-50 ${colorMap.btn}`}
+          className={`flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] font-semibold transition disabled:opacity-50 ${colorMap.btn}`}
         >
           {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
           {fetched ? 'Refresh' : 'Generate'}
@@ -297,9 +304,17 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
   );
 };
 
-const ParentDashboard = ({ parentName }) => {
+const ParentDashboard = ({
+  parentName,
+  parentInitials,
+  unreadCount = 0,
+  onOpenSidebar,
+  onToggleNotifications,
+  onToggleProfile,
+}) => {
   const prefersReducedMotion = useReducedMotion();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [childrenData, setChildrenData] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [feeSummary, setFeeSummary] = useState(null);
@@ -348,6 +363,7 @@ const ParentDashboard = ({ parentName }) => {
         if (feeRes.ok) {
           setFeeSummary(await feeRes.json());
         }
+        setLastUpdatedAt(new Date());
       } catch (err) {
         console.error('Dashboard fetch error:', err);
         setError('Failed to refresh dashboard data.');
@@ -391,6 +407,23 @@ const ParentDashboard = ({ parentName }) => {
     const startYear = currentTime.getMonth() >= 3 ? year : year - 1;
     return `${startYear}–${startYear + 1} Session`;
   }, [currentTime]);
+
+  const profileInitials = useMemo(() => {
+    if (parentInitials) return parentInitials;
+    const parts = String(parentName || 'Parent Account').trim().split(/\s+/).filter(Boolean);
+    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : parts[0]?.[0] || 'P').toUpperCase();
+  }, [parentInitials, parentName]);
+
+  const shortParentName = useMemo(() => {
+    const parts = String(parentName || 'Parent').trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return parts[0] || 'Parent';
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }, [parentName]);
+
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedAt) return loading ? 'Refreshing now' : 'Update unavailable';
+    return `Today, ${lastUpdatedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  }, [lastUpdatedAt, loading]);
 
   const statsData = useMemo(() => {
     const nextMeeting = upcomingMeetings[0];
@@ -480,6 +513,11 @@ const ParentDashboard = ({ parentName }) => {
             animate={prefersReducedMotion ? undefined : { x: [0, 32, 0], y: [0, -24, 0] }}
             transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut', delay: 2 }}
           />
+          <motion.div
+            className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-300/10 blur-3xl"
+            animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1], x: [0, 18, 0], y: [0, -18, 0] }}
+            transition={{ repeat: Infinity, duration: 16, ease: 'easeInOut', delay: 0.5 }}
+          />
         </div>
 
         <motion.div
@@ -488,23 +526,63 @@ const ParentDashboard = ({ parentName }) => {
           transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
           className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
         >
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600 sm:text-xs">
-                <motion.span
-                  className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30"
-                  animate={prefersReducedMotion ? undefined : { scale: [1, 1.3, 1] }}
-                  transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
-                />
-                Portal Active
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-5">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <motion.button
+                type="button"
+                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+                onClick={onOpenSidebar}
+                className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
+                aria-label="Open parent navigation"
+              >
+                <Menu size={20} />
+              </motion.button>
+              <div className="flex items-center gap-3">
+                <motion.div
+                  className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 sm:text-xs"
+                  animate={prefersReducedMotion ? undefined : { opacity: [0.8, 1, 0.8] }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30" />
+                  </span>
+                  Portal Active
+                </motion.div>
+                <span className="hidden text-xs text-slate-300 sm:inline">·</span>
+                <span className="hidden rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm sm:inline">
+                  {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </span>
               </div>
-              <span className="text-xs text-slate-300">·</span>
-              <span className="text-[11px] font-medium text-slate-500 sm:text-xs">
-                {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-              </span>
             </div>
-            <div className="flex items-center gap-1.5 rounded-full border border-white/70 bg-white/50 px-3 py-1.5 text-[11px] font-medium text-slate-500 shadow-sm backdrop-blur-sm sm:px-4 sm:text-xs">
-              <Calendar size={14} aria-hidden="true" /> {academicSession}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <motion.button
+                type="button"
+                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+                onClick={onToggleNotifications}
+                className="relative rounded-full border border-white/60 bg-white/40 p-2 text-slate-400 backdrop-blur-sm transition hover:text-slate-600"
+                aria-label={`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`}
+              >
+                <Bell size={19} />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-purple-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </motion.button>
+              <button
+                type="button"
+                onClick={onToggleProfile}
+                className="flex items-center gap-2.5 rounded-full border border-white/60 bg-white/40 px-2 py-1.5 pr-3 backdrop-blur-sm transition hover:bg-white/70"
+                aria-label="Open parent profile menu"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-sm font-bold text-white shadow-md shadow-purple-500/20">
+                  {profileInitials}
+                </span>
+                <span className="hidden text-xs font-medium text-slate-700 sm:block">{shortParentName}</span>
+              </button>
             </div>
           </div>
 
@@ -513,9 +591,10 @@ const ParentDashboard = ({ parentName }) => {
               initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: prefersReducedMotion ? 0 : 0.15, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl"
+              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl lg:text-4xl"
             >
-              {getGreeting()}, <span className="text-purple-600">{parentName || 'Parent Account'}</span>
+              {getGreeting()}, <br className="sm:hidden" />
+              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">{parentName || 'Parent Account'}</span>
             </motion.h1>
             <motion.p
               initial={{ opacity: 0 }}
@@ -542,21 +621,22 @@ const ParentDashboard = ({ parentName }) => {
             <motion.div
               variants={itemVariants}
               whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              className="flex min-h-[140px] flex-col justify-between rounded-2xl border border-purple-200/60 bg-purple-50/60 p-5 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md"
+              className="group relative flex min-h-[150px] flex-col justify-between overflow-hidden rounded-2xl border border-purple-200/50 bg-gradient-to-br from-purple-50/80 to-purple-100/40 p-5 shadow-sm backdrop-blur-sm transition-shadow duration-200 hover:shadow-lg"
             >
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-600">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100/80 text-purple-600">
+              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-purple-300/20 blur-2xl transition-transform duration-500 group-hover:scale-150" />
+              <div className="relative z-10 flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-700">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-200/60 text-purple-600 shadow-sm">
                   <MessageCircle size={19} aria-hidden="true" />
                 </span>
                 Staff Chat
               </div>
-              <div>
-                <p className="mb-2 text-sm text-slate-500">Connect with teachers</p>
+              <div className="relative z-10">
+                <p className="mb-3 text-sm text-slate-500">Connect with teachers</p>
                 <Link
                   to="/parents/chat"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:bg-purple-700 active:scale-95"
+                  className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:scale-[1.04] hover:bg-purple-700 active:scale-95"
                 >
-                  Open <ChevronRight size={14} aria-hidden="true" />
+                  Open Chat <ChevronRight size={14} aria-hidden="true" />
                 </Link>
               </div>
             </motion.div>
@@ -568,16 +648,16 @@ const ParentDashboard = ({ parentName }) => {
                   key={item.id}
                   variants={itemVariants}
                   whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-                  className="flex min-h-[140px] flex-col justify-between rounded-2xl border border-white/70 bg-white/45 p-5 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md"
+                  className="flex min-h-[150px] flex-col justify-between rounded-2xl border border-white/60 bg-white/40 p-5 shadow-sm backdrop-blur-sm transition-shadow duration-200 hover:shadow-lg"
                 >
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.iconClass}`}>
+                  <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow-sm ${item.iconClass}`}>
                       <Icon size={19} aria-hidden="true" />
                     </span>
                     {item.label}
                   </div>
                   <div>
-                    <p className={`text-lg font-bold leading-tight ${item.valueClass || 'text-slate-800'}`}>{item.value}</p>
+                    <p className={`text-xl font-bold leading-tight ${item.valueClass || 'text-slate-800'}`}>{item.value}</p>
                     <p className="mt-1 text-sm text-slate-500">{item.sub}</p>
                   </div>
                 </motion.div>
@@ -587,177 +667,132 @@ const ParentDashboard = ({ parentName }) => {
         </motion.div>
       </section>
 
-      <div className="grid gap-8 lg:grid-cols-12">
-        {/* Children Status Roster */}
-        <div className="lg:col-span-8 space-y-8">
-          <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white">
-                  <Users size={20} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Ward Overview</h2>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Live Student Status</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="p-8">
-              {childrenData.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-3xl">
-                  <UserIcon size={48} className="mx-auto mb-4 opacity-10" />
-                  <p className="text-sm font-bold uppercase tracking-widest">No active student profiles linked</p>
-                </div>
-              ) : (
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {childrenData.map((child) => (
-                    <div key={child._id} className="group relative border border-slate-100 rounded-[2rem] p-6 bg-slate-50/50 hover:bg-white hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="w-14 h-14 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm transition-transform group-hover:scale-110 group-hover:-rotate-6">
-                          <UserIcon size={28} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-black text-slate-900 truncate">
-                            {child.name}
-                          </h3>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                            {child.grade} {child.section} • {formatStudentDisplay({ username: child.username, studentCode: child.studentCode, roll: child.roll }).split('• ID: ')[1]}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-end">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                              <Calendar size={10} /> Attendance
-                            </span>
-                            <span className="text-sm font-black text-slate-900">{child.attendancePercentage}%</span>
-                          </div>
-                          <div
-                            className="w-full h-2 bg-slate-200 rounded-full overflow-hidden"
-                            role="progressbar"
-                            aria-valuenow={Math.round(child.attendancePercentage)}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-label={`${child.name} attendance`}
-                          >
-                            <div
-                              className={`h-full rounded-full transition-all duration-1000 ${
-                                child.attendancePercentage >= 85 ? 'bg-emerald-500' : 'bg-amber-500'
-                              }`}
-                              style={{ width: `${child.attendancePercentage}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="pt-4 grid grid-cols-2 gap-3 border-t border-slate-100/50">
-                          <Link to="/parents/routine" className="flex items-center justify-center gap-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-900 hover:text-white transition-all shadow-sm">
-                            <Clock size={12} /> Routine
-                          </Link>
-                          <Link to="/parents/results" className="flex items-center justify-center gap-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-900 hover:text-white transition-all shadow-sm">
-                            <Award size={12} /> Results
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        {/* Right Side: Quick Links & Meetings */}
-        <div className="lg:col-span-4 space-y-8">
-          <section className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                <Bell size={16} className="text-indigo-500" />
-                Upcoming Events
-              </h2>
-            </div>
-            
-            <div className="p-6">
-              {upcomingMeetings.length === 0 ? (
-                <div className="text-center py-12 px-6 text-slate-400">
-                  <Video size={32} className="mx-auto mb-3 opacity-10" />
-                  <p className="text-[10px] font-black uppercase tracking-widest">No meetings scheduled</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {upcomingMeetings.map((meeting) => (
-                    <div key={meeting._id} className="group relative p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-md transition-all">
-                      <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <Calendar size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-slate-900 truncate pr-16">{meeting.title || meeting.topic}</p>
-                          <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1">
-                            <Clock size={10} /> {formatMeetingDate(meeting.meetingDate)} • {meeting.meetingTime}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`absolute top-4 right-4 text-[8px] font-black px-2 py-0.5 rounded-full border ${
-                        meeting.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'
-                      }`}>
-                        {String(meeting.status || 'pending').replace(/_/g, ' ').toUpperCase()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <Link to="/parents/ptm" className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-slate-50 rounded-2xl text-xs font-bold text-slate-500 hover:bg-slate-900 hover:text-white transition-all group">
-                View All Meetings <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
-              </Link>
-            </div>
-          </section>
-
-          <section className="bg-indigo-600 rounded-[2rem] p-8 text-white shadow-xl shadow-indigo-200 relative overflow-hidden group">
-            <div className="absolute -top-12 -right-12 w-32 h-32 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-            <div className="relative z-10 space-y-4">
-              <h3 className="text-xl font-black leading-tight">Need technical assistance?</h3>
-              <p className="text-indigo-100 text-xs font-medium leading-relaxed">
-                Our support team is available 24/7 to help you with portal navigation or student records.
-              </p>
-              <Link to="/parents/complaints" className="block text-center w-full bg-white text-indigo-600 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-indigo-50 transition-all active:scale-95 shadow-lg shadow-indigo-900/20">
-                Open Support Ticket
-              </Link>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      {/* Section 6C — Parent Dashboard Tracking */}
-      <section className="grid gap-6 lg:grid-cols-2">
-        <WeakAreasCard />
-        <RemarksFeedCard />
-      </section>
-
-      {/* Per-child AI reports */}
-      {childrenData.length > 0 && (
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-indigo-500" />
-            <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">AI-Powered Reports</h2>
+      <motion.section
+        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 24, scale: prefersReducedMotion ? 1 : 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.65, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-white/55 p-4 shadow-2xl shadow-slate-200/50 backdrop-blur-2xl sm:p-5 lg:p-6"
+      >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-white/50 pb-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">Ward Overview</h2>
+            <span className="flex items-center gap-1 rounded-full border border-purple-200/50 bg-purple-50/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-purple-600">
+              <Users size={12} /> Live Student Status
+            </span>
           </div>
-          {childrenData.map((child) => (
-            <div key={child._id} className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6 space-y-4">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <UserIcon size={12} /> {child.name} · Class {child.grade} {child.section}
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <HomeSupportCard studentId={child._id} studentName={child.name} />
-                <AIDigestCard studentId={child._id} studentName={child.name} type="weekly" />
-                <AIDigestCard studentId={child._id} studentName={child.name} type="monthly" />
+          <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-xs font-medium text-slate-500 backdrop-blur-sm">
+            <span className="relative flex h-2 w-2">
+              {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            {currentTime.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </div>
+        </div>
+
+        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {childrenData.length === 0 ? (
+            <motion.div variants={itemVariants} className="md:col-span-2 rounded-xl border border-dashed border-slate-200/60 bg-white/20 py-10 text-center text-slate-400">
+              <UserIcon size={38} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm font-semibold">No active student profiles linked</p>
+            </motion.div>
+          ) : childrenData.map((child) => (
+            <motion.article
+              key={child._id}
+              variants={itemVariants}
+              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+              className="rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md md:col-span-2"
+            >
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-base font-bold text-white shadow-md shadow-purple-500/20">
+                  {getInitials(child.name)}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-bold text-slate-800">{child.name}</h3>
+                  <p className="truncate text-xs text-slate-500">
+                    Class {child.grade} {child.section} · {formatStudentDisplay({ username: child.username, studentCode: child.studentCode, roll: child.roll })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center">
+                  <span className="text-base font-bold text-purple-600">{child.attendancePercentage}%</span>
+                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Calendar size={12} /> Attendance</span>
+                </div>
+                <Link to="/parents/routine" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white/60">
+                  <span className="text-base font-bold text-emerald-600">View</span>
+                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Clock size={12} /> Routine</span>
+                </Link>
+                <Link to="/parents/results" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white/60">
+                  <span className="text-base font-bold text-amber-600">View</span>
+                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Award size={12} /> Results</span>
+                </Link>
+              </div>
+            </motion.article>
+          ))}
+
+          <motion.div variants={itemVariants}><WeakAreasCard /></motion.div>
+          <motion.div variants={itemVariants}><RemarksFeedCard /></motion.div>
+
+          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+            <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Calendar size={14} /> Upcoming Events</h3>
+            {upcomingMeetings.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200/50 bg-white/20 py-5 text-center">
+                <Video size={28} className="mb-2 text-slate-300" />
+                <p className="text-sm font-semibold text-slate-600">No meetings scheduled</p>
+                <p className="text-xs text-slate-400">Check back later for updates</p>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-2">
+                {upcomingMeetings.map((meeting) => (
+                  <div key={meeting._id} className="rounded-lg border border-white/50 bg-white/30 p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-700">{meeting.title || meeting.topic || 'Parent-teacher meeting'}</p>
+                        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400"><Clock size={10} /> {formatMeetingDate(meeting.meetingDate)} · {meeting.meetingTime}</p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase ${meeting.status === 'confirmed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{String(meeting.status || 'pending').replace(/_/g, ' ')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Link to="/parents/ptm" className="mt-2 inline-flex items-center justify-end text-xs font-semibold text-purple-600 hover:text-purple-700">View All Meetings <ChevronRight size={14} /></Link>
+          </motion.section>
+
+          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-purple-200/40 bg-purple-50/40 p-4 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600"><LifeBuoy size={17} /></div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">Need technical assistance?</h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">Our support team can help with portal navigation or student records.</p>
               </div>
             </div>
-          ))}
-        </section>
-      )}
+            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:bg-purple-700">Contact Support</Link>
+          </motion.section>
+
+          {childrenData.length > 0 && (
+            <motion.section variants={itemVariants} className="rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm md:col-span-2">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Sparkles size={14} className="text-purple-500" /> AI-Powered Reports</h3>
+                <span className="rounded-full border border-purple-200/50 bg-purple-50/60 px-2 py-0.5 text-[9px] font-semibold text-purple-600">Personalized</span>
+              </div>
+              <div className="space-y-4">
+                {childrenData.map((child) => (
+                  <div key={child._id}>
+                    <p className="mb-2 text-xs text-slate-400">{child.name} · Class {child.grade} {child.section}</p>
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                      <HomeSupportCard studentId={child._id} studentName={child.name} />
+                      <AIDigestCard studentId={child._id} studentName={child.name} type="weekly" />
+                      <AIDigestCard studentId={child._id} studentName={child.name} type="monthly" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.section>
+          )}
+        </motion.div>
+      </motion.section>
 
       <footer className="text-center pb-8 border-t border-slate-100 pt-8">
         <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
