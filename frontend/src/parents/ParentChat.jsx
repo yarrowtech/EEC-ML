@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import { io } from 'socket.io-client';
 import {
   MessageSquare, Send, Search, ChevronLeft,
@@ -424,11 +425,16 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
   const visibleText = isLong && !expanded ? `${fullText.slice(0, LONG_MESSAGE_LIMIT)}...` : fullText;
 
   return (
-    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+    <motion.div
+      initial={{ opacity: 0, x: isMine ? 20 : -20, scale: 0.97 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+      className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}
+    >
       <div
-        className={`max-w-[78%] w-fit rounded-2xl px-4 py-2.5 text-sm shadow-sm
-          ${isMine ? 'text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm'}`}
-        style={isMine ? { backgroundColor: t.color } : {}}
+        className={`max-w-[78%] w-fit rounded-2xl border px-4 py-2.5 text-sm text-slate-900 shadow-sm backdrop-blur-lg
+          ${isMine ? 'rounded-br-md' : 'rounded-bl-md border-white/90 bg-white/65'}`}
+        style={isMine ? { backgroundColor: `${t.color}20`, borderColor: `${t.color}35` } : {}}
       >
         {!isMine && (
           <div className="text-xs font-semibold mb-1" style={{ color: t.color }}>{msg.senderName}</div>
@@ -442,24 +448,23 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
             type="button"
             onClick={() => setExpanded(p => !p)}
             className="mt-1 text-xs font-semibold hover:underline"
-            style={{ color: isMine ? 'rgba(255,255,255,0.8)' : t.color }}
+            style={{ color: t.color }}
           >
             {expanded ? 'Read less' : 'Read more'}
           </button>
         )}
         <div
-          className={`text-xs flex items-center justify-end gap-1 -mt-4 ${!isMine ? 'text-gray-400' : ''}`}
-          style={isMine ? { color: 'rgba(255,255,255,0.75)' } : {}}
+          className="-mt-4 flex items-center justify-end gap-1 text-xs text-slate-400"
         >
           <span>{formatMessageTime(msg.createdAt || msg.ts)}</span>
           {isMine && (
-            <span style={{ color: seen ? '#7dd3fc' : 'rgba(255,255,255,0.75)' }} className="inline-flex items-center">
+            <span style={{ color: seen ? t.color : '#94a3b8' }} className="inline-flex items-center">
               {seen || delivered ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
             </span>
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -472,11 +477,13 @@ const ConversationItem = ({ thread, isActive, onClick, isTyping, theme }) => {
   const unread = thread.unreadCount || 0;
 
   return (
-    <button
+    <motion.button
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors border-b border-gray-100
-        ${isActive ? '' : 'hover:bg-gray-50'}`}
-      style={isActive ? { backgroundColor: t.lighter, borderLeft: `4px solid ${t.color}` } : {}}
+      className={`w-full rounded-2xl border px-4 py-3.5 text-left flex items-center gap-3 transition-all backdrop-blur-sm
+        ${isActive ? 'bg-white/65 border-white/90 shadow-md' : 'bg-white/25 border-white/35 hover:bg-white/50 hover:border-white/70'}`}
+      style={isActive ? { boxShadow: `0 8px 24px ${t.color}12` } : {}}
     >
       <Avatar src={img} name={name} size="md" ring={isActive} themeColor={t.color} />
       <div className="flex-1 min-w-0">
@@ -503,7 +510,7 @@ const ConversationItem = ({ thread, isActive, onClick, isTyping, theme }) => {
           )}
         </div>
       </div>
-    </button>
+    </motion.button>
   );
 };
 
@@ -514,7 +521,7 @@ const ContactItem = ({ contact, onClick, theme }) => {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b border-gray-100"
+      className="mx-2 my-1 flex w-[calc(100%-1rem)] items-center gap-3 rounded-2xl border border-white/40 bg-white/25 px-4 py-3 text-left backdrop-blur-sm transition-all hover:bg-white/55 hover:shadow-sm"
     >
       <Avatar src={img} name={contact.name} size="md" themeColor={t.color} />
       <div className="flex-1 min-w-0">
@@ -1025,6 +1032,12 @@ const ParentChat = () => {
 
   const theme          = THEMES[themeKey]         || THEMES.green;
   const wallpaperStyle = (WALLPAPERS[wallpaperKey] || WALLPAPERS.doodle).style;
+  const chatSurfaceStyle = wallpaperStyle.backgroundImage
+    ? {
+        ...wallpaperStyle,
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.48), rgba(255,255,255,0.48)), ${wallpaperStyle.backgroundImage}`,
+      }
+    : { ...wallpaperStyle, backgroundColor: wallpaperStyle.backgroundColor || 'rgba(255,255,255,0.16)' };
   const handleSetWallpaper = (key) => { setWallpaperKey(key); localStorage.setItem('parent_chat_wallpaper', key); };
   const handleSetTheme     = (key) => { setThemeKey(key);     localStorage.setItem('parent_chat_theme',    key); };
 
@@ -1043,38 +1056,53 @@ const ParentChat = () => {
     : (activeTeacher?.subtitle || activeTeacher?.subject || 'Teacher');
 
   return (
-    <div className="h-full flex bg-gray-50 overflow-hidden">
+    <div className="relative isolate flex min-h-[calc(100vh-1.5rem)] items-center justify-center overflow-hidden rounded-[2rem] bg-slate-100 p-2 sm:p-4 lg:p-6">
+      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+        <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-violet-300/25 blur-3xl" />
+        <div className="absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-emerald-300/20 blur-3xl" />
+      </div>
       {teacherModal && (
         <TeacherModal teacher={teacherModal} onClose={() => setTeacherModal(null)} theme={theme} />
       )}
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="flex h-[calc(100vh-3rem)] max-h-[900px] min-h-[620px] w-full max-w-7xl overflow-hidden rounded-[28px] border border-white/70 bg-white/55 shadow-2xl shadow-black/10 backdrop-blur-[20px] backdrop-saturate-[1.8]"
+      >
+
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       {showSidebar && (
-        <div className="w-full md:w-[320px] shrink-0 bg-white border-r border-gray-200 flex flex-col h-full relative">
+        <motion.aside
+          initial={{ opacity: 0, x: -16 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="relative flex h-full w-full shrink-0 flex-col border-r border-white/60 bg-white/40 backdrop-blur-xl md:w-[360px]"
+        >
 
           {/* Header */}
-          <div className="px-4 py-4 border-b border-gray-100">
+          <div className="border-b border-white/60 px-5 py-5 sm:px-6">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.light }}>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/45 shadow-sm backdrop-blur-sm" style={{ color: theme.color }}>
                   <MessageSquare className="h-5 w-5" style={{ color: theme.color }} />
                 </div>
                 <div>
-                  <h1 className="font-bold text-gray-900 text-sm">Messages</h1>
+                  <h1 className="text-xl font-bold tracking-tight text-slate-900">Messages</h1>
                   <p className="text-xs text-gray-500">Chat with your teachers</p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowChatSettings(true)}
-                  className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/40 bg-white/25 backdrop-blur-sm transition-all hover:bg-white/55"
                   title="Chat settings"
                 >
                   <Palette className="h-4 w-4" style={{ color: theme.color }} />
                 </button>
                 <button
                   onClick={openContacts}
-                  className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/50 backdrop-blur-sm transition-all"
                   title="Start new conversation"
                   style={{ backgroundColor: theme.lighter, color: theme.color }}
                   onMouseEnter={e => { e.currentTarget.style.backgroundColor = theme.light; }}
@@ -1084,20 +1112,20 @@ const ParentChat = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/50 px-3.5 py-2.5 shadow-sm backdrop-blur-sm focus-within:bg-white/70">
               <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search conversations..."
-                className="bg-transparent outline-none text-xs flex-1 placeholder-gray-400"
+                className="flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
             </div>
           </div>
 
           {/* Contacts overlay */}
           {showContacts && (
-            <div className="absolute inset-0 w-full h-full bg-white z-50 flex flex-col shadow-xl">
+            <div className="absolute inset-0 z-50 flex h-full w-full flex-col bg-white/80 shadow-xl backdrop-blur-2xl">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <h2 className="font-semibold text-gray-800 text-sm">New Conversation</h2>
                 <button onClick={() => { setShowContacts(false); setContactQuery(''); }}
@@ -1133,7 +1161,7 @@ const ParentChat = () => {
 
           {/* Chat Settings Overlay */}
           {showChatSettings && (
-            <div className="absolute inset-0 bg-white z-50 flex flex-col">
+            <div className="absolute inset-0 z-50 flex flex-col bg-white/80 backdrop-blur-2xl">
               <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
                 <h2 className="font-semibold text-gray-800 text-sm">Chat Settings</h2>
                 <button
@@ -1229,7 +1257,7 @@ const ParentChat = () => {
           )}
 
           {/* Thread list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 space-y-2 overflow-y-auto p-2.5">
             {loadingThreads ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin" style={{ color: theme.color }} />
@@ -1266,7 +1294,7 @@ const ParentChat = () => {
               ))
             )}
             {syncingThreads && filteredThreads.length > 0 && (
-              <div className="px-4 py-2 border-t border-gray-100 bg-white/90 backdrop-blur-sm">
+              <div className="rounded-xl border border-white/60 bg-white/50 px-4 py-2 backdrop-blur-sm">
                 <div className="inline-flex items-center gap-1.5 text-[11px] text-gray-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: theme.color }} />
                   Syncing latest chats...
@@ -1276,7 +1304,7 @@ const ParentChat = () => {
           </div>
 
           {/* Footer — parent info */}
-          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+          <div className="border-t border-white/60 bg-white/20 px-4 py-3 backdrop-blur-sm">
             <div className="flex items-center gap-2.5">
               <Avatar src={pickImg(me)} name={me?.name || 'P'} size="xs" themeColor={theme.color} />
               <div className="flex-1 min-w-0">
@@ -1286,16 +1314,16 @@ const ParentChat = () => {
               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Online</span>
             </div>
           </div>
-        </div>
+        </motion.aside>
       )}
 
       {/* ── Main Chat Area ───────────────────────────────────────────────── */}
       {showMain && (
-        <div className="flex-1 flex flex-col h-full min-w-0">
+        <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-white/10 backdrop-blur-sm">
           {activeThreadId ? (
             <>
               {/* Chat header */}
-              <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between shrink-0">
+              <div className="flex shrink-0 items-center justify-between border-b border-white/50 bg-white/20 px-5 py-4 backdrop-blur-lg sm:px-7">
                 <div className="flex items-center gap-3">
                   {isMobileView && (
                     <button
@@ -1332,9 +1360,9 @@ const ParentChat = () => {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-4" style={wallpaperStyle}>
+              <div className="flex-1 overflow-y-auto px-5 py-4 backdrop-blur-sm sm:px-7" style={chatSurfaceStyle}>
                 <div className="flex justify-center mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] px-3 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/50 bg-white/45 px-3 py-1 text-[11px] font-medium text-slate-500 backdrop-blur-sm">
                     <Lock className="h-3 w-3" />
                     Messages are end-to-end encrypted
                   </span>
@@ -1361,7 +1389,7 @@ const ParentChat = () => {
                         <React.Fragment key={msg._id}>
                           {showDateSep && (
                             <div className="flex justify-center my-3">
-                              <span className="text-[11px] px-3 py-1 rounded-full bg-gray-200 text-gray-600 font-medium">
+                              <span className="rounded-full border border-white/40 bg-white/40 px-3 py-1 text-[11px] font-medium text-slate-500 backdrop-blur-sm">
                                 {formatDaySeparator(currentTs)}
                               </span>
                             </div>
@@ -1377,7 +1405,7 @@ const ParentChat = () => {
                     })}
                     {isTypingInActive && (
                       <div className="flex justify-start mb-3">
-                        <div className="bg-white rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm">
+                        <div className="rounded-2xl rounded-bl-md border border-white/80 bg-white/60 px-4 py-2.5 shadow-sm backdrop-blur-lg">
                           <div className="flex gap-1 items-center h-4">
                             <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                             <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -1392,9 +1420,9 @@ const ParentChat = () => {
               </div>
 
               {/* Input */}
-              <div className="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5">
+              <div className="shrink-0 border-t border-white/40 bg-white/10 px-4 py-3 backdrop-blur-lg sm:px-5 sm:py-4">
+                <div className="flex items-end gap-2.5 rounded-2xl border border-white/60 bg-white/35 p-1.5 pl-4 shadow-sm backdrop-blur-lg focus-within:bg-white/55">
+                  <div className="flex-1 py-1">
                     <textarea
                       rows={1}
                       value={draft}
@@ -1403,13 +1431,13 @@ const ParentChat = () => {
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                       }}
                       placeholder="Type a message..."
-                      className="w-full resize-none bg-transparent text-sm focus:outline-none placeholder-gray-400 min-h-[20px] max-h-28"
+                      className="min-h-[20px] max-h-28 w-full resize-none bg-transparent text-sm text-slate-900 focus:outline-none placeholder:text-slate-400"
                     />
                   </div>
                   <button
                     onClick={sendMessage}
                     disabled={!draft.trim()}
-                    className="h-10 w-10 rounded-full text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-lg transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
                     style={{ backgroundColor: theme.color }}
                   >
                     <Send className="h-4 w-4" />
@@ -1419,7 +1447,7 @@ const ParentChat = () => {
             </>
           ) : (
             /* Empty state */
-            <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 p-8">
+            <div className="flex flex-1 flex-col items-center justify-center bg-white/10 p-8 backdrop-blur-sm">
               <div className="text-center max-w-xs">
                 <div className="h-16 w-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: theme.light }}>
                   <MessageSquare className="h-8 w-8" style={{ color: theme.color }} />
@@ -1439,8 +1467,9 @@ const ParentChat = () => {
               </div>
             </div>
           )}
-        </div>
+        </main>
       )}
+      </motion.div>
     </div>
   );
 };
