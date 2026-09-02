@@ -123,7 +123,7 @@ const buildFinancialState = (invoices = [], payments = [], months = 6) => {
   invoices.forEach((inv) => {
     const ts = inv.dueDate || inv.createdAt;
     if (ts && bucketMap.has(getMonthKey(new Date(ts)))) {
-      bucketMap.get(getMonthKey(new Date(ts))).due += computeOutstanding(inv);
+      bucketMap.get(getMonthKey(new Date(ts))).due += Number(inv.totalAmount || 0);
     }
   });
 

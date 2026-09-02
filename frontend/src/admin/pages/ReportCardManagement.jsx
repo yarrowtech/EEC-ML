@@ -213,7 +213,7 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
     const selectedSectionName = String(selectedSection?.name || '').trim();
 
     return examGroups
-      .filter((group) => String(group?.status || '').toLowerCase() === 'completed')
+      .filter((group) => ['completed', 'published'].includes(String(group?.status || '').toLowerCase()))
       .filter((group) => {
         if (!filters.classId) return true;
         const byId = String(group?.classId?._id || group?.classId || '') === String(filters.classId);
