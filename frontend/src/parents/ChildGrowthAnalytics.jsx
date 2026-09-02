@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -48,6 +48,7 @@ import {
 import { parentApiJson } from './parentApi';
 import AnalyticsPureWhiteDashboard from './AnalyticsPureWhiteDashboard';
 import { useDialog } from './useDialog';
+import { useSharedChildSelection, childOptionKey } from './ChildSwitcher';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const moodIcon = (rating) => {
@@ -769,8 +770,14 @@ const SkillsSidebar = ({ data, onClose }) => {
 const ChildGrowthAnalytics = () => {
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
+
+  const childOptions = useMemo(
+    () => students.map((s) => ({ id: String(s._id || ''), name: s.name || 'Student' })),
+    [students],
+  );
+  const [, setChildKey, selectedChildOption] = useSharedChildSelection(childOptions);
+  const selectedId = selectedChildOption?.id || null;
 
   const [academicData, setAcademicData] = useState(null);
   const [wellbeingData, setWellbeingData] = useState(null);
@@ -806,10 +813,8 @@ const ChildGrowthAnalytics = () => {
           }));
         if (list.length > 0) {
           setStudents(list);
-          setSelectedId(list[0]._id);
         } else if (kids.length > 0) {
           setStudents(kids);
-          setSelectedId(String(kids[0]._id));
         }
       } catch (err) {
         if (!cancelled) setStudentLoadError(err.message || 'Unable to load linked students.');
@@ -862,7 +867,8 @@ const ChildGrowthAnalytics = () => {
   }, [selectedId, fetchAcademic, fetchWellbeing, fetchSkills]);
 
   const handleSelectStudent = (id) => {
-    setSelectedId(id);
+    const opt = childOptions.find((o) => o.id === String(id));
+    if (opt) setChildKey(childOptionKey(opt));
     setActiveSidebar(null);
   };
 
@@ -872,7 +878,7 @@ const ChildGrowthAnalytics = () => {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3" aria-busy="true" aria-live="polite">
         <Loader2 size={36} className="animate-spin text-indigo-400" aria-hidden="true" />
-        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Loading analytics...</p>
+        <p className="text-sm font-medium text-slate-400 tracking-wide">Loading analytics…</p>
       </div>
     );
   }

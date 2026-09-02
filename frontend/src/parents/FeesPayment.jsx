@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { downloadFeeReceiptPdf } from '../utils/feeReceiptPdf';
 import { downloadFeesStructurePdf } from '../utils/feesStructurePdf';
 import { parentApiFetch } from './parentApi';
+import { useSharedChildSelection, childOptionKey } from './ChildSwitcher';
 import { useDialog } from './useDialog';
 import './FeesPayment.css';
 
@@ -195,7 +196,6 @@ const ChildAvatar = ({ child, index }) => (
 const FeesPayment = () => {
   const navigate = useNavigate();
   const [children, setChildren] = useState([]);
-  const [selectedChildId, setSelectedChildId] = useState('');
   const [loadingChildren, setLoadingChildren] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState('');
@@ -211,9 +211,23 @@ const FeesPayment = () => {
   const [downloadingFeesCardId, setDownloadingFeesCardId] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const selectedChild = useMemo(
-    () => children.find((child) => buildChildKey(child) === selectedChildId) || null,
-    [children, selectedChildId]
+  const childOptions = useMemo(
+    () => children.map((child) => ({ id: String(child?._id || child?.id || ''), name: child?.name || 'Child' })),
+    [children],
+  );
+  const [, setChildKey, selectedChildOption] = useSharedChildSelection(childOptions);
+
+  const selectedChild = useMemo(() => {
+    if (!children.length || !selectedChildOption) return null;
+    return children.find((child) => {
+      const id = String(child?._id || child?.id || '');
+      if (selectedChildOption.id && id) return id === selectedChildOption.id;
+      return (child?.name || 'Child') === selectedChildOption.name;
+    }) || null;
+  }, [children, selectedChildOption]);
+  const selectedChildId = selectedChild ? buildChildKey(selectedChild) : '';
+  const pickChild = (child) => setChildKey(
+    childOptionKey({ id: String(child?._id || child?.id || ''), name: child?.name || 'Child' }),
   );
 
   const breakdownDialogRef = useDialog(showFeeBreakdown, () => setShowFeeBreakdown(false));
@@ -236,12 +250,8 @@ const FeesPayment = () => {
       if (!res.ok) throw new Error(data?.error || 'Failed to load children');
       const list = Array.isArray(data.children) ? data.children : [];
       setChildren(list);
-      setSelectedChildId((current) => (
-        list.some((child) => buildChildKey(child) === current) ? current : (list[0] ? buildChildKey(list[0]) : '')
-      ));
     } catch (err) {
       setChildren([]);
-      setSelectedChildId('');
       showError(err.message || 'Unable to load children');
     } finally {
       setLoadingChildren(false);
@@ -546,7 +556,7 @@ const FeesPayment = () => {
                   const isActive = childKey === selectedChildId;
                   const childClass = getChildClass(child);
                   return (
-                    <button key={childKey} type="button" role="option" aria-selected={isActive} onClick={() => setSelectedChildId(childKey)} className={`fees-child-card flex w-[min(280px,calc(100vw-3.5rem))] shrink-0 snap-start items-center gap-3 rounded-xl p-4 text-left lg:w-full lg:p-3 ${isActive ? 'is-active' : ''}`}>
+                    <button key={childKey} type="button" role="option" aria-selected={isActive} onClick={() => pickChild(child)} className={`fees-child-card flex w-[min(280px,calc(100vw-3.5rem))] shrink-0 snap-start items-center gap-3 rounded-xl p-4 text-left lg:w-full lg:p-3 ${isActive ? 'is-active' : ''}`}>
                       <ChildAvatar child={child} index={index} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-slate-800">{child.name || 'Child'}</span>

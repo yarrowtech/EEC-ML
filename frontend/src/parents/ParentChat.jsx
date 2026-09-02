@@ -1260,7 +1260,7 @@ const ParentChat = () => {
             ) : syncingThreads && filteredThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2">
                 <Loader2 className="h-5 w-5 animate-spin" style={{ color: theme.color }} />
-                <p className="text-xs text-gray-500">Loading conversations...</p>
+                <p className="text-xs text-gray-500">Loading conversations…</p>
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="p-6 text-center">

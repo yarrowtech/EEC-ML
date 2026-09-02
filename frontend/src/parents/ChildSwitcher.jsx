@@ -37,6 +37,12 @@ const writeStore = (value) => {
   }
 };
 
+// Raw store access for screens that keep a bespoke selector but still want to
+// share the selection (Fees, Observations, Growth Analytics).
+export const readSharedChild = readStore;
+export const writeSharedChild = writeStore;
+export const isSameChild = (a, b) => sameChild(a, b);
+
 const sameChild = (option, stored) => {
   if (!option || !stored) return false;
   if (stored.id && option.id) return String(stored.id) === String(option.id);

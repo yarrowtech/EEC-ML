@@ -322,7 +322,7 @@ const HolidayList = () => {
               <div className="rounded-2xl border border-white/80 bg-white/55 p-4 shadow-sm backdrop-blur-xl">
                 <Loader2 className="h-6 w-6 animate-spin text-violet-600" aria-hidden="true" />
               </div>
-              Loading holidays...
+              Loading holidays…
             </div>
           ) : error ? (
             <div className="m-5 rounded-2xl border border-red-200/70 bg-red-50/60 p-5 text-sm text-red-700 backdrop-blur-xl" role="alert">

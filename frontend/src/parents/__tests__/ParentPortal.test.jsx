@@ -570,7 +570,8 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const dashboardLink = screen.getByText('Dashboard').closest('a');
+      const nav = within(screen.getByLabelText('Sidebar navigation'));
+      const dashboardLink = nav.getByText('Dashboard').closest('a');
       expect(dashboardLink).toHaveAttribute('aria-current', 'page');
       expect(dashboardLink).toHaveClass('bg-violet-50');
       expect(dashboardLink).toHaveClass('border-violet-600');

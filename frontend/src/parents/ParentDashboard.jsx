@@ -494,25 +494,19 @@ const ParentDashboard = ({
           className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
         >
           <div className="relative mb-6 flex w-full items-center justify-center border-b border-white/60 pb-5">
-            <div className="flex items-center justify-center gap-3 sm:gap-4">
-              <motion.button
-                type="button"
-                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
-                onClick={onOpenSidebar}
-                className="absolute left-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
-                aria-label="Open parent navigation"
-              >
-                <Menu size={20} />
-              </motion.button>
-              <div className="flex items-center gap-3">
-                
-                <span className="hidden text-xs text-slate-300 sm:inline">·</span>
-                <span className="hidden rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm sm:inline">
-                  {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </span>
-              </div>
-            </div>
+            <motion.button
+              type="button"
+              whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+              onClick={onOpenSidebar}
+              className="absolute left-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
+              aria-label="Open parent navigation"
+            >
+              <Menu size={20} />
+            </motion.button>
+            <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm">
+              {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            </span>
           </div>
 
           <div className="mb-7 flex flex-col items-center text-center sm:mb-8">
@@ -635,7 +629,7 @@ const ParentDashboard = ({
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500">Our support team can help with portal navigation or student records.</p>
               </div>
             </div>
-            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-300 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-300">Contact Support</Link>
+            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-700">Contact Support</Link>
           </motion.section>
 
           {childrenData.length > 0 && (

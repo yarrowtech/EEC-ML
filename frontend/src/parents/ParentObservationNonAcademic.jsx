@@ -26,6 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiJson } from './parentApi';
+import { readSharedChild, writeSharedChild, isSameChild } from './ChildSwitcher';
 
 const POSITIVE_OPTIONS = ['Excellent', 'Good', 'Average', 'Needs Support'];
 const SCORE_OPTIONS = ['High', 'Medium', 'Low'];
@@ -130,7 +131,12 @@ const ParentObservationNonAcademic = () => {
         setClassOptions([...classSet].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
         setSectionOptions([...sectionSet].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
         setChildren(childOptions);
-        setStudentId((prev) => prev || childOptions[0]?.id || '');
+        setStudentId((prev) => {
+          if (prev) return prev;
+          const stored = readSharedChild();
+          const match = stored && childOptions.find((c) => isSameChild({ id: String(c.id || ''), name: c.name }, stored));
+          return String((match || childOptions[0])?.id || '');
+        });
         setObservations(Array.isArray(observationsPayload.parentEntries) ? observationsPayload.parentEntries : []);
       } catch (err) {
         console.error('Parent observation load error:', err);
@@ -170,6 +176,12 @@ const ParentObservationNonAcademic = () => {
       setStudentId(String(filteredChildren[0].id));
     }
   }, [filteredChildren, studentId]);
+
+  // Keep the portal-wide selection in sync when the parent picks a child here.
+  useEffect(() => {
+    const child = children.find((c) => String(c.id) === String(studentId));
+    if (child) writeSharedChild({ id: String(child.id || ''), name: child.name || 'Student' });
+  }, [studentId, children]);
 
   const concernLevel = useMemo(() => {
     const values = ['Behavioral issues', 'Addiction (mobile, games, etc.)', 'Fear or anxiety', 'Sudden changes in behavior']

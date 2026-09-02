@@ -366,7 +366,7 @@ const ComplaintManagementSystem = () => {
           </div>
 
           {loading ? (
-            <div className="text-sm text-gray-500">Loading complaints...</div>
+            <div className="text-sm text-gray-500">Loading complaints…</div>
           ) : error ? (
             <div className="text-sm text-red-600 flex items-center gap-2">
               <AlertCircle className="w-4 h-4" /> {error}

@@ -136,7 +136,7 @@ const ParentClassRoutine = () => {
   const todayEntries = schedule[todayName] || [];
 
   if (loading) {
-    return <div className="p-6 text-sm text-gray-600" aria-busy="true" aria-live="polite">Loading children routine...</div>;
+    return <div className="p-6 text-sm text-gray-600" aria-busy="true" aria-live="polite">Loading class routine…</div>;
   }
 
   return (

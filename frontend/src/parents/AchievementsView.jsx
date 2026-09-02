@@ -203,7 +203,7 @@ const AchievementsView = () => {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
               <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
-              <p className="text-sm font-medium text-slate-500 tracking-widest uppercase">Fetching records...</p>
+              <p className="text-sm font-medium text-slate-500 tracking-wide">Loading achievements…</p>
             </div>
           ) : !selectedChild || selectedChild.achievements.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
