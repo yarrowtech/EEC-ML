@@ -30,7 +30,7 @@ const STAT_STYLES = [
 
 const DONUT_PALETTE = ['#6366f1', '#3b82f6', '#22c55e', '#fb923c', '#ef4444', '#6b7280'];
 
-const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats, attendanceTrend, studentPerformance, criticalNotifications, recentActivities, monthlyGrowth, schoolName, isRefreshing, onRefreshOverview }) => {
+const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats, attendanceTrend, studentPerformance, criticalNotifications, recentActivities, monthlyGrowth, schoolName, academicYears, selectedYearId, onSelectYear, isRefreshing, onRefreshOverview }) => {
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -177,7 +177,7 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
         <div className="relative z-10 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-white sm:text-3xl">
-              {getGreeting()}, Principal <span aria-hidden="true">👋</span>
+              {getGreeting()}, Principal
             </h1>
             <p className="text-sm text-indigo-100 sm:text-base">
               Here&apos;s what&apos;s happening at {schoolName || 'your institution'}
@@ -264,10 +264,22 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-base font-bold text-slate-900">Performance Distribution</h3>
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
-              <GraduationCap className="h-3.5 w-3.5 text-slate-400" />
-              Current Term
-              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            <div className="relative">
+              <GraduationCap className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <select
+                value={selectedYearId || ''}
+                onChange={(e) => onSelectYear?.(e.target.value)}
+                disabled={!academicYears?.length}
+                className="appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {!academicYears?.length && <option value="">Current Term</option>}
+                {academicYears?.map((year) => (
+                  <option key={year._id} value={year._id}>
+                    {year.name}{year.isActive ? ' (Active)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             </div>
           </div>
           {studentPerformance.length > 0 ? (
@@ -305,7 +317,7 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
       {/* Notifications and Activities */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {/* Critical Alerts */}
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        {/* <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50">
@@ -354,10 +366,10 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
               </a>
             </div>
           )}
-        </div>
+        </div> */}
 
         {/* Recent Activities */}
-        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        {/* <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50">
@@ -394,7 +406,7 @@ const OverviewPage = ({ overview, isLoading, loadError, schoolStats, quickStats,
               </div>
             )}
           </div>
-        </div>
+        </div> */}
       </div>
 
       <p className="pt-2 text-center text-xs text-slate-400">

@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
-  Award,
   Calendar,
   Users,
   User,
@@ -16,6 +15,9 @@ import {
   CheckCircle2,
   Clock,
   Inbox,
+  MapPin,
+  GraduationCap,
+  X,
 } from 'lucide-react';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
@@ -51,15 +53,45 @@ const AcademicAnalytics = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [analytics, setAnalytics] = useState(null);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('current_term');
+  const [academicYears, setAcademicYears] = useState([]);
+  const [selectedYearId, setSelectedYearId] = useState('');
+  const [yearsLoaded, setYearsLoaded] = useState(false);
+
+  // Every session for this school — default the picker to whichever one is
+  // marked active, falling back to the most recent if none is.
+  useEffect(() => {
+    const fetchYears = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/principal/academic/years`, {
+          headers: { authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data?.error || 'Failed to load academic sessions');
+        const list = Array.isArray(data) ? data : [];
+        setAcademicYears(list);
+        const defaultYear = list.find((y) => y.isActive) || list[0] || null;
+        setSelectedYearId(defaultYear?._id || '');
+      } catch (err) {
+        console.error('Academic years error:', err);
+      } finally {
+        setYearsLoaded(true);
+      }
+    };
+
+    fetchYears();
+  }, []);
 
   useEffect(() => {
+    if (!yearsLoaded) return;
+
     const fetchAcademicAnalytics = async () => {
       setLoading(true);
       setError('');
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/principal/academic/analytics`, {
+        const qs = selectedYearId ? `?academicYearId=${selectedYearId}` : '';
+        const res = await fetch(`${API_BASE}/api/principal/academic/analytics${qs}`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -80,7 +112,7 @@ const AcademicAnalytics = () => {
     };
 
     fetchAcademicAnalytics();
-  }, []);
+  }, [yearsLoaded, selectedYearId]);
 
   const academicOverview = analytics?.academicOverview || {
     averageGPA: '0%',
@@ -96,7 +128,40 @@ const AcademicAnalytics = () => {
   const classAnalytics = analytics?.classAnalytics || [];
   const examSchedule = analytics?.examSchedule || [];
 
-  const gradeTotal = gradeDistribution.reduce((sum, item) => sum + (item.count || 0), 0);
+  const [examFilters, setExamFilters] = useState({ grade: '', section: '', subject: '', status: '' });
+  const examGradeOptions = useMemo(
+    () => Array.from(new Set(examSchedule.map((e) => e.grade).filter(Boolean))).sort(),
+    [examSchedule]
+  );
+  const examSectionOptions = useMemo(
+    () => Array.from(new Set(examSchedule.map((e) => e.section).filter(Boolean))).sort(),
+    [examSchedule]
+  );
+  const examSubjectOptions = useMemo(
+    () => Array.from(new Set(examSchedule.map((e) => e.subject).filter(Boolean))).sort(),
+    [examSchedule]
+  );
+  const hasExamFilters = Object.values(examFilters).some(Boolean);
+  const filteredExamSchedule = examSchedule.filter((exam) => {
+    if (examFilters.grade && exam.grade !== examFilters.grade) return false;
+    if (examFilters.section && exam.section !== examFilters.section) return false;
+    if (examFilters.subject && exam.subject !== examFilters.subject) return false;
+    if (examFilters.status && String(exam.status || '').toLowerCase() !== examFilters.status) return false;
+    return true;
+  });
+
+  const EXAMS_PER_PAGE = 6;
+  const [examPage, setExamPage] = useState(1);
+  useEffect(() => {
+    setExamPage(1);
+  }, [examFilters]);
+  const totalExamPages = Math.max(1, Math.ceil(filteredExamSchedule.length / EXAMS_PER_PAGE));
+  const safeExamPage = Math.min(examPage, totalExamPages);
+  const pagedExamSchedule = filteredExamSchedule.slice(
+    (safeExamPage - 1) * EXAMS_PER_PAGE,
+    safeExamPage * EXAMS_PER_PAGE
+  );
+
   const gradeDonutData = {
     labels: gradeDistribution.map((item) => item.grade),
     datasets: [
@@ -139,13 +204,17 @@ const AcademicAnalytics = () => {
           <div className="relative">
             <Calendar className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <select
-              value={selectedTimeframe}
-              onChange={(e) => setSelectedTimeframe(e.target.value)}
-              className="h-11 appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-9 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              value={selectedYearId}
+              onChange={(e) => setSelectedYearId(e.target.value)}
+              disabled={academicYears.length === 0}
+              className="h-11 appearance-none rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-9 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <option value="current_term">Current Term</option>
-              <option value="last_term">Last Term</option>
-              <option value="academic_year">Academic Year</option>
+              {academicYears.length === 0 && <option value="">No sessions found</option>}
+              {academicYears.map((year) => (
+                <option key={year._id} value={year._id}>
+                  {year.name}{year.isActive ? ' (Active)' : ''}
+                </option>
+              ))}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           </div>
@@ -365,13 +434,83 @@ const AcademicAnalytics = () => {
 
           {/* Examination Schedule */}
           <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-            <h3 className="mb-5 flex items-center gap-2 text-base font-bold text-slate-900">
-              <Calendar className="h-5 w-5 text-indigo-500" />
-              Examination Schedule
-            </h3>
-            {examSchedule.length > 0 ? (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                <Calendar className="h-5 w-5 text-indigo-500" />
+                Examination Schedule
+              </h3>
+              {examSchedule.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={examFilters.grade}
+                    onChange={(e) => setExamFilters((p) => ({ ...p, grade: e.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  >
+                    <option value="">All Classes</option>
+                    {examGradeOptions.map((grade) => (
+                      <option key={grade} value={grade}>{grade}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={examFilters.section}
+                    onChange={(e) => setExamFilters((p) => ({ ...p, section: e.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  >
+                    <option value="">All Sections</option>
+                    {examSectionOptions.map((section) => (
+                      <option key={section} value={section}>{section}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={examFilters.subject}
+                    onChange={(e) => setExamFilters((p) => ({ ...p, subject: e.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  >
+                    <option value="">All Subjects</option>
+                    {examSubjectOptions.map((subject) => (
+                      <option key={subject} value={subject}>{subject}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={examFilters.status}
+                    onChange={(e) => setExamFilters((p) => ({ ...p, status: e.target.value }))}
+                    className="rounded-lg border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-semibold text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  >
+                    <option value="">All Status</option>
+                    <option value="completed">Completed</option>
+                    <option value="upcoming">Upcoming</option>
+                  </select>
+                  {hasExamFilters && (
+                    <button
+                      type="button"
+                      onClick={() => setExamFilters({ grade: '', section: '', subject: '', status: '' })}
+                      className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            {examSchedule.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center">
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                  <Calendar className="h-6 w-6 text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-500">No examination schedule data available</p>
+              </div>
+            ) : filteredExamSchedule.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center">
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                  <Calendar className="h-6 w-6 text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-500">No exams match the selected filters</p>
+              </div>
+            ) : (
+              <>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {examSchedule.map((exam, index) => {
+                {pagedExamSchedule.map((exam, index) => {
                   const statusKey = String(exam.status || '').toLowerCase();
                   const style = STATUS_STYLES[statusKey] || { badge: 'bg-blue-50 text-blue-700', icon: Clock };
                   const StatusIcon = style.icon;
@@ -388,26 +527,70 @@ const AcademicAnalytics = () => {
                         </span>
                       </div>
                       <div className="space-y-1.5 text-sm text-slate-500">
+                        {exam.subject && (
+                          <div className="flex items-center gap-2">
+                            <BookOpen className="h-4 w-4 shrink-0 text-slate-400" />
+                            {exam.subject}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-slate-400" />
+                          <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
                           {new Date(exam.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {exam.time && ` · ${exam.time}`}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <BookOpen className="h-4 w-4 text-slate-400" />
-                          {exam.subjects} subjects
-                        </div>
+                        {exam.room && (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+                            Room {exam.room}
+                          </div>
+                        )}
+                        {exam.teacher && (
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 shrink-0 text-slate-400" />
+                            {exam.teacher}
+                          </div>
+                        )}
+                        {(exam.grade || exam.section) && (
+                          <div className="flex items-center gap-2">
+                            <GraduationCap className="h-4 w-4 shrink-0 text-slate-400" />
+                            {[exam.grade && `Class ${exam.grade}`, exam.section && `Section ${exam.section}`].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            ) : (
-              <div className="flex flex-col items-center py-6 text-center">
-                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-                  <Calendar className="h-6 w-6 text-slate-400" />
+              {totalExamPages > 1 && (
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-500">
+                    Showing {(safeExamPage - 1) * EXAMS_PER_PAGE + 1}
+                    –{Math.min(safeExamPage * EXAMS_PER_PAGE, filteredExamSchedule.length)} of {filteredExamSchedule.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExamPage((p) => Math.max(1, p - 1))}
+                      disabled={safeExamPage === 1}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-xs font-medium text-slate-500">
+                      Page {safeExamPage} of {totalExamPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setExamPage((p) => Math.min(totalExamPages, p + 1))}
+                      disabled={safeExamPage === totalExamPages}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
-                <p className="text-sm font-medium text-slate-500">No examination schedule data available</p>
-              </div>
+              )}
+              </>
             )}
           </div>
         </>

@@ -91,8 +91,33 @@ const PrincipalDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [academicYears, setAcademicYears] = useState([]);
+  const [selectedYearId, setSelectedYearId] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Sessions for the Performance Distribution chart's year picker — default
+  // to whichever is marked active, falling back to the most recent.
+  useEffect(() => {
+    const fetchYears = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/principal/academic/years`, {
+          headers: { authorization: `Bearer ${token}` }
+        });
+        const data = await res.json().catch(() => []);
+        if (!res.ok) throw new Error(data?.error || 'Failed to load academic sessions');
+        const list = Array.isArray(data) ? data : [];
+        setAcademicYears(list);
+        const defaultYear = list.find((y) => y.isActive) || list[0] || null;
+        setSelectedYearId(defaultYear?._id || '');
+      } catch (err) {
+        console.error('Academic years error:', err);
+      }
+    };
+
+    fetchYears();
+  }, []);
 
   const fetchOverview = useCallback(async (showLoader = true) => {
     if (showLoader) {
@@ -100,7 +125,8 @@ const PrincipalDashboard = () => {
     }
     setLoadError('');
     try {
-      const res = await fetch(`${API_BASE}/api/principal/overview`, {
+      const qs = selectedYearId ? `?academicYearId=${selectedYearId}` : '';
+      const res = await fetch(`${API_BASE}/api/principal/overview${qs}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +146,7 @@ const PrincipalDashboard = () => {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [selectedYearId]);
 
   useEffect(() => {
     fetchOverview(true);
@@ -485,6 +511,9 @@ const PrincipalDashboard = () => {
       recentActivities={recentActivities}
       monthlyGrowth={monthlyGrowth}
       schoolName={resolvedSchoolName}
+      academicYears={academicYears}
+      selectedYearId={selectedYearId}
+      onSelectYear={setSelectedYearId}
       isRefreshing={isRefreshing}
       onRefreshOverview={handleManualRefresh}
     />

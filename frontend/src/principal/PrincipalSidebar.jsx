@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, LogOut, GraduationCap, ChevronDown, HelpCircle, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut, GraduationCap, ChevronDown, HelpCircle, ArrowRight, Info } from 'lucide-react';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { PRINCIPAL_MENU_ITEMS } from './principalConstants';
 
@@ -182,7 +182,7 @@ const PrincipalSidebar = ({ isOpen, setIsOpen, principalProfile }) => {
                 <p className="truncate text-xs font-bold text-slate-800">{principalName}</p>
                 <p className="truncate text-[10px] text-slate-400">Principal</p>
               </div>
-              <ChevronDown size={14} className="shrink-0 text-slate-400" />
+              <Info size={14} className="shrink-0 text-slate-400" />
             </button>
           )}
 

@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const principalAuth = require('../middleware/principalAuth');
 const StudentUser = require('../models/StudentUser');
+const AcademicYear = require('../models/AcademicYear');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
 const StaffUser = require('../models/StaffUser');
@@ -29,6 +30,45 @@ const EXPENSE_CATEGORY_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8
 // been expelled, or been archived shouldn't count toward the live totals.
 const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
 const isExitedStudentStatus = (status) => EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
+
+// `StudentUser.academicYear` is a free-text label (e.g. "2025-26"), not an
+// AcademicYear reference, and its formatting drifts ("2025-2026" vs
+// "2025-26"). Same matcher used by the promotion flow so a session picker
+// here finds the same students promotion would.
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const buildAcademicYearMatcher = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/(\d{4})\D+(\d{2,4})/);
+  if (!match) {
+    return new RegExp(`^\\s*${escapeRegex(raw)}\\s*$`, 'i');
+  }
+  const startYear = match[1];
+  const endPart = match[2];
+  const endYearFull = endPart.length === 2 ? `${startYear.slice(0, 2)}${endPart}` : endPart;
+  const endYearShort = endYearFull.slice(-2);
+  return new RegExp(
+    `^\\s*${escapeRegex(startYear)}\\s*[-/]\\s*(?:${escapeRegex(endYearShort)}|${escapeRegex(endYearFull)})\\s*$`,
+    'i'
+  );
+};
+
+const toDateValue = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const withinAcademicYear = (date, yearDoc) => {
+  if (!yearDoc) return true;
+  const parsedDate = toDateValue(date);
+  if (!parsedDate) return true;
+  const start = toDateValue(yearDoc.startDate);
+  const end = toDateValue(yearDoc.endDate);
+  if (start && parsedDate < start) return false;
+  if (end && parsedDate > end) return false;
+  return true;
+};
 
 const router = express.Router();
 
@@ -92,6 +132,24 @@ router.get('/overview', principalAuth, async (req, res) => {
       status: { $nin: EXITED_STUDENT_STATUSES },
     };
 
+    const { academicYearId } = req.query;
+    let selectedYear = null;
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      selectedYear = await AcademicYear.findOne({ _id: academicYearId, schoolId: req.schoolId }).lean();
+    }
+    if (!selectedYear) {
+      selectedYear = await AcademicYear.findOne({ schoolId: req.schoolId, isActive: true }).lean();
+    }
+
+    // Grade Distribution (the "Performance Distribution" chart) is scoped to
+    // the selected academic session; the rest of the overview — totals,
+    // attendance, fees — stays school-wide, unaffected by this picker.
+    const performanceStudentFilter = { ...activeStudentFilter };
+    if (selectedYear) {
+      const matcher = buildAcademicYearMatcher(selectedYear.name);
+      if (matcher) performanceStudentFilter.academicYear = matcher;
+    }
+
     const [
       totalStudents,
       totalTeachers,
@@ -99,7 +157,7 @@ router.get('/overview', principalAuth, async (req, res) => {
       parentDocs,
       totalClasses,
       totalSubjects,
-      studentProgress,
+      performanceStudents,
       feeSummary,
     ] = await Promise.all([
       StudentUser.countDocuments(activeStudentFilter),
@@ -110,7 +168,7 @@ router.get('/overview', principalAuth, async (req, res) => {
         .lean(),
       ClassModel.countDocuments(schoolFilter),
       Subject.countDocuments(schoolFilter),
-      StudentProgress.find(schoolFilter, 'overallGrade').lean(),
+      StudentUser.find(performanceStudentFilter, '_id').lean(),
       FeeInvoice.aggregate([
         { $match: getFeeAggregateMatch(req) },
         {
@@ -123,6 +181,11 @@ router.get('/overview', principalAuth, async (req, res) => {
         },
       ]),
     ]);
+
+    const performanceStudentIds = performanceStudents.map((s) => s._id);
+    const studentProgress = performanceStudentIds.length
+      ? await StudentProgress.find({ schoolId: req.schoolId, studentId: { $in: performanceStudentIds } }, 'overallGrade').lean()
+      : [];
 
     // A parent counts as active unless they have children linked and every
     // one of those children has exited/been archived (parents with no
@@ -138,13 +201,12 @@ router.get('/overview', principalAuth, async (req, res) => {
     const students = await StudentUser.find(schoolFilter, 'attendance').lean();
     let present = 0;
     let total = 0;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
 
+    // Cumulative across all recorded attendance — matches how
+    // /academic/analytics computes "Avg Attendance" so both pages agree
+    // instead of one showing a rolling 30-day window and the other all-time.
     students.forEach((student) => {
       (student.attendance || []).forEach((entry) => {
-        const entryDate = new Date(entry.date);
-        if (entryDate < cutoff) return;
         total += 1;
         if (entry.status === 'present') {
           present += 1;
@@ -234,6 +296,9 @@ router.get('/overview', principalAuth, async (req, res) => {
       performance: {
         gradeDistribution,
       },
+      academicYear: selectedYear
+        ? { _id: selectedYear._id, name: selectedYear.name, isActive: Boolean(selectedYear.isActive) }
+        : null,
       recentActivities,
       timestamp: new Date().toISOString(),
     });
@@ -424,25 +489,70 @@ router.get('/teachers', principalAuth, async (req, res) => {
   }
 });
 
+// Every academic session for this school, active one flagged, most recent first.
+router.get('/academic/years', principalAuth, async (req, res) => {
+  // #swagger.tags = ['Principal Dashboard']
+  try {
+    const years = await AcademicYear.find({ schoolId: req.schoolId })
+      .sort({ startDate: -1, createdAt: -1 })
+      .lean();
+    res.json(years.map((year) => ({
+      _id: year._id,
+      name: year.name,
+      isActive: Boolean(year.isActive),
+      status: year.status || 'upcoming',
+      startDate: year.startDate || null,
+      endDate: year.endDate || null,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/academic/analytics', principalAuth, async (req, res) => {
   // #swagger.tags = ['Principal Dashboard']
   try {
     const schoolFilter = getSchoolFilter(req);
-    const progressFilter = { schoolId: req.schoolId };
+    const { academicYearId } = req.query;
 
-    const [
-      students,
-      studentProgressList,
-      exams,
-      classes,
-      subjects,
-    ] = await Promise.all([
-      StudentUser.find(schoolFilter, '_id name grade attendance').lean(),
-      StudentProgress.find(progressFilter).lean(),
-      Exam.find(schoolFilter).sort({ date: 1 }).limit(10).lean(),
+    let selectedYear = null;
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      selectedYear = await AcademicYear.findOne({ _id: academicYearId, schoolId: req.schoolId }).lean();
+    }
+    if (!selectedYear) {
+      selectedYear = await AcademicYear.findOne({ schoolId: req.schoolId, isActive: true }).lean();
+    }
+
+    // `academicYear` is a free-text label on StudentUser, so narrow by it only
+    // when we actually resolved a session — schools without any AcademicYear
+    // rows configured fall back to the previous, unscoped behaviour.
+    const studentFilter = { ...schoolFilter };
+    if (selectedYear) {
+      const matcher = buildAcademicYearMatcher(selectedYear.name);
+      if (matcher) studentFilter.academicYear = matcher;
+    }
+
+    const [students, exams, classes, subjects] = await Promise.all([
+      StudentUser.find(studentFilter, '_id name grade attendance').lean(),
+      Exam.find(schoolFilter)
+        .sort({ date: 1 })
+        .populate('subjectId', 'name')
+        .populate('roomId', 'roomNumber')
+        .populate('classId', 'name')
+        .populate('sectionId', 'name')
+        .lean(),
       ClassModel.find(schoolFilter).lean(),
       Subject.find(schoolFilter).lean(),
     ]);
+
+    const studentIds = students.map((s) => s._id);
+    // StudentProgress keeps one rolling record per student (no per-year
+    // history), so a past session shows each matched student's current
+    // standing rather than a historical snapshot — the student *set* is
+    // still correctly scoped to the selected year.
+    const studentProgressList = studentIds.length
+      ? await StudentProgress.find({ schoolId: req.schoolId, studentId: { $in: studentIds } }).lean()
+      : [];
 
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
 
@@ -525,13 +635,21 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
       needsSupport: data.needsSupport,
     }));
 
-    // Exam Schedule
-    const examSchedule = exams.map((exam) => ({
-      exam: exam.title || exam.term || 'Exam',
-      date: exam.date,
-      status: new Date(exam.date) < new Date() ? 'completed' : 'upcoming',
-      subjects: 1,
-    }));
+    // Exam Schedule — scoped to the selected session's date range
+    const examSchedule = exams
+      .filter((exam) => withinAcademicYear(exam.date, selectedYear))
+      .slice(0, 50)
+      .map((exam) => ({
+        exam: exam.title || exam.term || 'Exam',
+        subject: exam.subjectId?.name || exam.subject || '',
+        date: exam.date,
+        time: exam.time || '',
+        status: new Date(exam.date) < new Date() ? 'completed' : 'upcoming',
+        room: exam.roomId?.roomNumber || exam.venue || '',
+        teacher: exam.instructor || '',
+        grade: exam.classId?.name || exam.grade || '',
+        section: exam.sectionId?.name || exam.section || '',
+      }));
 
     // Academic Overview
     const totalGPA = studentProgressList.reduce((acc, curr) => {
@@ -565,6 +683,9 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
       subjectPerformance,
       classAnalytics,
       examSchedule,
+      academicYear: selectedYear
+        ? { _id: selectedYear._id, name: selectedYear.name, isActive: Boolean(selectedYear.isActive) }
+        : null,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
