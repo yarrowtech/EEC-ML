@@ -47,6 +47,7 @@ import {
 } from 'recharts';
 import { parentApiJson } from './parentApi';
 import AnalyticsPureWhiteDashboard from './AnalyticsPureWhiteDashboard';
+import { useDialog } from './useDialog';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const moodIcon = (rating) => {
@@ -185,7 +186,7 @@ const AcademicSidebar = ({ data, onClose }) => {
               <h2 className="text-base font-black">Academic Performance</h2>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+          <button onClick={onClose} aria-label="Close academic analytics" className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -359,7 +360,7 @@ const WellbeingSidebar = ({ data, onClose }) => {
               <h2 className="text-base font-black">Emotional Wellbeing</h2>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+          <button onClick={onClose} aria-label="Close wellbeing analytics" className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -572,6 +573,7 @@ const SkillsSidebar = ({ data, onClose }) => {
 
   if (!data) return null;
   const { domains = [], overallSkillScore, dataPoints = {} } = data;
+  const trackedSkills = domains.reduce((total, domain) => total + (Array.isArray(domain.skills) ? domain.skills.length : 0), 0);
 
   const radarData = domains.map((d) => ({
     domain: d.name.split(' ')[0], // first word for brevity
@@ -592,7 +594,7 @@ const SkillsSidebar = ({ data, onClose }) => {
               <h2 className="text-base font-black">Skill Development</h2>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+          <button onClick={onClose} aria-label="Close skill analytics" className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -602,7 +604,7 @@ const SkillsSidebar = ({ data, onClose }) => {
             <p className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">Overall Score</p>
           </div>
           <div className="bg-white/10 rounded-xl p-3 text-center">
-            <p className="text-xl font-black">22</p>
+            <p className="text-xl font-black">{trackedSkills || '–'}</p>
             <p className="text-[10px] font-bold text-amber-100 uppercase tracking-wider">Skills Tracked</p>
           </div>
           <div className="bg-white/10 rounded-xl p-3 text-center">
@@ -776,13 +778,18 @@ const ChildGrowthAnalytics = () => {
   const [loadingAcademic, setLoadingAcademic] = useState(false);
   const [loadingWellbeing, setLoadingWellbeing] = useState(false);
   const [loadingSkills, setLoadingSkills] = useState(false);
+  const [analyticsErrors, setAnalyticsErrors] = useState({});
+  const [studentLoadError, setStudentLoadError] = useState('');
 
   const [activeSidebar, setActiveSidebar] = useState(null); // 'academic' | 'wellbeing' | 'skills' | null
+  const closeAnalytics = useCallback(() => setActiveSidebar(null), []);
+  const analyticsDialogRef = useDialog(Boolean(activeSidebar), closeAnalytics);
 
   // Fetch student list from parent profile
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setStudentLoadError('');
       try {
         const profile = await parentApiJson('/api/parent/auth/profile', {}, navigate);
         const kids = Array.isArray(profile?.childrenIds)
@@ -791,7 +798,12 @@ const ChildGrowthAnalytics = () => {
 
         const att = await parentApiJson('/api/attendance/parent/children', {}, navigate);
         if (cancelled) return;
-        const list = (att.children || []).map((c) => c.student).filter(Boolean);
+        const list = (att.children || [])
+          .filter((child) => child?.student)
+          .map((child) => ({
+            ...child.student,
+            currentMonthAttendance: child.monthlySummary || null,
+          }));
         if (list.length > 0) {
           setStudents(list);
           setSelectedId(list[0]._id);
@@ -799,8 +811,8 @@ const ChildGrowthAnalytics = () => {
           setStudents(kids);
           setSelectedId(String(kids[0]._id));
         }
-      } catch {
-        /* empty state handles a failed load */
+      } catch (err) {
+        if (!cancelled) setStudentLoadError(err.message || 'Unable to load linked students.');
       } finally {
         if (!cancelled) setLoadingStudents(false);
       }
@@ -812,9 +824,10 @@ const ChildGrowthAnalytics = () => {
     if (!sid) return;
     setLoadingAcademic(true);
     setAcademicData(null);
+    setAnalyticsErrors((current) => ({ ...current, academic: '' }));
     parentApiJson(`/api/parent-dashboard/analytics/academic/${sid}`, {}, navigate)
       .then((d) => setAcademicData(d.data || null))
-      .catch(() => {})
+      .catch((err) => setAnalyticsErrors((current) => ({ ...current, academic: err.message || 'Academic analytics are unavailable.' })))
       .finally(() => setLoadingAcademic(false));
   }, [navigate]);
 
@@ -822,9 +835,10 @@ const ChildGrowthAnalytics = () => {
     if (!sid) return;
     setLoadingWellbeing(true);
     setWellbeingData(null);
+    setAnalyticsErrors((current) => ({ ...current, wellbeing: '' }));
     parentApiJson(`/api/parent-dashboard/analytics/wellbeing/${sid}`, {}, navigate)
       .then((d) => setWellbeingData(d.data || null))
-      .catch(() => {})
+      .catch((err) => setAnalyticsErrors((current) => ({ ...current, wellbeing: err.message || 'Wellbeing analytics are unavailable.' })))
       .finally(() => setLoadingWellbeing(false));
   }, [navigate]);
 
@@ -832,9 +846,10 @@ const ChildGrowthAnalytics = () => {
     if (!sid) return;
     setLoadingSkills(true);
     setSkillsData(null);
+    setAnalyticsErrors((current) => ({ ...current, skills: '' }));
     parentApiJson(`/api/parent-dashboard/analytics/skills/${sid}`, {}, navigate)
       .then((d) => setSkillsData(d.data || null))
-      .catch(() => {})
+      .catch((err) => setAnalyticsErrors((current) => ({ ...current, skills: err.message || 'Skill analytics are unavailable.' })))
       .finally(() => setLoadingSkills(false));
   }, [navigate]);
 
@@ -866,13 +881,14 @@ const ChildGrowthAnalytics = () => {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-slate-400">
         <Users size={40} className="opacity-20" />
-        <p className="text-sm font-bold uppercase tracking-widest">No children found</p>
+        <p className="text-sm font-bold uppercase tracking-widest">{studentLoadError ? 'Unable to load analytics' : 'No children found'}</p>
+        {studentLoadError && <p role="alert" className="max-w-md text-center text-sm font-medium normal-case tracking-normal text-rose-600">{studentLoadError}</p>}
       </div>
     );
   }
 
   const overallMastery = academicData?.overallMastery;
-  const attendancePct = academicData?.attendanceSummary?.attendancePct;
+  const attendancePct = selectedStudent?.currentMonthAttendance?.attendancePercentage;
   const avgMood = wellbeingData?.avgMood;
   const highConcern = wellbeingData ? (wellbeingData.concernCounts?.high || 0) + (wellbeingData.concernCounts?.urgent || 0) : 0;
   const subjectCount = academicData?.subjectBreakdown?.length || 0;
@@ -894,21 +910,45 @@ const ChildGrowthAnalytics = () => {
           loadingAcademic={loadingAcademic}
           loadingWellbeing={loadingWellbeing}
           loadingSkills={loadingSkills}
+          errors={analyticsErrors}
+          currentMonthAttendance={selectedStudent.currentMonthAttendance}
+          onRetry={() => {
+            fetchAcademic(selectedId);
+            fetchWellbeing(selectedId);
+            fetchSkills(selectedId);
+          }}
           onOpen={setActiveSidebar}
         />
 
         {activeSidebar && (
           <>
-            <div
+            <button
+              type="button"
+              aria-label="Close analytics details"
               className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
               onClick={() => setActiveSidebar(null)}
             />
             <div
+              ref={analyticsDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${activeSidebar} analytics details`}
+              tabIndex={-1}
               className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-slate-50 shadow-2xl"
               style={{ animation: 'analyticsSlideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
             >
               {activeSidebar === 'academic' ? (
-                <AcademicSidebar data={academicData} onClose={() => setActiveSidebar(null)} />
+                <AcademicSidebar
+                  data={academicData ? {
+                    ...academicData,
+                    attendanceSummary: {
+                      presentDays: selectedStudent.currentMonthAttendance?.presentDays ?? 0,
+                      totalDays: selectedStudent.currentMonthAttendance?.totalClasses ?? 0,
+                      attendancePct: selectedStudent.currentMonthAttendance?.attendancePercentage ?? null,
+                    },
+                  } : null}
+                  onClose={() => setActiveSidebar(null)}
+                />
               ) : activeSidebar === 'wellbeing' ? (
                 <WellbeingSidebar data={wellbeingData} onClose={() => setActiveSidebar(null)} />
               ) : (

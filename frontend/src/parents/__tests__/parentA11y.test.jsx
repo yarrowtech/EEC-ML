@@ -1,5 +1,6 @@
+/* global beforeEach, describe, expect, global, it, jest */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
@@ -14,6 +15,19 @@ import ComplaintManagementSystem from '../ComplaintManagementSystem';
 import HealthReport from '../HealthReport';
 import ParentObservationNonAcademic from '../ParentObservationNonAcademic';
 import PTMPortal from '../PTMPortal';
+import ParentDashboard from '../ParentDashboard';
+import ChildGrowthAnalytics from '../ChildGrowthAnalytics';
+import ParentChat from '../ParentChat';
+import FeesPayment from '../FeesPayment';
+import ParentPortal from '../ParentPortal';
+
+jest.mock('socket.io-client', () => ({
+  io: () => ({
+    on: jest.fn(),
+    emit: jest.fn(),
+    disconnect: jest.fn(),
+  }),
+}));
 
 expect.extend(toHaveNoViolations);
 
@@ -58,6 +72,11 @@ const SCREENS = {
   HealthReport,
   ParentObservationNonAcademic,
   PTMPortal,
+  ParentDashboard,
+  ChildGrowthAnalytics,
+  ParentChat,
+  FeesPayment,
+  ParentPortal,
 };
 
 describe('Parent portal accessibility (axe)', () => {
@@ -70,7 +89,9 @@ describe('Parent portal accessibility (axe)', () => {
       expect(screen.queryByText(/loading|fetching/i)).not.toBeInTheDocument();
     }, { timeout: 3000 }).catch(() => {});
     // Flush any trailing effects triggered by the loaded state.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
 
     const results = await axe(container, {
       rules: {

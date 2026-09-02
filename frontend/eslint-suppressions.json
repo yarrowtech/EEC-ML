@@ -1584,11 +1584,6 @@
       "count": 3
     }
   },
-  "src/parents/ParentPortal.jsx": {
-    "no-unused-vars": {
-      "count": 3
-    }
-  },
   "src/parents/ResultsView.jsx": {
     "no-unused-vars": {
       "count": 1

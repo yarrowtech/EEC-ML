@@ -1,7 +1,7 @@
 /* eslint-disable react/prop-types */
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, Smile, Sparkles } from 'lucide-react';
+import { AlertCircle, Calendar, RefreshCw, Smile, Sparkles } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 const containerVariants = {
@@ -21,12 +21,6 @@ const initials = (name) => String(name || 'Student')
   .map((part) => part[0])
   .join('')
   .toUpperCase();
-
-const academicYearLabel = () => {
-  const now = new Date();
-  const start = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-  return `${start}–${start + 1}`;
-};
 
 const valueOrDash = (value, suffix = '') => (value != null ? `${value}${suffix}` : '—');
 
@@ -92,9 +86,12 @@ const AnalyticsPureWhiteDashboard = ({
   loadingAcademic,
   loadingWellbeing,
   loadingSkills,
+  errors,
+  currentMonthAttendance,
+  onRetry,
   onOpen,
 }) => {
-  const attendance = academicData?.attendanceSummary?.attendancePct;
+  const attendance = currentMonthAttendance?.attendancePercentage;
   const mood = wellbeingData?.avgMood;
   const skillScore = skillsData?.overallSkillScore;
   const overallMastery = academicData?.overallMastery;
@@ -109,9 +106,10 @@ const AnalyticsPureWhiteDashboard = ({
   const trackedSkills = allSkills.length;
   const masteredSkills = allSkills.filter((skill) => Number(skill.score) >= 70).length;
   const insightCount = [attendance, mood, skillScore, overallMastery, observations, subjectCount].filter((value) => value != null).length;
+  const errorMessages = Object.values(errors || {}).filter(Boolean);
 
   const masteryItems = [
-    { label: 'Attendance', value: valueOrDash(attendance, '%'), Icon: Calendar, wrap: 'bg-purple-50 border-purple-100', color: 'text-purple-600' },
+    { label: 'Attendance · This month', value: valueOrDash(attendance, '%'), Icon: Calendar, wrap: 'bg-purple-50 border-purple-100', color: 'text-purple-600' },
     { label: 'Avg Mood', value: valueOrDash(mood, '/5'), Icon: Smile, wrap: 'bg-emerald-50 border-emerald-100', color: 'text-emerald-600' },
     { label: 'Skill Score', value: valueOrDash(skillScore, '%'), Icon: Sparkles, wrap: 'bg-amber-50 border-amber-200', color: 'text-amber-600' },
   ];
@@ -146,10 +144,25 @@ const AnalyticsPureWhiteDashboard = ({
               </p>
             </div>
           </div>
-          <span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">{academicYearLabel()}</span>
+          <span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">Current academic year</span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Active</span>
         </div>
       </motion.header>
+
+      {errorMessages.length > 0 && (
+        <motion.div variants={itemVariants} role="alert" className="flex flex-col gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold">Some analytics could not be loaded</p>
+              <p className="mt-0.5 text-xs">{errorMessages.join(' ')}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onRetry} className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold transition hover:bg-rose-100">
+            <RefreshCw size={13} /> Retry
+          </button>
+        </motion.div>
+      )}
 
       {students.length > 1 && (
         <motion.div variants={itemVariants} className="flex flex-wrap gap-2">
@@ -201,7 +214,7 @@ const AnalyticsPureWhiteDashboard = ({
           </div>
         </SectionCard>
 
-        <SectionCard dot="bg-emerald-500" title="Growth · Academic Performance" onClick={() => onOpen('academic')} badge={<span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">This term</span>}>
+        <SectionCard dot="bg-emerald-500" title="Growth · Academic Performance" onClick={academicData ? () => onOpen('academic') : undefined} badge={<span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">This term</span>}>
           <div className="grid grid-cols-2 gap-3">
             <StatBlock tone="purple" label="Subjects Tracked" value={subjectCount} progress={Math.min(subjectCount * 10, 100)} sub={`${subjectCount} subjects with recorded evidence`} />
             <StatBlock tone="emerald" label="Exams Taken" value={examCount} progress={Math.min(examCount * 10, 100)} sub={`${examCount} assessment${examCount === 1 ? '' : 's'} available`} />
@@ -220,7 +233,7 @@ const AnalyticsPureWhiteDashboard = ({
       </motion.div>
 
       <motion.div variants={containerVariants} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SectionCard dot="bg-amber-500" title="Growth · Emotional Wellbeing" onClick={() => onOpen('wellbeing')} badge={<span className={`rounded-full border px-3 py-1 text-xs font-medium ${highConcern > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{highConcern > 0 ? 'Needs review' : 'On track'}</span>}>
+        <SectionCard dot="bg-amber-500" title="Growth · Emotional Wellbeing" onClick={wellbeingData ? () => onOpen('wellbeing') : undefined} badge={<span className={`rounded-full border px-3 py-1 text-xs font-medium ${!wellbeingData ? 'border-slate-200 bg-slate-50 text-slate-500' : highConcern > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{!wellbeingData ? 'Awaiting data' : highConcern > 0 ? 'Needs review' : 'On track'}</span>}>
           <div className="grid grid-cols-2 gap-3">
             <StatBlock label="Observations" value={observations} sub={`${observations} recorded observation${observations === 1 ? '' : 's'}`} />
             <StatBlock tone="rose" label="High Concern" value={highConcern} progress={observations ? (highConcern / observations) * 100 : 0} sub="flagged for review" />
@@ -228,20 +241,26 @@ const AnalyticsPureWhiteDashboard = ({
           </div>
         </SectionCard>
 
-        <SectionCard dot="bg-purple-500" title="Growth · Skill Development" onClick={() => onOpen('skills')} badge={<span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">{trackedSkills || 22} skills</span>}>
+        <SectionCard dot="bg-purple-500" title="Growth · Skill Development" onClick={skillsData ? () => onOpen('skills') : undefined} badge={<span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">{trackedSkills ? `${trackedSkills} skills` : 'No skill data'}</span>}>
           <div className="grid grid-cols-2 gap-3">
-            <StatBlock tone="purple" label="Skills Tracked" value={trackedSkills || 22} progress={skillScore || 0} sub={trackedSkills ? `${masteredSkills} proficient · ${trackedSkills - masteredSkills} developing` : 'Awaiting skill evidence'} />
-            <StatBlock tone="emerald" label="Domains" value={domains.length || 5} progress={domains.length ? 100 : 0} sub={domains.length ? domains.map((domain) => domain.name).join(' · ') : 'cognitive · social · physical · language · creative'} />
+            <StatBlock tone="purple" label="Skills Tracked" value={trackedSkills || '—'} progress={trackedSkills ? skillScore || 0 : undefined} sub={trackedSkills ? `${masteredSkills} proficient · ${trackedSkills - masteredSkills} developing` : 'Awaiting skill evidence'} />
+            <StatBlock tone="emerald" label="Domains" value={domains.length || '—'} progress={domains.length ? 100 : undefined} sub={domains.length ? domains.map((domain) => domain.name).join(' · ') : 'No domain evidence recorded'} />
           </div>
           <div className="my-4 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
           <div className="flex flex-wrap gap-2">
-            {(domains.length ? domains : [{ name: 'Cognitive' }, { name: 'Social' }, { name: 'Physical' }, { name: 'Language' }, { name: 'Creative' }]).slice(0, 5).map((domain, index) => {
+            {domains.slice(0, 5).map((domain, index) => {
               const tones = ['border-purple-200 bg-purple-50 text-purple-700', 'border-emerald-200 bg-emerald-50 text-emerald-700', 'border-amber-200 bg-amber-50 text-amber-700', 'border-rose-200 bg-rose-50 text-rose-700', 'border-slate-200 bg-slate-50 text-slate-700'];
               return <span key={domain.name} className={`rounded-full border px-3 py-1 text-xs font-medium ${tones[index]}`}>{domain.name}</span>;
             })}
+            {!domains.length && <p className="text-xs text-slate-500">Skill domains will appear after the school records assessment evidence.</p>}
           </div>
         </SectionCard>
       </motion.div>
+
+      <motion.footer variants={itemVariants} className="flex flex-wrap justify-end gap-4 px-1 text-[10px] tracking-wide text-slate-500/60">
+        <span>● Data sync: live</span>
+        <span>● {insightCount} insights available</span>
+      </motion.footer>
     </motion.main>
   );
 };

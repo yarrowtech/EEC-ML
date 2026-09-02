@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
   MessageSquare, Send, Search, ChevronLeft,
@@ -26,11 +27,6 @@ const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
 const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PARENT_CHAT_ME_KEY = 'parent_chat_me_id_v1';
-
-// Delegates to the shared parent wrapper: attaches the token, parses JSON, throws
-// on non-2xx, and on 401 clears the session + fires AUTH_LOGOUT_EVENT (which this
-// screen already listens for to tear down the socket).
-const apiFetch = (path, options = {}) => parentApiJson(path, options);
 
 const formatTime = (ts) => {
   if (!ts) return '';
@@ -532,6 +528,7 @@ const ContactItem = ({ contact, onClick, theme }) => {
 
 // ── Main ParentChat ────────────────────────────────────────────────────────────
 const ParentChat = () => {
+  const navigate = useNavigate();
   const [me, setMe]                             = useState(null);
   const [threads, setThreads]                   = useState([]);
   const [activeThreadId, setActiveThreadId]     = useState(null);
@@ -560,6 +557,7 @@ const ParentChat = () => {
   const isTyping          = useRef(false);
   const meRef             = useRef(null);
   const privateKeyRef     = useRef('');
+  const apiFetch = useCallback((path, options = {}) => parentApiJson(path, options, navigate), [navigate]);
 
   const activeThread = useMemo(
     () => threads.find(t => String(t._id) === activeThreadId),
@@ -785,7 +783,7 @@ const ParentChat = () => {
       mounted = false;
       socket.disconnect();
     };
-  }, [decryptForUI, decryptThreadPreview]);
+  }, [apiFetch, decryptForUI, decryptThreadPreview]);
 
   // Periodic REST catch-up keeps messages current if a reverse proxy or
   // reconnect briefly drops a Socket.IO event.
@@ -817,7 +815,7 @@ const ParentChat = () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeThreadId, me?.id, decryptForUI]);
+  }, [activeThreadId, me?.id, apiFetch, decryptForUI]);
 
   useEffect(() => {
     const check = () => setIsMobileView(window.innerWidth < 768);
@@ -903,7 +901,7 @@ const ParentChat = () => {
     } finally {
       setLoadingMessages(false);
     }
-  }, [decryptForUI, me?.id]);
+  }, [apiFetch, decryptForUI, me?.id]);
 
   const startConversation = useCallback(async (contact) => {
     setShowContacts(false);
@@ -919,7 +917,7 @@ const ParentChat = () => {
       });
       selectThread(String(thread._id));
     } catch { /* ignore */ }
-  }, [selectThread]);
+  }, [apiFetch, selectThread]);
 
   const openContacts = useCallback(async () => {
     if (contacts.length === 0) {
@@ -938,7 +936,7 @@ const ParentChat = () => {
       }
     }
     setShowContacts(true);
-  }, [contacts, me?.id]);
+  }, [apiFetch, contacts, me?.id]);
 
   const sendMessage = useCallback(() => {
     const text = draft.trim();
@@ -995,7 +993,7 @@ const ParentChat = () => {
       isTyping.current = false;
       socketRef.current?.emit('typing-stop', { threadId: activeThreadId });
     }
-  }, [draft, activeThreadId, me, decryptForUI]);
+  }, [apiFetch, draft, activeThreadId, me, decryptForUI]);
 
   const handleDraftChange = useCallback((val) => {
     setDraft(val);

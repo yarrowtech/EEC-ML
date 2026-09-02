@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -8,12 +8,10 @@ import {
   BookOpen,
   CreditCard,
   Activity,
-  MessageSquare,
   MessageCircle,
   AlertOctagon,
   FileEdit,
   FileText,
-  Search,
   Menu,
   X,
   Award,
@@ -26,28 +24,38 @@ import {
   ChevronDown,
   CheckCheck,
   Home,
-  Eye,
   LogOut,
   BarChart2,
 } from 'lucide-react';
-import AttendanceReport from './AttendanceReport';
-import AcademicReport from './AcademicReport';
-import FeesPayment from './FeesPayment';
-import HealthReport from './HealthReport';
-import ComplaintManagementSystem from './ComplaintManagementSystem';
-import AchievementsView from './AchievementsView';
-import PTMPortal from './PTMPortal';
-import ParentDashboard from './ParentDashboard';
-import ParentObservationNonAcademic from './ParentObservationNonAcademic';
-import ParentChat from './ParentChat';
-import ClassRoutine from './ClassRoutine';
-import HolidayList from './HolidayList';
-import ExcuseLetters from './ExcuseLetters';
-import ChildGrowthAnalytics from './ChildGrowthAnalytics';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { useDialog } from './useDialog';
+import './parentPortalDesign.css';
+
+const ParentDashboard = lazy(() => import('./ParentDashboard'));
+const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
+const AcademicReport = lazy(() => import('./AcademicReport'));
+const AttendanceReport = lazy(() => import('./AttendanceReport'));
+const AchievementsView = lazy(() => import('./AchievementsView'));
+const HealthReport = lazy(() => import('./HealthReport'));
+const ClassRoutine = lazy(() => import('./ClassRoutine'));
+const HolidayList = lazy(() => import('./HolidayList'));
+const FeesPayment = lazy(() => import('./FeesPayment'));
+const ParentChat = lazy(() => import('./ParentChat'));
+const PTMPortal = lazy(() => import('./PTMPortal'));
+const ComplaintManagementSystem = lazy(() => import('./ComplaintManagementSystem'));
+const ParentObservationNonAcademic = lazy(() => import('./ParentObservationNonAcademic'));
+const ExcuseLetters = lazy(() => import('./ExcuseLetters'));
+
+const PortalRouteFallback = () => (
+  <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-live="polite">
+    <div className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-600 shadow-sm backdrop-blur-sm">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" aria-hidden="true" />
+      Loading page…
+    </div>
+  </div>
+);
 
 // Navigation is grouped so a parent scans by intent, not through a flat list.
 const NAV_GROUPS = [
@@ -91,11 +99,11 @@ const NAV_GROUPS = [
   },
 ];
 
-const MENU_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
-
 const ParentPortal = () => {
   const prefersReducedMotion = useReducedMotion();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => (
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024
+  ));
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -156,11 +164,22 @@ const ParentPortal = () => {
   }, [sidebarOpen]);
 
   useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+    const handleBreakpointChange = (event) => {
+      setSidebarOpen(event.matches);
+      setProfileOpen(false);
+      setShowNotifications(false);
+    };
+    desktopQuery.addEventListener?.('change', handleBreakpointChange);
+    return () => desktopQuery.removeEventListener?.('change', handleBreakpointChange);
+  }, []);
+
+  useEffect(() => {
     const handler = (event) => {
-      if (profileRef.current && !profileRef.current.contains(event.target)) {
+      if (profileRef.current && !profileRef.current.contains(event.target) && !event.target.closest('[data-profile-control]')) {
         setProfileOpen(false);
       }
-      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target) && !event.target.closest('[data-notification-control]')) {
         setShowNotifications(false);
       }
     };
@@ -179,45 +198,21 @@ const ParentPortal = () => {
       ? location.pathname
       : location.pathname.replace(/^\/parent(\/|$)/, '/parents$1')
   );
-  const activePageTitle = useMemo(() => {
-    const active = MENU_ITEMS.find((item) => {
-      const targetPath = normalizePath(item.path);
-      const isRootLink = targetPath === '/parents';
-      return isRootLink
-        ? currentPath === targetPath
-        : currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
-    });
-    return active?.label || 'Parent Portal';
-  }, [currentPath]);
-
   const handleMenuClick = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
   };
-  const toggleProfile = useCallback(() => {
-    setProfileOpen((prev) => !prev);
-  }, []);
-
   const childrenCount = Array.isArray(parentProfile?.children)
     ? parentProfile.children.length
     : 0;
   const wardLabel = childrenCount === 1 ? 'child' : 'children';
   const parentName = String(parentProfile?.name || 'Parent').trim();
   const nameParts = parentName.split(/\s+/).filter(Boolean);
-  const firstName = nameParts[0] || 'Parent';
   const initials = (nameParts.length >= 2
     ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
     : (nameParts[0]?.[0] || 'P')
   ).toUpperCase();
-  const { greeting, dateLabel } = useMemo(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    const g = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    const d = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-    return { greeting: g, dateLabel: d };
-  }, []);
-
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item?.isRead).length,
     [notifications]
@@ -308,14 +303,12 @@ const ParentPortal = () => {
     }
   }, [API_BASE, fetchNotifs, navigate]);
 
-  const handleToggleNotifications = useCallback(async () => {
+  const handleToggleNotifications = useCallback(() => {
     const nextOpen = !showNotifications;
-    if (nextOpen && unreadCount > 0) {
-      await markAllRead();
-    }
     setShowNotifications(nextOpen);
     setProfileOpen(false);
-  }, [markAllRead, showNotifications, unreadCount]);
+    if (nextOpen && !sidebarOpen) setSidebarOpen(true);
+  }, [showNotifications, sidebarOpen]);
 
   const timeAgo = useCallback((value) => {
     if (!value) return '';
@@ -430,7 +423,8 @@ const ParentPortal = () => {
       </button>}
 
       {sidebarOpen && (
-        <div
+        <button
+          type="button"
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-label="Close sidebar backdrop"
@@ -438,8 +432,8 @@ const ParentPortal = () => {
       )}
 
       <div
-        className={`parent-sidebar fixed lg:relative h-screen bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex flex-col border-r border-gray-200 overflow-hidden
-          ${sidebarOpen ? 'w-80' : 'w-20'}
+        className={`parent-sidebar fixed lg:relative h-[100dvh] min-h-0 shrink-0 bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex flex-col border-r border-gray-200 overflow-hidden
+          ${sidebarOpen ? 'w-[min(20rem,calc(100vw-1rem))] lg:w-80' : 'w-20'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
         style={{
@@ -510,7 +504,7 @@ const ParentPortal = () => {
           </div>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto modern-scrollbar ${sidebarOpen ? 'px-4 py-5 space-y-4' : 'px-1 py-4 space-y-3'}`}>
+        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain modern-scrollbar ${sidebarOpen ? 'px-4 py-5 space-y-4' : 'px-1 py-4 space-y-3'}`}>
           {NAV_GROUPS.map((group, groupIndex) => (
             <div key={group.heading || 'primary'} className={sidebarOpen ? 'space-y-1' : 'space-y-1'}>
               {group.heading && sidebarOpen && (
@@ -564,12 +558,108 @@ const ParentPortal = () => {
           ))}
         </nav>
 
-        <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t border-gray-200`}>
+        <div className={`${sidebarOpen ? 'p-3' : 'p-2'} shrink-0 border-t border-gray-200 bg-white`}>
+          {sidebarOpen && showNotifications && (
+            <section ref={notificationsRef} aria-label="Notifications panel" className="mb-3 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-lg">
+              <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Bell size={15} className="text-violet-600" />
+                  <span className="text-sm font-bold text-gray-900">Notifications</span>
+                  {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
+                </div>
+                {unreadCount > 0 && (
+                  <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
+                    <CheckCheck size={12} /> Mark all read
+                  </button>
+                )}
+              </div>
+              <div className="max-h-[30dvh] min-h-0 divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
+                {notifLoading && <p className="px-3 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
+                {!notifLoading && notifError && <p role="alert" className="px-3 py-4 text-xs text-red-600">{notifError}</p>}
+                {!notifLoading && !notifError && notifications.length === 0 && <p className="px-3 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
+                {!notifLoading && !notifError && notifications.map((notification) => {
+                  const id = String(notification?._id || notification?.id || '');
+                  const isRead = Boolean(notification?.isRead);
+                  return (
+                    <button
+                      key={id || notification?.title}
+                      type="button"
+                      onClick={async () => {
+                        await markRead(id);
+                        setShowNotifications(false);
+                        navigate(resolveNotifPath(notification));
+                        if (window.innerWidth < 1024) setSidebarOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
+                    >
+                      <span className="flex items-start gap-2">
+                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
+                          {notification?.message && <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500">{formatNotificationMessage(notification.message)}</span>}
+                          <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {sidebarOpen && profileOpen && (
+            <section ref={profileRef} aria-label="Profile panel" className="mb-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-gray-900">{parentName}</p>
+                  <p className="text-[11px] text-gray-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setProfileOpen(false); navigate('/parents'); }} className="mt-3 flex w-full items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-violet-100">
+                <User size={15} className="text-violet-600" /> Open dashboard
+              </button>
+            </section>
+          )}
+
+          <div className={`grid gap-2 ${sidebarOpen ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <motion.button
+              data-notification-control
+              type="button"
+              onClick={handleToggleNotifications}
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
+              aria-expanded={showNotifications}
+              aria-label="Notifications"
+              className={`relative flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${showNotifications ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Bell size={18} />
+              {sidebarOpen && <span className="text-xs font-semibold">Notifications</span>}
+              {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+            </motion.button>
+            <motion.button
+              data-profile-control
+              type="button"
+              onClick={() => {
+                if (!sidebarOpen) setSidebarOpen(true);
+                setProfileOpen((open) => !open);
+                setShowNotifications(false);
+              }}
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
+              aria-expanded={profileOpen}
+              aria-label="Profile"
+              className={`flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${profileOpen ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              <User size={18} />
+              {sidebarOpen && <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold">Profile</span>}
+              {sidebarOpen && <ChevronDown size={13} className={`transition-transform ${profileOpen ? 'rotate-180' : ''}`} />}
+            </motion.button>
+          </div>
+
           <button
             type="button"
             onClick={handleLogout}
-            className={`group relative w-full flex items-center rounded-xl transition-all duration-300 ease-out transform ${
-              sidebarOpen ? 'px-4 py-3' : 'px-0 py-2 justify-center'
+            className={`group relative mt-2 w-full flex items-center rounded-xl transition-all duration-300 ease-out transform ${
+              sidebarOpen ? 'px-3 py-2.5' : 'px-0 py-2 justify-center'
             } text-red-600 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 active:scale-95`}
           >
             <div className={`flex items-center justify-center rounded-lg transition-all duration-300 ${
@@ -587,8 +677,10 @@ const ParentPortal = () => {
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col h-screen bg-gray-50">
-        <div className="flex-1 overflow-y-auto p-2 sm:p-3">
+      <div className="flex-1 min-w-0 flex flex-col h-screen bg-slate-50">
+        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-2 sm:p-3">
+          <div className="h-full min-h-full rounded-[2rem] border border-white/80 bg-white/40 shadow-sm backdrop-blur-sm">
+          <Suspense fallback={<PortalRouteFallback />}>
           <Routes>
             <Route
               path="/"
@@ -615,8 +707,11 @@ const ParentPortal = () => {
             {/* "Results" merged into the Report Card screen — keep the old path working. */}
             <Route path="results" element={<Navigate to="/parents/academic" replace />} />
             <Route path="achievements" element={<AchievementsView />} />
+            <Route path="*" element={<Navigate to="/parents" replace />} />
           </Routes>
-        </div>
+          </Suspense>
+          </div>
+        </main>
       </div>
     </div>
     <DesktopNotificationPermissionModal

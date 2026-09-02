@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
@@ -45,6 +46,7 @@ const Chips = ({ items, tone = 'slate', empty }) => {
 };
 
 const HealthReport = () => {
+  const navigate = useNavigate();
   const selectId = useId();
   const [children, setChildren] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -57,7 +59,7 @@ const HealthReport = () => {
       setLoading(true);
       setError('');
       try {
-        const data = await parentApiJson('/api/parent/auth/health');
+        const data = await parentApiJson('/api/parent/auth/health', {}, navigate);
         if (!active) return;
         const list = Array.isArray(data?.children) ? data.children : [];
         setChildren(list);
@@ -71,7 +73,7 @@ const HealthReport = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [navigate]);
 
   const child = useMemo(
     () => children.find((c) => String(c.studentId) === String(selectedId)) || children[0] || null,

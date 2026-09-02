@@ -527,7 +527,7 @@ const FeesPayment = () => {
         </header>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <aside className="space-y-4 lg:col-span-1">
+          <div className="space-y-4 lg:col-span-1">
             <div>
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-700">Select Child</span>
@@ -536,7 +536,7 @@ const FeesPayment = () => {
                 </button>
               </div>
 
-              <div className="fees-child-list -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:block lg:space-y-2 lg:px-0 lg:pb-0" role="listbox" aria-label="Children">
+              <div className="fees-child-list -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:block lg:space-y-2 lg:px-0 lg:pb-0" role={children.length ? 'listbox' : undefined} aria-label="Children">
                 {loadingChildren && children.length === 0 ? (
                   <div className="fees-child-card flex w-full items-center gap-3 rounded-xl p-3 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-purple-500" /> Loading children…</div>
                 ) : children.length === 0 ? (
@@ -578,9 +578,9 @@ const FeesPayment = () => {
                 <span className="self-end text-xs font-medium text-emerald-600">This session</span>
               </div>
             </div>
-          </aside>
+          </div>
 
-          <main className="min-w-0 lg:col-span-2">
+          <div className="min-w-0 lg:col-span-2">
             <div className="mb-4">
               <div><h2 className="text-base font-semibold text-slate-700 lg:text-sm">Transaction History &amp; Dues</h2><p className="mt-0.5 text-xs text-slate-400">All invoices for the selected academic session</p></div>
               <div className="mt-3 flex items-center justify-end gap-3 text-xs text-slate-400 lg:mt-2 lg:gap-1.5" aria-label="Status legend">
@@ -658,7 +658,7 @@ const FeesPayment = () => {
                 </div>
               </section>
             )}
-          </main>
+          </div>
         </div>
       </section>
 

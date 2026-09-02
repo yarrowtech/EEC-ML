@@ -94,7 +94,9 @@ jest.mock('../HolidayList', () => {
 jest.mock('../../utils/authSession', () => ({
   AUTH_NOTICE: {
     LOGGED_OUT: 'Logged out successfully',
+    EXPIRED: 'expired',
   },
+  apiFetch: jest.fn((url, options) => global.fetch(url, options)),
   logoutAndRedirect: jest.fn(),
 }));
 
@@ -185,8 +187,7 @@ describe('ParentPortal', () => {
   });
 
   describe('Profile Loading Tests', () => {
-    test.skip('loads parent profile on mount', async () => {
-      // TODO: Fix async timing issue with fetch mock
+    test('loads parent profile on mount', async () => {
       render(
         <MemoryRouter initialEntries={['/parents']}>
           <Routes>
@@ -208,8 +209,7 @@ describe('ParentPortal', () => {
       }, { timeout: 5000 });
     });
 
-    test.skip('displays parent name when profile is loaded', async () => {
-      // TODO: Fix async timing issue with profile loading
+    test('displays parent name when profile is loaded', async () => {
       render(
         <MemoryRouter initialEntries={['/parents']}>
           <Routes>
@@ -219,12 +219,11 @@ describe('ParentPortal', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(mockParentProfile.name)).toBeInTheDocument();
+        expect(screen.getAllByText(mockParentProfile.name).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
 
-    test.skip('displays children count correctly', async () => {
-      // TODO: Fix async timing issue with profile loading
+    test('displays children count correctly', async () => {
       render(
         <MemoryRouter initialEntries={['/parents']}>
           <Routes>
@@ -235,7 +234,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === 'Monitoring 2 wards';
+          return element?.textContent === '2 children';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });
@@ -404,7 +403,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-80');
+        expect(sidebar).toHaveClass('lg:w-80');
       });
     });
 
@@ -458,7 +457,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-80');
+        expect(sidebar).toHaveClass('lg:w-80');
       });
     });
 
@@ -478,6 +477,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
+      fireEvent.click(screen.getByLabelText('Open sidebar'));
       const attendanceLink = screen.getByText('Attendance');
       fireEvent.click(attendanceLink);
 
@@ -557,8 +557,7 @@ describe('ParentPortal', () => {
   });
 
   describe('Active Route Highlighting', () => {
-    test.skip('dashboard link is highlighted when on dashboard route', async () => {
-      // TODO: Fix route highlighting test
+    test('dashboard link is highlighted when on dashboard route', async () => {
       render(
         <MemoryRouter initialEntries={['/parents']}>
           <Routes>
@@ -572,12 +571,12 @@ describe('ParentPortal', () => {
       });
 
       const dashboardLink = screen.getByText('Dashboard').closest('a');
-      expect(dashboardLink).toHaveClass('from-yellow-100');
-      expect(dashboardLink).toHaveClass('border-yellow-500');
+      expect(dashboardLink).toHaveAttribute('aria-current', 'page');
+      expect(dashboardLink).toHaveClass('bg-violet-50');
+      expect(dashboardLink).toHaveClass('border-violet-600');
     });
 
-    test.skip('attendance link is highlighted when on attendance route', async () => {
-      // TODO: Fix route highlighting test
+    test('attendance link is highlighted when on attendance route', async () => {
       render(
         <MemoryRouter initialEntries={['/parents/attendance']}>
           <Routes>
@@ -588,14 +587,15 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const attendanceLink = screen.getAllByText('Attendance')[0].closest('a');
-        expect(attendanceLink).toHaveClass('from-yellow-100');
-        expect(attendanceLink).toHaveClass('border-yellow-500');
+        expect(attendanceLink).toHaveAttribute('aria-current', 'page');
+        expect(attendanceLink).toHaveClass('bg-violet-50');
+        expect(attendanceLink).toHaveClass('border-violet-600');
       });
     });
   });
 
   describe('Responsive Behavior', () => {
-    test('shows backdrop on mobile when sidebar is open', async () => {
+    test('keeps the mobile sidebar closed initially and shows a backdrop after opening it', async () => {
       global.innerWidth = 500;
 
       render(
@@ -606,10 +606,9 @@ describe('ParentPortal', () => {
         </MemoryRouter>
       );
 
-      await waitFor(() => {
-        const backdrop = screen.getByLabelText('Close sidebar backdrop');
-        expect(backdrop).toBeInTheDocument();
-      });
+      expect(screen.queryByLabelText('Close sidebar backdrop')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText('Open sidebar'));
+      expect(await screen.findByLabelText('Close sidebar backdrop')).toBeInTheDocument();
     });
 
     test('clicking backdrop closes sidebar on mobile', async () => {
@@ -623,6 +622,7 @@ describe('ParentPortal', () => {
         </MemoryRouter>
       );
 
+      fireEvent.click(screen.getByLabelText('Open sidebar'));
       await waitFor(() => {
         const backdrop = screen.getByLabelText('Close sidebar backdrop');
         expect(backdrop).toBeInTheDocument();
@@ -673,8 +673,7 @@ describe('ParentPortal', () => {
       });
     });
 
-    test.skip('handles parent profile with single child (singular ward)', async () => {
-      // TODO: Fix async timing issue with profile loading
+    test('handles parent profile with single child', async () => {
       mockFetch = createMockFetch({
         'http://localhost:5000/api/parent/auth/profile': {
           ok: true,
@@ -703,7 +702,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === 'Monitoring 1 ward';
+          return element?.textContent === '1 child';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });

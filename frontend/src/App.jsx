@@ -1,27 +1,37 @@
+import React, { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import "./App.css";
-import LoginForm from "./components/LoginForm";
-import SignupForm from "./components/SignupForm";
-import Dashboard from "./components/Dashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AuthSessionManager from "./components/AuthSessionManager";
-import ComplaintManagementSystem from "./parents/ComplaintManagementSystem";
-import AdminApp from "./admin/AdminApp";
-import PrincipalDashboard from "./principal/PrincipalDashboard";
-import ProfileUpdate from "./components/ProfileUpdate";
-import ParentPortal from "./parents/ParentPortal";
-import TeacherPortal from "./teachers/TeacherPortal";
-import FeedbackPage from "./pages/FeedbackPage";
-import FeedbackThankYou from "./pages/FeedbackThankYou";
-import MeetTheDeveloper from "./pages/MeetTheDeveloper";
-import SchoolRegistrationForm from "./components/SchoolRegistrationForm";
-import SchoolRegistrationSuccess from "./components/SchoolRegistrationSuccess";
 import FloatingGamesButton from "./components/FloatingGamesButton";
-import GamesPage from "./games/GamesPage";
-import SuperAdminApp from "./Super Admin/SuperAdminApp";
-import ArchivedStudents from "./admin/ArchivedStudents";
-import AdminFeeQrDisplay from "./admin/pages/AdminFeeQrDisplay";
+
+const LoginForm = lazy(() => import("./components/LoginForm"));
+const SignupForm = lazy(() => import("./components/SignupForm"));
+const Dashboard = lazy(() => import("./components/Dashboard"));
+const ComplaintManagementSystem = lazy(() =>
+  import("./parents/ComplaintManagementSystem"),
+);
+const AdminApp = lazy(() => import("./admin/AdminApp"));
+const PrincipalDashboard = lazy(() => import("./principal/PrincipalDashboard"));
+const ProfileUpdate = lazy(() => import("./components/ProfileUpdate"));
+const ParentPortal = lazy(() => import("./parents/ParentPortal"));
+const TeacherPortal = lazy(() => import("./teachers/TeacherPortal"));
+const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
+const FeedbackThankYou = lazy(() => import("./pages/FeedbackThankYou"));
+const MeetTheDeveloper = lazy(() => import("./pages/MeetTheDeveloper"));
+const SchoolRegistrationForm = lazy(() =>
+  import("./components/SchoolRegistrationForm"),
+);
+const SchoolRegistrationSuccess = lazy(() =>
+  import("./components/SchoolRegistrationSuccess"),
+);
+const GamesPage = lazy(() => import("./games/GamesPage"));
+const SuperAdminApp = lazy(() => import("./Super Admin/SuperAdminApp"));
+const ArchivedStudents = lazy(() => import("./admin/ArchivedStudents"));
+const AdminFeeQrDisplay = lazy(() =>
+  import("./admin/pages/AdminFeeQrDisplay"),
+);
 
 const ROLES = Object.freeze({
   STUDENT: "Student",
@@ -85,7 +95,14 @@ function App() {
   return (
     <BrowserRouter>
       <AuthSessionManager />
-      <Routes>
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center" role="status">
+            <span className="sr-only">Loading page</span>
+          </div>
+        }
+      >
+        <Routes>
         {/* Public routes */}
         <Route path="/" element={<LoginForm />} />
         <Route path="/signup" element={<SignupForm />} />
@@ -179,7 +196,8 @@ function App() {
           element={withAuth([ROLES.TEACHER], <TeacherPortal />)}
         />
 
-      </Routes>
+        </Routes>
+      </Suspense>
 
       <FloatingGamesButton />
       <Toaster
