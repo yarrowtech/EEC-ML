@@ -453,27 +453,24 @@ const ParentPortal = () => {
           <div className={`transition-all duration-400 ease-in-out ${sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none absolute inset-0'}`}>
             <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-violet-600 to-violet-500 opacity-95" />
             <div className="relative px-4 py-5">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="relative">
+              <div className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="relative shrink-0">
                     <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-lg border border-white/30">
                       <Users className="w-6 h-6 text-white" />
                     </div>
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse" />
                   </div>
-                  <div className="text-white">
+                  <div className="min-w-0 flex-1 text-white">
                     <div className="font-semibold text-lg leading-tight">
                       {parentProfile?.name ? `${parentProfile.name}` : 'Parent Portal'}
                     </div>
                     <div className="text-white/80 text-xs">
                       {childrenCount ? `${childrenCount} ${wardLabel}` : 'Your children'}
                     </div>
-                    <div className="text-white/70 text-xs mt-1">
-                      Stay updated with weekly progress
-                    </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="ml-auto flex shrink-0 gap-2">
                   <button
                     onClick={() => setSidebarOpen(false)}
                     className="hidden lg:flex p-2 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"

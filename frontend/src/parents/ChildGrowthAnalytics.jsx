@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   TrendingUp,
   Heart,
@@ -45,6 +46,7 @@ import {
   Pie,
 } from 'recharts';
 import { parentApiJson } from './parentApi';
+import AnalyticsPureWhiteDashboard from './AnalyticsPureWhiteDashboard';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const moodIcon = (rating) => {
@@ -77,6 +79,16 @@ const scoreLabel = (s) => {
 
 const PIE_COLORS = ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6', '#06b6d4'];
 
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+};
+
 // ── Student selector ──────────────────────────────────────────────────────────
 const StudentPill = ({ students, selectedId, onSelect }) => (
   <div className="flex flex-wrap gap-2">
@@ -86,11 +98,11 @@ const StudentPill = ({ students, selectedId, onSelect }) => (
         onClick={() => onSelect(s._id)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
           selectedId === s._id
-            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
-            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+            ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-200'
+            : 'bg-white/70 text-slate-600 border-white/80 hover:border-purple-300 hover:text-purple-600 backdrop-blur-sm'
         }`}
       >
-        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${selectedId === s._id ? 'bg-white/20' : 'bg-indigo-100 text-indigo-700'}`}>
+        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${selectedId === s._id ? 'bg-white/20' : 'bg-purple-100 text-purple-700'}`}>
           {s.name?.[0]?.toUpperCase() || 'S'}
         </div>
         {s.name}
@@ -868,51 +880,127 @@ const ChildGrowthAnalytics = () => {
   const overallSkillScore = skillsData?.overallSkillScore;
   const holistic = skillsData?.holistic || null;
 
+  if (selectedStudent) {
+    return (
+      <div className="min-h-screen bg-white">
+        <AnalyticsPureWhiteDashboard
+          students={students}
+          selectedId={selectedId}
+          selectedStudent={selectedStudent}
+          onSelectStudent={handleSelectStudent}
+          academicData={academicData}
+          wellbeingData={wellbeingData}
+          skillsData={skillsData}
+          loadingAcademic={loadingAcademic}
+          loadingWellbeing={loadingWellbeing}
+          loadingSkills={loadingSkills}
+          onOpen={setActiveSidebar}
+        />
+
+        {activeSidebar && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+              onClick={() => setActiveSidebar(null)}
+            />
+            <div
+              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-slate-50 shadow-2xl"
+              style={{ animation: 'analyticsSlideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+            >
+              {activeSidebar === 'academic' ? (
+                <AcademicSidebar data={academicData} onClose={() => setActiveSidebar(null)} />
+              ) : activeSidebar === 'wellbeing' ? (
+                <WellbeingSidebar data={wellbeingData} onClose={() => setActiveSidebar(null)} />
+              ) : (
+                <SkillsSidebar data={skillsData} onClose={() => setActiveSidebar(null)} />
+              )}
+            </div>
+          </>
+        )}
+
+        <style>{`
+          @keyframes analyticsSlideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 relative">
+    <motion.div
+      className="relative mx-auto min-h-screen max-w-7xl space-y-6 overflow-hidden rounded-[2rem] bg-slate-50/50 p-4 sm:p-6 lg:p-8"
+      initial="hidden"
+      animate="visible"
+      variants={containerVariants}
+    >
+      <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
+        <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-purple-200/30 blur-3xl" />
+        <div className="absolute -bottom-28 -left-20 h-96 w-96 rounded-full bg-emerald-200/20 blur-3xl" />
+      </div>
       {/* Page header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-md shadow-indigo-200">
-            <BarChart2 size={18} className="text-white" />
+      <motion.header
+        variants={itemVariants}
+        className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/70 p-6 shadow-sm backdrop-blur-xl"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-300 shadow-md shadow-purple-200">
+            <BarChart2 size={19} className="text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-black text-slate-900">Child Growth Analytics</h1>
-            <p className="text-xs text-slate-400 font-medium">Academic performance & emotional wellbeing at a glance</p>
+            <h1 className="bg-gradient-to-r from-slate-900 to-purple-700 bg-clip-text text-2xl font-extrabold text-transparent">Child Growth Analytics</h1>
+            <p className="text-sm text-slate-500">Academic performance &amp; emotional wellbeing at a glance</p>
           </div>
         </div>
-      </div>
+
+        {selectedStudent && (
+          <div className="flex items-center gap-2 rounded-full border border-white/70 bg-white/60 py-1 pl-1 pr-4 shadow-sm backdrop-blur-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-purple-300 text-sm font-semibold text-white shadow-md">
+              {selectedStudent.name?.[0]?.toUpperCase() || 'S'}
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold text-slate-800">{selectedStudent.name}</p>
+              <p className="text-xs text-slate-500">
+                {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : 'Student'}
+                {selectedStudent.section ? ` · Section ${selectedStudent.section}` : ''}
+              </p>
+            </div>
+          </div>
+        )}
+      </motion.header>
 
       {/* Student selector */}
       {students.length > 1 && (
-        <div className="mb-5">
+        <motion.div variants={itemVariants}>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Select Child</p>
           <StudentPill students={students} selectedId={String(selectedId)} onSelect={handleSelectStudent} />
-        </div>
+        </motion.div>
       )}
 
       {/* Student banner */}
       {selectedStudent && (
-        <div className="mb-5 bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl px-5 py-4 flex items-center gap-4 text-white shadow-lg">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-lg font-black shadow">
+        <motion.div variants={itemVariants} className="flex items-center gap-4 rounded-2xl border border-white/70 bg-white/60 px-5 py-4 text-slate-800 shadow-sm backdrop-blur-xl">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-purple-300 flex items-center justify-center text-lg font-black text-white shadow">
             {selectedStudent.name?.[0]?.toUpperCase() || 'S'}
           </div>
           <div>
             <p className="font-black text-base leading-tight">{selectedStudent.name}</p>
-            <p className="text-slate-400 text-xs font-semibold">
+            <p className="text-slate-500 text-xs font-semibold">
               {selectedStudent.grade ? `Grade ${selectedStudent.grade}` : ''}
               {selectedStudent.section ? ` · Section ${selectedStudent.section}` : ''}
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-1 bg-white/10 rounded-full px-3 py-1.5 text-xs font-bold text-slate-300">
+          <div className="ml-auto flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             <Eye size={12} />
             Tracking growth
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Quick stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <motion.div variants={containerVariants} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Overall Mastery', value: overallMastery != null ? `${overallMastery}%` : '–', icon: Brain, color: 'indigo', loading: loadingAcademic },
           { label: 'Attendance', value: attendancePct != null ? `${attendancePct}%` : '–', icon: Calendar, color: 'emerald', loading: loadingAcademic },
@@ -921,47 +1009,51 @@ const ChildGrowthAnalytics = () => {
         ].map((stat) => {
           const Icon = stat.icon;
           const colors = {
-            indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-            emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-            rose: 'bg-rose-50 text-rose-600 border-rose-100',
-            amber: 'bg-amber-50 text-amber-600 border-amber-100',
+            indigo: 'bg-purple-50 text-purple-600 border-purple-200',
+            emerald: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+            rose: 'bg-rose-50 text-rose-600 border-rose-200',
+            amber: 'bg-amber-50 text-amber-600 border-amber-200',
             orange: 'bg-orange-50 text-orange-600 border-orange-100',
             slate: 'bg-slate-50 text-slate-500 border-slate-100',
           };
           return (
-            <div key={stat.label} className={`rounded-2xl border px-4 py-3 ${colors[stat.color]}`}>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon size={13} />
-                <p className="text-[10px] font-black uppercase tracking-wider opacity-70">{stat.label}</p>
+            <motion.div key={stat.label} variants={itemVariants} className={`flex items-center gap-4 rounded-2xl border p-4 transition-all hover:-translate-y-1 hover:shadow-md ${colors[stat.color]}`}>
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/80 bg-white/60 text-xl font-medium">
+                <Icon size={20} />
               </div>
-              {stat.loading ? (
-                <Loader2 size={16} className="animate-spin opacity-50" />
-              ) : (
-                <p className="text-xl font-black">{stat.value}</p>
-              )}
-            </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{stat.label}</p>
+                {stat.loading ? <Loader2 size={18} className="mt-1 animate-spin opacity-50" /> : <p className="text-2xl font-bold text-slate-800">{stat.value}</p>}
+              </div>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Holistic Development Summary — 3 sections */}
       {!loadingSkills && (
-        <div className="mb-6">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Holistic Development Overview</p>
+        <motion.section variants={itemVariants} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+              Holistic Development Overview
+            </p>
+            <span className="rounded-full border border-purple-100 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-600">Live overview</span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
 
             {/* Section 1 — Academic Growth */}
-            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-violet-50 p-4">
+            <div className="rounded-xl border border-purple-100 bg-purple-50/60 p-4 transition hover:bg-purple-50">
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-xl bg-indigo-500 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-purple-500 flex items-center justify-center">
                   <Brain size={15} className="text-white" />
                 </div>
-                <p className="text-xs font-black text-indigo-700 uppercase tracking-wide">Academic Growth</p>
+                <p className="text-xs font-black text-purple-700 uppercase tracking-wide">Academic Growth</p>
               </div>
-              <p className="text-3xl font-black text-indigo-700 mb-1">
+              <p className="text-3xl font-black text-slate-800 mb-1">
                 {holistic?.academicGrowth?.score != null ? `${holistic.academicGrowth.score}%` : '–'}
               </p>
-              <p className="text-[10px] text-indigo-400 font-semibold mb-3">Cognitive · Memory · Creative · Language</p>
+              <p className="text-[10px] text-purple-500 font-semibold mb-3">Cognitive · Memory · Creative · Language</p>
               <div className="space-y-1.5">
                 {[
                   { label: 'Cognitive', key: 'cognitive', color: 'bg-indigo-400' },
@@ -992,17 +1084,17 @@ const ChildGrowthAnalytics = () => {
             </div>
 
             {/* Section 2 — Emotional Wellbeing */}
-            <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 p-4">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 transition hover:bg-emerald-50">
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-xl bg-rose-500 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 flex items-center justify-center">
                   <Heart size={15} className="text-white" />
                 </div>
-                <p className="text-xs font-black text-rose-700 uppercase tracking-wide">Emotional Wellbeing</p>
+                <p className="text-xs font-black text-emerald-700 uppercase tracking-wide">Emotional Wellbeing</p>
               </div>
-              <p className="text-3xl font-black text-rose-700 mb-1">
+              <p className="text-3xl font-black text-slate-800 mb-1">
                 {holistic?.emotionalWellbeing?.score != null ? `${holistic.emotionalWellbeing.score}%` : '–'}
               </p>
-              <p className="text-[10px] text-rose-400 font-semibold mb-3">Social-Emotional · Physical Development</p>
+              <p className="text-[10px] text-emerald-500 font-semibold mb-3">Social-Emotional · Physical Development</p>
               <div className="space-y-1.5">
                 {[
                   { label: 'Social', key: 'socialEmotional', color: 'bg-rose-400' },
@@ -1031,7 +1123,7 @@ const ChildGrowthAnalytics = () => {
             </div>
 
             {/* Section 3 — Overall Mastery Score */}
-            <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 flex flex-col items-center justify-center text-center">
+            <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4 flex flex-col items-center justify-center text-center transition hover:bg-amber-50">
               <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center mb-3">
                 <Sparkles size={15} className="text-white" />
               </div>
@@ -1070,16 +1162,16 @@ const ChildGrowthAnalytics = () => {
             </div>
 
           </div>
-        </div>
+        </motion.section>
       )}
 
       {/* Three main analytics cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+      <motion.div variants={containerVariants} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
         {/* Academic Growth Card */}
         <button
           onClick={() => setActiveSidebar(activeSidebar === 'academic' ? null : 'academic')}
-          className={`group text-left rounded-3xl border-2 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 ${
+          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 ${
             activeSidebar === 'academic' ? 'border-indigo-400 ring-2 ring-indigo-200' : 'border-slate-100 hover:border-indigo-200'
           }`}
         >
@@ -1150,7 +1242,7 @@ const ChildGrowthAnalytics = () => {
         {/* Emotional Wellbeing Card */}
         <button
           onClick={() => setActiveSidebar(activeSidebar === 'wellbeing' ? null : 'wellbeing')}
-          className={`group text-left rounded-3xl border-2 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 ${
+          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 ${
             activeSidebar === 'wellbeing' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-slate-100 hover:border-rose-200'
           }`}
         >
@@ -1244,7 +1336,7 @@ const ChildGrowthAnalytics = () => {
         {/* Skill Development Card */}
         <button
           onClick={() => setActiveSidebar(activeSidebar === 'skills' ? null : 'skills')}
-          className={`group text-left rounded-3xl border-2 overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 ${
+          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 lg:col-span-2 ${
             activeSidebar === 'skills' ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-100 hover:border-amber-200'
           }`}
         >
@@ -1322,7 +1414,7 @@ const ChildGrowthAnalytics = () => {
           </div>
         </button>
 
-      </div>
+      </motion.div>
 
       {/* Bottom hint when no sidebar is open */}
       {!activeSidebar && (
@@ -1362,7 +1454,7 @@ const ChildGrowthAnalytics = () => {
           to { transform: translateX(0); opacity: 1; }
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 };
 

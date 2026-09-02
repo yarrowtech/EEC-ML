@@ -441,7 +441,6 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
         )}
         <div className="whitespace-pre-wrap leading-relaxed wrap-break-word">
           {visibleText}
-          <span className="inline-block w-14" aria-hidden="true" />
         </div>
         {isLong && (
           <button
@@ -453,9 +452,7 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
             {expanded ? 'Read less' : 'Read more'}
           </button>
         )}
-        <div
-          className="-mt-4 flex items-center justify-end gap-1 text-xs text-slate-400"
-        >
+        <div className="mt-1.5 flex items-center justify-end gap-1 text-[11px] leading-none text-slate-400">
           <span>{formatMessageTime(msg.createdAt || msg.ts)}</span>
           {isMine && (
             <span style={{ color: seen ? t.color : '#94a3b8' }} className="inline-flex items-center">
@@ -485,7 +482,7 @@ const ConversationItem = ({ thread, isActive, onClick, isTyping, theme }) => {
         ${isActive ? 'bg-white/65 border-white/90 shadow-md' : 'bg-white/25 border-white/35 hover:bg-white/50 hover:border-white/70'}`}
       style={isActive ? { boxShadow: `0 8px 24px ${t.color}12` } : {}}
     >
-      <Avatar src={img} name={name} size="md" ring={isActive} themeColor={t.color} />
+      <Avatar src={img} name={name} size="md" themeColor={t.color} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className={`text-sm truncate ${unread > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'}`}>
@@ -1056,7 +1053,7 @@ const ParentChat = () => {
     : (activeTeacher?.subtitle || activeTeacher?.subject || 'Teacher');
 
   return (
-    <div className="relative isolate flex min-h-[calc(100vh-1.5rem)] items-center justify-center overflow-hidden rounded-[2rem] bg-slate-100 p-2 sm:p-4 lg:p-6">
+    <div className="relative isolate flex h-full min-h-0 items-center justify-center overflow-hidden rounded-[2rem] bg-slate-100 p-2 sm:p-4 lg:p-6">
       <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
         <div className="absolute -left-24 top-12 h-80 w-80 rounded-full bg-violet-300/25 blur-3xl" />
         <div className="absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-emerald-300/20 blur-3xl" />
@@ -1069,7 +1066,7 @@ const ParentChat = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        className="flex h-[calc(100vh-3rem)] max-h-[900px] min-h-[620px] w-full max-w-7xl overflow-hidden rounded-[28px] border border-white/70 bg-white/55 shadow-2xl shadow-black/10 backdrop-blur-[20px] backdrop-saturate-[1.8]"
+        className="flex h-full min-h-0 w-full max-w-7xl overflow-hidden rounded-[28px] border border-white/70 bg-white/55 shadow-2xl shadow-black/10 backdrop-blur-[20px] backdrop-saturate-[1.8]"
       >
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
@@ -1343,7 +1340,6 @@ const ParentChat = () => {
                       src={pickImg(activeTeacher)}
                       name={activeTeacher?.name || ''}
                       size="sm"
-                      ring
                       themeColor={theme.color}
                       className="hover:opacity-90 transition-opacity cursor-pointer"
                     />
