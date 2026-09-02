@@ -14,7 +14,7 @@ import {
 export const PRINCIPAL_MENU_ITEMS = [
   {
     id: 'overview',
-    label: 'Dashboard Overview',
+    label: 'Dashboard',
     description: 'School-wide statistics and KPIs',
     path: '/principal/overview',
     icon: Home,

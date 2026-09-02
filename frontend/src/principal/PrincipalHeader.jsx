@@ -96,8 +96,9 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
     : (nameParts[0]?.[0] || 'P');
   const initialsLabel = initials.toUpperCase();
 
-  const urgentNotifications = notifications.filter((n) => n.priority === 'high');
-  const totalNotifications = notifications.length;
+  const unreadNotifications = notifications.filter((n) => !n.read);
+  const urgentNotifications = unreadNotifications.filter((n) => n.priority === 'high');
+  const totalNotifications = unreadNotifications.length;
 
   const handleLogout = () => {
     logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
@@ -126,13 +127,13 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="flex h-16 items-center px-4 sm:px-6">
+    <header className="z-40 bg-slate-50 px-4 py-4 sm:px-6">
+      <div className="flex h-12 items-center gap-3">
         {/* Left Section */}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 md:hidden"
+            className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition-colors hover:bg-slate-100 md:hidden"
             aria-label="Toggle sidebar"
           >
             <Menu className="h-5 w-5" />
@@ -141,27 +142,31 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
           {/* Search Bar */}
           <div className="relative" ref={searchRef}>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
-                placeholder="Search Principal portal..."
-                className="w-full rounded-full border border-slate-200 bg-slate-50 py-2 pl-10 pr-8 transition-all duration-200 focus:border-transparent focus:bg-white focus:ring-2 focus:ring-slate-900 sm:w-64 md:w-80"
+                placeholder="Search anything..."
+                className="h-11 w-full rounded-full border border-slate-200 bg-white py-2 pl-10 pr-16 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 sm:w-64 md:w-80"
               />
-              {searchQuery && (
+              {searchQuery ? (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
                   <X className="h-4 w-4" />
                 </button>
+              ) : (
+                <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                  Ctrl+K
+                </kbd>
               )}
             </div>
 
             {searchFocused && filteredSuggestions.length > 0 && (
-              <div className="absolute top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+              <div className="absolute top-full z-50 mt-1 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
                 <div className="py-2">
                   <div className="bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">Go to</div>
                   {filteredSuggestions.map((item) => {
@@ -187,29 +192,29 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
         </div>
 
         {/* Center Section - Current Time & Date */}
-        <div className="hidden shrink-0 items-center gap-4 text-sm text-slate-600 md:flex">
-          <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
-            <Clock className="h-4 w-4 text-slate-500" />
+        <div className="hidden shrink-0 items-center gap-3 text-sm font-medium text-slate-600 md:flex">
+          <div className="flex h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 shadow-sm">
+            <Clock className="h-4 w-4 text-slate-400" />
             <span>{now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
-            <Calendar className="h-4 w-4 text-slate-500" />
+          <div className="flex h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 shadow-sm">
+            <Calendar className="h-4 w-4 text-slate-400" />
             <span>{now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
           </div>
         </div>
 
         {/* Right Section */}
-        <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
+        <div className="flex flex-1 items-center justify-end gap-3">
           {/* Notifications */}
           <div className="relative" ref={notificationsRef}>
             <button
               onClick={() => setShowNotifications(!showNotifications)}
-              className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-100 hover:text-slate-700"
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
               {totalNotifications > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-xs text-white">
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-slate-50 bg-rose-500 px-1 text-[10px] font-bold text-white">
                   {totalNotifications > 9 ? '9+' : totalNotifications}
                 </span>
               )}
@@ -294,7 +299,7 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
           <div className="relative" ref={profileRef}>
             <button
               onClick={() => setShowProfile(!showProfile)}
-              className="flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-slate-100"
+              className="flex h-11 items-center gap-2 rounded-full border border-slate-200 bg-white pl-1.5 pr-2.5 shadow-sm transition-colors hover:bg-slate-100"
               aria-label="Profile menu"
             >
               {hasAvatar ? (

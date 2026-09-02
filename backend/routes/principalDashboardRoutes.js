@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const principalAuth = require('../middleware/principalAuth');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
@@ -37,6 +38,13 @@ const getSchoolFilter = (req) => {
   }
   return filter;
 };
+
+// Aggregation pipelines skip Mongoose's query casting, so `schoolId` must be
+// cast to ObjectId by hand or `$match` silently matches nothing.
+const getFeeAggregateMatch = (req) => ({
+  ...getSchoolFilter(req),
+  schoolId: new mongoose.Types.ObjectId(req.schoolId),
+});
 
 const buildAttendanceTrend = (students, monthsBack = 6) => {
   const now = new Date();
@@ -92,7 +100,7 @@ router.get('/overview', principalAuth, async (req, res) => {
       Subject.countDocuments(schoolFilter),
       StudentProgress.find(schoolFilter, 'overallGrade').lean(),
       FeeInvoice.aggregate([
-        { $match: schoolFilter },
+        { $match: getFeeAggregateMatch(req) },
         {
           $group: {
             _id: null,
@@ -806,7 +814,7 @@ router.get('/reports', principalAuth, async (req, res) => {
       StudentUser.find(schoolFilter, 'attendance').lean(),
       ExamResult.find(schoolFilter).lean(),
       FeeInvoice.aggregate([
-        { $match: schoolFilter },
+        { $match: getFeeAggregateMatch(req) },
         {
           $group: {
             _id: null,

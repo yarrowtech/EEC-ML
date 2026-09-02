@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
-  School, Users, GraduationCap, BookOpen, TrendingUp,
+  School, Users, User, GraduationCap, BookOpen, TrendingUp,
   AlertTriangle, Calendar, DollarSign, UserCheck, FileText,
   Bell, Settings, BarChart3, PieChart, Activity, Clock,
   Award, Target, Zap, Eye, ChevronRight, ArrowUp,
@@ -38,6 +38,15 @@ import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBri
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 
 const API_BASE = import.meta.env.VITE_API_URL;
+
+// Indian short scale for compact currency display (₹5k, ₹1.2L, ₹3.4Cr).
+const formatCompactINR = (value = 0) => {
+  const n = Number(value) || 0;
+  if (n >= 1e7) return `₹${(n / 1e7).toFixed(n % 1e7 === 0 ? 0 : 1)}Cr`;
+  if (n >= 1e5) return `₹${(n / 1e5).toFixed(n % 1e5 === 0 ? 0 : 1)}L`;
+  if (n >= 1e3) return `₹${(n / 1e3).toFixed(n % 1e3 === 0 ? 0 : 1)}k`;
+  return `₹${n}`;
+};
 
 const formatRelativeLabel = (timestamp) => {
   if (!timestamp) return '';
@@ -80,6 +89,7 @@ const PrincipalDashboard = () => {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
@@ -114,6 +124,17 @@ const PrincipalDashboard = () => {
 
   useEffect(() => {
     fetchOverview(true);
+  }, [fetchOverview]);
+
+  // Manual refresh (the header/hero "Refresh" button): shows its own
+  // "Refreshing..." state on the button instead of the full-page loading banner.
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchOverview(false);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [fetchOverview]);
 
   useEffect(() => {
@@ -234,15 +255,9 @@ const PrincipalDashboard = () => {
     totalClasses: overview?.stats?.totalClasses || 0,
     activeParents: overview?.stats?.totalParents || 0,
     attendanceRate: overview?.attendance?.rate || 0,
-    currentRevenue: overview?.fees?.paidAmount
-      ? Number((overview.fees.paidAmount / 1_000_000).toFixed(2))
-      : 0,
-    totalRevenue: overview?.fees?.totalAmount
-      ? Number((overview.fees.totalAmount / 1_000_000).toFixed(2))
-      : 0,
-    balanceRevenue: overview?.fees?.balanceAmount
-      ? Number((overview.fees.balanceAmount / 1_000_000).toFixed(2))
-      : 0,
+    currentRevenue: overview?.fees?.paidAmount || 0,
+    totalRevenue: overview?.fees?.totalAmount || 0,
+    balanceRevenue: overview?.fees?.balanceAmount || 0,
   };
 
   // Calculate growth percentage from API data
@@ -324,17 +339,17 @@ const PrincipalDashboard = () => {
       value: `${schoolStats.attendanceRate.toFixed(1)}%`,
       change: '',
       changeType: 'neutral',
-      icon: UserCheck,
+      icon: TrendingUp,
       color: 'bg-orange-600',
       drillDown: 'attendance'
     },
     {
-      title: 'Paid Revenue (M)',
-      value: `$${schoolStats.currentRevenue}M`,
+      title: 'Paid Revenue',
+      value: formatCompactINR(schoolStats.currentRevenue),
       change: `${monthlyGrowth.toFixed(1)}%`,
       changeType: monthlyGrowth > 0 ? 'increase' : 'neutral',
       icon: DollarSign,
-      color: 'bg-indigo-600',
+      color: 'bg-rose-600',
       drillDown: 'finance'
     },
     {
@@ -342,8 +357,8 @@ const PrincipalDashboard = () => {
       value: schoolStats.activeParents.toLocaleString(),
       change: '',
       changeType: 'neutral',
-      icon: Award,
-      color: 'bg-yellow-500',
+      icon: User,
+      color: 'bg-purple-600',
       drillDown: 'students'
     }
   ];
@@ -470,7 +485,8 @@ const PrincipalDashboard = () => {
       recentActivities={recentActivities}
       monthlyGrowth={monthlyGrowth}
       schoolName={resolvedSchoolName}
-      onRefreshOverview={() => fetchOverview(true)}
+      isRefreshing={isRefreshing}
+      onRefreshOverview={handleManualRefresh}
     />
   );
 
