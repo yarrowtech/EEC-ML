@@ -311,7 +311,30 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
   // #swagger.tags = ['Principal Dashboard']
   try {
     const schoolFilter = getSchoolFilter(req);
-    const students = await StudentUser.find(schoolFilter, 'name grade attendance').lean();
+
+    const { academicYearId } = req.query;
+    let selectedYear = null;
+    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
+      selectedYear = await AcademicYear.findOne({ _id: academicYearId, schoolId: req.schoolId }).lean();
+    }
+    if (!selectedYear) {
+      selectedYear = await AcademicYear.findOne({ schoolId: req.schoolId, isActive: true }).lean();
+    }
+
+    // Same "active" rule as the overview/report-card endpoints: a student who
+    // has left, been expelled, or been archived shouldn't inflate enrollment
+    // or attendance figures.
+    const studentFilter = {
+      ...schoolFilter,
+      isArchived: { $ne: true },
+      status: { $nin: EXITED_STUDENT_STATUSES },
+    };
+    if (selectedYear) {
+      const matcher = buildAcademicYearMatcher(selectedYear.name);
+      if (matcher) studentFilter.academicYear = matcher;
+    }
+
+    const students = await StudentUser.find(studentFilter, 'name grade attendance').lean();
     const studentIds = students.map((student) => student._id);
 
     const progressFilter = { schoolId: req.schoolId };
@@ -332,9 +355,20 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
     const last30 = new Date();
     last30.setDate(last30.getDate() - 30);
 
+    // Cumulative across all recorded attendance — matches how the Overview
+    // and Academic Analytics pages compute their attendance figure, so this
+    // page doesn't show a different number for the same students.
     let attendanceTotal = 0;
     let attendancePresent = 0;
+    students.forEach((student) => {
+      (student.attendance || []).forEach((entry) => {
+        attendanceTotal += 1;
+        if (entry.status === 'present') attendancePresent += 1;
+      });
+    });
 
+    // "Top students" is deliberately a recent (last-30-day) leaderboard, so
+    // it keeps its own windowed rate rather than the cumulative one above.
     const topStudents = students
       .map((student) => {
         let total = 0;
@@ -348,8 +382,6 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
           }
         });
 
-        attendanceTotal += total;
-        attendancePresent += present;
         return {
           id: student._id,
           name: student.name || 'Student',
@@ -378,6 +410,9 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
         .map(([grade, count]) => ({ grade, students: count }))
         .sort((a, b) => b.students - a.students),
       topStudents,
+      academicYear: selectedYear
+        ? { _id: selectedYear._id, name: selectedYear.name, isActive: Boolean(selectedYear.isActive) }
+        : null,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
