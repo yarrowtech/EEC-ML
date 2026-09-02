@@ -570,10 +570,10 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
             {/* ── Desktop search — glass pill ── */}
             <div ref={desktopSearchRef} className="hidden lg:flex flex-1 max-w-md relative">
               <form
-                className={`relative w-full flex items-center gap-2 rounded-full border pl-4 pr-1.5 py-0.5 transition-all ${
+                className={`relative w-full flex items-center gap-2 rounded-full border border-gray-400 pl-4 pr-1.5 py-0.5 transition-all ${
                   isSearchFocused
                     ? 'bg-white/70 border-white/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]'
-                    : 'bg-white/30 border-white/40'
+                    : 'bg-white border-gray-400/50 hover:bg-white/60 hover:border-white/70'
                 }`}
                 onSubmit={handleSearch}
               >
@@ -595,7 +595,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                       ? `desktop-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
+                  className="w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
                 />
                 {searchQuery ? (
                   <button
