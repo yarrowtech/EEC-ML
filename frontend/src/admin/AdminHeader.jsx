@@ -542,13 +542,13 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="sticky top-0 z-30 px-3 sm:px-4 pt-2.5 pb-2 bg-gradient-to-b from-white/70 via-white/40 to-transparent backdrop-blur-[2px]"
+        className="sticky top-0 z-30 px-3 sm:px-0 bg-gradient-to-b from-grey/70 via-grey/40 to-transparent backdrop-blur-[2px]"
       >
         <div className="mx-auto max-w-[1200px]">
           <motion.div
             whileHover={{ y: -1 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 sm:gap-3 rounded-[1.75rem] border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70 hover:border-white/90"
+            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70 hover:border-white/90"
           >
             {/* ── Mobile hamburger ── */}
             <button
@@ -595,7 +595,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                       ? `desktop-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2"
+                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
                 />
                 {searchQuery ? (
                   <button
