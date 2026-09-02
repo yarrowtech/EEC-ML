@@ -237,10 +237,10 @@ const ParentObservationNonAcademic = () => {
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header */}
       <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
               <Eye size={14} />
               <span>Wellbeing tracker</span>
             </div>
@@ -281,13 +281,13 @@ const ParentObservationNonAcademic = () => {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-session" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Academic Year</label>
+                    <label htmlFor="obs-session" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Academic Year</label>
                     <div className="relative group">
                       <select
                         id="obs-session"
                         value={selectedSession}
                         onChange={(e) => setSelectedSession(e.target.value)}
-                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
+                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Years</option>
                         {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -296,13 +296,13 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-class" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Class</label>
+                    <label htmlFor="obs-class" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Class</label>
                     <div className="relative group">
                       <select
                         id="obs-class"
                         value={selectedClass}
                         onChange={(e) => setSelectedClass(e.target.value)}
-                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
+                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Classes</option>
                         {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -311,13 +311,13 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-section" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Section</label>
+                    <label htmlFor="obs-section" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Section</label>
                     <div className="relative group">
                       <select
                         id="obs-section"
                         value={selectedSection}
                         onChange={(e) => setSelectedSection(e.target.value)}
-                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all cursor-pointer group-hover:bg-white"
+                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all cursor-pointer group-hover:bg-white"
                       >
                         <option value="">All Sections</option>
                         {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -326,13 +326,13 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Report Date</label>
+                    <label htmlFor="obs-date" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Report Date</label>
                     <input
                       id="obs-date"
                       type="date"
                       value={date}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all"
                     />
                   </div>
                 </div>
@@ -343,7 +343,7 @@ const ParentObservationNonAcademic = () => {
                       <Users size={16} className="text-slate-400" />
                       Select Child
                     </h3>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-white px-2 py-1 rounded-md border border-slate-100">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-white px-2 py-1 rounded-md border border-slate-100">
                       {filteredChildren.length} children matching filters
                     </span>
                   </div>
@@ -365,12 +365,12 @@ const ParentObservationNonAcademic = () => {
                           key={child.id}
                           className={`flex items-center gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-all hover:shadow-sm focus-within:ring-2 focus-within:ring-blue-500 ${
                             String(studentId) === String(child.id)
-                              ? 'border-blue-500 bg-white ring-2 ring-blue-500/10 shadow-md'
+                              ? 'border-violet-500 bg-white ring-2 ring-violet-500/10 shadow-md'
                               : 'border-slate-200 bg-white hover:border-slate-300'
                           }`}
                         >
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                            String(studentId) === String(child.id) ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400'
+                            String(studentId) === String(child.id) ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-400'
                           }`}>
                             <User size={16} />
                           </div>
@@ -378,7 +378,7 @@ const ParentObservationNonAcademic = () => {
                             <p className={`text-sm font-bold truncate ${String(studentId) === String(child.id) ? 'text-slate-900' : 'text-slate-700'}`}>
                               {child.name}
                             </p>
-                            <p className="text-[10px] font-semibold text-slate-400">
+                            <p className="text-[11px] font-semibold text-slate-400">
                               {child.className} {child.section} • Roll {child.roll || '-'}
                             </p>
                           </div>
@@ -401,7 +401,7 @@ const ParentObservationNonAcademic = () => {
               <div className="flex flex-wrap items-center justify-between gap-4 py-3 px-6 bg-slate-900 rounded-2xl text-white">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <ClipboardList size={16} className="text-blue-400" />
+                    <ClipboardList size={16} className="text-violet-400" />
                     <span className="text-xs font-bold uppercase tracking-wider">{selectedCount} Fields Rated</span>
                   </div>
                   <div className="h-4 w-px bg-slate-700" />
@@ -412,7 +412,7 @@ const ParentObservationNonAcademic = () => {
                     </span>
                   </div>
                 </div>
-                <div className="text-[10px] font-bold text-slate-400 italic">Progress autosaved in session</div>
+                <div className="text-[11px] font-bold text-slate-400 italic">Progress autosaved in session</div>
               </div>
 
               {/* Observation Sections */}
@@ -447,12 +447,12 @@ const ParentObservationNonAcademic = () => {
                                   onClick={() => setRatings((prev) => ({ ...prev, [f.label]: opt }))}
                                   className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 ${
                                     active
-                                      ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-500'
+                                      ? 'border-violet-500 bg-violet-50 text-violet-700 shadow-sm ring-1 ring-violet-500'
                                       : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50'
                                   }`}
                                 >
                                   <span className="text-xl mb-1" aria-hidden="true">{getEmoji(opt)}</span>
-                                  <span className="text-[10px] font-bold text-center leading-tight uppercase tracking-tighter">{opt}</span>
+                                  <span className="text-[11px] font-bold text-center leading-tight uppercase tracking-tighter">{opt}</span>
                                 </button>
                               );
                             })}
@@ -467,7 +467,7 @@ const ParentObservationNonAcademic = () => {
               {/* Remarks Section */}
               <div className="space-y-6 pt-8 border-t border-slate-100">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-indigo-50 text-indigo-500 shadow-sm">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-violet-50 text-violet-500 shadow-sm">
                     <MessageSquare size={20} />
                   </div>
                   <div>
@@ -485,7 +485,7 @@ const ParentObservationNonAcademic = () => {
                         rows={4}
                         value={remarks[f]}
                         onChange={(e) => setRemarks((prev) => ({ ...prev, [f]: e.target.value }))}
-                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all resize-none placeholder:text-slate-400"
+                        className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all resize-none placeholder:text-slate-400"
                         placeholder={`Share your thoughts on ${f.toLowerCase()}...`}
                       />
                     </div>
@@ -499,7 +499,7 @@ const ParentObservationNonAcademic = () => {
                   disabled={!isValid || submitting} 
                   className={`w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-3 ${
                     isValid 
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-[0.98]' 
+                      ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-200 active:scale-[0.98]' 
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                   }`}
                 >
@@ -515,28 +515,28 @@ const ParentObservationNonAcademic = () => {
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl shadow-slate-200">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <TrendingUp size={20} className="text-blue-400" />
+              <TrendingUp size={20} className="text-violet-400" />
               Quick Summary
             </h3>
             <div className="space-y-4">
               <div className="bg-white/10 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Active Child</p>
+                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Active Child</p>
                   <p className="text-sm font-bold truncate max-w-[150px]">
                     {filteredChildren.find(c => String(c.id) === String(studentId))?.name || 'None Selected'}
                   </p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-violet-500 flex items-center justify-center">
                   <User size={18} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Total Logs</p>
+                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Total Logs</p>
                   <p className="text-xl font-bold">{observations.length}</p>
                 </div>
                 <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Urgency</p>
+                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Urgency</p>
                   <p className={`text-xl font-bold ${concernLevel === 'high' ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {concernLevel.toUpperCase()}
                   </p>
@@ -561,16 +561,16 @@ const ParentObservationNonAcademic = () => {
               ) : (
                 <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                   {recentObservations.map((obs) => (
-                    <div key={obs.id} className="group relative border border-slate-100 rounded-2xl p-4 transition-all hover:bg-slate-50 hover:border-blue-100">
+                    <div key={obs.id} className="group relative border border-slate-100 rounded-2xl p-4 transition-all hover:bg-slate-50 hover:border-violet-100">
                       <div className="flex items-start justify-between mb-3">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-900">{obs.studentName}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${concernBadge(obs.concernLevel || 'low')}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-black border uppercase tracking-wider ${concernBadge(obs.concernLevel || 'low')}`}>
                               {obs.concernLevel || 'low'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
                             <Calendar size={10} />
                             <span>{obs.recordedAt ? new Date(obs.recordedAt).toLocaleDateString() : obs.date}</span>
                           </div>
@@ -581,8 +581,8 @@ const ParentObservationNonAcademic = () => {
                       </p>
                       {obs.behaviorNotes && (
                         <div className="mt-3 pt-3 border-t border-slate-100/50">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1">Qualitative Feedback</p>
-                          <p className="text-[10px] text-slate-500 line-clamp-3 whitespace-pre-line">
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tighter mb-1">Qualitative Feedback</p>
+                          <p className="text-[11px] text-slate-500 line-clamp-3 whitespace-pre-line">
                             {obs.behaviorNotes}
                           </p>
                         </div>

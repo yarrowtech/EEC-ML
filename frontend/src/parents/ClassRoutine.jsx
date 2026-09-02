@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Calendar, Users } from 'lucide-react';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiFetch } from './parentApi';
+import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -33,11 +34,17 @@ const getTimeLabel = (entry, index) =>
 const ParentClassRoutine = () => {
   const navigate = useNavigate();
   const [children, setChildren] = useState([]);
-  const [selectedChildId, setSelectedChildId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
+
+  const childOptions = useMemo(
+    () => children.map((c) => ({ id: String(c.studentId || ''), name: c.studentName || 'Student' })),
+    [children],
+  );
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const selectedChildId = selectedOption?.id || '';
 
   const fetchRoutine = useCallback(async ({ initial = false } = {}) => {
     const token = localStorage.getItem('token');
@@ -45,7 +52,6 @@ const ParentClassRoutine = () => {
     if (!token || userType !== 'Parent') {
       setError('Only parents can view children routines.');
       setChildren([]);
-      setSelectedChildId('');
       setLoading(false);
       setIsRefreshing(false);
       return;
@@ -71,19 +77,10 @@ const ParentClassRoutine = () => {
       }));
 
       setChildren(list);
-      setSelectedChildId((prev) => {
-        if (prev && list.some((child) => String(child.studentId) === String(prev))) {
-          return prev;
-        }
-        if (list.length === 0) return '';
-        const preferred = list.find((child) => child.hasRoutine) || list[0];
-        return String(preferred.studentId);
-      });
       setLastFetchedAt(new Date());
     } catch (err) {
       setError(err.message || 'Unable to load routine');
       setChildren([]);
-      setSelectedChildId('');
     } finally {
       if (initial) {
         setLoading(false);
@@ -145,11 +142,11 @@ const ParentClassRoutine = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <div className="rounded-2xl border border-amber-200/70 bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 p-5 shadow-sm sm:p-6">
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 shadow-sm sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-amber-700" />
+                <Calendar className="h-5 w-5 text-violet-700" />
                 <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl">Children Class Routine</h1>
               </div>
               {selectedChild && (
@@ -175,7 +172,7 @@ const ParentClassRoutine = () => {
               <button
                 onClick={() => fetchRoutine()}
                 disabled={loading || isRefreshing}
-                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isRefreshing ? 'Refreshing...' : 'Refresh data'}
               </button>
@@ -205,38 +202,15 @@ const ParentClassRoutine = () => {
           )}
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <Users className="h-4 w-4 text-amber-600" />
-            Select Child
+        {childOptions.length > 0 && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <Users className="h-4 w-4 text-violet-600" />
+              Child
+            </div>
+            <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {children.map((child) => (
-              <button
-                key={child.studentId}
-                onClick={() => setSelectedChildId(String(child.studentId))}
-                className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
-                  String(child.studentId) === String(selectedChildId)
-                    ? 'border-amber-300 bg-amber-50 text-amber-900'
-                    : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <p className="font-semibold leading-tight">
-                  {formatStudentDisplay({
-                    studentName: child.studentName,
-                    studentId: child.studentId,
-                    roll: child.roll || child.rollNumber,
-                    section: child.sectionName || child.section,
-                  })}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  Class {child.className || child.grade || '-'}
-                  {child.sectionName || child.section ? ` | Sec ${child.sectionName || child.section}` : ''}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           {children.length === 0 ? (
@@ -277,7 +251,7 @@ const ParentClassRoutine = () => {
                         return (
                           <td key={`${day}-${slot.time}`} className="border-b p-2.5">
                             {entry ? (
-                              <div className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2">
+                              <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2">
                                 <p className="text-sm font-semibold text-gray-900">{entry.subject || 'Subject'}</p>
                                 <p className="mt-1 text-xs text-gray-600">{entry.instructor || 'TBA'}</p>
                                 <p className="mt-1 text-xs text-gray-500">{entry.room || 'TBA'}</p>

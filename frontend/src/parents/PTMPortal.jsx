@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Video, Phone, Users, Bell, Check, X, ArrowLeftRight, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
+import { Calendar, Clock, Video, Phone, Users, Check, X, ArrowLeftRight, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import { useDialog } from './useDialog';
 
@@ -17,7 +17,7 @@ const buildJitsiUrl = (room) => {
 
 const PTMPortal = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('meetings'); // meetings | requests | video | history
+  const [activeTab, setActiveTab] = useState('upcoming'); // upcoming | history
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [modalMode, setModalMode] = useState(null); // 'reschedule' | 'feedback' | null
   const [meetings, setMeetings] = useState([]);
@@ -51,11 +51,6 @@ const PTMPortal = () => {
   );
   const videoRoom = roomForMeeting(videoMeeting);
   const jitsiUrl = useMemo(() => buildJitsiUrl(videoRoom), [videoRoom]);
-  const videoEligible = useMemo(
-    () => meetings.filter((m) => ['confirmed', 'scheduled', 'pending'].includes(String(m.status || '').toLowerCase())),
-    [meetings],
-  );
-
   const getMeetingId = (meeting) => meeting?._id || meeting?.id;
   const getTeacherName = (meeting) => meeting?.teacherId?.name || meeting?.teacherName || 'Teacher';
   const getMeetingSubject = (meeting) =>
@@ -86,7 +81,6 @@ const PTMPortal = () => {
   };
   const isConfirmedStatus = (status) => normalizeStatus(status) === 'confirmed';
   const isRescheduleStatus = (status) => normalizeStatus(status) === 'reschedule_requested';
-  const isHistoryStatus = (status) => !isPendingStatus(status) && !isConfirmedStatus(status);
 
   const fetchMeetings = useCallback(async () => {
     try {
@@ -114,19 +108,6 @@ const PTMPortal = () => {
   useEffect(() => {
     fetchMeetings();
   }, [fetchMeetings]);
-
-  const upcomingMeetings = useMemo(
-    () => meetings.filter((m) => isPendingStatus(m.status) || isConfirmedStatus(m.status)),
-    [meetings]
-  );
-  const pendingRequests = useMemo(
-    () => meetings.filter((m) => isPendingStatus(m.status) || isRescheduleStatus(m.status)),
-    [meetings]
-  );
-  const historyMeetings = useMemo(
-    () => meetings.filter((m) => isHistoryStatus(m.status)),
-    [meetings]
-  );
 
   const getMeetingTypeIcon = (type) => {
     switch (type) {
@@ -238,369 +219,238 @@ const PTMPortal = () => {
     try { await navigator.clipboard.writeText(text); } catch {}
   };
 
+  const DONE_STATUSES = ['completed', 'cancelled', 'declined'];
+  const activeMeetings = useMemo(
+    () => meetings.filter((m) => !DONE_STATUSES.includes(normalizeStatus(m.status))),
+    [meetings],
+  );
+  const pastMeetings = useMemo(
+    () => meetings.filter((m) => DONE_STATUSES.includes(normalizeStatus(m.status))),
+    [meetings],
+  );
+  const needsResponseCount = activeMeetings.filter(
+    (m) => isPendingStatus(m.status) || isRescheduleStatus(m.status),
+  ).length;
+
+  const [statusFilter, setStatusFilter] = useState('all'); // all | response | confirmed
+  const filteredActive = activeMeetings.filter((m) => {
+    if (statusFilter === 'response') return isPendingStatus(m.status) || isRescheduleStatus(m.status);
+    if (statusFilter === 'confirmed') return isConfirmedStatus(m.status);
+    return true;
+  });
+
+  const startVideo = (meeting) => {
+    setVideoMeetingId(String(getMeetingId(meeting)));
+    setJitsiActive(true);
+  };
+  const stopVideo = () => setJitsiActive(false);
+
+  const statusChip = (status) => {
+    const s = normalizeStatus(status);
+    if (s === 'confirmed') return <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Confirmed</span>;
+    if (s === 'reschedule_requested') return <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Reschedule requested</span>;
+    return <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-semibold text-violet-700">Needs your response</span>;
+  };
+
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-6 mb-6 text-white">
-        <h1 className="text-3xl font-bold mb-2">Parent-Teacher Meetings</h1>
-        <p className="text-yellow-100">View and respond to meeting requests</p>
-      </div>
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      <header className="mb-5">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Parent-Teacher Meetings</h1>
+        <p className="mt-1 text-sm text-slate-500">Respond to meeting requests and join video calls.</p>
+      </header>
 
       {error && (
-        <div role="alert" className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
         {[
-          { key: 'meetings', label: 'Meetings' },
-          { key: 'requests', label: 'Requests' },
-          { key: 'video', label: 'Video Meeting' },
-          { key: 'history', label: 'History' },
-        ].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} className={`px-3 py-1.5 rounded-lg text-sm border ${activeTab === t.key ? 'bg-yellow-500 text-black border-yellow-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+          { key: 'upcoming', label: `Upcoming${activeMeetings.length ? ` (${activeMeetings.length})` : ''}` },
+          { key: 'history', label: 'Past' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setActiveTab(t.key)}
+            aria-pressed={activeTab === t.key}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              activeTab === t.key ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
             {t.label}
           </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upcoming Meetings */}
-        <div className="lg:col-span-2 space-y-6">
-          {activeTab === 'meetings' && (
-          <div className="bg-white rounded-xl shadow-sm">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">Upcoming Meetings</h2>
-            </div>
-            <div className="p-4 space-y-4">
-              {loading && upcomingMeetings.length === 0 && (
-                <div className="py-6 text-center text-gray-500">Loading meetings...</div>
-              )}
-              {!loading && upcomingMeetings.length === 0 && (
-                <div className="py-6 text-center text-gray-500">No meetings scheduled yet.</div>
-              )}
-              {upcomingMeetings.map((meeting) => {
-                  const meetingId = getMeetingId(meeting);
-                  const pending = isPendingStatus(meeting.status);
-                  const confirmed = isConfirmedStatus(meeting.status);
-                  const agendaItems = getMeetingAgenda(meeting);
-                  const meetingType = getMeetingTypeLabel(meeting);
-                  const meetingDateLabel = getMeetingDate(meeting);
-                  const meetingTimeLabel = getMeetingTime(meeting);
-                  const teacherName = getTeacherName(meeting);
-                  const subjectLabel = getMeetingSubject(meeting);
-                  const studentLabel = getStudentLabel(meeting);
-
-                  return (
-                    <div
-                      key={meetingId || subjectLabel}
-                      className="bg-white border border-gray-200 rounded-lg p-4 hover:border-yellow-500 transition-colors"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-medium text-gray-800">
-                              Meeting with {teacherName}
-                            </h3>
-                            {pending && (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                New
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500">{subjectLabel}</p>
-                          {studentLabel && (
-                            <p className="text-xs text-gray-400">{studentLabel}</p>
-                          )}
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="w-4 h-4" />
-                              <span>{meetingDateLabel || 'TBA'}</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <Clock className="w-4 h-4" />
-                              <span>{meetingTimeLabel || 'TBA'}</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              {getMeetingTypeIcon(meetingType)}
-                              <span>{meetingType}</span>
-                            </div>
-                          </div>
-                          {agendaItems?.length ? (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium">Agenda:</span> {agendaItems.join(', ')}
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {pending && (
-                          <div className="flex flex-wrap items-center gap-2 justify-end">
-                            <button
-                              onClick={() => handleResponse(meeting, 'accept')}
-                              aria-label="Confirm meeting"
-                              className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-200 transition-colors"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleRescheduleRequest(meeting)}
-                              className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
-                            >
-                              Reschedule
-                            </button>
-                            <button
-                              onClick={() => handleResponse(meeting, 'decline')}
-                              aria-label="Decline meeting"
-                              className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-
-                        {confirmed && (
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              Confirmed
-                            </span>
-                            <button
-                              onClick={() => handleRescheduleRequest(meeting)}
-                              className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-50"
-                            >
-                              Reschedule
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+      {/* Inline video call */}
+      {jitsiActive && videoRoom && (
+        <section className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              {videoMeeting ? `Video call with ${getTeacherName(videoMeeting)}` : 'Video call'} — you&apos;ll wait in the lobby until the teacher admits you
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => window.open(`${jitsiUrl}${JITSI_ROOM_CONFIG}`, '_blank', 'noopener')} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50" aria-label="Open in new tab">
+                <ExternalLink className="h-4 w-4" />
+              </button>
+              <button onClick={() => copyToClipboard(`${jitsiUrl}${JITSI_ROOM_CONFIG}`)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50" aria-label="Copy link">
+                <Copy className="h-4 w-4" />
+              </button>
+              <button onClick={stopVideo} className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200">Leave</button>
             </div>
           </div>
-          )}
+          <iframe
+            title="PTM Video Meeting"
+            src={`${jitsiUrl}${JITSI_ROOM_CONFIG}`}
+            className="w-full h-[460px]"
+            allow="camera; microphone; fullscreen; display-capture"
+          />
+        </section>
+      )}
 
-          {activeTab === 'requests' && (
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-800">Pending Requests</h2>
-              </div>
-              <div className="p-4 space-y-4">
-                {pendingRequests.length === 0 && (
-                  <p className="text-sm text-gray-500">No pending requests.</p>
-                )}
-                {pendingRequests.map((m) => {
-                    const meetingId = getMeetingId(m);
-                    const meetingType = getMeetingTypeLabel(m);
-                    const meetingDateLabel = getMeetingDate(m);
-                    const meetingTimeLabel = getMeetingTime(m);
-                    const subjectLabel = getMeetingSubject(m);
-                    const teacherName = getTeacherName(m);
-                    return (
-                      <div key={meetingId || subjectLabel} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-800">{teacherName} • {subjectLabel}</p>
-                            <p className="text-sm text-gray-600">
-                              {meetingDateLabel || 'TBA'} at {meetingTimeLabel || 'TBA'} • {meetingType}
-                            </p>
-                            {m.rescheduleRequest?.requestedAt && (
-                              <p className="text-xs text-blue-700 mt-1">
-                                Your reschedule request:
-                                {m.rescheduleRequest.requestedDate ? ` ${formatMeetingDate(m.rescheduleRequest.requestedDate)}` : ' (no date given)'}
-                                {m.rescheduleRequest.requestedTime ? ` at ${m.rescheduleRequest.requestedTime}` : ''}
-                                {m.rescheduleRequest.reason ? ` — ${m.rescheduleRequest.reason}` : ''}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleResponse(m, 'accept')} className="px-3 py-1 rounded-lg bg-green-600 text-white text-sm">Accept</button>
-                            <button onClick={() => handleRescheduleRequest(m)} className="px-3 py-1 rounded-lg border border-blue-300 text-blue-700 text-sm">Reschedule</button>
-                            <button onClick={() => handleResponse(m, 'decline')} className="px-3 py-1 rounded-lg bg-red-600 text-white text-sm">Decline</button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
+      {activeTab === 'upcoming' && (
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+            <h2 className="text-base font-semibold text-slate-800">Meetings</h2>
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Filter meetings">
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'response', label: `Needs response${needsResponseCount ? ` (${needsResponseCount})` : ''}` },
+                { key: 'confirmed', label: 'Confirmed' },
+              ].map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={statusFilter === f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    statusFilter === f.key ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
-          {activeTab === 'video' && (
-            <div className="bg-white rounded-xl shadow-sm p-4">
-              <h2 className="text-lg font-semibold text-gray-800 mb-1">Video Meeting</h2>
-              <p className="text-xs text-gray-500 mb-3">
-                Pick a scheduled meeting to join its private room. Your child&apos;s teacher joins the same room from their portal.
+          <div className="divide-y divide-slate-100">
+            {loading && activeMeetings.length === 0 && (
+              <p className="p-6 text-center text-sm text-slate-500" aria-live="polite">Loading meetings…</p>
+            )}
+            {!loading && filteredActive.length === 0 && (
+              <p className="p-8 text-center text-sm text-slate-500">
+                {activeMeetings.length === 0 ? 'No meetings scheduled yet.' : 'Nothing in this filter.'}
               </p>
-              <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Each meeting has its own unlisted room. You&apos;ll wait in a lobby until the teacher admits you.
-              </p>
-              {videoEligible.length === 0 ? (
-                <div className="h-[200px] flex items-center justify-center text-gray-500 text-sm">
-                  You have no scheduled meetings to join.
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                    <label htmlFor="ptm-video-meeting" className="sr-only">Select meeting</label>
-                    <select
-                      id="ptm-video-meeting"
-                      value={videoMeetingId}
-                      onChange={(e) => { setVideoMeetingId(e.target.value); setJitsiActive(false); }}
-                      className="border border-gray-300 rounded-lg px-3 py-2 md:col-span-2"
-                    >
-                      <option value="">Select a meeting…</option>
-                      {videoEligible.map((m) => (
-                        <option key={getMeetingId(m)} value={getMeetingId(m)}>
-                          {getTeacherName(m)} — {getMeetingDate(m) || 'TBA'} {getMeetingTime(m)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setJitsiActive(true)}
-                      disabled={!videoRoom}
-                      className={`px-3 py-2 rounded-lg ${videoRoom ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-gray-100 text-gray-400'}`}
-                    >
-                      Join room
-                    </button>
-                  </div>
-                  {videoRoom && (
-                    <div className="flex items-center gap-2 mb-3">
-                      <button onClick={() => window.open(`${jitsiUrl}${JITSI_ROOM_CONFIG}`, '_blank', 'noopener')} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
-                        <ExternalLink className="w-4 h-4" /> Open in new tab
-                      </button>
-                      <button onClick={() => copyToClipboard(`${jitsiUrl}${JITSI_ROOM_CONFIG}`)} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
-                        <Copy className="w-4 h-4" /> Copy link
-                      </button>
-                    </div>
-                  )}
-                  <div className="rounded-lg overflow-hidden border border-gray-200">
-                    {jitsiActive && videoRoom ? (
-                      <iframe
-                        title="PTM Video Meeting"
-                        src={`${jitsiUrl}${JITSI_ROOM_CONFIG}`}
-                        className="w-full h-[480px]"
-                        allow="camera; microphone; fullscreen; display-capture"
-                      />
-                    ) : (
-                      <div className="h-[240px] flex items-center justify-center text-gray-500 text-sm">
-                        Select a meeting and click Join room.
+            )}
+            {filteredActive.map((meeting) => {
+              const meetingId = getMeetingId(meeting);
+              const pending = isPendingStatus(meeting.status);
+              const confirmed = isConfirmedStatus(meeting.status);
+              const agendaItems = getMeetingAgenda(meeting);
+              const meetingType = getMeetingTypeLabel(meeting);
+              const isVideo = meetingType === 'Video Call';
+              const teacherName = getTeacherName(meeting);
+              const subjectLabel = getMeetingSubject(meeting);
+              const studentLabel = getStudentLabel(meeting);
+
+              return (
+                <div key={meetingId || subjectLabel} className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-slate-800">Meeting with {teacherName}</h3>
+                        {statusChip(meeting.status)}
                       </div>
+                      <p className="text-sm text-slate-500">{subjectLabel}</p>
+                      {studentLabel && <p className="text-xs text-slate-400">{studentLabel}</p>}
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                        <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{getMeetingDate(meeting) || 'Date TBA'}</span>
+                        <span className="flex items-center gap-1"><Clock className="h-4 w-4" />{getMeetingTime(meeting) || 'Time TBA'}</span>
+                        <span className="flex items-center gap-1">{getMeetingTypeIcon(meetingType)}{meetingType}</span>
+                      </div>
+                      {agendaItems?.length ? (
+                        <p className="text-sm text-slate-600"><span className="font-medium">Agenda:</span> {agendaItems.join(', ')}</p>
+                      ) : null}
+                      {meeting.rescheduleRequest?.requestedAt && (
+                        <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                          Your reschedule request:
+                          {meeting.rescheduleRequest.requestedDate ? ` ${formatMeetingDate(meeting.rescheduleRequest.requestedDate)}` : ' (no date given)'}
+                          {meeting.rescheduleRequest.requestedTime ? ` at ${meeting.rescheduleRequest.requestedTime}` : ''}
+                          {meeting.rescheduleRequest.reason ? ` — ${meeting.rescheduleRequest.reason}` : ''}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {confirmed && isVideo && roomForMeeting(meeting) && (
+                        <button onClick={() => startVideo(meeting)} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-700">
+                          <Video className="h-4 w-4" /> Join
+                        </button>
+                      )}
+                      {pending && (
+                        <button onClick={() => handleResponse(meeting, 'accept')} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                          <Check className="h-4 w-4" /> Accept
+                        </button>
+                      )}
+                      {(pending || confirmed) && (
+                        <button onClick={() => handleRescheduleRequest(meeting)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                          Reschedule
+                        </button>
+                      )}
+                      {pending && (
+                        <button onClick={() => handleResponse(meeting, 'decline')} className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">
+                          Decline
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'history' && (
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 p-4">
+            <h2 className="text-base font-semibold text-slate-800">Past meetings</h2>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {pastMeetings.length === 0 && (
+              <p className="p-8 text-center text-sm text-slate-500">No past meetings recorded.</p>
+            )}
+            {pastMeetings.map((m) => {
+              const meetingId = getMeetingId(m);
+              const statusLabel = normalizeStatus(m.status).replace(/_/g, ' ');
+              const isCompleted = normalizeStatus(m.status) === 'completed';
+              return (
+                <div key={meetingId || getMeetingSubject(m)} className="flex flex-wrap items-start justify-between gap-3 p-4">
+                  <div>
+                    <p className="font-medium text-slate-800">{getTeacherName(m)} · {getMeetingSubject(m)}</p>
+                    <p className="text-sm text-slate-500">{getMeetingDate(m) || 'Date TBA'} at {getMeetingTime(m) || 'Time TBA'}</p>
+                    {m.parentFeedback?.submittedAt && (
+                      <p className="mt-1 text-xs text-slate-500">Your rating: {m.parentFeedback.rating}/5{m.parentFeedback.comment ? ` — ${m.parentFeedback.comment}` : ''}</p>
                     )}
                   </div>
-                </>
-              )}
-              <p className="mt-2 text-xs text-gray-500">Video meetings are powered by Jitsi Meet. By joining, you agree to Jitsi&apos;s terms of service.</p>
-            </div>
-          )}
-
-          {activeTab === 'history' && (
-            <div className="bg-white rounded-xl shadow-sm">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-800">Past Meetings</h2>
-              </div>
-              <div className="p-4 space-y-3">
-                {historyMeetings.length === 0 && (
-                  <p className="text-sm text-gray-500">No past meetings recorded.</p>
-                )}
-                {historyMeetings.map((m) => {
-                  const meetingId = getMeetingId(m);
-                  const meetingDateLabel = getMeetingDate(m);
-                  const meetingTimeLabel = getMeetingTime(m);
-                  const subjectLabel = getMeetingSubject(m);
-                  const statusLabel = normalizeStatus(m.status).replace(/_/g, ' ');
-                  const isCompleted = normalizeStatus(m.status) === 'completed';
-                  return (
-                    <div key={meetingId || subjectLabel} className="border rounded-lg p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-gray-800">{getTeacherName(m)} • {subjectLabel}</p>
-                          <p className="text-sm text-gray-600">{meetingDateLabel || 'TBA'} at {meetingTimeLabel || 'TBA'}</p>
-                          {m.parentFeedback?.submittedAt && (
-                            <p className="text-xs text-yellow-700">Your rating: {m.parentFeedback.rating}/5{m.parentFeedback.comment ? ` — ${m.parentFeedback.comment}` : ''}</p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">{statusLabel}</span>
-                          {isCompleted && !m.parentFeedback?.submittedAt && (
-                            <button onClick={() => openFeedback(m)} className="text-xs px-3 py-1 rounded-lg border border-yellow-300 text-yellow-700 hover:bg-yellow-50">
-                              Leave feedback
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Notifications & Calendar */}
-        <div className="space-y-6">
-          {/* Recent Notifications */}
-          <div className="bg-white rounded-xl shadow-sm">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">Notifications</h2>
-            </div>
-            <div className="p-4">
-              <div className="space-y-4">
-                {meetings.slice(0, 5).map((meeting) => {
-                  const meetingId = getMeetingId(meeting);
-                  const pending = isPendingStatus(meeting.status);
-                  const meetingDateLabel = getMeetingDate(meeting);
-                  const meetingTimeLabel = getMeetingTime(meeting);
-                  return (
-                    <div
-                      key={meetingId || meetingDateLabel}
-                      className={`flex items-start space-x-3 p-3 rounded-lg ${
-                        pending ? 'bg-yellow-50' : 'bg-gray-50'
-                      }`}
-                    >
-                      <Bell className={`w-5 h-5 ${
-                        pending ? 'text-yellow-500' : 'text-gray-400'
-                      }`} />
-                      <div>
-                        <p className="text-sm text-gray-800">
-                          {pending ? 'New meeting scheduled' : 'Meeting update'} from {getTeacherName(meeting)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {meetingDateLabel || 'Date TBA'} {meetingTimeLabel ? `• ${meetingTimeLabel}` : ''}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-                {meetings.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-4">No notifications yet.</p>
-                )}
-              </div>
-            </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium capitalize text-slate-600">{statusLabel}</span>
+                    {isCompleted && !m.parentFeedback?.submittedAt && (
+                      <button onClick={() => openFeedback(m)} className="rounded-lg border border-violet-200 px-3 py-1 text-xs font-medium text-violet-700 hover:bg-violet-50">
+                        Leave feedback
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-
-          {/* Quick Stats */}
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Overview</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-500">Upcoming</p>
-                <p className="text-2xl font-semibold text-yellow-600">
-                  {upcomingMeetings.length}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Pending</p>
-                <p className="text-2xl font-semibold text-yellow-600">
-                  {pendingRequests.length}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+        </section>
+      )}
 
       {/* Reschedule Modal */}
       {selectedMeeting && modalMode === 'reschedule' && (

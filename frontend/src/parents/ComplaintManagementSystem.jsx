@@ -187,7 +187,7 @@ const ComplaintManagementSystem = () => {
       <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Parent Services</p>
+            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Parent Services</p>
             <h1 className="text-2xl font-semibold text-gray-900 mt-1">Complaints & Support</h1>
             <p className="text-sm text-gray-600 mt-2">
               Submit issues directly to the school support desk and track the status in real time.
@@ -217,7 +217,7 @@ const ComplaintManagementSystem = () => {
       <section className="grid lg:grid-cols-2 gap-6">
         <form onSubmit={handleFormSubmit} className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-4">
           <div className="flex items-center gap-2 text-gray-800">
-            <Plus className="w-5 h-5 text-amber-600" />
+            <Plus className="w-5 h-5 text-violet-600" />
             <h2 className="text-lg font-semibold">Submit new complaint</h2>
           </div>
           <div className="space-y-1">
@@ -227,7 +227,7 @@ const ComplaintManagementSystem = () => {
               type="text"
               value={form.title}
               onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-200 focus:border-violet-400 text-sm"
               placeholder="Brief summary of the issue"
             />
           </div>
@@ -238,7 +238,7 @@ const ComplaintManagementSystem = () => {
               value={form.description}
               onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
               rows={4}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-200 focus:border-violet-400 text-sm"
               placeholder="Explain what happened, when it occurred, and how it affects your child."
             />
           </div>
@@ -249,7 +249,7 @@ const ComplaintManagementSystem = () => {
                 id="complaint-category"
                 value={form.category}
                 onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-200 focus:border-violet-400 text-sm"
               >
                 {CATEGORY_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -269,7 +269,7 @@ const ComplaintManagementSystem = () => {
                 id="complaint-priority"
                 value={form.priority}
                 onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm capitalize"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-200 focus:border-violet-400 text-sm capitalize"
               >
                 {PRIORITY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -289,7 +289,7 @@ const ComplaintManagementSystem = () => {
                 value={form.studentId}
                 onChange={(e) => setForm((prev) => ({ ...prev, studentId: e.target.value }))}
                 disabled={!isAcademicCategory}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-200 focus:border-violet-400 text-sm disabled:bg-gray-100 disabled:text-gray-500"
               >
                 {children.map((child) => (
                   <option key={child.studentId} value={child.studentId}>
@@ -308,7 +308,7 @@ const ComplaintManagementSystem = () => {
             </div>
           )}
           {isAcademicCategory && !children.length && (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-violet-600">
               No linked children were found, so this complaint will be forwarded to the school admin.
             </p>
           )}
@@ -320,7 +320,7 @@ const ComplaintManagementSystem = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700 focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 focus:ring-2 focus:ring-violet-200 disabled:opacity-60"
           >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             Submit complaint
@@ -331,7 +331,7 @@ const ComplaintManagementSystem = () => {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <div className="flex items-center gap-2 text-gray-800">
-                <FileText className="w-5 h-5 text-amber-600" />
+                <FileText className="w-5 h-5 text-violet-600" />
                 <h2 className="text-lg font-semibold">Complaint log</h2>
               </div>
               <p className="text-xs text-gray-500 mt-1">
@@ -344,7 +344,7 @@ const ComplaintManagementSystem = () => {
               placeholder="Search by ticket or title"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent w-full sm:w-64"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-violet-200 focus:border-violet-400 w-full sm:w-64"
             />
           </div>
           <div className="flex flex-wrap gap-2 text-sm" role="group" aria-label="Filter complaints by status">
@@ -356,7 +356,7 @@ const ComplaintManagementSystem = () => {
                 onClick={() => setStatusFilter(status)}
                 className={`px-3 py-1.5 rounded-full border ${
                   statusFilter === status
-                    ? 'border-amber-500 bg-amber-50 text-amber-700'
+                    ? 'border-violet-500 bg-violet-50 text-violet-700'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                 }`}
               >
@@ -378,7 +378,7 @@ const ComplaintManagementSystem = () => {
               {filteredComplaints.map((complaint) => {
                 const assigneeLabel = resolveAssignee(complaint);
                 return (
-                  <article key={complaint.id} className="border border-gray-200 rounded-lg p-4 hover:border-amber-200 transition-colors">
+                  <article key={complaint.id} className="border border-gray-200 rounded-lg p-4 hover:border-violet-200 transition-colors">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div>
                         <p className="text-xs text-gray-500">Ticket #{complaint.ticketNumber}</p>

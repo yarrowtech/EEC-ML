@@ -271,7 +271,7 @@ const HolidayList = () => {
         <header className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/55 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-2xl sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white/60 text-amber-600 shadow-lg shadow-amber-900/5 backdrop-blur-xl">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white/60 text-violet-600 shadow-lg shadow-violet-900/5 backdrop-blur-xl">
                 <CalendarDays className="h-6 w-6" aria-hidden="true" />
               </div>
               <div>
@@ -285,7 +285,7 @@ const HolidayList = () => {
               type="button"
               onClick={handleDownloadPdf}
               disabled={loading || !holidays.length || downloading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/70 bg-indigo-600/90 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-900/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/70 bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-900/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
             >
               {downloading
                 ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -301,14 +301,14 @@ const HolidayList = () => {
             </div>
             <div className="rounded-2xl border border-white/80 bg-white/45 px-4 py-3 shadow-sm backdrop-blur-xl">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Upcoming</p>
-              <p className="mt-1 text-2xl font-bold text-indigo-600">{loading ? '—' : upcomingHolidayCount}</p>
+              <p className="mt-1 text-2xl font-bold text-violet-600">{loading ? '—' : upcomingHolidayCount}</p>
             </div>
           </div>
         </header>
 
         <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/50 shadow-xl shadow-slate-900/5 backdrop-blur-2xl">
           <div className="flex items-center gap-3 border-b border-white/70 bg-white/25 px-5 py-4 sm:px-7">
-            <CalendarCheck2 className="h-5 w-5 text-indigo-600" aria-hidden="true" />
+            <CalendarCheck2 className="h-5 w-5 text-violet-600" aria-hidden="true" />
             <h2 className="font-bold text-slate-800">Published holidays</h2>
             {!loading && !error && (
               <span className="ml-auto rounded-full border border-white/80 bg-white/55 px-3 py-1 text-xs font-semibold text-slate-600 backdrop-blur-xl">
@@ -320,7 +320,7 @@ const HolidayList = () => {
           {loading ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-sm text-slate-500" aria-live="polite">
               <div className="rounded-2xl border border-white/80 bg-white/55 p-4 shadow-sm backdrop-blur-xl">
-                <Loader2 className="h-6 w-6 animate-spin text-indigo-600" aria-hidden="true" />
+                <Loader2 className="h-6 w-6 animate-spin text-violet-600" aria-hidden="true" />
               </div>
               Loading holidays...
             </div>

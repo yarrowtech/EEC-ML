@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -13,8 +13,8 @@ import {
   Syringe,
   User,
 } from 'lucide-react';
-import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiJson } from './parentApi';
+import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 
 const MOOD_LABELS = {
   excellent: 'Excellent',
@@ -47,11 +47,16 @@ const Chips = ({ items, tone = 'slate', empty }) => {
 
 const HealthReport = () => {
   const navigate = useNavigate();
-  const selectId = useId();
   const [children, setChildren] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const childOptions = useMemo(
+    () => children.map((c) => ({ id: String(c.studentId || ''), name: c.name || 'Student' })),
+    [children],
+  );
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const selectedId = selectedOption?.id || '';
 
   useEffect(() => {
     let active = true;
@@ -63,7 +68,6 @@ const HealthReport = () => {
         if (!active) return;
         const list = Array.isArray(data?.children) ? data.children : [];
         setChildren(list);
-        if (list.length > 0) setSelectedId(String(list[0].studentId));
       } catch (err) {
         if (active) setError(err.message || 'Unable to load the health report.');
       } finally {
@@ -83,7 +87,7 @@ const HealthReport = () => {
   if (loading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-slate-500" aria-live="polite" aria-busy="true">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
         <p className="text-sm font-medium">Loading health records…</p>
       </div>
     );
@@ -124,21 +128,8 @@ const HealthReport = () => {
       {children.length > 0 && (
         <>
           <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <label htmlFor={selectId} className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-              Select child
-            </label>
-            <select
-              id={selectId}
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              className="w-full sm:w-80 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none"
-            >
-              {children.map((c) => (
-                <option key={c.studentId} value={c.studentId}>
-                  {formatStudentDisplay({ studentName: c.name, roll: c.roll, section: c.className })}
-                </option>
-              ))}
-            </select>
+            <p className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Child</p>
+            <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
           </section>
 
           {child && (
