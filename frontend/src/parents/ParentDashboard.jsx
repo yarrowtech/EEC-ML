@@ -468,37 +468,89 @@ const ParentDashboard = ({
 
   return (
     <div className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onOpenSidebar}
-              className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 lg:hidden"
-              aria-label="Open parent navigation"
+      <section className="relative isolate overflow-hidden rounded-[2rem] bg-slate-50 p-2 sm:p-4 lg:p-6">
+        <div className="absolute inset-0 -z-10 pointer-events-none" aria-hidden="true">
+          <motion.div
+            className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-300/30 blur-3xl sm:h-96 sm:w-96"
+            animate={prefersReducedMotion ? undefined : { x: [0, -32, 0], y: [0, 24, 0] }}
+            transition={{ repeat: Infinity, duration: 10, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl sm:h-80 sm:w-80"
+            animate={prefersReducedMotion ? undefined : { x: [0, 32, 0], y: [0, -24, 0] }}
+            transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut', delay: 2 }}
+          />
+          <motion.div
+            className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-300/10 blur-3xl"
+            animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1], x: [0, 18, 0], y: [0, -18, 0] }}
+            transition={{ repeat: Infinity, duration: 16, ease: 'easeInOut', delay: 0.5 }}
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
+          className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
+        >
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-5">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <motion.button
+                type="button"
+                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+                onClick={onOpenSidebar}
+                className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
+                aria-label="Open parent navigation"
+              >
+                <Menu size={20} />
+              </motion.button>
+              <div className="flex items-center gap-3">
+                <motion.div
+                  className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 sm:text-xs"
+                  animate={prefersReducedMotion ? undefined : { opacity: [0.8, 1, 0.8] }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
+                >
+                  <span className="relative flex h-2.5 w-2.5">
+                    {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30" />
+                  </span>
+                  Portal Active
+                </motion.div>
+                <span className="hidden text-xs text-slate-300 sm:inline">·</span>
+                <span className="hidden rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm sm:inline">
+                  {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-7 sm:mb-8">
+            <motion.h1
+              initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: prefersReducedMotion ? 0 : 0.15, duration: prefersReducedMotion ? 0 : 0.5 }}
+              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl lg:text-4xl"
             >
-              <Menu size={20} />
-            </button>
-            <span className="text-sm font-medium text-slate-400">
-              {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </span>
+              {getGreeting()}, <br className="sm:hidden" />
+              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">{parentName || 'Parent Account'}</span>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.5 }}
+              className="mt-1 max-w-xl text-sm text-slate-500 sm:text-base"
+            >
+              Track academic progress, monitor wellbeing, and stay connected with the institution.
+            </motion.p>
           </div>
-        </div>
 
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl">
-            {getGreeting()}, <span className="text-violet-600">{parentName || 'Parent Account'}</span>
-          </h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-500">
-            Track academic progress, monitor wellbeing, and stay connected with the school.
-          </p>
-        </div>
-
-        {error && (
-          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+        </motion.div>
       </section>
 
       <motion.section
