@@ -4259,6 +4259,20 @@ const Students = ({ setShowAdminHeader }) => {
                             <div className="text-xs">
                               {(() => {
                                 const sessionFee = getStudentFeeSessionSummary(student);
+                                const hasAnyInvoice =
+                                  Array.isArray(student.feeInvoices) && student.feeInvoices.length > 0;
+                                if (!hasAnyInvoice) {
+                                  return (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                        <AlertTriangle size={11} /> Not assigned yet
+                                      </span>
+                                      <span className="text-[11px] text-gray-400">
+                                        Assign this student to a fee plan in Fees Manage
+                                      </span>
+                                    </div>
+                                  );
+                                }
                                 const paidAmount = sessionFee?.paidAmount ?? student.feeSummary?.paidAmount ?? 0;
                                 const totalAmount = sessionFee?.totalAmount ?? student.feeSummary?.totalFee ?? 0;
                                 const balanceAmount = sessionFee?.balanceAmount ?? student.feeSummary?.dueAmount ?? 0;
