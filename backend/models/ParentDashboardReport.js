@@ -4,7 +4,7 @@ const parentDashboardReportSchema = new mongoose.Schema({
   parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParentUser', required: true },
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser', required: true },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
-  type: { type: String, enum: ['weekly_digest', 'monthly_report'], required: true },
+  type: { type: String, enum: ['home_support', 'weekly_digest', 'monthly_report'], required: true },
   content: { type: String, default: '' },
   generatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });

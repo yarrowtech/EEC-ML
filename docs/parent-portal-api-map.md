@@ -426,7 +426,7 @@ Mounted API used by this page:
 `backend/scripts/validateRuntimeLogs.js`
 
 Endpoints directly connected:
-- `GET /api/attendance/parent/children?studentId=...&from=...&to=...` (query params used by frontend filter flow)
+- `GET /api/attendance/parent/children?month=YYYY-MM` (the response includes both all-time `summary` and selected-month `monthlySummary`; the attendance page and dashboard display the monthly values)
 
 Frontend file:
 - `frontend/src/parents/AttendanceReport.jsx`

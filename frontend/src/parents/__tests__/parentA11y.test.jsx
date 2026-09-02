@@ -5,7 +5,6 @@ import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 
 import AcademicReport from '../AcademicReport';
-import ResultsView from '../ResultsView';
 import AchievementsView from '../AchievementsView';
 import AttendanceReport from '../AttendanceReport';
 import ExcuseLetters from '../ExcuseLetters';
@@ -50,7 +49,6 @@ beforeEach(() => {
 
 const SCREENS = {
   AcademicReport,
-  ResultsView,
   AchievementsView,
   AttendanceReport,
   ExcuseLetters,

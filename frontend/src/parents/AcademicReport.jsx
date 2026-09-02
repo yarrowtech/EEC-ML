@@ -6,8 +6,7 @@ import {
   Calendar, 
   TrendingUp, 
   AlertCircle, 
-  User, 
-  ChevronRight,
+  User,
   Filter,
   Printer,
   FileText,
@@ -17,20 +16,26 @@ import {
   Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { formatStudentDisplay } from '../utils/studentDisplay';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { normalizeReportCard } from './reportCardShape';
 import { parentApiJson } from './parentApi';
+import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 
 const AcademicReport = () => {
   const navigate = useNavigate();
   const [reportCards, setReportCards] = useState([]);
   const [template, setTemplate] = useState(null);
-  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [viewMode, setViewMode] = useState('detailed');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+
+  const childOptions = useMemo(
+    () => reportCards.map((c) => ({ id: String(c.studentId || ''), name: c.studentName || 'Student' })),
+    [reportCards],
+  );
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const selectedStudentId = selectedOption?.id || '';
 
   useEffect(() => {
     const fetchRealData = async () => {
@@ -48,10 +53,6 @@ const AcademicReport = () => {
         const cards = (Array.isArray(data.reportCards) ? data.reportCards : []).map(normalizeReportCard);
         setReportCards(cards);
         setTemplate(data.template);
-
-        if (cards.length > 0) {
-          setSelectedStudentId(String(cards[0].studentId));
-        }
       } catch (err) {
         setError(err.message || 'Unable to load academic report');
       } finally {
@@ -106,16 +107,16 @@ const AcademicReport = () => {
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header Section */}
       <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-amber-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
               <BarChart3 size={14} />
-              <span>Real-time Academic Data</span>
+              <span>Report Card</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Academic Performance</h1>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Report Card</h1>
             <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
-              Consolidated official report card data including subject totals, attendance, and assessment history.
+              Official marks, subject totals and assessment history, as published by the school.
             </p>
           </div>
           
@@ -134,33 +135,13 @@ const AcademicReport = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label htmlFor="academic-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
               <User size={14} />
-              Select Child
-            </label>
-            <div className="relative group">
-              <select
-                id="academic-student"
-                value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all cursor-pointer group-hover:bg-white"
-              >
-                {reportCards.length === 0 && <option value="">No linked children</option>}
-                {reportCards.map((card) => (
-                  <option key={card.studentId} value={card.studentId}>
-                    {formatStudentDisplay({
-                      studentName: card.studentName,
-                      username: card.username,
-                      studentCode: card.studentCode,
-                      roll: card.roll,
-                      grade: card.grade,
-                      section: card.section
-                    })}
-                  </option>
-                ))}
-              </select>
-              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={18} />
-            </div>
+              Child
+            </p>
+            {childOptions.length === 0
+              ? <p className="text-sm text-slate-400">No linked children</p>
+              : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />}
           </div>
 
           <div className="space-y-2">
@@ -308,7 +289,7 @@ const AcademicReport = () => {
 
           {loading ? (
             <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-4">
-              <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
+              <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
               <p className="text-sm font-medium text-slate-500 tracking-wide">Syncing academic records...</p>
             </div>
           ) : !selectedReport ? (

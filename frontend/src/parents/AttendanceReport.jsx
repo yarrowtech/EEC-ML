@@ -7,7 +7,6 @@ import {
   TrendingUp, 
   Loader2, 
   Users, 
-  ChevronRight, 
   Filter, 
   CheckCircle2, 
   User,
@@ -16,16 +15,23 @@ import {
   ShieldCheck,
   AlertCircle
 } from 'lucide-react';
-import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiJson } from './parentApi';
+import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
+import { getLocalMonthKey } from './attendanceViewModel';
 
 const AttendanceReport = () => {
   const navigate = useNavigate();
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [month, setMonth] = useState(() => getLocalMonthKey());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [children, setChildren] = useState([]);
+
+  const childOptions = useMemo(
+    () => children.map((c) => ({ id: c?.student?._id || '', name: c?.student?.name || 'Student' })),
+    [children],
+  );
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const selectedStudentId = selectedOption?.id || '';
 
   useEffect(() => {
     const loadAttendance = async () => {
@@ -43,9 +49,6 @@ const AttendanceReport = () => {
 
         const list = Array.isArray(data.children) ? data.children : [];
         setChildren(list);
-        if (!selectedStudentId && list.length > 0) {
-          setSelectedStudentId(list[0]?.student?._id || '');
-        }
       } catch (err) {
         setError(err.message || 'Could not load attendance');
       } finally {
@@ -59,7 +62,7 @@ const AttendanceReport = () => {
   const selectedChild = useMemo(() => {
     if (!children.length) return null;
     if (!selectedStudentId) return children[0];
-    return children.find((child) => child?.student?._id === selectedStudentId) || children[0];
+    return children.find((child) => String(child?.student?._id) === String(selectedStudentId)) || children[0];
   }, [children, selectedStudentId]);
 
   const records = useMemo(() => Array.isArray(selectedChild?.attendance) ? selectedChild.attendance : [], [selectedChild]);
@@ -75,10 +78,10 @@ const AttendanceReport = () => {
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header Section */}
       <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
               <CheckCircle2 size={14} />
               <span>Presence Tracker</span>
             </div>
@@ -101,32 +104,13 @@ const AttendanceReport = () => {
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <label htmlFor="att-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
               <User size={14} />
-              Select Student
-            </label>
-            <div className="relative group">
-              <select
-                id="att-student"
-                value={selectedStudentId}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all cursor-pointer group-hover:bg-white"
-              >
-                {children.length === 0 && <option value="">No children found</option>}
-                {children.map((child) => (
-                  <option key={child?.student?._id} value={child?.student?._id}>
-                    {formatStudentDisplay({
-                      name: child?.student?.name,
-                      username: child?.student?.username,
-                      studentCode: child?.student?.studentCode,
-                      roll: child?.student?.roll,
-                      section: child?.student?.section,
-                    })}
-                  </option>
-                ))}
-              </select>
-              <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={18} />
-            </div>
+              Student
+            </p>
+            {childOptions.length === 0
+              ? <p className="text-sm text-slate-400">No children found</p>
+              : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Student" />}
           </div>
 
           <div className="space-y-2">
@@ -139,7 +123,7 @@ const AttendanceReport = () => {
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all"
             />
           </div>
         </div>

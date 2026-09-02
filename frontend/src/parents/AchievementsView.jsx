@@ -9,7 +9,6 @@ import {
   Star, 
   Users, 
   Loader2, 
-  ChevronRight, 
   AlertCircle,
   TrendingUp,
   User,
@@ -18,15 +17,21 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiJson } from './parentApi';
+import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 
 const AchievementsView = () => {
   const navigate = useNavigate();
   const [childrenReports, setChildrenReports] = useState([]);
-  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const childOptions = useMemo(
+    () => childrenReports.map((c) => ({ id: String(c.studentId || ''), name: c.studentName || 'Student' })),
+    [childrenReports],
+  );
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const selectedStudentId = selectedOption?.id || '';
 
   useEffect(() => {
     const fetchRealAchievements = async () => {
@@ -46,10 +51,6 @@ const AchievementsView = () => {
           achievements: Array.isArray(c.achievements) ? c.achievements : [],
         }));
         setChildrenReports(children);
-        
-        if (children.length > 0) {
-          setSelectedStudentId(String(children[0].studentId));
-        }
       } catch (err) {
         setError(err.message || 'Unable to load achievements');
       } finally {
@@ -100,10 +101,10 @@ const AchievementsView = () => {
     <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header Section */}
       <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
               <Award size={14} className="fill-yellow-500" />
               <span>Wall of Fame</span>
             </div>
@@ -125,33 +126,13 @@ const AchievementsView = () => {
       {/* Control Panel */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
         <div className="space-y-2">
-          <label htmlFor="ach-student" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
             <Users size={14} />
-            Select Child
-          </label>
-          <div className="relative group">
-            <select
-              id="ach-student"
-              value={selectedStudentId}
-              onChange={(e) => setSelectedStudentId(e.target.value)}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-4 focus:ring-yellow-500/10 focus:border-yellow-500 outline-none transition-all cursor-pointer group-hover:bg-white"
-            >
-              {childrenReports.length === 0 && <option value="">No children found</option>}
-              {childrenReports.map((child) => (
-                <option key={child.studentId} value={child.studentId}>
-                  {formatStudentDisplay({
-                    studentName: child.studentName,
-                    username: child.username,
-                    studentCode: child.studentCode,
-                    roll: child.roll,
-                    grade: child.grade,
-                    section: child.section
-                  })}
-                </option>
-              ))}
-            </select>
-            <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={18} />
-          </div>
+            Child
+          </p>
+          {childOptions.length === 0
+            ? <p className="text-sm text-slate-400">No children found</p>
+            : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />}
         </div>
       </section>
 
@@ -221,7 +202,7 @@ const AchievementsView = () => {
         <div className="p-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-24 space-y-4">
-              <Loader2 className="w-10 h-10 text-yellow-500 animate-spin" />
+              <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
               <p className="text-sm font-medium text-slate-500 tracking-widest uppercase">Fetching records...</p>
             </div>
           ) : !selectedChild || selectedChild.achievements.length === 0 ? (
@@ -239,7 +220,7 @@ const AchievementsView = () => {
               {selectedChild.achievements.map((achievement, idx) => (
                 <div 
                   key={idx} 
-                  className="group relative flex flex-col sm:flex-row gap-6 border border-slate-100 rounded-3xl p-6 transition-all hover:bg-slate-50/50 hover:border-yellow-200 hover:shadow-xl hover:shadow-yellow-500/5"
+                  className="group relative flex flex-col sm:flex-row gap-6 border border-slate-100 rounded-3xl p-6 transition-all hover:bg-slate-50/50 hover:border-violet-200 hover:shadow-xl hover:shadow-violet-500/5"
                 >
                   <div className="flex-shrink-0">
                     <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform ${
@@ -255,7 +236,7 @@ const AchievementsView = () => {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-slate-900 group-hover:text-yellow-700 transition-colors">
+                          <h3 className="text-lg font-bold text-slate-900 group-hover:text-violet-700 transition-colors">
                             {achievement.title}
                           </h3>
                           <ShieldCheck size={16} className="text-blue-500" />

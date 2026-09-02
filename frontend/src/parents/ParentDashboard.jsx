@@ -18,7 +18,6 @@ import {
   FileText,
   AlertTriangle,
   BookOpen,
-  Home,
   Lightbulb,
   RefreshCw,
   ChevronDown,
@@ -28,6 +27,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiFetch, parentApiJson } from './parentApi';
+import { mapAttendanceChildForDashboard } from './attendanceViewModel';
 
 const getInitials = (name) => String(name || 'Student')
   .trim()
@@ -57,12 +57,12 @@ const WeakAreasCard = () => {
   };
 
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-white/60 bg-white/40 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
       <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
         <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           <AlertTriangle size={14} className="text-amber-500" /> Weak Areas
         </h2>
-        <span className="rounded-full border border-amber-200/60 bg-amber-50/70 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
+        <span className="rounded-full border border-amber-200/60 bg-amber-50/70 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
           Topics below 60%
         </span>
       </div>
@@ -80,7 +80,7 @@ const WeakAreasCard = () => {
               <div key={i} className="flex items-center justify-between border-b border-slate-100/60 py-2 last:border-0">
                 <div className="min-w-0 mr-3">
                   <p className="truncate text-sm font-medium text-slate-700">{item.topicTitle}</p>
-                  <p className="text-[10px] text-slate-400">{item.subject} · {item.studentId?.name || 'Student'}</p>
+                  <p className="text-[11px] text-slate-400">{item.subject} · {item.studentId?.name || 'Student'}</p>
                 </div>
                 <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${concernColor(item.score)}`}>{item.score}%</span>
               </div>
@@ -115,42 +115,42 @@ const RemarksFeedCard = () => {
   };
 
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-white/60 bg-white/40 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
       <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
         <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           <BookOpen size={14} className="text-blue-500" /> Teacher Remarks
         </h2>
-        <span className="rounded-full border border-emerald-200/60 bg-emerald-50/70 px-2 py-0.5 text-[9px] font-semibold text-emerald-700">Latest</span>
+        <span className="rounded-full border border-emerald-200/60 bg-emerald-50/70 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Latest</span>
       </div>
       <div className="flex-1 px-4 pb-4 pt-1">
         {loading ? (
           <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
         ) : remarks.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200/60 bg-white/20 py-6 text-center text-slate-400">
+          <div className="rounded-lg border border-dashed border-slate-200/60 bg-slate-50 py-6 text-center text-slate-400">
             <MessageCircle size={26} className="mx-auto mb-2 opacity-30" />
             <p className="text-xs font-semibold">No remarks yet</p>
           </div>
         ) : (
           <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
             {remarks.map((r, i) => (
-              <motion.div key={i} whileHover={prefersReducedMotion ? undefined : { x: 3 }} className="rounded-lg border border-white/50 bg-white/30 p-2.5 transition hover:bg-white/60">
+              <motion.div key={i} whileHover={prefersReducedMotion ? undefined : { x: 3 }} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 transition hover:bg-white">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div>
                     <p className="text-xs font-semibold text-slate-700">{r.studentName}</p>
-                    <p className="text-[10px] text-slate-400">{new Date(r.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                    <p className="text-[11px] text-slate-400">{new Date(r.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {r.category && (
-                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase">{r.category}</span>
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase">{r.category}</span>
                     )}
                     {r.concernLevel && (
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full border uppercase ${concernBadge[r.concernLevel] || concernBadge.low}`}>{r.concernLevel}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full border uppercase ${concernBadge[r.concernLevel] || concernBadge.low}`}>{r.concernLevel}</span>
                     )}
                   </div>
                 </div>
                 <p className={`text-xs leading-relaxed text-slate-600 ${expanded === i ? '' : 'line-clamp-2'}`}>{r.observationText}</p>
                 {r.observationText?.length > 100 && (
-                  <button onClick={() => setExpanded(expanded === i ? null : i)} className="mt-1 text-[10px] font-bold text-indigo-500 flex items-center gap-0.5">
+                  <button onClick={() => setExpanded(expanded === i ? null : i)} className="mt-1 text-[11px] font-bold text-indigo-500 flex items-center gap-0.5">
                     {expanded === i ? <><ChevronUp size={10} /> Less</> : <><ChevronDown size={10} /> More</>}
                   </button>
                 )}
@@ -163,135 +163,129 @@ const RemarksFeedCard = () => {
   );
 };
 
-// ── Home Support Tips Card ────────────────────────────────────────────────────
-const HomeSupportCard = ({ studentId, studentName }) => {
-  const navigate = useNavigate();
-  const [content, setContent] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [fetched, setFetched] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!studentId) return;
-    setLoading(true);
-    try {
-      const d = await parentApiJson(`/api/parent-dashboard/home-support/${studentId}`, {}, navigate);
-      setContent(d.data?.content || '');
-    } catch {
-      setContent('');
-    } finally {
-      setLoading(false);
-      setFetched(true);
-    }
-  }, [studentId, navigate]);
-
-  const lines = content.split('\n').filter(Boolean);
-
-  return (
-    <div aria-label={`Home support for ${studentName}`} className="rounded-lg border border-amber-200/60 bg-amber-50/50 p-3 transition hover:bg-amber-50/80 hover:shadow-sm">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Home size={15} className="text-amber-600" />
-          <p className="text-xs font-semibold text-slate-700">Home Support</p>
-        </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-200 disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={10} className="animate-spin" /> : <Lightbulb size={10} />}
-          {fetched ? 'Refresh' : 'Get Tips'}
-        </button>
-      </div>
-      {content && (
-        <div className="space-y-1 mt-2">
-          {lines.map((line, i) => (
-            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('•') ? 'pl-3 text-amber-800' : 'font-bold text-amber-900 mt-2'}`}>{line}</p>
-          ))}
-        </div>
-      )}
-      {!content && !loading && fetched && (
-        <p role="alert" className="text-xs text-amber-700 mt-2">Could not load tips. Please try again.</p>
-      )}
-      {!fetched && !loading && (
-        <p className="text-[11px] text-amber-700 mt-1">Click "Get Tips" to see AI-generated home support suggestions for this student.</p>
-      )}
-    </div>
-  );
+// ── AI report cards ──────────────────────────────────────────────────────────
+// All three cards self-load their most recent cached report on mount. The server
+// only regenerates (an LLM call) when its cache is stale or "Refresh" forces it.
+const relativeTime = (value) => {
+  if (!value) return '';
+  const diff = Date.now() - new Date(value).getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  const days = Math.round(hrs / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
 };
 
-// ── AI Digest Card (weekly / monthly) ────────────────────────────────────────
-const AIDigestCard = ({ studentId, studentName, type }) => {
-  const navigate = useNavigate();
+const ReportSkeleton = () => (
+  <div className="mt-2 space-y-2" aria-hidden="true">
+    <div className="h-2.5 w-3/4 animate-pulse rounded bg-slate-200" />
+    <div className="h-2.5 w-full animate-pulse rounded bg-slate-200" />
+    <div className="h-2.5 w-5/6 animate-pulse rounded bg-slate-200" />
+  </div>
+);
+
+const useAiReport = (path, navigate) => {
   const [content, setContent] = useState('');
   const [generatedAt, setGeneratedAt] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [fetched, setFetched] = useState(false);
-  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const endpoint = type === 'weekly' ? 'weekly-digest' : 'monthly-report';
-  const label = type === 'weekly' ? 'Weekly Digest' : 'Monthly Report';
-  const Icon = type === 'weekly' ? TrendingUp : FileText;
-  const color = type === 'weekly' ? 'indigo' : 'purple';
-
-  const load = useCallback(async () => {
-    if (!studentId) return;
+  const load = useCallback(async (force = false) => {
     setLoading(true);
-    setLoadError('');
+    setError('');
     try {
-      const d = await parentApiJson(`/api/parent-dashboard/${endpoint}/${studentId}`, {}, navigate);
+      const d = await parentApiJson(`${path}${force ? '?refresh=1' : ''}`, {}, navigate);
       setContent(d.data?.content || '');
-      setGeneratedAt(d.data?.generatedAt);
-      if (!d.data?.content) setLoadError('No report content was returned. Please try again.');
+      setGeneratedAt(d.data?.generatedAt || null);
+      if (!d.data?.content) setError('No report available yet — check back after more classwork is recorded.');
     } catch (err) {
-      setLoadError(err.message || 'The report could not be generated right now.');
+      setError(err.message || 'Couldn’t load this report.');
     } finally {
       setLoading(false);
-      setFetched(true);
     }
-  }, [studentId, endpoint, navigate]);
+  }, [path, navigate]);
 
+  useEffect(() => { load(false); }, [load]);
+
+  return { content, generatedAt, loading, error, refresh: () => load(true) };
+};
+
+const AiReportCard = ({ title, Icon, palette, studentName, path }) => {
+  const navigate = useNavigate();
+  const { content, generatedAt, loading, error, refresh } = useAiReport(path, navigate);
   const lines = content.split('\n').filter(Boolean);
-
-  const colorMap = {
-    indigo: { border: 'border-indigo-200', bg: 'bg-indigo-50/60', icon: 'text-indigo-600', heading: 'text-indigo-900', body: 'text-indigo-800', btn: 'text-indigo-700 bg-indigo-100 border-indigo-200 hover:bg-indigo-200', h2: 'font-black text-indigo-900 mt-2', bullet: 'pl-3 text-indigo-800' },
-    purple: { border: 'border-purple-200', bg: 'bg-purple-50/60', icon: 'text-purple-600', heading: 'text-purple-900', body: 'text-purple-800', btn: 'text-purple-700 bg-purple-100 border-purple-200 hover:bg-purple-200', h2: 'font-black text-purple-900 mt-2', bullet: 'pl-3 text-purple-800' },
-  }[color];
+  const showSkeleton = loading && !content;
 
   return (
-    <div aria-label={`${label} for ${studentName}`} className={`rounded-lg border ${colorMap.border} ${colorMap.bg} p-3 transition hover:shadow-sm`}>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+    <div aria-label={`${title} for ${studentName}`} className={`rounded-lg border ${palette.border} ${palette.bg} p-3`}>
+      <div className="mb-1 flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Icon size={16} className={colorMap.icon} />
-          <div>
-            <p className={`text-xs font-semibold ${colorMap.heading}`}>{label}</p>
-            {generatedAt && <p className="text-[9px] text-slate-400">Generated {new Date(generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
-          </div>
+          <Icon size={15} className={palette.icon} aria-hidden="true" />
+          <p className={`text-xs font-semibold ${palette.heading}`}>{title}</p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className={`flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] font-semibold transition disabled:opacity-50 ${colorMap.btn}`}
-        >
-          {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-          {fetched ? 'Refresh' : 'Generate'}
-        </button>
+        {(content || error) && (
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-white hover:text-slate-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+            Refresh
+          </button>
+        )}
       </div>
-      {content && (
-        <div className="space-y-0.5 mt-2 max-h-48 overflow-y-auto pr-1">
+
+      {generatedAt && !showSkeleton && (
+        <p className="text-[11px] text-slate-400">Updated {relativeTime(generatedAt)}</p>
+      )}
+
+      {showSkeleton && <ReportSkeleton />}
+
+      {content && !showSkeleton && (
+        <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto pr-1">
           {lines.map((line, i) => (
-            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('##') ? colorMap.h2 : line.startsWith('•') || line.startsWith('-') ? colorMap.bullet : colorMap.body}`}>
+            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('##') ? palette.h2 : line.startsWith('•') || line.startsWith('-') ? palette.bullet : palette.body}`}>
               {line.replace(/^##\s*/, '')}
             </p>
           ))}
         </div>
       )}
-      {!content && !loading && !fetched && (
-        <p className={`text-[11px] mt-1 ${colorMap.body}`}>Click "Generate" to create an AI-powered {label.toLowerCase()} for this student.</p>
-      )}
-      {loadError && !loading && (
-        <p role="alert" className="text-[11px] mt-1 text-rose-600">{loadError}</p>
+
+      {error && !loading && !content && (
+        <p role="status" className="mt-2 text-[11px] text-slate-500">{error}</p>
       )}
     </div>
+  );
+};
+
+const HomeSupportCard = ({ studentId, studentName }) => (
+  <AiReportCard
+    title="Home Support"
+    Icon={Lightbulb}
+    studentName={studentName}
+    path={`/api/parent-dashboard/home-support/${studentId}`}
+    palette={{
+      border: 'border-slate-200', bg: 'bg-slate-50', icon: 'text-violet-600', heading: 'text-slate-800',
+      body: 'text-slate-600', h2: 'font-bold text-slate-800 mt-2', bullet: 'pl-3 text-slate-600',
+    }}
+  />
+);
+
+const AIDigestCard = ({ studentId, studentName, type }) => {
+  const isWeekly = type === 'weekly';
+  return (
+    <AiReportCard
+      title={isWeekly ? 'Weekly Digest' : 'Monthly Report'}
+      Icon={isWeekly ? TrendingUp : FileText}
+      studentName={studentName}
+      path={`/api/parent-dashboard/${isWeekly ? 'weekly-digest' : 'monthly-report'}/${studentId}`}
+      palette={isWeekly
+        ? { border: 'border-indigo-200', bg: 'bg-indigo-50/60', icon: 'text-indigo-600', heading: 'text-indigo-900', body: 'text-indigo-800', h2: 'font-bold text-indigo-900 mt-2', bullet: 'pl-3 text-indigo-800' }
+        : { border: 'border-violet-200', bg: 'bg-violet-50', icon: 'text-violet-600', heading: 'text-violet-900', body: 'text-violet-800', h2: 'font-bold text-violet-900 mt-2', bullet: 'pl-3 text-violet-800' }}
+    />
   );
 };
 
@@ -332,12 +326,7 @@ const ParentDashboard = ({
           const attendance = await attendanceRes.json();
 
           // Merge data to get rich child info
-          const children = (attendance.children || []).map(c => ({
-            ...c.student,
-            attendancePercentage: c.summary?.attendancePercentage || 0,
-            presentDays: c.summary?.presentDays || 0,
-            totalDays: c.summary?.totalClasses || 0,
-          }));
+          const children = (attendance.children || []).map(mapAttendanceChildForDashboard);
           setChildrenData(children);
         } else {
           throw new Error('attendance');
@@ -410,38 +399,39 @@ const ParentDashboard = ({
     return [
       {
         id: 'attendance',
-        label: 'Avg Attendance',
+        label: 'Monthly attendance',
         value: `${avgAttendance}%`,
-        sub: 'Across all wards',
+        sub: 'Current month · across all children',
         icon: Calendar,
-        iconClass: 'bg-emerald-100/80 text-emerald-600',
+        iconClass: 'bg-emerald-50 text-emerald-600',
+        valueClass: 'text-slate-800',
       },
       {
         id: 'ptms',
-        label: 'Upcoming PTMs',
-        value: nextMeeting ? 'Scheduled ahead' : 'No meetings',
-        sub: nextMeeting ? `Next: ${formatMeetingDate(nextMeeting.meetingDate)}` : 'Nothing scheduled',
+        label: 'Upcoming meetings',
+        value: String(upcomingMeetings.length),
+        sub: nextMeeting ? `Next ${formatMeetingDate(nextMeeting.meetingDate)}` : 'None scheduled',
         icon: Video,
-        iconClass: 'bg-amber-100/80 text-amber-600',
-        valueClass: nextMeeting ? 'text-amber-600' : 'text-slate-700',
+        iconClass: 'bg-amber-50 text-amber-600',
+        valueClass: 'text-slate-800',
       },
       {
         id: 'children',
-        label: 'Linked Children',
-        value: childrenData.length ? 'Active profiles' : 'No profiles',
-        sub: `${childrenData.length} ${childrenData.length === 1 ? 'child' : 'children'} linked`,
+        label: 'Linked children',
+        value: String(childrenData.length),
+        sub: childrenData.length ? 'Active profiles' : 'None linked yet',
         icon: Users,
-        iconClass: 'bg-emerald-100/80 text-emerald-600',
-        valueClass: childrenData.length ? 'text-emerald-600' : 'text-slate-700',
+        iconClass: 'bg-violet-50 text-violet-600',
+        valueClass: 'text-slate-800',
       },
       {
         id: 'invoices',
-        label: 'Open Invoices',
-        value: openInvoices ? `${openInvoices} open` : 'All fees cleared',
-        sub: openInvoices ? `₹${pendingAmount.toLocaleString('en-IN')} pending` : '₹0 pending',
+        label: 'Open invoices',
+        value: String(openInvoices),
+        sub: openInvoices ? `₹${pendingAmount.toLocaleString('en-IN')} due` : 'All fees cleared',
         icon: CreditCard,
-        iconClass: openInvoices ? 'bg-rose-100/80 text-rose-600' : 'bg-emerald-100/80 text-emerald-600',
-        valueClass: openInvoices ? 'text-rose-600' : 'text-emerald-600',
+        iconClass: openInvoices ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600',
+        valueClass: openInvoices ? 'text-rose-600' : 'text-slate-800',
       },
     ];
   }, [avgAttendance, childrenData.length, feeSummary, formatMeetingDate, upcomingMeetings]);
@@ -469,178 +459,64 @@ const ParentDashboard = ({
 
   if (loading && childrenData.length === 0) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center space-y-4 bg-slate-50">
-        <Loader2 size={48} className="animate-spin text-indigo-600" />
-        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Constructing Portal...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50" aria-busy="true" aria-live="polite">
+        <Loader2 size={40} className="animate-spin text-violet-600" aria-hidden="true" />
+        <p className="text-sm font-medium text-slate-500">Loading your dashboard…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-2 sm:p-4 lg:p-6 space-y-8 max-w-7xl mx-auto">
-      <section className="relative isolate overflow-hidden rounded-[2rem] bg-slate-50 p-2 sm:p-4 lg:p-6">
-        <div className="absolute inset-0 -z-10 pointer-events-none" aria-hidden="true">
-          <motion.div
-            className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-300/30 blur-3xl sm:h-96 sm:w-96"
-            animate={prefersReducedMotion ? undefined : { x: [0, -32, 0], y: [0, 24, 0] }}
-            transition={{ repeat: Infinity, duration: 10, ease: 'easeInOut' }}
-          />
-          <motion.div
-            className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl sm:h-80 sm:w-80"
-            animate={prefersReducedMotion ? undefined : { x: [0, 32, 0], y: [0, -24, 0] }}
-            transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut', delay: 2 }}
-          />
-          <motion.div
-            className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-300/10 blur-3xl"
-            animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1], x: [0, 18, 0], y: [0, -18, 0] }}
-            transition={{ repeat: Infinity, duration: 16, ease: 'easeInOut', delay: 0.5 }}
-          />
+    <div className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onOpenSidebar}
+              className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 lg:hidden"
+              aria-label="Open parent navigation"
+            >
+              <Menu size={20} />
+            </button>
+            <span className="text-sm font-medium text-slate-400">
+              {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </span>
+          </div>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 28 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
-          className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
-        >
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-5">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <motion.button
-                type="button"
-                whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
-                onClick={onOpenSidebar}
-                className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
-                aria-label="Open parent navigation"
-              >
-                <Menu size={20} />
-              </motion.button>
-              <div className="flex items-center gap-3">
-                <motion.div
-                  className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 sm:text-xs"
-                  animate={prefersReducedMotion ? undefined : { opacity: [0.8, 1, 0.8] }}
-                  transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
-                >
-                  <span className="relative flex h-2.5 w-2.5">
-                    {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30" />
-                  </span>
-                  Portal Active
-                </motion.div>
-                <span className="hidden text-xs text-slate-300 sm:inline">·</span>
-                <span className="hidden rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm sm:inline">
-                  {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </span>
-              </div>
-            </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl">
+            {getGreeting()}, <span className="text-violet-600">{parentName || 'Parent Account'}</span>
+          </h1>
+          <p className="mt-1 max-w-xl text-sm text-slate-500">
+            Track academic progress, monitor wellbeing, and stay connected with the school.
+          </p>
+        </div>
+
+        {error && (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {error}
           </div>
-
-          <div className="mb-7 sm:mb-8">
-            <motion.h1
-              initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: prefersReducedMotion ? 0 : 0.15, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl lg:text-4xl"
-            >
-              {getGreeting()}, <br className="sm:hidden" />
-              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">{parentName || 'Parent Account'}</span>
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="mt-1 max-w-xl text-sm text-slate-500 sm:text-base"
-            >
-              Track academic progress, monitor wellbeing, and stay connected with the institution.
-            </motion.p>
-          </div>
-
-          {error && (
-            <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
-
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
-          >
-            <motion.div
-              variants={itemVariants}
-              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              className="group relative flex min-h-[150px] flex-col justify-between overflow-hidden rounded-2xl border border-purple-200/50 bg-gradient-to-br from-purple-50/80 to-purple-100/40 p-5 shadow-sm backdrop-blur-sm transition-shadow duration-200 hover:shadow-lg"
-            >
-              <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-purple-300/20 blur-2xl transition-transform duration-500 group-hover:scale-150" />
-              <div className="relative z-10 flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-700">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-200/60 text-purple-600 shadow-sm">
-                  <MessageCircle size={19} aria-hidden="true" />
-                </span>
-                Staff Chat
-              </div>
-              <div className="relative z-10">
-                <p className="mb-3 text-sm text-slate-500">Connect with teachers</p>
-                <Link
-                  to="/parents/chat"
-                  className="inline-flex items-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:scale-[1.04] hover:bg-purple-700 active:scale-95"
-                >
-                  Open Chat <ChevronRight size={14} aria-hidden="true" />
-                </Link>
-              </div>
-            </motion.div>
-
-            {statsData.map((item) => {
-              const Icon = item.icon;
-              return (
-                <motion.div
-                  key={item.id}
-                  variants={itemVariants}
-                  whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-                  className="flex min-h-[150px] flex-col justify-between rounded-2xl border border-white/60 bg-white/40 p-5 shadow-sm backdrop-blur-sm transition-shadow duration-200 hover:shadow-lg"
-                >
-                  <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow-sm ${item.iconClass}`}>
-                      <Icon size={19} aria-hidden="true" />
-                    </span>
-                    {item.label}
-                  </div>
-                  <div>
-                    <p className={`text-xl font-bold leading-tight ${item.valueClass || 'text-slate-800'}`}>{item.value}</p>
-                    <p className="mt-1 text-sm text-slate-500">{item.sub}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
-        </motion.div>
+        )}
       </section>
 
       <motion.section
-        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 24, scale: prefersReducedMotion ? 1 : 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.65, ease: 'easeOut' }}
-        className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-white/55 p-4 shadow-2xl shadow-slate-200/50 backdrop-blur-2xl sm:p-5 lg:p-6"
+        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.4, ease: 'easeOut' }}
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
       >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-white/50 pb-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">Ward Overview</h2>
-            <span className="flex items-center gap-1 rounded-full border border-purple-200/50 bg-purple-50/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-purple-600">
-              <Users size={12} /> Live Student Status
-            </span>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-white/60 bg-white/40 px-3 py-1.5 text-xs font-medium text-slate-500 backdrop-blur-sm">
-            <span className="relative flex h-2 w-2">
-              {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            {currentTime.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <h2 className="text-lg font-bold tracking-tight text-slate-800">Your children</h2>
+          <span className="text-xs font-medium text-slate-400">
+            Updated {currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+          </span>
         </div>
 
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {childrenData.length === 0 ? (
-            <motion.div variants={itemVariants} className="md:col-span-2 rounded-xl border border-dashed border-slate-200/60 bg-white/20 py-10 text-center text-slate-400">
+            <motion.div variants={itemVariants} className="md:col-span-2 rounded-xl border border-dashed border-slate-200/60 bg-slate-50 py-10 text-center text-slate-400">
               <UserIcon size={38} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm font-semibold">No active student profiles linked</p>
             </motion.div>
@@ -649,10 +525,10 @@ const ParentDashboard = ({
               key={child._id}
               variants={itemVariants}
               whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              className="rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md md:col-span-2"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md md:col-span-2"
             >
               <div className="mb-3 flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-base font-bold text-white shadow-md shadow-purple-500/20">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-base font-bold text-white shadow-md shadow-violet-500/20">
                   {getInitials(child.name)}
                 </div>
                 <div className="min-w-0">
@@ -664,17 +540,17 @@ const ParentDashboard = ({
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center">
-                  <span className="text-base font-bold text-purple-600">{child.attendancePercentage}%</span>
-                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Calendar size={12} /> Attendance</span>
+                <div className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
+                  <span className="text-base font-bold text-violet-600">{child.attendancePercentage}%</span>
+                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Calendar size={12} /> Monthly attendance</span>
                 </div>
-                <Link to="/parents/routine" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white/60">
+                <Link to="/parents/routine" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white">
                   <span className="text-base font-bold text-emerald-600">View</span>
-                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Clock size={12} /> Routine</span>
+                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Clock size={12} /> Routine</span>
                 </Link>
-                <Link to="/parents/results" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-white/40 bg-white/25 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white/60">
-                  <span className="text-base font-bold text-amber-600">View</span>
-                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500"><Award size={12} /> Results</span>
+                <Link to="/parents/academic" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white">
+                  <span className="text-base font-bold text-violet-600">View</span>
+                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Award size={12} /> Report card</span>
                 </Link>
               </div>
             </motion.article>
@@ -683,10 +559,10 @@ const ParentDashboard = ({
           <motion.div variants={itemVariants}><WeakAreasCard /></motion.div>
           <motion.div variants={itemVariants}><RemarksFeedCard /></motion.div>
 
-          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
             <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Calendar size={14} /> Upcoming Events</h3>
             {upcomingMeetings.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200/50 bg-white/20 py-5 text-center">
+              <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200/50 bg-slate-50 py-5 text-center">
                 <Video size={28} className="mb-2 text-slate-300" />
                 <p className="text-sm font-semibold text-slate-600">No meetings scheduled</p>
                 <p className="text-xs text-slate-400">Check back later for updates</p>
@@ -694,37 +570,37 @@ const ParentDashboard = ({
             ) : (
               <div className="flex-1 space-y-2">
                 {upcomingMeetings.map((meeting) => (
-                  <div key={meeting._id} className="rounded-lg border border-white/50 bg-white/30 p-2.5">
+                  <div key={meeting._id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-700">{meeting.title || meeting.topic || 'Parent-teacher meeting'}</p>
-                        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400"><Clock size={10} /> {formatMeetingDate(meeting.meetingDate)} · {meeting.meetingTime}</p>
+                        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400"><Clock size={10} /> {formatMeetingDate(meeting.meetingDate)} · {meeting.meetingTime}</p>
                       </div>
-                      <span className={`rounded-full border px-2 py-0.5 text-[8px] font-semibold uppercase ${meeting.status === 'confirmed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{String(meeting.status || 'pending').replace(/_/g, ' ')}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase ${meeting.status === 'confirmed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{String(meeting.status || 'pending').replace(/_/g, ' ')}</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            <Link to="/parents/ptm" className="mt-2 inline-flex items-center justify-end text-xs font-semibold text-purple-600 hover:text-purple-700">View All Meetings <ChevronRight size={14} /></Link>
+            <Link to="/parents/ptm" className="mt-2 inline-flex items-center justify-end text-xs font-semibold text-violet-600 hover:text-violet-700">View All Meetings <ChevronRight size={14} /></Link>
           </motion.section>
 
-          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-purple-200/40 bg-purple-50/40 p-4 shadow-sm backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
+          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
             <div className="mb-3 flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600"><LifeBuoy size={17} /></div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><LifeBuoy size={17} /></div>
               <div>
                 <h3 className="text-sm font-semibold text-slate-800">Need technical assistance?</h3>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500">Our support team can help with portal navigation or student records.</p>
               </div>
             </div>
-            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-purple-600/20 transition hover:bg-purple-700">Contact Support</Link>
+            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-700">Contact Support</Link>
           </motion.section>
 
           {childrenData.length > 0 && (
-            <motion.section variants={itemVariants} className="rounded-xl border border-white/60 bg-white/40 p-4 shadow-sm backdrop-blur-sm md:col-span-2">
+            <motion.section variants={itemVariants} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Sparkles size={14} className="text-purple-500" /> AI-Powered Reports</h3>
-                <span className="rounded-full border border-purple-200/50 bg-purple-50/60 px-2 py-0.5 text-[9px] font-semibold text-purple-600">Personalized</span>
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Sparkles size={14} className="text-violet-500" /> AI-Powered Reports</h3>
+                <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">Personalized</span>
               </div>
               <div className="space-y-4">
                 {childrenData.map((child) => (
@@ -743,9 +619,42 @@ const ParentDashboard = ({
         </motion.div>
       </motion.section>
 
-      <footer className="text-center pb-8 border-t border-slate-100 pt-8">
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
-          Electronic Educare • Unified Parent Experience
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 className="mb-4 text-lg font-bold tracking-tight text-slate-800">At a glance</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Link
+            to="/parents/chat"
+            className="flex flex-col justify-between rounded-xl border border-violet-200 bg-violet-50 p-4 transition hover:bg-violet-100"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm">
+              <MessageCircle size={18} aria-hidden="true" />
+            </span>
+            <span className="mt-3">
+              <span className="block text-sm font-bold text-slate-800">Message staff</span>
+              <span className="mt-0.5 block text-xs text-slate-500">Open chat</span>
+            </span>
+          </Link>
+          {statsData.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.id} className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4">
+                <span className={`flex h-9 w-9 items-center justify-center rounded-full ${item.iconClass}`}>
+                  <Icon size={18} aria-hidden="true" />
+                </span>
+                <span className="mt-3">
+                  <span className={`block text-2xl font-bold leading-none ${item.valueClass || 'text-slate-800'}`}>{item.value}</span>
+                  <span className="mt-1 block text-xs font-semibold text-slate-600">{item.label}</span>
+                  <span className="block text-xs text-slate-400">{item.sub}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <footer className="border-t border-slate-100 pt-6 pb-8 text-center">
+        <p className="text-xs font-medium tracking-wide text-slate-400">
+          Electronic Educare
         </p>
       </footer>
     </div>

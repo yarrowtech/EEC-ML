@@ -44,12 +44,6 @@ jest.mock('../ComplaintManagementSystem', () => {
   };
 });
 
-jest.mock('../ResultsView', () => {
-  return function ResultsView() {
-    return <div data-testid="results-view">Results View</div>;
-  };
-});
-
 jest.mock('../AchievementsView', () => {
   return function AchievementsView() {
     return <div data-testid="achievements-view">Achievements View</div>;
@@ -168,21 +162,24 @@ describe('ParentPortal', () => {
       [
         'Dashboard',
         'Growth Analytics',
-        'Attendance Report',
-        'Academic Report',
-        'Fees Payment',
-        'Health Report',
-        'Chat',
-        'Complaints',
-        'Parent-Teacher Meetings',
-        'Class Routine',
-        'Holiday List',
-        'Parent Observation',
-        'Excuse Letters',
-        'Results',
+        'Report Card',
+        'Attendance',
         'Achievements',
+        'Health Record',
+        'Class Routine',
+        'Holidays',
+        'Fees',
+        'Chat',
+        'Meetings',
+        'Complaints',
+        'Observations',
+        'Excuse Letters',
       ].forEach((label) => {
         expect(nav.getByText(label)).toBeInTheDocument();
+      });
+      // Grouped navigation headings
+      ['Progress', 'Schedule', 'Money', 'Talk to school'].forEach((heading) => {
+        expect(nav.getByText(heading)).toBeInTheDocument();
       });
     });
   });
@@ -302,7 +299,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const attendanceLink = screen.getByText('Attendance Report');
+      const attendanceLink = screen.getByText('Attendance');
       fireEvent.click(attendanceLink);
 
       await waitFor(() => {
@@ -323,7 +320,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const academicLink = screen.getByText('Academic Report');
+      const academicLink = screen.getByText('Report Card');
       fireEvent.click(academicLink);
 
       await waitFor(() => {
@@ -344,7 +341,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const feesLink = screen.getByText('Fees Payment');
+      const feesLink = screen.getByText('Fees');
       fireEvent.click(feesLink);
 
       await waitFor(() => {
@@ -365,7 +362,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const ptmLink = screen.getByText('Parent-Teacher Meetings');
+      const ptmLink = screen.getByText('Meetings');
       fireEvent.click(ptmLink);
 
       await waitFor(() => {
@@ -481,7 +478,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const attendanceLink = screen.getByText('Attendance Report');
+      const attendanceLink = screen.getByText('Attendance');
       fireEvent.click(attendanceLink);
 
       await waitFor(() => {
@@ -590,7 +587,7 @@ describe('ParentPortal', () => {
       );
 
       await waitFor(() => {
-        const attendanceLink = screen.getAllByText('Attendance Report')[0].closest('a');
+        const attendanceLink = screen.getAllByText('Attendance')[0].closest('a');
         expect(attendanceLink).toHaveClass('from-yellow-100');
         expect(attendanceLink).toHaveClass('border-yellow-500');
       });
@@ -671,7 +668,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === 'Monitoring your wards';
+          return element?.textContent === 'Your children';
         })).toBeInTheDocument();
       });
     });

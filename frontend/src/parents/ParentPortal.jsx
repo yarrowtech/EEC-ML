@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import {
   Users,
   Calendar,
@@ -17,7 +17,7 @@ import {
   Menu,
   X,
   Award,
-  GraduationCap,
+  Sun,
   Video,
   Clock,
   User,
@@ -35,7 +35,6 @@ import AcademicReport from './AcademicReport';
 import FeesPayment from './FeesPayment';
 import HealthReport from './HealthReport';
 import ComplaintManagementSystem from './ComplaintManagementSystem';
-import ResultsView from './ResultsView';
 import AchievementsView from './AchievementsView';
 import PTMPortal from './PTMPortal';
 import ParentDashboard from './ParentDashboard';
@@ -50,23 +49,49 @@ import DesktopNotificationPermissionModal from '../components/DesktopNotificatio
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { useDialog } from './useDialog';
 
-const MENU_ITEMS = [
-  { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
-  { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
-  { icon: Calendar, label: 'Holiday List', description: 'School holidays', path: '/parents/holidays' },
-  { icon: Clock, label: 'Class Routine', description: 'Weekly schedule', path: '/parents/routine' },
-  { icon: Calendar, label: 'Attendance Report', description: 'Punctuality tracker', path: '/parents/attendance' },
-  { icon: BookOpen, label: 'Academic Report', description: 'Learning progress', path: '/parents/academic' },
-  { icon: CreditCard, label: 'Fees Payment', description: 'Bills & dues', path: '/parents/fees' },
-  { icon: Activity, label: 'Health Report', description: 'Wellness records', path: '/parents/health' },
-  { icon: MessageCircle, label: 'Chat', description: 'Connect with staff', path: '/parents/chat' },
-  { icon: AlertOctagon, label: 'Complaints', description: 'Issue resolution', path: '/parents/complaints' },
-  { icon: Video, label: 'Parent-Teacher Meetings', description: 'Upcoming PTMs', path: '/parents/ptm' },
-  { icon: FileEdit, label: 'Parent Observation', description: 'Share feedback', path: '/parents/parent-observation' },
-  { icon: FileText, label: 'Excuse Letters', description: 'Children leave requests', path: '/parents/excuse-letters' },
-  { icon: GraduationCap, label: 'Results', description: 'Performance summary', path: '/parents/results' },
-  { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
+// Navigation is grouped so a parent scans by intent, not through a flat list.
+const NAV_GROUPS = [
+  {
+    items: [
+      { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
+    ],
+  },
+  {
+    heading: 'Progress',
+    items: [
+      { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
+      { icon: BookOpen, label: 'Report Card', description: 'Marks & assessments', path: '/parents/academic' },
+      { icon: Calendar, label: 'Attendance', description: 'Punctuality tracker', path: '/parents/attendance' },
+      { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
+      { icon: Activity, label: 'Health Record', description: 'Wellness & medical', path: '/parents/health' },
+    ],
+  },
+  {
+    heading: 'Schedule',
+    items: [
+      { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
+      { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
+    ],
+  },
+  {
+    heading: 'Money',
+    items: [
+      { icon: CreditCard, label: 'Fees', description: 'Bills & payments', path: '/parents/fees' },
+    ],
+  },
+  {
+    heading: 'Talk to school',
+    items: [
+      { icon: MessageCircle, label: 'Chat', description: 'Message staff', path: '/parents/chat' },
+      { icon: Video, label: 'Meetings', description: 'Parent-teacher meetings', path: '/parents/ptm' },
+      { icon: AlertOctagon, label: 'Complaints', description: 'Raise an issue', path: '/parents/complaints' },
+      { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
+      { icon: FileText, label: 'Excuse Letters', description: 'Leave requests', path: '/parents/excuse-letters' },
+    ],
+  },
 ];
+
+const MENU_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
 const ParentPortal = () => {
   const prefersReducedMotion = useReducedMotion();
@@ -177,7 +202,7 @@ const ParentPortal = () => {
   const childrenCount = Array.isArray(parentProfile?.children)
     ? parentProfile.children.length
     : 0;
-  const wardLabel = childrenCount === 1 ? 'ward' : 'wards';
+  const wardLabel = childrenCount === 1 ? 'child' : 'children';
   const parentName = String(parentProfile?.name || 'Parent').trim();
   const nameParts = parentName.split(/\s+/).filter(Boolean);
   const firstName = nameParts[0] || 'Parent';
@@ -397,7 +422,7 @@ const ParentPortal = () => {
       )}
       {/* Mobile Sidebar Toggle */}
       {!sidebarOpen && <button
-        className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-yellow-500 text-white rounded-lg shadow-lg"
+        className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-violet-600 text-white rounded-lg shadow-lg"
         onClick={() => setSidebarOpen(true)}
         aria-label="Open sidebar"
       >
@@ -426,7 +451,7 @@ const ParentPortal = () => {
       >
         <div className="relative overflow-hidden">
           <div className={`transition-all duration-400 ease-in-out ${sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none absolute inset-0'}`}>
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-600 via-amber-500 to-yellow-500 opacity-95" />
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-violet-600 to-violet-500 opacity-95" />
             <div className="relative px-4 py-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3">
@@ -441,7 +466,7 @@ const ParentPortal = () => {
                       {parentProfile?.name ? `${parentProfile.name}` : 'Parent Portal'}
                     </div>
                     <div className="text-white/80 text-xs">
-                      Monitoring {childrenCount || 'your'} {childrenCount ? wardLabel : 'wards'}
+                      {childrenCount ? `${childrenCount} ${wardLabel}` : 'Your children'}
                     </div>
                     <div className="text-white/70 text-xs mt-1">
                       Stay updated with weekly progress
@@ -471,13 +496,13 @@ const ParentPortal = () => {
           <div className={`transition-all duration-400 ease-in-out ${!sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4 pointer-events-none absolute inset-0'}`}>
             <div className="p-3 border-b border-gray-200 bg-white">
               <div className="flex flex-col items-center space-y-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-yellow-500 rounded-xl flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 bg-gradient-to-br from-violet-600 to-violet-500 rounded-xl flex items-center justify-center shadow-md">
                   <Users className="w-5 h-5 text-white" />
                 </div>
                 <div className="hidden lg:flex">
                   <button
                     onClick={() => setSidebarOpen(true)}
-                    className="p-2 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
+                    className="p-2 rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
                     aria-label="Expand sidebar"
                   >
                     <ChevronRight size={18} />
@@ -488,44 +513,58 @@ const ParentPortal = () => {
           </div>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto modern-scrollbar ${sidebarOpen ? 'px-4 py-6 space-y-2' : 'px-1 py-4 space-y-1'}`}>
-          {MENU_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const targetPath = normalizePath(item.path);
-            const isRootLink = targetPath === '/parents';
-            const isActive = isRootLink
-              ? currentPath === targetPath
-              : currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
+        <nav className={`flex-1 overflow-y-auto modern-scrollbar ${sidebarOpen ? 'px-4 py-5 space-y-4' : 'px-1 py-4 space-y-3'}`}>
+          {NAV_GROUPS.map((group, groupIndex) => (
+            <div key={group.heading || 'primary'} className={sidebarOpen ? 'space-y-1' : 'space-y-1'}>
+              {group.heading && sidebarOpen && (
+                <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  {group.heading}
+                </p>
+              )}
+              {group.heading && !sidebarOpen && groupIndex > 0 && (
+                <div className="mx-2 my-1 border-t border-gray-200" aria-hidden="true" />
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const targetPath = normalizePath(item.path);
+                const isRootLink = targetPath === '/parents';
+                const isActive = isRootLink
+                  ? currentPath === targetPath
+                  : currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
 
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={handleMenuClick}
-                className={`
-                  group flex items-start rounded-2xl transition-all duration-300 ease-out transform ${
-                    sidebarOpen ? 'px-4 py-3' : 'px-2 py-3 justify-center'
-                  }
-                  ${
-                    isActive
-                      ? 'bg-gradient-to-r from-yellow-100 to-yellow-50 text-yellow-700 shadow-md border-l-4 border-yellow-500'
-                      : 'text-gray-600 hover:bg-gradient-to-r hover:from-blue-50 hover:to-yellow-50 hover:text-gray-900 hover:shadow-md hover:scale-105 active:scale-95 hover:border-l-4 hover:border-blue-300'
-                  }
-                `}
-              >
-                <Icon
-                  className={`flex-shrink-0 transition-all duration-300 ${isActive ? 'text-yellow-600' : 'text-gray-500 group-hover:text-blue-600 group-hover:scale-110'}`}
-                  size={sidebarOpen ? 20 : 18}
-                />
-                {sidebarOpen && (
-                  <div className="ml-3 flex-1">
-                    <div className="font-medium text-sm text-gray-800">{item.label}</div>
-                    <div className="text-xs text-gray-500">{item.description}</div>
-                  </div>
-                )}
-              </Link>
-            );
-          })}
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={handleMenuClick}
+                    aria-current={isActive ? 'page' : undefined}
+                    title={!sidebarOpen ? item.label : undefined}
+                    className={`
+                      group flex items-center rounded-xl transition-colors duration-200 ${
+                        sidebarOpen ? 'px-4 py-2.5' : 'px-2 py-2.5 justify-center'
+                      }
+                      ${
+                        isActive
+                          ? 'bg-violet-50 text-violet-700 border-l-[3px] border-violet-600'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 border-l-[3px] border-transparent'
+                      }
+                    `}
+                  >
+                    <Icon
+                      className={`flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-gray-600'}`}
+                      size={sidebarOpen ? 19 : 18}
+                    />
+                    {sidebarOpen && (
+                      <div className="ml-3 flex-1 min-w-0">
+                        <div className="font-medium text-sm">{item.label}</div>
+                        <div className="text-xs text-gray-400 truncate">{item.description}</div>
+                      </div>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t border-gray-200`}>
@@ -617,17 +656,17 @@ const ParentPortal = () => {
                     <div className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/80 bg-white/95 shadow-xl backdrop-blur-xl">
                       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                         <div className="flex items-center gap-2">
-                          <Bell size={14} className="text-amber-500" />
+                          <Bell size={14} className="text-violet-500" />
                           <span className="text-sm font-bold text-gray-900">Notifications</span>
                           {unreadCount > 0 && (
-                            <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
+                            <span className="bg-violet-100 text-violet-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
                           )}
                         </div>
                         {notifications.length > 0 && (
                           <button
                             type="button"
                             onClick={markAllRead}
-                            className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-semibold"
+                            className="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700 font-semibold"
                           >
                             <CheckCheck size={12} />
                             Mark all read
@@ -660,10 +699,10 @@ const ParentPortal = () => {
                                 setShowNotifications(false);
                                 navigate(resolveNotifPath(n));
                               }}
-                              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${isRead ? '' : 'bg-amber-50/50'}`}
+                              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${isRead ? "" : "bg-violet-50/60"}`}
                             >
                               <div className="flex items-start gap-2">
-                                {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                                {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />}
                                 <div className={!isRead ? '' : 'ml-3.5'}>
                                   <p className="text-sm font-medium text-gray-800 line-clamp-1">{n?.title || 'Notification'}</p>
                                   {n?.message && (
@@ -709,9 +748,9 @@ const ParentPortal = () => {
 
                   {profileOpen && (
                     <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden">
-                      <div className="px-4 py-3 bg-gradient-to-br from-amber-50 to-yellow-50 border-b border-gray-100">
+                      <div className="px-4 py-3 bg-gradient-to-br from-violet-50 to-white border-b border-gray-100">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-yellow-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-600 to-violet-500 text-white flex items-center justify-center text-sm font-bold shadow-sm">
                             {initials}
                           </div>
                           <div className="min-w-0">
@@ -771,7 +810,8 @@ const ParentPortal = () => {
             <Route path="ptm" element={<PTMPortal />} />
             <Route path="parent-observation" element={<ParentObservationNonAcademic />} />
             <Route path="excuse-letters" element={<ExcuseLetters />} />
-            <Route path="results" element={<ResultsView />} />
+            {/* "Results" merged into the Report Card screen — keep the old path working. */}
+            <Route path="results" element={<Navigate to="/parents/academic" replace />} />
             <Route path="achievements" element={<AchievementsView />} />
           </Routes>
         </div>

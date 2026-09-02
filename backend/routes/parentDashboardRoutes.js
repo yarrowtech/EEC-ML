@@ -28,6 +28,34 @@ const getChildIds = async (parentId, schoolId) => {
 
 const ownsStudent = parentOwnsStudent;
 
+const DAY = 24 * 60 * 60 * 1000;
+// How long a stored AI report stays fresh before the dashboard regenerates it.
+const REPORT_TTL = { home_support: 3 * DAY, weekly_digest: 7 * DAY, monthly_report: 30 * DAY };
+
+// Returns a fresh cached report, or null. `?refresh=1` forces a regenerate.
+const readCachedReport = async ({ req, type }) => {
+  if (String(req.query.refresh || '') === '1') return null;
+  const existing = await ParentDashboardReport.findOne({
+    parentId: req.user.id,
+    studentId: req.params.studentId,
+    type,
+  }).lean();
+  if (existing && Date.now() - new Date(existing.generatedAt).getTime() < REPORT_TTL[type]) {
+    return { content: existing.content, generatedAt: existing.generatedAt, cached: true };
+  }
+  return null;
+};
+
+const writeCachedReport = async ({ req, type, content }) => {
+  const generatedAt = new Date();
+  await ParentDashboardReport.findOneAndUpdate(
+    { parentId: req.user.id, studentId: req.params.studentId, type },
+    { content, generatedAt, schoolId: req.schoolId },
+    { upsert: true, new: true },
+  );
+  return generatedAt;
+};
+
 // ── Exam result helpers ──────────────────────────────────────────────────────
 // ExamResult stores `marks` (obtained). The exam total lives on Exam.marks.
 const buildExamIndex = async (examIds) => {
@@ -106,6 +134,9 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
+    const cached = await readCachedReport({ req, type: 'home_support' });
+    if (cached) return res.json({ success: true, data: cached });
+
     const weakAreas = await MasteryScore.find({
       studentId: req.params.studentId,
       score: { $lt: 70 },
@@ -116,15 +147,16 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
       .lean();
 
     if (!weakAreas.length) {
-      return res.json({
-        success: true,
-        data: { content: 'Great news — no weak areas identified right now! Keep encouraging regular study and reading habits at home.' },
-      });
+      const content = 'Great news — no weak areas identified right now. Keep encouraging regular study and reading habits at home.';
+      const generatedAt = await writeCachedReport({ req, type: 'home_support', content });
+      return res.json({ success: true, data: { content, generatedAt } });
     }
 
     const context = weakAreas.map((w) => `${w.subject} — ${w.topicTitle}: ${w.score}%`).join('\n');
     const aiRes = await callAI('home_support', context);
-    return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
+    const content = aiRes.data?.content || '';
+    const generatedAt = await writeCachedReport({ req, type: 'home_support', content });
+    return res.json({ success: true, data: { content, generatedAt } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error' });
     return res.status(500).json({ error: err.message });
@@ -139,18 +171,10 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
-    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-    const existing = await ParentDashboardReport.findOne({
-      parentId: req.user.id,
-      studentId: req.params.studentId,
-      type: 'weekly_digest',
-    }).lean();
+    const cached = await readCachedReport({ req, type: 'weekly_digest' });
+    if (cached) return res.json({ success: true, data: cached });
 
-    if (existing && Date.now() - new Date(existing.generatedAt) < SEVEN_DAYS) {
-      return res.json({ success: true, data: { content: existing.content, generatedAt: existing.generatedAt } });
-    }
-
-    const since = new Date(Date.now() - SEVEN_DAYS);
+    const since = new Date(Date.now() - REPORT_TTL.weekly_digest);
     const [recentExams, recentMastery, student] = await Promise.all([
       ExamResult.find({ studentId: req.params.studentId, createdAt: { $gte: since } }).lean(),
       MasteryScore.find({ studentId: req.params.studentId, lastUpdated: { $gte: since } }).lean(),
@@ -171,14 +195,9 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
     const context = `Student: ${student?.name || 'Student'}, Class ${student?.grade || ''} ${student?.section || ''}\nExams this week: ${examSummary}\nMastery updates: ${masterySummary}`;
     const aiRes = await callAI('progress_digest', context);
     const content = aiRes.data?.content || '';
+    const generatedAt = await writeCachedReport({ req, type: 'weekly_digest', content });
 
-    await ParentDashboardReport.findOneAndUpdate(
-      { parentId: req.user.id, studentId: req.params.studentId, type: 'weekly_digest' },
-      { content, generatedAt: new Date(), schoolId: req.schoolId },
-      { upsert: true, new: true }
-    );
-
-    return res.json({ success: true, data: { content, generatedAt: new Date() } });
+    return res.json({ success: true, data: { content, generatedAt } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error' });
     return res.status(500).json({ error: err.message });
@@ -193,18 +212,10 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-    const existing = await ParentDashboardReport.findOne({
-      parentId: req.user.id,
-      studentId: req.params.studentId,
-      type: 'monthly_report',
-    }).lean();
+    const cached = await readCachedReport({ req, type: 'monthly_report' });
+    if (cached) return res.json({ success: true, data: cached });
 
-    if (existing && Date.now() - new Date(existing.generatedAt) < THIRTY_DAYS) {
-      return res.json({ success: true, data: { content: existing.content, generatedAt: existing.generatedAt } });
-    }
-
-    const since = new Date(Date.now() - THIRTY_DAYS);
+    const since = new Date(Date.now() - REPORT_TTL.monthly_report);
     const [exams, mastery, remarks, student] = await Promise.all([
       ExamResult.find({ studentId: req.params.studentId, createdAt: { $gte: since } }).lean(),
       MasteryScore.find({ studentId: req.params.studentId }).lean(),
@@ -235,14 +246,9 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
     const context = `Student: ${student?.name || 'Student'}, Class ${student?.grade || ''} ${student?.section || ''}\nExam results: ${examSummary}\nMastery scores: ${masterySummary}\nTeacher remarks: ${remarksSummary}`;
     const aiRes = await callAI('monthly_report', context);
     const content = aiRes.data?.content || '';
+    const generatedAt = await writeCachedReport({ req, type: 'monthly_report', content });
 
-    await ParentDashboardReport.findOneAndUpdate(
-      { parentId: req.user.id, studentId: req.params.studentId, type: 'monthly_report' },
-      { content, generatedAt: new Date(), schoolId: req.schoolId },
-      { upsert: true, new: true }
-    );
-
-    return res.json({ success: true, data: { content, generatedAt: new Date() } });
+    return res.json({ success: true, data: { content, generatedAt } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error' });
     return res.status(500).json({ error: err.message });
