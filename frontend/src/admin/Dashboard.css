@@ -1,0 +1,109 @@
+/* Admin dashboard — frosted-glass surface system.
+   The route sits inside AdminLayout's bg-gray-50 <main>; this root paints a
+   soft wash so the translucent panels actually read as glass. Light only,
+   consistent with the rest of the admin portal. */
+
+.admin-dashboard-root {
+  position: relative;
+  background:
+    radial-gradient(1100px 480px at 8% -6%, rgba(139, 92, 246, 0.12), transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, rgba(96, 165, 250, 0.12), transparent 55%),
+    linear-gradient(180deg, #f7f7fb 0%, #f4f5f9 100%);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.glass-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.glass-hover:hover {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 18px 44px rgba(15, 23, 42, 0.09);
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.stat-number {
+  font-size: 1.75rem;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: #0f172a;
+}
+
+.section-subtitle {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.125rem;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  display: inline-block;
+  flex: none;
+}
+
+.quick-action-btn .icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.625rem;
+}
+
+.stat-skeleton {
+  display: inline-block;
+  height: 1.5rem;
+  width: 3.5rem;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.15) 25%, rgba(148, 163, 184, 0.28) 37%, rgba(148, 163, 184, 0.15) 63%);
+  background-size: 400% 100%;
+  animation: stat-shimmer 1.4s ease infinite;
+}
+
+@keyframes stat-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-hover,
+  .stat-skeleton {
+    transition: none;
+    animation: none;
+  }
+}

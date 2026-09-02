@@ -44,6 +44,16 @@ Object.defineProperty(global, 'localStorage', {
   },
 });
 
+// ResizeObserver — not implemented in JSDOM (recharts ResponsiveContainer,
+// MindMapUI, AcademicSetup, etc. all construct one).
+if (typeof global.ResizeObserver === 'undefined') {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Mock window.scrollTo (not implemented in JSDOM)
 window.scrollTo = jest.fn();
 

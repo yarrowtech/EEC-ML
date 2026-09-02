@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Bell,
   Search,
@@ -36,7 +37,9 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
   const [notifLoading, setNotifLoading]             = useState(false);
   const [notifError, setNotifError]                 = useState('');
   const [now, setNow]                               = useState(new Date());
+  const [isSearchFocused, setIsSearchFocused]       = useState(false);
   const desktopSearchRef = useRef(null);
+  const desktopInputRef = useRef(null);
   const mobileSearchRef = useRef(null);
   const navigate = useNavigate();
 
@@ -46,6 +49,11 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
   const profileName   = adminUser?.name || 'Admin';
   const profileRole   = adminUser?.role || 'Administrator';
   const profileInit   = profileName.charAt(0).toUpperCase();
+  const primaryName   = schoolName || profileName;
+  const avatarInitials = (schoolName
+    ? schoolName.split(' ').map((w) => w[0]).join('').slice(0, 2)
+    : profileInit
+  ).toUpperCase();
 
   /* Clock */
   useEffect(() => {
@@ -350,6 +358,23 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
 
   const handleLogout = () => { setShowProfileMenu(false); onLogoutRequest?.(); };
 
+  /* ⌘K / Ctrl+K focuses the module search */
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        if (desktopInputRef.current && window.innerWidth >= 1024) {
+          desktopInputRef.current.focus();
+          setShowSuggestions(true);
+        } else {
+          setShowSearch(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   /* Close dropdowns on outside click */
   useEffect(() => {
     const handler = (e) => {
@@ -362,371 +387,364 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  return (
-    <>
-    <header className="sticky top-0 bg-white border-b border-gray-100 shadow-sm z-30">
-      <div className="flex items-center gap-3 px-4 py-3 h-[63.4px]">
-
-        {/* ── Mobile hamburger ── */}
-        <button
-          onClick={onOpenMobileSidebar}
-          className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 active:scale-95 transition-all shrink-0"
-          aria-label="Open menu"
-        >
-          <Menu size={20} />
-        </button>
-
-        {/* ── School branding (mobile) ── */}
-        <div className="flex items-center gap-2 lg:hidden min-w-0 flex-1">
-          {schoolLogoSrc && (
-            <img src={schoolLogoSrc} alt={schoolName} className="w-7 h-7 rounded-lg object-cover shrink-0 ring-1 ring-gray-100" />
-          )}
-          {schoolName && (
-            <span className="text-sm font-bold text-gray-800 truncate">{schoolName}</span>
+  const notificationDropdown = showNotifications && (
+    <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-80 rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/50">
+        <div className="flex items-center gap-2">
+          <Bell size={14} className="text-indigo-500" />
+          <span className="text-sm font-bold text-slate-900">Notifications</span>
+          {unreadCount > 0 && (
+            <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
           )}
         </div>
-
-        {/* ── Desktop search ── */}
-        <div ref={desktopSearchRef} className="hidden lg:flex flex-1 max-w-md relative">
-          <form className="relative w-full flex items-center" onSubmit={handleSearch}>
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search modules…"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => closeSuggestionsIfFocusOutside(desktopSearchRef)}
-              onKeyDown={handleSearchInputKeyDown}
-              aria-expanded={showSuggestions}
-              aria-haspopup="listbox"
-              aria-controls={DESKTOP_SEARCH_LISTBOX_ID}
-              aria-activedescendant={
-                showSuggestions && activeSuggestionIndex >= 0
-                  ? `desktop-search-option-${activeSuggestionIndex}`
-                  : undefined
-              }
-              className="w-full pl-9 pr-24 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none hover:border-gray-300 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 focus:bg-white transition-all placeholder-gray-400"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => { setSearchQuery(''); setShowSuggestions(true); setActiveSuggestionIndex(-1); }}
-                className="absolute right-[72px] text-gray-400 hover:text-gray-600"
-              >
-                <X size={13} />
-              </button>
-            )}
-            <button
-              type="submit"
-              className="absolute right-2 px-3 py-1 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white text-xs font-semibold rounded-lg transition-all"
-            >
-              Search
-            </button>
-          </form>
-
-          {/* Search suggestions dropdown */}
-          {showSuggestions && (
-            <div
-              id={DESKTOP_SEARCH_LISTBOX_ID}
-              role="listbox"
-              className="absolute top-full left-0 right-0 mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
-            >
-              {suggestions.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-gray-400">No results</div>
-              ) : (
-                <ul className="divide-y divide-gray-50">
-                  {suggestions.map((item, idx) => (
-                    <li key={item.path}>
-                      <button
-                        id={`desktop-search-option-${idx}`}
-                        role="option"
-                        aria-selected={idx === activeSuggestionIndex}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onMouseEnter={() => setActiveSuggestionIndex(idx)}
-                        onClick={() => navigateToSuggestion(item)}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          idx === activeSuggestionIndex ? 'bg-indigo-50/80' : 'hover:bg-indigo-50/60'
-                        }`}
-                      >
-                        <Search size={13} className="text-gray-300 shrink-0" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{item.label}</p>
-                          <p className="text-[11px] text-gray-400">{item.hint}</p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-          {searchFeedback && (
-            <span className="absolute -bottom-6 left-0 text-xs text-amber-600 font-medium">{searchFeedback}</span>
-          )}
-        </div>
-
-        {/* ── Right section ── */}
-        <div className="flex items-center gap-2 ml-auto">
-
-          {/* Live clock — desktop only */}
-          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-100">
-            <Clock size={14} className="text-indigo-400 shrink-0" />
-            <span className="text-xs text-gray-600 font-semibold tabular-nums">
-              {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-            <span className="text-xs text-gray-400">
-              {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-            </span>
-          </div>
-
-          {/* Mobile search toggle */}
+        {notifications.length > 0 && (
           <button
-            className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 active:scale-95 transition-all"
-            onClick={() => setShowSearch((p) => !p)}
-            aria-label="Search"
+            type="button"
+            onClick={markAllRead}
+            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
           >
-            <Search size={18} />
+            <CheckCheck size={12} />
+            Mark all read
           </button>
-
-          {/* Notification bell */}
-          <div className="relative" data-dropdown>
-            <button
-              onClick={handleToggleNotifications}
-              className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 active:scale-95 border border-gray-100 transition-all"
-              aria-label="Notifications"
-            >
-              <Bell size={18} />
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
-                  <span className="relative min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-80 bg-white rounded-2xl shadow-xl ring-1 ring-black/5 border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-                  <div className="flex items-center gap-2">
-                    <Bell size={14} className="text-indigo-500" />
-                    <span className="text-sm font-bold text-gray-900">Notifications</span>
-                    {unreadCount > 0 && (
-                      <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
-                    )}
-                  </div>
-                  {notifications.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={markAllRead}
-                      className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
-                    >
-                      <CheckCheck size={12} />
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-
-                {/* List */}
-                <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
-                  {notifLoading && (
-                    <div className="px-4 py-6 text-sm text-gray-400 text-center">Loading…</div>
-                  )}
-                  {!notifLoading && notifError && (
-                    <div className="px-4 py-4 text-sm text-red-600 flex items-center gap-2">
-                      <AlertCircle size={14} />{notifError}
-                    </div>
-                  )}
-                  {!notifLoading && !notifError && notifications.length === 0 && (
-                    <div className="px-4 py-8 text-sm text-gray-400 text-center">
-                      <Bell size={24} className="mx-auto text-gray-200 mb-2" />
-                      No notifications yet
-                    </div>
-                  )}
-                  {!notifLoading && !notifError && notifications.map((n) => {
-                    const id = String(n?._id || n?.id || '');
-                    const isRead = Boolean(n?.isRead);
-                    return (
-                      <button
-                        key={id || n?.title}
-                        type="button"
-                        onClick={async () => {
-                          await markRead(id);
-                          setShowNotifications(false);
-                          navigate(resolveNotifPath(n));
-                        }}
-                        className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${isRead ? '' : 'bg-indigo-50/50'}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
-                          <div className={!isRead ? '' : 'ml-3.5'}>
-                            <p className="text-sm font-medium text-gray-800 line-clamp-1">{n?.title || 'Notification'}</p>
-                            {n?.message && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>}
-                            <p className="text-[11px] text-gray-400 mt-1 flex items-center">
-                              {(n?.schoolName || n?.senderName || n?.createdByName) && (
-                                <span className="font-semibold text-gray-500 mr-1.5 truncate max-w-[120px]">
-                                  {n.schoolName || n.senderName || n.createdByName} •
-                                </span>
-                              )}
-                              <span>{timeAgo(n?.createdAt)}</span>
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Footer */}
-                <div className="border-t border-gray-50 px-4 py-2.5">
-                  <button
-                    type="button"
-                    onClick={() => { setShowNotifications(false); navigate('/admin/notices'); }}
-                    className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-semibold text-center py-1"
-                  >
-                    View all notices →
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Profile dropdown */}
-          <div className="relative" data-dropdown>
-            <button
-              onClick={() => { setShowProfileMenu((p) => !p); setShowNotifications(false); }}
-              className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-2xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 active:scale-[0.98] transition-all"
-            >
-              {/* Avatar */}
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white shadow-sm">
-                {!isSuperAdmin && schoolLogoSrc ? (
-                  <img src={schoolLogoSrc} alt={schoolName} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-white font-bold text-sm">{profileInit}</span>
-                )}
-              </div>
-              {/* Name — desktop */}
-              <div className="hidden sm:block text-left">
-                <p className="text-xs font-bold text-gray-800 leading-tight">{profileName}</p>
-                <p className="text-[11px] text-gray-400 leading-tight">{profileRole}</p>
-              </div>
-              <ChevronDown size={14} className="text-gray-400 hidden sm:block" />
-            </button>
-
-            {showProfileMenu && (
-              <div className="absolute right-0 top-full mt-2 w-52 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl ring-1 ring-black/5 border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                {/* User card */}
-                <div className="px-4 py-3 border-b border-gray-50">
-                  <p className="text-sm font-bold text-gray-900 truncate">{profileName}</p>
-                  <p className="text-xs text-gray-400 truncate">{profileRole}</p>
-                  {schoolName && (
-                    <p className="text-[11px] text-indigo-600 font-medium truncate mt-0.5" title={schoolName}>{schoolName}</p>
-                  )}
-                </div>
-                <div className="py-1">
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors"
-                    onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
-                  >
-                    <Settings size={15} className="text-gray-400" />
-                    Settings
-                  </button>
-                  <div className="border-t border-gray-50 my-0.5" />
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition-colors"
-                    onClick={handleLogout}
-                  >
-                    <LogOut size={15} />
-                    Logout
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* ── Mobile search bar (expanded) ── */}
-      {showSearch && (
-        <div ref={mobileSearchRef} className="lg:hidden px-4 pb-3 animate-in fade-in slide-in-from-top-1 duration-150">
-          <form className="relative flex items-center" onSubmit={handleSearch}>
-            <Search className="absolute left-3 w-4 h-4 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search modules…"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => closeSuggestionsIfFocusOutside(mobileSearchRef)}
-              onKeyDown={handleSearchInputKeyDown}
-              autoFocus
-              aria-expanded={showSuggestions}
-              aria-haspopup="listbox"
-              aria-controls={MOBILE_SEARCH_LISTBOX_ID}
-              aria-activedescendant={
-                showSuggestions && activeSuggestionIndex >= 0
-                  ? `mobile-search-option-${activeSuggestionIndex}`
-                  : undefined
-              }
-              className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 focus:bg-white transition-all"
-            />
+      <div className="max-h-72 overflow-y-auto divide-y divide-white/50">
+        {notifLoading && (
+          <div className="px-4 py-6 text-sm text-slate-400 text-center">Loading…</div>
+        )}
+        {!notifLoading && notifError && (
+          <div className="px-4 py-4 text-sm text-red-600 flex items-center gap-2">
+            <AlertCircle size={14} />{notifError}
+          </div>
+        )}
+        {!notifLoading && !notifError && notifications.length === 0 && (
+          <div className="px-4 py-8 text-sm text-slate-400 text-center">
+            <Bell size={24} className="mx-auto text-slate-200 mb-2" />
+            No notifications yet
+          </div>
+        )}
+        {!notifLoading && !notifError && notifications.map((n) => {
+          const id = String(n?._id || n?.id || '');
+          const isRead = Boolean(n?.isRead);
+          return (
             <button
+              key={id || n?.title}
               type="button"
-              onClick={() => { setShowSearch(false); setSearchQuery(''); setShowSuggestions(false); setActiveSuggestionIndex(-1); }}
-              className="absolute right-3 text-gray-400 hover:text-gray-600 active:scale-95 transition-transform"
+              onClick={async () => {
+                await markRead(id);
+                setShowNotifications(false);
+                navigate(resolveNotifPath(n));
+              }}
+              className={`w-full text-left px-4 py-3 hover:bg-white/60 transition-colors ${isRead ? '' : 'bg-indigo-50/50'}`}
             >
-              <X size={16} />
+              <div className="flex items-start gap-2">
+                {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
+                <div className={!isRead ? '' : 'ml-3.5'}>
+                  <p className="text-sm font-medium text-slate-800 line-clamp-1">{n?.title || 'Notification'}</p>
+                  {n?.message && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>}
+                  <p className="text-[11px] text-slate-400 mt-1 flex items-center">
+                    {(n?.schoolName || n?.senderName || n?.createdByName) && (
+                      <span className="font-semibold text-slate-500 mr-1.5 truncate max-w-[120px]">
+                        {n.schoolName || n.senderName || n.createdByName} •
+                      </span>
+                    )}
+                    <span>{timeAgo(n?.createdAt)}</span>
+                  </p>
+                </div>
+              </div>
             </button>
-          </form>
-          {showSuggestions && (
-            <div
-              id={MOBILE_SEARCH_LISTBOX_ID}
-              role="listbox"
-              className="mt-1.5 rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
+          );
+        })}
+      </div>
+
+      <div className="border-t border-white/50 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => { setShowNotifications(false); navigate('/admin/notices'); }}
+          className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-semibold text-center py-1"
+        >
+          View all notices →
+        </button>
+      </div>
+    </div>
+  );
+
+  const profileDropdown = showProfileMenu && (
+    <div className="absolute right-0 top-full mt-2 w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+      <div className="px-4 py-3 border-b border-white/50">
+        <p className="text-sm font-bold text-slate-900 truncate">{profileName}</p>
+        <p className="text-xs text-slate-400 truncate">{profileRole}</p>
+        {schoolName && (
+          <p className="text-[11px] text-indigo-600 font-medium truncate mt-0.5" title={schoolName}>{schoolName}</p>
+        )}
+      </div>
+      <div className="py-1.5">
+        <button
+          className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-white/60 rounded-xl flex items-center gap-2.5 transition-colors"
+          onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
+        >
+          <Settings size={15} className="text-slate-400" />
+          Settings
+        </button>
+        <div className="border-t border-white/50 my-1" />
+        <button
+          className="w-full px-4 py-2.5 text-left text-sm text-rose-600 hover:bg-rose-50/60 rounded-xl flex items-center gap-2.5 transition-colors"
+          onClick={handleLogout}
+        >
+          <LogOut size={15} />
+          Logout
+        </button>
+      </div>
+    </div>
+  );
+
+  const suggestionList = (idPrefix, listboxId) => (
+    <div
+      id={listboxId}
+      role="listbox"
+      className="mt-2 rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl shadow-xl ring-1 ring-black/5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
+    >
+      {suggestions.length === 0 ? (
+        <div className="px-4 py-3 text-sm text-slate-400">No results</div>
+      ) : (
+        <ul className="divide-y divide-white/50">
+          {suggestions.map((item, idx) => (
+            <li key={item.path}>
+              <button
+                id={`${idPrefix}-${idx}`}
+                role="option"
+                aria-selected={idx === activeSuggestionIndex}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                onClick={() => navigateToSuggestion(item)}
+                className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
+                  idx === activeSuggestionIndex ? 'bg-indigo-50/70' : 'hover:bg-indigo-50/50'
+                }`}
+              >
+                <Search size={13} className="text-slate-300 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{item.label}</p>
+                  <p className="text-[11px] text-slate-400">{item.hint}</p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <motion.header
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="sticky top-0 z-30 px-3 sm:px-4 pt-2.5 pb-2 bg-gradient-to-b from-white/70 via-white/40 to-transparent backdrop-blur-[2px]"
+      >
+        <div className="mx-auto max-w-[1200px]">
+          <motion.div
+            whileHover={{ y: -1 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center gap-2 sm:gap-3 rounded-[1.75rem] border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70 hover:border-white/90"
+          >
+            {/* ── Mobile hamburger ── */}
+            <button
+              onClick={onOpenMobileSidebar}
+              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/70 active:scale-95 transition-all shrink-0"
+              aria-label="Open menu"
             >
-              {suggestions.length > 0 ? (
-                <ul className="divide-y divide-gray-50">
-                  {suggestions.map((item, idx) => (
-                    <li key={item.path}>
-                      <button
-                        id={`mobile-search-option-${idx}`}
-                        role="option"
-                        aria-selected={idx === activeSuggestionIndex}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onMouseEnter={() => setActiveSuggestionIndex(idx)}
-                        onClick={() => navigateToSuggestion(item)}
-                        className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${
-                          idx === activeSuggestionIndex ? 'bg-indigo-50/80' : 'hover:bg-indigo-50/60'
-                        }`}
-                      >
-                        <Search size={13} className="text-gray-300 shrink-0" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{item.label}</p>
-                          <p className="text-[11px] text-gray-400">{item.hint}</p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="px-4 py-3 text-sm text-gray-400">No results</div>
+              <Menu size={20} />
+            </button>
+
+            {/* ── School branding (mobile) ── */}
+            <div className="flex items-center gap-2 lg:hidden min-w-0 flex-1">
+              {schoolLogoSrc && (
+                <img src={schoolLogoSrc} alt={primaryName} className="w-7 h-7 rounded-lg object-cover shrink-0 ring-1 ring-white/60" />
               )}
+              <span className="text-sm font-bold text-slate-800 truncate">{primaryName}</span>
+            </div>
+
+            {/* ── Desktop search — glass pill ── */}
+            <div ref={desktopSearchRef} className="hidden lg:flex flex-1 max-w-md relative">
+              <form
+                className={`relative w-full flex items-center gap-2 rounded-full border pl-4 pr-1.5 py-0.5 transition-all ${
+                  isSearchFocused
+                    ? 'bg-white/70 border-white/80 shadow-[0_4px_16px_rgba(15,23,42,0.05)]'
+                    : 'bg-white/30 border-white/40'
+                }`}
+                onSubmit={handleSearch}
+              >
+                <Search className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={2} />
+                <input
+                  ref={desktopInputRef}
+                  type="text"
+                  placeholder="Search modules…"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
+                  onFocus={() => { setShowSuggestions(true); setIsSearchFocused(true); }}
+                  onBlur={() => { closeSuggestionsIfFocusOutside(desktopSearchRef); setIsSearchFocused(false); }}
+                  onKeyDown={handleSearchInputKeyDown}
+                  aria-expanded={showSuggestions}
+                  aria-haspopup="listbox"
+                  aria-controls={DESKTOP_SEARCH_LISTBOX_ID}
+                  aria-activedescendant={
+                    showSuggestions && activeSuggestionIndex >= 0
+                      ? `desktop-search-option-${activeSuggestionIndex}`
+                      : undefined
+                  }
+                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { setSearchQuery(''); setShowSuggestions(true); setActiveSuggestionIndex(-1); desktopInputRef.current?.focus(); }}
+                    className="text-slate-400 hover:text-slate-600 shrink-0 pr-1"
+                    aria-label="Clear search"
+                  >
+                    <X size={14} />
+                  </button>
+                ) : (
+                  <kbd
+                    className={`hidden xl:inline-block text-[10px] font-medium text-slate-400 px-2.5 py-1 rounded-full border border-white/40 transition-colors ${
+                      isSearchFocused ? 'bg-white/70' : 'bg-white/40'
+                    }`}
+                  >
+                    ⌘K
+                  </kbd>
+                )}
+              </form>
+
+              {/* Search suggestions dropdown */}
+              {showSuggestions && (
+                <div className="absolute top-full left-0 right-0">
+                  {suggestionList('desktop-search-option', DESKTOP_SEARCH_LISTBOX_ID)}
+                </div>
+              )}
+              {searchFeedback && (
+                <span className="absolute -bottom-6 left-0 text-xs text-amber-600 font-medium">{searchFeedback}</span>
+              )}
+            </div>
+
+            {/* ── Right cluster ── */}
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Live clock — wide screens only */}
+              <div className="hidden xl:flex items-center gap-2 rounded-full border border-white/30 bg-white/25 px-3.5 py-1.5 text-sm font-medium text-slate-900">
+                <Clock size={14} className="text-slate-400 shrink-0" />
+                <span className="tabular-nums whitespace-nowrap">
+                  {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className="text-slate-400">
+                  {now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+              </div>
+
+              {/* Mobile search toggle */}
+              <button
+                className="lg:hidden w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/70 active:scale-95 transition-all"
+                onClick={() => setShowSearch((p) => !p)}
+                aria-label="Search"
+              >
+                <Search size={18} />
+              </button>
+
+              {/* Notification bell */}
+              <div className="relative" data-dropdown>
+                <motion.button
+                  whileHover={{ scale: 1.05, y: -1 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleToggleNotifications}
+                  className="relative w-10 h-10 flex items-center justify-center rounded-full border border-white/30 bg-white/25 text-slate-600 hover:bg-white/70 hover:border-white/60 transition-all"
+                  aria-label="Notifications"
+                >
+                  <Bell size={18} />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
+                      <span className="relative min-w-[17px] h-[17px] px-1 bg-red-500 rounded-full text-[10px] text-white font-bold flex items-center justify-center border-2 border-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    </span>
+                  )}
+                </motion.button>
+                {notificationDropdown}
+              </div>
+
+              {/* Profile pill */}
+              <div className="relative" data-dropdown>
+                <button
+                  onClick={() => { setShowProfileMenu((p) => !p); setShowNotifications(false); }}
+                  className="flex items-center gap-2.5 rounded-full border border-white/30 bg-white/25 pl-1.5 pr-2 sm:pr-3 py-1 hover:bg-white/50 hover:border-white/50 active:scale-[0.98] transition-all"
+                >
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white/70 shadow-sm">
+                    {!isSuperAdmin && schoolLogoSrc ? (
+                      <img src={schoolLogoSrc} alt={primaryName} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-semibold text-xs">{avatarInitials}</span>
+                    )}
+                  </div>
+                  <div className="hidden sm:flex flex-col leading-tight min-w-0 text-left">
+                    <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span>
+                    <span className="text-[10px] font-medium text-slate-500 tracking-wide">{profileRole}</span>
+                  </div>
+                  <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
+                </button>
+                {profileDropdown}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Mobile search bar (expanded) ── */}
+          {showSearch && (
+            <div ref={mobileSearchRef} className="lg:hidden mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
+              <form
+                className="relative flex items-center rounded-full border border-white/50 bg-white/60 backdrop-blur-xl pl-4 pr-2 py-1"
+                onSubmit={handleSearch}
+              >
+                <Search className="w-4 h-4 text-slate-400 pointer-events-none shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search modules…"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => closeSuggestionsIfFocusOutside(mobileSearchRef)}
+                  onKeyDown={handleSearchInputKeyDown}
+                  autoFocus
+                  aria-expanded={showSuggestions}
+                  aria-haspopup="listbox"
+                  aria-controls={MOBILE_SEARCH_LISTBOX_ID}
+                  aria-activedescendant={
+                    showSuggestions && activeSuggestionIndex >= 0
+                      ? `mobile-search-option-${activeSuggestionIndex}`
+                      : undefined
+                  }
+                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 px-2 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setShowSearch(false); setSearchQuery(''); setShowSuggestions(false); setActiveSuggestionIndex(-1); }}
+                  className="text-slate-400 hover:text-slate-600 active:scale-95 transition-transform shrink-0"
+                  aria-label="Close search"
+                >
+                  <X size={16} />
+                </button>
+              </form>
+              {showSuggestions && suggestionList('mobile-search-option', MOBILE_SEARCH_LISTBOX_ID)}
             </div>
           )}
         </div>
-      )}
-    </header>
-    <DesktopNotificationPermissionModal
-      open={showPermissionModal}
-      onAllow={requestPermissionFromModal}
-      onLater={dismissPermissionModal}
-      pendingCount={pendingCount}
-    />
+      </motion.header>
+
+      <DesktopNotificationPermissionModal
+        open={showPermissionModal}
+        onAllow={requestPermissionFromModal}
+        onLater={dismissPermissionModal}
+        pendingCount={pendingCount}
+      />
     </>
   );
 };
