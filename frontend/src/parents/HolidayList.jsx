@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { CalendarDays, Download, Loader2 } from 'lucide-react';
+import { CalendarCheck2, CalendarDays, Download, Loader2 } from 'lucide-react';
 import { parentApiFetch } from './parentApi';
 
 const formatDate = (value) => {
@@ -254,60 +254,120 @@ const HolidayList = () => {
     }
   };
 
+  const upcomingHolidayCount = holidays.filter((item) => !isPastHoliday(
+    item.startDate || item.date,
+    item.endDate || item.startDate || item.date,
+  )).length;
+
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2">
-        <CalendarDays className="h-5 w-5 text-amber-600" />
-        <h1 className="text-lg font-bold text-gray-900">Holiday List</h1>
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={loading || !holidays.length || downloading}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Download className="h-3.5 w-3.5" />
-          {downloading ? 'Preparing...' : 'Download PDF'}
-        </button>
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-violet-50/70 to-cyan-50/60 p-3 sm:p-5 lg:p-7">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+        <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full bg-violet-300/30 blur-3xl" />
+        <div className="absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-cyan-300/25 blur-3xl" />
+        <div className="absolute left-1/3 top-1/3 h-72 w-72 rounded-full bg-amber-200/20 blur-3xl" />
       </div>
-      {loading ? (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading holidays...
-        </div>
-      ) : error ? (
-        <p className="text-sm text-red-600">{error}</p>
-      ) : holidays.length === 0 ? (
-        <div>
-          <p className="text-sm text-gray-500">No holidays announced yet.</p>
-          <p className="mt-3 text-sm font-medium text-gray-600">Total Holidays: 0</p>
-        </div>
-      ) : (
-        <div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wider text-gray-500">
-                  <th className="px-3 py-2">Date Range</th>
-                  <th className="px-3 py-2">Holiday Name</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holidays.map((item) => (
-                  <tr key={item._id} className="border-b border-gray-100">
-                    <td className={`px-3 py-2.5 ${isPastHoliday(item.startDate || item.date, item.endDate || item.startDate || item.date) ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                      {formatDateRange(item.startDate || item.date, item.endDate || item.startDate || item.date)}
-                    </td>
-                    <td className={`px-3 py-2.5 font-medium ${isPastHoliday(item.startDate || item.date, item.endDate || item.startDate || item.date) ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                      {item.name}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+      <div className="relative space-y-5">
+        <header className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/55 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-2xl sm:p-7">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white/60 text-amber-600 shadow-lg shadow-amber-900/5 backdrop-blur-xl">
+                <CalendarDays className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Academic calendar</p>
+                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Holiday List</h1>
+                <p className="mt-1 text-sm text-slate-500">School holidays and scheduled breaks in one place.</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={loading || !holidays.length || downloading}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/70 bg-indigo-600/90 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-900/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+            >
+              {downloading
+                ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                : <Download className="h-4 w-4" aria-hidden="true" />}
+              {downloading ? 'Preparing...' : 'Download PDF'}
+            </button>
           </div>
-          <p className="mt-3 text-sm font-medium text-gray-600">Total Holidays: {holidays.length}</p>
-        </div>
-      )}
+
+          <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/70 pt-5 sm:max-w-md">
+            <div className="rounded-2xl border border-white/80 bg-white/45 px-4 py-3 shadow-sm backdrop-blur-xl">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total holidays</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? '—' : holidays.length}</p>
+            </div>
+            <div className="rounded-2xl border border-white/80 bg-white/45 px-4 py-3 shadow-sm backdrop-blur-xl">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Upcoming</p>
+              <p className="mt-1 text-2xl font-bold text-indigo-600">{loading ? '—' : upcomingHolidayCount}</p>
+            </div>
+          </div>
+        </header>
+
+        <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/50 shadow-xl shadow-slate-900/5 backdrop-blur-2xl">
+          <div className="flex items-center gap-3 border-b border-white/70 bg-white/25 px-5 py-4 sm:px-7">
+            <CalendarCheck2 className="h-5 w-5 text-indigo-600" aria-hidden="true" />
+            <h2 className="font-bold text-slate-800">Published holidays</h2>
+            {!loading && !error && (
+              <span className="ml-auto rounded-full border border-white/80 bg-white/55 px-3 py-1 text-xs font-semibold text-slate-600 backdrop-blur-xl">
+                {holidays.length} {holidays.length === 1 ? 'entry' : 'entries'}
+              </span>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-sm text-slate-500" aria-live="polite">
+              <div className="rounded-2xl border border-white/80 bg-white/55 p-4 shadow-sm backdrop-blur-xl">
+                <Loader2 className="h-6 w-6 animate-spin text-indigo-600" aria-hidden="true" />
+              </div>
+              Loading holidays...
+            </div>
+          ) : error ? (
+            <div className="m-5 rounded-2xl border border-red-200/70 bg-red-50/60 p-5 text-sm text-red-700 backdrop-blur-xl" role="alert">
+              {error}
+            </div>
+          ) : holidays.length === 0 ? (
+            <div className="flex min-h-64 flex-col items-center justify-center p-8 text-center">
+              <div className="mb-4 rounded-2xl border border-white/80 bg-white/55 p-4 text-slate-400 shadow-sm backdrop-blur-xl">
+                <CalendarDays className="h-8 w-8" aria-hidden="true" />
+              </div>
+              <p className="font-semibold text-slate-700">No holidays announced yet</p>
+              <p className="mt-1 max-w-sm text-sm text-slate-500">New holidays will appear here when they are published by the school.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto p-3 sm:p-5">
+              <table className="min-w-full border-separate border-spacing-y-2 text-sm">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 font-semibold">Date Range</th>
+                    <th className="px-4 py-2 font-semibold">Holiday Name</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holidays.map((item) => {
+                    const isPast = isPastHoliday(
+                      item.startDate || item.date,
+                      item.endDate || item.startDate || item.date,
+                    );
+                    return (
+                      <tr key={item._id} className="group bg-white/40 shadow-sm backdrop-blur-xl transition hover:bg-white/65 hover:shadow-md">
+                        <td className={`rounded-l-2xl border-y border-l border-white/80 px-4 py-4 ${isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                          {formatDateRange(item.startDate || item.date, item.endDate || item.startDate || item.date)}
+                        </td>
+                        <td className={`rounded-r-2xl border-y border-r border-white/80 px-4 py-4 font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                          {item.name}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 };

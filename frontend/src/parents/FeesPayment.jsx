@@ -498,7 +498,7 @@ const FeesPayment = () => {
   const isProcessingSelected = selectedInvoice && processingInvoiceId === selectedInvoice._id;
 
   return (
-    <div className={`fees-dashboard-page w-full px-4 py-4 md:p-6 ${selectedBalance > 0 ? 'pb-28 md:pb-6' : ''}`}>
+    <div className={`fees-dashboard-page w-full px-4 py-4 md:p-30 ${selectedBalance > 0 ? 'pb-28 md:pb-8' : ''}`}>
       <section className="fees-glass-card mx-auto w-full max-w-6xl p-5 sm:p-6 md:p-8" aria-labelledby="fees-dashboard-title">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>

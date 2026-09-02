@@ -493,30 +493,20 @@ const ParentDashboard = ({
           transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
           className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
         >
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-white/60 pb-5">
-            <div className="flex items-center gap-3 sm:gap-4">
+          <div className="relative mb-6 flex w-full items-center justify-center border-b border-white/60 pb-5">
+            <div className="flex items-center justify-center gap-3 sm:gap-4">
               <motion.button
                 type="button"
                 whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
                 whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
                 onClick={onOpenSidebar}
-                className="-ml-1.5 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
+                className="absolute left-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
                 aria-label="Open parent navigation"
               >
                 <Menu size={20} />
               </motion.button>
               <div className="flex items-center gap-3">
-                <motion.div
-                  className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 sm:text-xs"
-                  animate={prefersReducedMotion ? undefined : { opacity: [0.8, 1, 0.8] }}
-                  transition={{ repeat: Infinity, duration: 2.5, ease: 'easeInOut' }}
-                >
-                  <span className="relative flex h-2.5 w-2.5">
-                    {!prefersReducedMotion && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />}
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/30" />
-                  </span>
-                  Portal Active
-                </motion.div>
+                
                 <span className="hidden text-xs text-slate-300 sm:inline">·</span>
                 <span className="hidden rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm sm:inline">
                   {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -525,7 +515,7 @@ const ParentDashboard = ({
             </div>
           </div>
 
-          <div className="mb-7 sm:mb-8">
+          <div className="mb-7 flex flex-col items-center text-center sm:mb-8">
             <motion.h1
               initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -539,14 +529,14 @@ const ParentDashboard = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="mt-1 max-w-xl text-sm text-slate-500 sm:text-base"
+              className="mt-1 max-w-xl text-center text-sm text-slate-500 sm:text-base"
             >
               Track academic progress, monitor wellbeing, and stay connected with the institution.
             </motion.p>
           </div>
 
           {error && (
-            <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
+            <div role="alert" className="mx-auto mb-4 max-w-xl rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-center text-sm text-rose-700">
               {error}
             </div>
           )}
@@ -645,7 +635,7 @@ const ParentDashboard = ({
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500">Our support team can help with portal navigation or student records.</p>
               </div>
             </div>
-            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-700">Contact Support</Link>
+            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-300 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-300">Contact Support</Link>
           </motion.section>
 
           {childrenData.length > 0 && (

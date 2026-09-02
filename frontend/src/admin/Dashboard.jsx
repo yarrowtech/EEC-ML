@@ -484,7 +484,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
                 <button
                   type="button"
                   onClick={() => navigate('/admin/support')}
-                  className="text-slate-600 font-medium hover:text-slate-900"
+                  className="text-slate-300 font-medium hover:text-slate-300"
                 >
                   Contact support
                 </button>
