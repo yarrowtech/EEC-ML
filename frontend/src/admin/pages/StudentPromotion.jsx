@@ -17,10 +17,7 @@ import {
   Loader2,
   UserX,
   UserCheck,
-  Zap,
-  BookOpen,
   ArrowUpCircle,
-  Sparkles,
   Award,
   Calendar,
   ClipboardList,
@@ -67,28 +64,39 @@ const initials = (name = "") =>
 const MODE_STYLES = {
   bulk: {
     icon: Users,
-    ring: "border-indigo-500 bg-indigo-50/70 ring-2 ring-indigo-100 shadow-sm",
-    iconBg: "bg-gradient-to-br from-indigo-500 to-blue-500",
-    badge: "bg-indigo-600",
+    ring: "border-indigo-300 bg-indigo-50/70 shadow-sm",
+    iconBg: "bg-indigo-100 text-indigo-600",
+    radio: "border-indigo-600",
+    dot: "bg-indigo-600",
   },
   manual: {
     icon: UserCheck,
-    ring: "border-violet-500 bg-violet-50/70 ring-2 ring-violet-100 shadow-sm",
-    iconBg: "bg-gradient-to-br from-violet-500 to-fuchsia-500",
-    badge: "bg-violet-600",
+    ring: "border-emerald-300 bg-emerald-50/70 shadow-sm",
+    iconBg: "bg-emerald-100 text-emerald-600",
+    radio: "border-emerald-600",
+    dot: "bg-emerald-600",
   },
   marks: {
     icon: Award,
-    ring: "border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-100 shadow-sm",
-    iconBg: "bg-gradient-to-br from-emerald-500 to-teal-500",
-    badge: "bg-emerald-600",
+    ring: "border-amber-300 bg-amber-50/70 shadow-sm",
+    iconBg: "bg-amber-100 text-amber-600",
+    radio: "border-amber-600",
+    dot: "bg-amber-600",
   },
 };
 
 const MODE_CARDS = [
-  { key: "bulk", label: "Bulk (Automatic)", desc: "Promote all students of a class at once" },
-  { key: "manual", label: "Manual (Individual)", desc: "Select specific students to promote" },
-  { key: "marks", label: "Marks Based", desc: "Promote only passing students and update roll by rank" },
+  { key: "bulk", label: "Bulk Promotion", desc: "Promote all students of a class to the next class." },
+  { key: "manual", label: "Individual Promotion", desc: "Select specific students and promote them." },
+  { key: "marks", label: "Marks Based Promotion", desc: "Promote only passing students based on marks." },
+];
+
+// Icon square colours for the class overview cards, cycled by index.
+const CLASS_CARD_COLORS = [
+  { bg: "bg-indigo-100", text: "text-indigo-600" },
+  { bg: "bg-emerald-100", text: "text-emerald-600" },
+  { bg: "bg-amber-100", text: "text-amber-600" },
+  { bg: "bg-blue-100", text: "text-blue-600" },
 ];
 
 const HISTORY_TYPE_STYLES = {
@@ -225,6 +233,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
 
   // per-class student counts (computed from all students)
   const [studentCounts, setStudentCounts] = useState({});
+  const [classSearch, setClassSearch] = useState("");
 
   // ── leave tab ─────────────────────────────────────────────
   const [leavingStudents, setLeavingStudents] = useState([]);
@@ -836,35 +845,34 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   // Render
   // ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-white p-4 md:p-6">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
       {/* ──────── Hero header ──────── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-6 md:p-8 mb-6 shadow-lg shadow-indigo-200/60">
-        <div className="absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 pointer-events-none" />
-        <div className="absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-black/10 pointer-events-none" />
-        <div className="absolute top-1/2 right-16 w-20 h-20 rounded-full bg-yellow-300/10 border border-yellow-300/20 pointer-events-none" />
-        <div className="relative flex items-start gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center shadow-inner shrink-0">
-            <ArrowUpCircle className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <div className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-2.5 py-0.5 mb-1.5">
-              <Sparkles className="w-3 h-3 text-yellow-200" />
-              <span className="text-[11px] font-semibold text-white/90 tracking-wide">Academic Operations</span>
-            </div>
-            <h1 className="text-xl md:text-2xl font-black text-white leading-tight">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-50 via-violet-50/50 to-white border border-indigo-100/70 p-6 md:p-8 mb-6 shadow-sm">
+        <div className="relative flex flex-col md:flex-row items-center gap-6">
+          <div className="flex-1 min-w-0 w-full">
+            <p className="text-xs font-semibold text-indigo-500 mb-2">Academics</p>
+            <h1 className="text-2xl md:text-[28px] font-extrabold text-gray-900 leading-tight">
               Student Promotion &amp; Leave Management
             </h1>
-            <p className="text-indigo-100/80 text-sm mt-1">
-              Promote students to their next class or manage student departures — all in one place.
+            <p className="text-gray-500 text-sm mt-2 max-w-xl">
+              Promote students to their next class or manage student departures in just a few clicks.
             </p>
+          </div>
+          <div className="shrink-0">
+            <img
+              src="/promotion_and_leave_img.png"
+              alt=""
+              draggable={false}
+              className="w-40 md:w-56 h-auto select-none pointer-events-none"
+            />
           </div>
         </div>
       </div>
 
       {/* ──────── Tabs ──────── */}
-      <div className="relative flex gap-1 mb-6 bg-white/80 backdrop-blur border border-gray-200/70 rounded-full p-1.5 w-fit shadow-sm">
+      <div className="relative flex items-center gap-6 mb-6 border-b border-gray-200">
         {[
-          { key: "promotion", label: "Class Promotion", icon: ArrowRight },
+          { key: "promotion", label: "Promotion", icon: ArrowUpCircle },
           { key: "leave", label: "Leave Management", icon: LogOut },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -873,19 +881,19 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`relative z-10 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-                active ? "text-white" : "text-gray-600 hover:text-gray-900"
+              className={`relative flex items-center gap-2 pb-3 text-sm font-semibold transition-colors ${
+                active ? "text-indigo-600" : "text-gray-500 hover:text-gray-800"
               }`}
             >
+              <Icon className="w-4 h-4" />
+              {tab.label}
               {active && (
                 <Motion.span
                   layoutId="promoTabIndicator"
-                  className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-200"
+                  className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full bg-indigo-600"
                   transition={{ type: "spring", duration: 0.5, bounce: 0.2 }}
                 />
               )}
-              <Icon className="w-4 h-4" />
-              {tab.label}
             </button>
           );
         })}
@@ -905,13 +913,8 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             className="space-y-6"
           >
             {/* Mode selector */}
-            <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 p-5 md:p-6 shadow-sm">
-              <div className="flex items-center gap-2.5 mb-5">
-                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
-                  <Zap className="w-4 h-4 text-white" />
-                </div>
-                <h2 className="font-bold text-gray-800">Promotion Mode</h2>
-              </div>
+            <div className="bg-white rounded-2xl border border-gray-200/70 p-5 md:p-6 shadow-sm">
+              <h2 className="font-bold text-gray-800 mb-4">1. Choose Action</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {MODE_CARDS.map(({ key, label, desc }) => {
                   const style = MODE_STYLES[key];
@@ -932,13 +935,15 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                         active ? style.ring : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
                       }`}
                     >
-                      {active && (
-                        <span className={`absolute top-3 right-3 h-5 w-5 rounded-full ${style.badge} flex items-center justify-center shadow-sm`}>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                        </span>
-                      )}
-                      <div className={`h-9 w-9 rounded-xl ${style.iconBg} flex items-center justify-center shadow-sm mb-3`}>
-                        <Icon className="w-4.5 h-4.5 text-white" />
+                      <span
+                        className={`absolute top-3.5 right-3.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${
+                          active ? style.radio : "border-gray-300"
+                        }`}
+                      >
+                        {active && <span className={`h-2 w-2 rounded-full ${style.dot}`} />}
+                      </span>
+                      <div className={`h-10 w-10 rounded-xl ${style.iconBg} flex items-center justify-center mb-3`}>
+                        <Icon className="w-5 h-5" />
                       </div>
                       <div className="font-semibold text-sm text-gray-800">{label}</div>
                       <div className="text-xs text-gray-500 mt-0.5 leading-snug">{desc}</div>
@@ -977,13 +982,8 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Promotion form */}
-            <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 p-5 md:p-6 shadow-sm">
-              <div className="flex items-center gap-2.5 mb-5">
-                <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-sm">
-                  <BookOpen className="w-4 h-4 text-white" />
-                </div>
-                <h2 className="font-bold text-gray-800">Promotion Details</h2>
-              </div>
+            <div className="bg-white rounded-2xl border border-gray-200/70 p-5 md:p-6 shadow-sm">
+              <h2 className="font-bold text-gray-800 mb-5">2. Promotion Details</h2>
 
               {loadingMeta && (
                 <div className="flex items-center gap-2 text-gray-400 text-sm mb-4">
@@ -995,7 +995,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                 {/* ── FROM side ── */}
                 <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-3">
-                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" /> From
+                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" /> From (Current)
                   </span>
                   <div className="space-y-3">
                     <div>
@@ -1071,7 +1071,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                 {/* ── TO side ── */}
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 uppercase tracking-wider mb-3">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> To
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> To (Next)
                   </span>
                   <div className="space-y-3">
                     <div>
@@ -1129,13 +1129,13 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
               <div className="mt-5">
                 <label className="flex items-center gap-1.5 text-xs text-gray-600 mb-1">
                   <ClipboardList className="w-3.5 h-3.5 text-gray-400" />
-                  Notes <span className="text-gray-400">(optional)</span>
+                  Additional Notes <span className="text-gray-400">(optional)</span>
                 </label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g., Annual promotion 2025–26"
+                  placeholder="Add notes about this promotion..."
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white/90 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition"
                 />
               </div>
@@ -1391,11 +1391,19 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             </AnimatePresence>
 
             {/* Class overview cards */}
-            <div>
-              <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                <GraduationCap className="w-4 h-4 text-indigo-500" />
-                Class Overview
-              </h3>
+            <div className="bg-white rounded-2xl border border-gray-200/70 p-5 md:p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-bold text-gray-800">3. Class Overview</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Quick summary of all classes and student count</p>
+                </div>
+                <SearchField
+                  value={classSearch}
+                  onChange={(e) => setClassSearch(e.target.value)}
+                  placeholder="Search class..."
+                  className="w-48"
+                />
+              </div>
               {loadingMeta ? (
                 <div className="flex items-center gap-2 text-gray-400 text-sm">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading...
@@ -1403,32 +1411,53 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
               ) : classes.length === 0 ? (
                 <p className="text-gray-400 text-sm">No classes configured yet. Add classes in Academic Setup.</p>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {classes.map((c) => (
-                    <div
-                      key={c._id}
-                      onClick={() => {
-                        setFromClassId(c._id);
-                        setFromClassName(c.name);
-                        setPreviewStudents([]);
-                        setSelectedStudentIds([]);
-                      }}
-                      className="group relative bg-white rounded-2xl border border-gray-200/70 p-4 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer overflow-hidden"
-                    >
-                      <div className="absolute -right-4 -top-4 w-16 h-16 rounded-full bg-indigo-50 group-hover:bg-indigo-100 transition-colors" />
-                      <div className="relative">
-                        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-xs shadow-sm mb-2.5">
-                          {initials(c.name)}
-                        </div>
-                        <div className="text-base font-bold text-gray-800">{c.name}</div>
-                        <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          {studentCounts[c.name] || 0} student{studentCounts[c.name] !== 1 ? "s" : ""}
-                        </div>
-                      </div>
+                (() => {
+                  const filteredClasses = classes.filter((c) =>
+                    (c.name || "").toLowerCase().includes(classSearch.trim().toLowerCase())
+                  );
+                  if (filteredClasses.length === 0) {
+                    return <p className="text-gray-400 text-sm">No classes match “{classSearch}”.</p>;
+                  }
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {filteredClasses.map((c, i) => {
+                        const color = CLASS_CARD_COLORS[i % CLASS_CARD_COLORS.length];
+                        const count = studentCounts[c.name] || 0;
+                        return (
+                          <button
+                            key={c._id}
+                            type="button"
+                            onClick={() => {
+                              setFromClassId(c._id);
+                              setFromClassName(c.name);
+                              if (c.academicYearId) {
+                                const y = academicYears.find((ay) => String(ay._id) === String(c.academicYearId));
+                                if (y) {
+                                  setFromAcademicYearId(y._id);
+                                  setFromAcademicYear(y.name);
+                                }
+                              }
+                              setPreviewStudents([]);
+                              setSelectedStudentIds([]);
+                            }}
+                            className="flex items-center gap-3 bg-white rounded-2xl border border-gray-200/70 p-4 text-left shadow-sm hover:shadow-md hover:border-indigo-200 transition-all"
+                          >
+                            <div className={`h-11 w-11 rounded-xl ${color.bg} ${color.text} flex items-center justify-center shrink-0`}>
+                              <Users className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold text-gray-800 truncate">{c.name}</div>
+                              <div className="text-xs text-gray-500">
+                                {count} Student{count !== 1 ? "s" : ""}
+                              </div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                          </button>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()
               )}
             </div>
           </Motion.div>

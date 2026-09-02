@@ -613,7 +613,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                       isSearchFocused ? 'bg-white/70' : 'bg-white/40'
                     }`}
                   >
-                    ⌘K
+                    ⌘+K
                   </kbd>
                 )}
               </form>

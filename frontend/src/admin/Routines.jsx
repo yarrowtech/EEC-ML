@@ -1391,7 +1391,7 @@ const Routines = ({ setShowAdminHeader }) => {
             </button>
             <button onClick={exportPDF} disabled={routines.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
-              <Download size={13} /> Export PDF
+              <Download size={13} /> Download PDF
             </button>
             <button onClick={handleDeleteAll} disabled={isDeletingAll || routines.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors">
