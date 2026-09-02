@@ -25,6 +25,11 @@ const Timetable = require('../models/Timetable');
 
 const EXPENSE_CATEGORY_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
 
+// Same "active" rule as /admin/users/dashboard-stats: a student who has left,
+// been expelled, or been archived shouldn't count toward the live totals.
+const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
+const isExitedStudentStatus = (status) => EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
+
 const router = express.Router();
 
 const getSchoolFilter = (req) => {
@@ -81,21 +86,28 @@ router.get('/overview', principalAuth, async (req, res) => {
   // #swagger.tags = ['Principal Dashboard']
   try {
     const schoolFilter = getSchoolFilter(req);
+    const activeStudentFilter = {
+      ...schoolFilter,
+      isArchived: { $ne: true },
+      status: { $nin: EXITED_STUDENT_STATUSES },
+    };
 
     const [
       totalStudents,
       totalTeachers,
       totalStaff,
-      totalParents,
+      parentDocs,
       totalClasses,
       totalSubjects,
       studentProgress,
       feeSummary,
     ] = await Promise.all([
-      StudentUser.countDocuments(schoolFilter),
+      StudentUser.countDocuments(activeStudentFilter),
       TeacherUser.countDocuments(schoolFilter),
       StaffUser.countDocuments(schoolFilter),
-      ParentUser.countDocuments(schoolFilter),
+      ParentUser.find(schoolFilter, 'childrenIds')
+        .populate({ path: 'childrenIds', select: 'status isArchived' })
+        .lean(),
       ClassModel.countDocuments(schoolFilter),
       Subject.countDocuments(schoolFilter),
       StudentProgress.find(schoolFilter, 'overallGrade').lean(),
@@ -111,6 +123,17 @@ router.get('/overview', principalAuth, async (req, res) => {
         },
       ]),
     ]);
+
+    // A parent counts as active unless they have children linked and every
+    // one of those children has exited/been archived (parents with no
+    // linked children yet still count) — same rule as the admin dashboard.
+    const totalParents = parentDocs.filter((parent) => {
+      const children = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+      const activeChildren = children.filter(
+        (child) => child && child.isArchived !== true && !isExitedStudentStatus(child.status)
+      );
+      return !(children.length > 0 && activeChildren.length === 0);
+    }).length;
 
     const students = await StudentUser.find(schoolFilter, 'attendance').lean();
     let present = 0;
