@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   Download,
@@ -20,10 +21,10 @@ import toast from 'react-hot-toast';
 import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { normalizeReportCard } from './reportCardShape';
-
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+import { parentApiJson } from './parentApi';
 
 const ResultsView = () => {
+  const navigate = useNavigate();
   const [reportCards, setReportCards] = useState([]);
   const [template, setTemplate] = useState(null);
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -44,14 +45,7 @@ const ResultsView = () => {
           return;
         }
 
-        const res = await fetch(`${API_BASE_URL}/api/reports/report-cards/parent`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
-          throw new Error(payload?.error || 'Unable to load results');
-        }
-        const payload = await res.json();
+        const payload = await parentApiJson('/api/reports/report-cards/parent', {}, navigate);
         const cards = (Array.isArray(payload?.reportCards) ? payload.reportCards : []).map(normalizeReportCard);
         setReportCards(cards);
         setTemplate(payload.template);
@@ -225,8 +219,8 @@ const ResultsView = () => {
             color: 'bg-cyan-50 text-cyan-600',
             trend: 'Total Components'
           },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow group">
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow group">
             <div className="flex justify-between items-start mb-4">
               <div className={`p-3 rounded-xl ${stat.color} transition-transform group-hover:scale-110`}>
                 <stat.icon size={20} />
@@ -234,7 +228,7 @@ const ResultsView = () => {
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-              <h2 className="text-2xl font-bold text-slate-900">{stat.value}</h2>
+              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
               <p className="text-[10px] font-medium text-slate-500 mt-2">{stat.trend}</p>
             </div>
           </div>

@@ -29,24 +29,25 @@ Checked against the current repository on 2026-09-01. A checked box means the im
 
 ### Partially complete or outstanding
 
-- [x] **C9 — Shared session wrapper created:** `parentApiFetch`/`parentApiJson` exist and are used by `ClassRoutine`, `HealthReport`, `ExcuseLetters`, and `HolidayList`.
-- [ ] **C9 — Complete migration:** move the remaining parent screens from raw `fetch` to the shared parent API wrapper.
+- [x] **C9 — Shared session wrapper created:** `parentApiFetch`/`parentApiJson` exist.
+- [x] **C9 — Complete migration (2026-09-02):** all 15 parent screens now route through the shared wrapper. `AcademicReport`, `AchievementsView`, `AttendanceReport`, `ResultsView`, `ComplaintManagementSystem`, `ParentObservationNonAcademic`, `PTMPortal`, `ChildGrowthAnalytics`, `ParentDashboard`, and `FeesPayment` migrated off raw `fetch` + `authHeader()`. (`ParentPortal`/`ParentChat` keep the equivalent `apiFetch` from `utils/authSession`.)
 - [x] **C10 — Dead frontend code removed:** unused components, backup files, and Academic Report dead filtering code are gone.
-- [ ] **C10 — Orphan backend cleanup:** remove or formally retain/document `/api/parent/auth/academics` and `/api/fees/parent/razorpay/*`.
-- [x] **C11 — Safer Jitsi room selection:** parents select scheduled meetings; invite functions are disabled and prejoin is enabled.
-- [ ] **C11 — Meeting privacy completion:** add an actual lobby/authenticated admission policy or move to a school-controlled provider. `EEC-PTM-<meetingId>` alone is not an access-control boundary.
-- [ ] **Accessibility completion:** run axe-core and keyboard/focus testing across every parent route; remediate remaining contrast, focus-trap, heading, and modal issues.
+- [x] **C10 — Orphan backend cleanup (2026-09-02):** deleted `GET /api/parent/auth/academics` (+ its now-unused `ExamResult`/`StudentProgress`/`Assignment` requires) and `POST /api/fees/parent/razorpay/{order,verify}`. `FeesPayment.test.jsx` rewritten against `/api/fees/:id/pay` + `/api/fees/payments/razorpay/verify` (no skipped stubs left in that suite). `docs/parent-portal-api-map.md` updated.
+- [x] **C11 — Safer Jitsi room selection:** parents select scheduled meetings; invite functions disabled, prejoin enabled.
+- [x] **C11 — Meeting privacy completion (2026-09-02):** `ParentMeeting` now carries a server-generated unguessable `videoRoom` slug (`eec-ptm-<24 hex>`), lazily backfilled for legacy meetings on read. Both the parent (`PTMPortal`) and teacher (`ParentMeetings`) portals resolve the room from that field — the guessable `EEC-PTM-<meetingId>` derivation is gone. The embed/opens now use `#config.prejoinPageEnabled=true&config.lobby.autoKnock=true&config.disableInviteFunctions=true`, so the parent waits in a lobby until the teacher (first in = moderator) admits them. A school-controlled JaaS/self-hosted bridge remains the recommended long-term move but is no longer required for a real admission boundary.
+- [x] **Accessibility completion (2026-09-02):** new `src/parents/__tests__/parentA11y.test.jsx` runs `jest-axe` against 11 standalone parent screens (0 violations). New shared `useDialog` hook adds `role="dialog"` + `aria-modal` + Escape + focus-trap + focus-restore to the `ParentPortal` logout modal, both `PTMPortal` modals, the `FeesPayment` breakdown modal, and the `ParentChat` teacher modal. `role="progressbar"` (+ `aria-valuenow/min/max`) added to every `ChildGrowthAnalytics` bar/ring; each Recharts chart wrapped in `role="img"` with a data summary label. `ComplaintManagementSystem` form controls got `htmlFor`/`id`; its status filter is a `role="group"` with `aria-pressed`. Stat-card values switched from `<h2>` to `<p>` in the four report screens (heading semantics); index `key`s replaced. App-wide reduced-motion was already handled (`index.css` universal rule + `<MotionConfig reducedMotion="user">`).
 
 ### Verification gates
 
-- [x] **Parent Jest suites:** 2 suites passed; 45 tests passed, 9 skipped, 0 failed (`npm test -- --runInBand src/parents`).
-- [x] **Frontend production build:** recorded as passing in the resolution log and subsequent parent-portal UI work.
-- [x] **AI-service tests:** resolution log records 157 passed, including four new parent-mode cases.
-- [ ] **Live database walkthrough:** exercise all 15 parent routes with ID-linked and name-linked parents against representative school data.
-- [ ] **Payment sandbox walkthrough:** verify Razorpay order, checkout, signature verification, receipt, retry, and failure handling.
-- [ ] **Notification walkthrough:** verify PTM actions generate the intended teacher notifications and read states persist.
-- [ ] **AI report quality review:** generate Home Support, Weekly Digest, and Monthly Report for representative learners and have a teacher review accuracy and safety.
-- [ ] **Cross-browser/mobile QA:** verify narrow mobile, tablet, desktop, keyboard-only, and reduced-motion behavior.
+- [x] **Parent Jest suites (2026-09-02):** 3 suites passed; 50 passed, 6 skipped, 0 failed (`npx jest src/parents --runInBand`). Includes the new axe suite and the rewritten payment-flow tests.
+- [x] **Frontend production build (2026-09-02):** `vite build` green.
+- [x] **Backend meeting/parent tests (2026-09-02):** `studentMeetingRoute` + `parentExcuseLetters` suites green; `node -c` clean on every touched backend file.
+- [x] **AI-service tests:** resolution log records 157 passed, including four new parent-mode cases (unchanged this pass — no ai-service edits).
+- [ ] **Live database walkthrough:** exercise all 15 parent routes with ID-linked and name-linked parents against representative school data. *(Needs a running stack + seeded DB — cannot be done from source.)*
+- [ ] **Payment sandbox walkthrough:** verify Razorpay order, checkout, signature verification, receipt, retry, and failure handling against a real test key. *(Needs Razorpay test credentials.)*
+- [ ] **Notification walkthrough:** verify PTM reschedule/decline/feedback generate the intended teacher notifications and read states persist. *(Needs a running stack.)*
+- [ ] **AI report quality review:** generate Home Support, Weekly Digest, and Monthly Report for representative learners and have a teacher review accuracy and safety. *(Needs Ollama + seeded learners + a human reviewer.)*
+- [ ] **Cross-browser/mobile QA:** verify narrow mobile, tablet, desktop, keyboard-only, and reduced-motion behavior. *(Needs a running stack + devices/browsers.)*
 
 ---
 
@@ -358,3 +359,32 @@ All items fixed. Verification: `frontend` build ✓ · parent Jest suites **45 p
 | **C9** — session handling | New `parents/parentApi.js` (`parentApiFetch`/`parentApiJson`) — auto-attaches the token, redirects to login **only on 401** (business-logic 403s pass through). Adopted in `ExcuseLetters`, `HolidayList`, `ClassRoutine`, `HealthReport`; remaining screens can migrate incrementally. |
 | **C10** — dead code / tests | Deleted `CoursesView.jsx`, `ParentObservation.jsx`, and 6 `*.jsx.bak` files. `ParentPortal.test.jsx` updated for the confirm-modal logout flow and the current menu (queries scoped to the nav landmark) — suite green. `AcademicReport` dead `filterType`/`filteredExams` removed. (`FeesPayment.jsx` + its test were being refactored in parallel and now pass — left untouched.) Orphan backend endpoints (`/api/parent/auth/academics`, `/api/fees/parent/razorpay/*`) left in place with no consumers — safe to delete in a follow-up. |
 | **C11** — Jitsi | `PTMPortal` video tab: free-text room replaced with a picker over the parent's scheduled meetings; room name is a deterministic `EEC-PTM-<meetingId>` (unguessable, and the teacher derives the same string). `disableInviteFunctions` + prejoin enabled in the embed URL; `window.open` uses `noopener`. |
+
+---
+
+## RESOLUTION LOG (2026-09-02) — remaining-items closeout
+
+Closes the four items left open after 2026-09-01: C9 full migration, C10 backend cleanup, C11 admission policy, and the accessibility pass. Verification: `vite build` ✓ · parent Jest **3 suites / 50 passed, 6 skipped, 0 failed** ✓ · backend `studentMeetingRoute` + `parentExcuseLetters` ✓ · `node -c` on every touched backend file ✓.
+
+### Backend
+
+| Change | Detail |
+|---|---|
+| Removed `GET /api/parent/auth/academics` | `parentRoute.js` — ~190-line dead handler; also dropped its now-orphan `ExamResult` / `StudentProgress` / `Assignment` requires. |
+| Removed `POST /api/fees/parent/razorpay/order` + `/verify` | `feeRoutes.js` — parents use the shared `/api/fees/:id/pay` + `/api/fees/payments/razorpay/verify`. Shared helpers (`resolveParentStudents`, `buildRazorpayReceipt`, …) still used elsewhere, so nothing else changed. |
+| `ParentMeeting.videoRoom` | New field, `default: () => 'eec-ptm-<24 hex>'` via `crypto.randomBytes`; `statics.generateVideoRoom` exported. |
+| `meetingRoute.js::ensureVideoRooms` | Lazily backfills `videoRoom` for legacy meetings on the parent and teacher `my-meetings` reads (`updateOne` per missing doc, mutates the in-memory result). |
+
+### Frontend
+
+| Change | Detail |
+|---|---|
+| **C9** | `AcademicReport`, `AchievementsView`, `AttendanceReport`, `ResultsView`, `ComplaintManagementSystem`, `ParentObservationNonAcademic`, `PTMPortal`, `ChildGrowthAnalytics`, `ParentDashboard` (all 4 cards + main), `FeesPayment` (6 calls) → `parentApiFetch`/`parentApiJson` with `useNavigate()`. Local `API_BASE`/`authHeader` consts deleted. Token-presence guards kept where they showed a friendlier message than a redirect. |
+| **C11 — `PTMPortal.jsx`** | `roomForMeeting` → `meeting.meetingLink \|\| meeting.videoRoom` (no id-derived fallback). Shared `JITSI_ROOM_CONFIG` hash: `prejoinPageEnabled` + `lobby.autoKnock` + `disableInviteFunctions` + `startWithAudioMuted`. Lobby notice added to the video tab. `useDialog` on both modals. |
+| **C11 — `teachers/ParentMeetings.jsx`** | New `jitsiRoomUrl(meeting)` helper + a "Join secure room" link for Video Call meetings without a manual link, using the same room + config as the parent side. |
+| **Accessibility** | New `parents/useDialog.js` (Escape + focus trap + focus restore) wired into the `ParentPortal` logout modal (now `role="dialog"`/`aria-modal`/labelled), both `PTMPortal` modals, the `FeesPayment` breakdown modal, and the `ParentChat` teacher modal. `ChildGrowthAnalytics`: `role="progressbar"` on `ScoreRing`/`MiniBar` + every inline bar; every Recharts chart wrapped in `role="img"` with a spoken data summary; main loader gets `aria-busy`/`aria-live`; dead imports (`Star`, `CheckCircle2`, `Award`, `Legend`, `trendIcon`) removed. `ComplaintManagementSystem`: `htmlFor`/`id` on all form controls, `aria-label` on search, status filter → `role="group"` + `aria-pressed`. Report screens: stat value `<h2>` → `<p>`, index `key`s → `stat.label`. |
+| **Tests** | New `parents/__tests__/parentA11y.test.jsx` — `jest-axe` over 11 standalone screens, 0 violations (contrast rule disabled: not computable in jsdom). `FeesPayment.test.jsx` rewritten: `MemoryRouter` wrapper, real endpoints, the 3 ex-`test.skip` Razorpay cases implemented against the mock checkout. `jest-axe@9` added as a devDependency. |
+
+### Still open (needs a running stack — cannot be done from source)
+
+Live DB walkthrough · Razorpay sandbox walkthrough · notification/read-state walkthrough · AI-report quality+safety review by a teacher · cross-browser/mobile/keyboard QA. Contrast (WCAG 1.4.3) on the small `text-[9-11px]` + `text-slate-400` text still needs a browser check — jsdom can't measure it.

@@ -52,8 +52,9 @@ Mounted under `backend/index.js`:
 - `/api/reports/report-cards/parent` -> `backend/routes/reportRoutes.js`
 - `/api/fees/parent/children` -> `backend/routes/feeRoutes.js`
 - `/api/fees/parent/invoices` -> `backend/routes/feeRoutes.js`
-- `/api/fees/parent/razorpay/order` -> `backend/routes/feeRoutes.js`
-- `/api/fees/parent/razorpay/verify` -> `backend/routes/feeRoutes.js`
+- `/api/fees/parent/summary` -> `backend/routes/feeRoutes.js`
+- `/api/fees/:id/pay` -> `backend/routes/feeRoutes.js` (shared student/parent checkout)
+- `/api/fees/payments/razorpay/verify` -> `backend/routes/feeRoutes.js` (shared signature verify)
 - `/api/holidays/parent` -> `backend/routes/holidayRoutes.js`
 - `/api/chat/me` -> `backend/routes/chatRoutes.js`
 - `/api/chat/threads` -> `backend/routes/chatRoutes.js`
@@ -63,10 +64,13 @@ Mounted under `backend/index.js`:
 - `/api/chat/contacts` -> `backend/routes/chatRoutes.js`
 - `/api/meeting/parent/my-meetings` -> `backend/routes/meetingRoute.js`
 - `/api/meeting/parent/confirm/:id` -> `backend/routes/meetingRoute.js`
+- `/api/meeting/parent/reschedule/:id` -> `backend/routes/meetingRoute.js`
+- `/api/meeting/parent/decline/:id` -> `backend/routes/meetingRoute.js`
+- `/api/meeting/parent/feedback/:id` -> `backend/routes/meetingRoute.js`
+- `/api/parent/auth/health` -> `backend/routes/parentRoute.js`
 - `/api/observations/parent` -> `backend/routes/studentObservationRoutes.js`
 
 Parent-related backend APIs present in code but not currently called by mounted parent pages:
-- `/api/parent/auth/academics` -> `backend/routes/parentRoute.js`
 - `/api/parent/auth/login` -> `backend/routes/parentRoute.js`
 - `/api/parent/auth/register` -> `backend/routes/parentRoute.js`
 - `/api/parent/auth/reset-first-password` -> `backend/routes/parentRoute.js`
@@ -170,12 +174,12 @@ For parent portal business flows:
 - Route-level structured parent/business/audit log: yes
 - File: `backend/routes/feeRoutes.js`
 
-`POST /api/fees/parent/razorpay/order`
+`POST /api/fees/:id/pay`
 - Generic request logs: yes
 - Route-level structured parent/business/audit log: yes
-- File: `backend/routes/feeRoutes.js`
+- File: `backend/routes/feeRoutes.js` (shared student/parent checkout; replaced the parent-only `/parent/razorpay/*` routes)
 
-`POST /api/fees/parent/razorpay/verify`
+`POST /api/fees/payments/razorpay/verify`
 - Generic request logs: yes
 - Route-level structured parent/business/audit log: yes
 - File: `backend/routes/feeRoutes.js`
@@ -508,8 +512,9 @@ Mounted API used by this page:
 Endpoints directly connected:
 - `GET /api/fees/parent/children`
 - `GET /api/fees/parent/invoices?studentId=...`
-- `POST /api/fees/parent/razorpay/order`
-- `POST /api/fees/parent/razorpay/verify`
+- `GET /api/fees/parent/summary`
+- `POST /api/fees/:id/pay`
+- `POST /api/fees/payments/razorpay/verify`
 
 Frontend file:
 - `frontend/src/parents/FeesPayment.jsx`
@@ -803,14 +808,6 @@ Frontend file:
 ---
 
 ## Parent routes present in code but not mounted in current parent portal sidebar
-- `GET /api/parent/auth/academics`
-  Route file: `backend/routes/parentRoute.js`
-  Note: current parent frontend uses `GET /api/reports/report-cards/parent` for both academic and results pages instead.
-
-- `frontend/src/parents/CoursesView.jsx`
-  Current behavior: loads child names from `GET /api/parent/auth/profile`
-  Note: this component is not mounted in `ParentPortal.jsx` right now, so `/parents/ai-learning` style routes are not active for parents in current routing.
-
 - Parent auth utility endpoints:
   - `POST /api/parent/auth/login`
   - `POST /api/parent/auth/register`
@@ -819,8 +816,8 @@ Frontend file:
 
 ---
 
-## Parent routes with no direct API calls in current frontend implementation
-- `http://localhost:5173/parents/health`
+## `/parents/health`
+- `GET /api/parent/auth/health` -> `backend/routes/parentRoute.js`
 
 Mapped frontend files:
 - `frontend/src/parents/HealthReport.jsx`

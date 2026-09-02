@@ -14,6 +14,22 @@ const {
   studentIsWithinTeacherScope,
 } = require('../utils/teacherAllocationScope');
 
+// Meetings created before per-meeting secure rooms existed have no `videoRoom`.
+// Backfill lazily on read so the parent and teacher portals always resolve the
+// same room string without another migration.
+const ensureVideoRooms = async (meetings) => {
+  const pending = [];
+  for (const meeting of meetings) {
+    if (!meeting.videoRoom) {
+      const room = ParentMeeting.generateVideoRoom();
+      meeting.videoRoom = room;
+      pending.push(ParentMeeting.updateOne({ _id: meeting._id }, { $set: { videoRoom: room } }));
+    }
+  }
+  if (pending.length) await Promise.all(pending);
+  return meetings;
+};
+
 const formatMeetingDay = (value) => {
   if (!value) return 'TBA';
   const d = new Date(value);
@@ -306,6 +322,7 @@ router.get('/teacher/my-meetings', authTeacher, async (req, res) => {
       .populate('parentId', 'name email mobile')
       .sort({ meetingDate: -1, meetingTime: -1 });
 
+    await ensureVideoRooms(meetings);
     res.json(meetings);
   } catch (err) {
     console.error('Error fetching meetings:', err);
@@ -438,6 +455,7 @@ router.get('/parent/my-meetings', authParent, async (req, res) => {
       .populate('teacherId', 'name email mobile')
       .sort({ meetingDate: -1, meetingTime: -1 });
 
+    await ensureVideoRooms(meetings);
     res.json(meetings);
   } catch (err) {
     console.error('Error fetching parent meetings:', err);

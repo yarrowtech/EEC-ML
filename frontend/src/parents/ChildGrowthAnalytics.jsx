@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   Heart,
@@ -8,15 +9,12 @@ import {
   Loader2,
   BarChart2,
   Activity,
-  Star,
   AlertTriangle,
-  CheckCircle2,
   Calendar,
   Smile,
   Frown,
   Meh,
   Brain,
-  Award,
   Target,
   Users,
   Eye,
@@ -45,11 +43,8 @@ import {
   Cell,
   PieChart,
   Pie,
-  Legend,
 } from 'recharts';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+import { parentApiJson } from './parentApi';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const moodIcon = (rating) => {
@@ -80,16 +75,6 @@ const scoreLabel = (s) => {
   return 'Needs Work';
 };
 
-const trendIcon = (arr, key) => {
-  if (!arr || arr.length < 2) return <Minus size={12} className="text-slate-400" />;
-  const last = arr[arr.length - 1][key];
-  const prev = arr[arr.length - 2][key];
-  if (last == null || prev == null) return <Minus size={12} className="text-slate-400" />;
-  if (last > prev) return <ArrowUp size={12} className="text-emerald-500" />;
-  if (last < prev) return <ArrowDown size={12} className="text-red-500" />;
-  return <Minus size={12} className="text-slate-400" />;
-};
-
 const PIE_COLORS = ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6', '#06b6d4'];
 
 // ── Student selector ──────────────────────────────────────────────────────────
@@ -116,15 +101,23 @@ const StudentPill = ({ students, selectedId, onSelect }) => (
 );
 
 // ── Score ring ────────────────────────────────────────────────────────────────
-const ScoreRing = ({ score, size = 80, stroke = 7, color }) => {
+const ScoreRing = ({ score, size = 80, stroke = 7, color, label = 'Score' }) => {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const pct = score != null ? Math.min(Math.max(score, 0), 100) : 0;
   const offset = circ - (pct / 100) * circ;
   const c = color || scoreColor(score);
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+    <div
+      className="relative flex items-center justify-center"
+      style={{ width: size, height: size }}
+      role="progressbar"
+      aria-valuenow={score != null ? Math.round(pct) : undefined}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuetext={score != null ? `${label}: ${Math.round(pct)}%` : `${label}: no data`}
+    >
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
         <circle
           cx={size / 2} cy={size / 2} r={r} fill="none"
@@ -140,14 +133,24 @@ const ScoreRing = ({ score, size = 80, stroke = 7, color }) => {
 };
 
 // ── MiniBar ───────────────────────────────────────────────────────────────────
-const MiniBar = ({ value, max = 100, color }) => (
-  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+const MiniBar = ({ value, max = 100, color, label = 'Progress' }) => {
+  const pct = Math.min((Number(value || 0) / max) * 100, 100);
+  return (
     <div
-      className="h-1.5 rounded-full transition-all duration-700"
-      style={{ width: `${Math.min((value / max) * 100, 100)}%`, background: color || scoreColor(value) }}
-    />
-  </div>
-);
+      className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"
+      role="progressbar"
+      aria-valuenow={Math.round(Number(value || 0))}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={label}
+    >
+      <div
+        className="h-1.5 rounded-full transition-all duration-700"
+        style={{ width: `${pct}%`, background: color || scoreColor(value) }}
+      />
+    </div>
+  );
+};
 
 // ── Academic Detail Sidebar ───────────────────────────────────────────────────
 const AcademicSidebar = ({ data, onClose }) => {
@@ -195,7 +198,11 @@ const AcademicSidebar = ({ data, onClose }) => {
         {radarData.length > 1 && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Subject Radar</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Subject radar chart comparing average scores across ${radarData.map((s) => `${s.subject} ${s.score}%`).join(', ')}`}
+            >
               <ResponsiveContainer width="100%" height={200}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#e2e8f0" />
@@ -247,7 +254,11 @@ const AcademicSidebar = ({ data, onClose }) => {
         {examTrend.length > 0 && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Exam Score Trend</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Line chart of exam scores over time: ${examTrend.map((e) => `${e.subject} ${e.percentage}%`).join(', ')}`}
+            >
               <ResponsiveContainer width="100%" height={160}>
                 <LineChart data={examTrend} margin={{ top: 4, right: 8, bottom: 4, left: -16 }}>
                   <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" />
@@ -285,7 +296,11 @@ const AcademicSidebar = ({ data, onClose }) => {
         {monthlyAttendance.some((m) => m.total > 0) && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Monthly Attendance</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Bar chart of monthly attendance percentage: ${monthlyAttendance.filter((m) => m.total > 0).map((m) => `${m.label} ${m.pct}%`).join(', ')}`}
+            >
               <ResponsiveContainer width="100%" height={130}>
                 <BarChart data={monthlyAttendance} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                   <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" vertical={false} />
@@ -357,7 +372,11 @@ const WellbeingSidebar = ({ data, onClose }) => {
         {moodTrend.length > 1 && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Mood Over Time</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Line chart of mood rating (1 to 5) over ${moodTrend.length} recent check-ins`}
+            >
               <ResponsiveContainer width="100%" height={150}>
                 <LineChart data={moodTrend} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
                   <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" />
@@ -366,7 +385,7 @@ const WellbeingSidebar = ({ data, onClose }) => {
                   <Tooltip
                     contentStyle={{ borderRadius: 12, fontSize: 11, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
                     labelFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                    formatter={(v, n, p) => [v, 'Mood Rating']}
+                    formatter={(v) => [v, 'Mood Rating']}
                   />
                   <Line type="monotone" dataKey="mood" stroke="#f43f5e" strokeWidth={2.5}
                     dot={({ cx, cy, payload }) => (
@@ -395,6 +414,11 @@ const WellbeingSidebar = ({ data, onClose }) => {
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Concern Level Distribution</h3>
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <div className="flex items-center gap-4">
+                <div
+                  className="shrink-0"
+                  role="img"
+                  aria-label={`Pie chart of concern levels: ${concernPieData.map((e) => `${e.name} ${e.value}`).join(', ')}`}
+                >
                 <ResponsiveContainer width={120} height={120}>
                   <PieChart>
                     <Pie data={concernPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={3}>
@@ -404,6 +428,7 @@ const WellbeingSidebar = ({ data, onClose }) => {
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
                 <div className="flex-1 space-y-2">
                   {concernPieData.map((entry) => (
                     <div key={entry.name} className="flex items-center justify-between">
@@ -424,7 +449,11 @@ const WellbeingSidebar = ({ data, onClose }) => {
         {categoryBreakdown.length > 0 && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Observation Categories</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Bar chart of observation counts by category: ${categoryBreakdown.map((c) => `${c.name} ${c.count}`).join(', ')}`}
+            >
               <ResponsiveContainer width="100%" height={Math.min(categoryBreakdown.length * 32, 180)}>
                 <BarChart layout="vertical" data={categoryBreakdown} margin={{ top: 0, right: 20, bottom: 0, left: 0 }}>
                   <XAxis type="number" tick={{ fontSize: 9, fill: '#94a3b8' }} />
@@ -445,7 +474,11 @@ const WellbeingSidebar = ({ data, onClose }) => {
         {monthlyObservations.some((m) => m.count > 0) && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Monthly Activity</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Monthly observation activity: ${monthlyObservations.map((m) => `${m.label} ${m.count}`).join(', ')}`}
+            >
               <div className="flex items-end gap-2 h-20">
                 {monthlyObservations.map((m, i) => {
                   const max = Math.max(...monthlyObservations.map((x) => x.count), 1);
@@ -580,7 +613,11 @@ const SkillsSidebar = ({ data, onClose }) => {
         {radarData.length > 0 && (
           <section>
             <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">Domain Overview</h3>
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <div
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
+              role="img"
+              aria-label={`Radar chart of skill-domain scores: ${radarData.map((d) => `${d.domain} ${d.score}%`).join(', ')}`}
+            >
               <ResponsiveContainer width="100%" height={210}>
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="#fde68a" />
@@ -612,7 +649,14 @@ const SkillsSidebar = ({ data, onClose }) => {
                         {d.score != null ? `${d.score}%` : '–'}
                       </span>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="w-full bg-slate-100 rounded-full h-2 overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={d.score ?? 0}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${d.name} score`}
+                    >
                       <div
                         className="h-2 rounded-full transition-all duration-700"
                         style={{ width: `${d.score ?? 0}%`, background: d.color }}
@@ -669,7 +713,14 @@ const SkillsSidebar = ({ data, onClose }) => {
                             </span>
                           </div>
                           <div className="ml-6">
-                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"
+                              role="progressbar"
+                              aria-valuenow={skill.score ?? 0}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-label={`${skill.label} score`}
+                            >
                               <div
                                 className="h-1.5 rounded-full transition-all duration-700"
                                 style={{ width: `${skill.score ?? 0}%`, background: d.color }}
@@ -702,6 +753,7 @@ const SkillsSidebar = ({ data, onClose }) => {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const ChildGrowthAnalytics = () => {
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
@@ -717,65 +769,62 @@ const ChildGrowthAnalytics = () => {
 
   // Fetch student list from parent profile
   useEffect(() => {
-    fetch(`${API_BASE}/api/parent/auth/profile`, { headers: authHeader() })
-      .then((r) => r.json())
-      .then((d) => {
-        const kids = Array.isArray(d?.childrenIds)
-          ? d.childrenIds.map((c) => (typeof c === 'object' ? c : { _id: c, name: 'Student' }))
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await parentApiJson('/api/parent/auth/profile', {}, navigate);
+        const kids = Array.isArray(profile?.childrenIds)
+          ? profile.childrenIds.map((c) => (typeof c === 'object' ? c : { _id: c, name: 'Student' }))
           : [];
-        // Also try children array with names
-        const childrenNames = Array.isArray(d?.children) ? d.children : [];
 
-        // Fetch student details
-        return fetch(`${API_BASE}/api/attendance/parent/children`, { headers: authHeader() })
-          .then((r) => r.json())
-          .then((att) => {
-            const list = (att.children || []).map((c) => c.student).filter(Boolean);
-            if (list.length > 0) {
-              setStudents(list);
-              setSelectedId(list[0]._id);
-            } else if (kids.length > 0) {
-              setStudents(kids);
-              setSelectedId(String(kids[0]._id));
-            }
-          });
-      })
-      .catch(() => {})
-      .finally(() => setLoadingStudents(false));
-  }, []);
+        const att = await parentApiJson('/api/attendance/parent/children', {}, navigate);
+        if (cancelled) return;
+        const list = (att.children || []).map((c) => c.student).filter(Boolean);
+        if (list.length > 0) {
+          setStudents(list);
+          setSelectedId(list[0]._id);
+        } else if (kids.length > 0) {
+          setStudents(kids);
+          setSelectedId(String(kids[0]._id));
+        }
+      } catch {
+        /* empty state handles a failed load */
+      } finally {
+        if (!cancelled) setLoadingStudents(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [navigate]);
 
   const fetchAcademic = useCallback((sid) => {
     if (!sid) return;
     setLoadingAcademic(true);
     setAcademicData(null);
-    fetch(`${API_BASE}/api/parent-dashboard/analytics/academic/${sid}`, { headers: authHeader() })
-      .then((r) => r.json())
+    parentApiJson(`/api/parent-dashboard/analytics/academic/${sid}`, {}, navigate)
       .then((d) => setAcademicData(d.data || null))
       .catch(() => {})
       .finally(() => setLoadingAcademic(false));
-  }, []);
+  }, [navigate]);
 
   const fetchWellbeing = useCallback((sid) => {
     if (!sid) return;
     setLoadingWellbeing(true);
     setWellbeingData(null);
-    fetch(`${API_BASE}/api/parent-dashboard/analytics/wellbeing/${sid}`, { headers: authHeader() })
-      .then((r) => r.json())
+    parentApiJson(`/api/parent-dashboard/analytics/wellbeing/${sid}`, {}, navigate)
       .then((d) => setWellbeingData(d.data || null))
       .catch(() => {})
       .finally(() => setLoadingWellbeing(false));
-  }, []);
+  }, [navigate]);
 
   const fetchSkills = useCallback((sid) => {
     if (!sid) return;
     setLoadingSkills(true);
     setSkillsData(null);
-    fetch(`${API_BASE}/api/parent-dashboard/analytics/skills/${sid}`, { headers: authHeader() })
-      .then((r) => r.json())
+    parentApiJson(`/api/parent-dashboard/analytics/skills/${sid}`, {}, navigate)
       .then((d) => setSkillsData(d.data || null))
       .catch(() => {})
       .finally(() => setLoadingSkills(false));
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (selectedId) {
@@ -794,8 +843,8 @@ const ChildGrowthAnalytics = () => {
 
   if (loadingStudents) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
-        <Loader2 size={36} className="animate-spin text-indigo-400" />
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3" aria-busy="true" aria-live="polite">
+        <Loader2 size={36} className="animate-spin text-indigo-400" aria-hidden="true" />
         <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Loading analytics...</p>
       </div>
     );
@@ -1165,7 +1214,14 @@ const ChildGrowthAnalytics = () => {
                         </div>
                         <span className="text-xs font-black text-slate-600">{count}</span>
                       </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"
+                        role="progressbar"
+                        aria-valuenow={count}
+                        aria-valuemin={0}
+                        aria-valuemax={total}
+                        aria-label={`${lvl} concern observations`}
+                      >
                         <div className={`h-1.5 rounded-full ${c.dot} transition-all duration-700`} style={{ width: `${(count / total) * 100}%` }} />
                       </div>
                     </div>
@@ -1240,7 +1296,14 @@ const ChildGrowthAnalytics = () => {
                         {d.score != null ? `${d.score}%` : '–'}
                       </span>
                     </div>
-                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={d.score ?? 0}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${d.name} score`}
+                    >
                       <div
                         className="h-1.5 rounded-full transition-all duration-700"
                         style={{ width: `${d.score ?? 0}%`, background: d.color || '#f59e0b' }}

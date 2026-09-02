@@ -10,6 +10,17 @@ import { formatStudentDisplay } from '../utils/studentDisplay';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '') + '/api';
 
+// Same Jitsi hash-config the parent portal uses: prejoin screen, lobby auto-knock,
+// no invite/dial-in controls. The teacher joins first and admits the parent.
+const JITSI_ROOM_CONFIG = '#config.prejoinPageEnabled=true&config.lobby.autoKnock=true&config.disableInviteFunctions=true&config.startWithAudioMuted=true';
+
+const jitsiRoomUrl = (meeting) => {
+  if (!meeting) return '';
+  if (meeting.meetingLink) return meeting.meetingLink;
+  if (!meeting.videoRoom) return '';
+  return `https://meet.jit.si/${encodeURIComponent(meeting.videoRoom)}${JITSI_ROOM_CONFIG}`;
+};
+
 const mergeOptions = (server, derived) =>
   [...new Set([...(server || []), ...(derived || [])].map(String).filter(Boolean))].sort();
 
@@ -554,7 +565,13 @@ const ParentMeetings = () => {
                               <MapPin className="w-3 h-3" />{meeting.location}
                             </span>
                           )}
-                          {meeting.meetingLink && (
+                          {meeting.meetingType === 'Video Call' && jitsiRoomUrl(meeting) && (
+                            <a href={jitsiRoomUrl(meeting)} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 font-medium">
+                              <Video className="w-3 h-3" />{meeting.meetingLink ? 'Join' : 'Join secure room'}
+                            </a>
+                          )}
+                          {meeting.meetingType !== 'Video Call' && meeting.meetingLink && (
                             <a href={meeting.meetingLink} target="_blank" rel="noopener noreferrer"
                               className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 font-medium">
                               <Link className="w-3 h-3" />Join

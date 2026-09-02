@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+
+// Unguessable per-meeting room slug. The parent and teacher portals both read
+// this field, so neither side has to share a link and the room name can't be
+// enumerated from the meeting id.
+const generateVideoRoom = () => `eec-ptm-${crypto.randomBytes(12).toString('hex')}`;
 
 const parentMeetingSchema = new mongoose.Schema({
   schoolId: {
@@ -58,6 +64,10 @@ const parentMeetingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  videoRoom: {
+    type: String,
+    default: generateVideoRoom
+  },
   status: {
     type: String,
     enum: ['scheduled', 'pending', 'confirmed', 'reschedule_requested', 'declined', 'cancelled', 'completed'],
@@ -91,5 +101,7 @@ parentMeetingSchema.index({ schoolId: 1, teacherId: 1 });
 parentMeetingSchema.index({ schoolId: 1, parentId: 1 });
 parentMeetingSchema.index({ schoolId: 1, studentId: 1 });
 parentMeetingSchema.index({ meetingDate: 1, status: 1 });
+
+parentMeetingSchema.statics.generateVideoRoom = generateVideoRoom;
 
 module.exports = mongoose.model('ParentMeeting', parentMeetingSchema);

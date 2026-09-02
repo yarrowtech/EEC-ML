@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,9 +14,9 @@ import {
 import toast from 'react-hot-toast';
 import { downloadFeeReceiptPdf } from '../utils/feeReceiptPdf';
 import { downloadFeesStructurePdf } from '../utils/feesStructurePdf';
+import { parentApiFetch } from './parentApi';
+import { useDialog } from './useDialog';
 import './FeesPayment.css';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const AVATAR_STYLES = [
   'from-purple-100 to-purple-200 text-purple-700',
@@ -192,6 +193,7 @@ const ChildAvatar = ({ child, index }) => (
 );
 
 const FeesPayment = () => {
+  const navigate = useNavigate();
   const [children, setChildren] = useState([]);
   const [selectedChildId, setSelectedChildId] = useState('');
   const [loadingChildren, setLoadingChildren] = useState(true);
@@ -214,6 +216,8 @@ const FeesPayment = () => {
     [children, selectedChildId]
   );
 
+  const breakdownDialogRef = useDialog(showFeeBreakdown, () => setShowFeeBreakdown(false));
+
   const showError = (message) => {
     const text = message || 'Something went wrong';
     setError(text);
@@ -227,12 +231,7 @@ const FeesPayment = () => {
     setSuccessMessage('');
     try {
       if (!token) throw new Error('Login required. Please sign in again.');
-      const res = await fetch(`${API_BASE}/api/fees/parent/children`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await parentApiFetch('/api/fees/parent/children', {}, navigate);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load children');
       const list = Array.isArray(data.children) ? data.children : [];
@@ -261,12 +260,7 @@ const FeesPayment = () => {
     setSuccessMessage('');
     try {
       if (!token) throw new Error('Login required. Please sign in again.');
-      const res = await fetch(`${API_BASE}/api/fees/parent/invoices?studentId=${childId}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await parentApiFetch(`/api/fees/parent/invoices?studentId=${childId}`, {}, navigate);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load invoices');
       const list = Array.isArray(data.invoices) ? data.invoices : [];
@@ -292,12 +286,7 @@ const FeesPayment = () => {
     const token = getStoredToken();
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/api/reports/report-cards/parent`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await parentApiFetch('/api/reports/report-cards/parent', {}, navigate);
       const data = await res.json().catch(() => ({}));
       const template = res.ok ? data?.template : null;
       if (template && typeof template === 'object') {
@@ -325,7 +314,6 @@ const FeesPayment = () => {
   }, [selectedChildId]);
 
   const handleDownloadReceipt = async (payment, invoice) => {
-    const token = getStoredToken();
     if (!payment?._id) {
       showError('Receipt not available for this payment');
       return;
@@ -334,12 +322,7 @@ const FeesPayment = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const res = await fetch(`${API_BASE}/api/fees/parent/payments/${payment._id}/receipt`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await parentApiFetch(`/api/fees/parent/payments/${payment._id}/receipt`, {}, navigate);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to load receipt');
       await downloadFeeReceiptPdf({
@@ -386,7 +369,6 @@ const FeesPayment = () => {
   };
 
   const handlePayNow = async (invoice, amountOverride) => {
-    const token = getStoredToken();
     const paymentAmount = Number(amountOverride ?? amounts[invoice._id] ?? getInvoiceBalance(invoice));
     setProcessingInvoiceId(invoice._id);
     setError('');
@@ -394,14 +376,10 @@ const FeesPayment = () => {
     try {
       if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('Enter a valid amount');
       if (paymentAmount > getInvoiceBalance(invoice)) throw new Error('Amount cannot exceed the outstanding balance');
-      const orderRes = await fetch(`${API_BASE}/api/fees/${invoice._id}/pay`, {
+      const orderRes = await parentApiFetch(`/api/fees/${invoice._id}/pay`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({ amount: paymentAmount }),
-      });
+      }, navigate);
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData?.error || 'Failed to create payment order');
       if (!await loadRazorpayScript()) throw new Error('Unable to load Razorpay');
@@ -419,18 +397,14 @@ const FeesPayment = () => {
         modal: { ondismiss: () => setProcessingInvoiceId('') },
         handler: async (response) => {
           try {
-            const verifyRes = await fetch(`${API_BASE}/api/fees/payments/razorpay/verify`, {
+            const verifyRes = await parentApiFetch('/api/fees/payments/razorpay/verify', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
               body: JSON.stringify({
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }),
-            });
+            }, navigate);
             const verifyData = await verifyRes.json();
             if (!verifyRes.ok) throw new Error(verifyData?.error || 'Payment verification failed');
             setSuccessMessage('Payment successful. Invoice updated.');
@@ -706,9 +680,9 @@ const FeesPayment = () => {
       )}
 
       {showFeeBreakdown && selectedInvoice && Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="fees-breakdown-title">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button type="button" className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowFeeBreakdown(false)} aria-label="Close breakdown" />
-          <div className="relative w-full max-w-md rounded-2xl border border-white/80 bg-white/95 p-5 shadow-2xl">
+          <div ref={breakdownDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="fees-breakdown-title" className="relative w-full max-w-md rounded-2xl border border-white/80 bg-white/95 p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div><h3 id="fees-breakdown-title" className="text-base font-bold text-slate-800">Fees Breakdown</h3><p className="mt-0.5 text-xs text-slate-500">{getInvoiceTitle(selectedInvoice)}</p></div>
               <button type="button" onClick={() => setShowFeeBreakdown(false)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600" aria-label="Close"><X className="h-4 w-4" /></button>

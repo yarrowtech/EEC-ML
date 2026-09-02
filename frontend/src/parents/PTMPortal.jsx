@@ -1,7 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Clock, Video, Phone, Users, Bell, Check, X, ArrowLeftRight, MessageSquareMore, Star, ExternalLink, Copy } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calendar, Clock, Video, Phone, Users, Bell, Check, X, ArrowLeftRight, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
+import { parentApiJson } from './parentApi';
+import { useDialog } from './useDialog';
+
+// Jitsi hash-config for a privacy-respecting room: show the prejoin screen,
+// auto-knock so the parent waits in the lobby until the teacher admits them,
+// and hide invite/dial-in controls.
+const JITSI_ROOM_CONFIG = '#config.prejoinPageEnabled=true&config.lobby.autoKnock=true&config.disableInviteFunctions=true&config.startWithAudioMuted=true';
+
+const buildJitsiUrl = (room) => {
+  if (!room) return '';
+  if (/^https?:\/\//.test(room)) return room;
+  return `https://meet.jit.si/${encodeURIComponent(room)}`;
+};
 
 const PTMPortal = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('meetings'); // meetings | requests | video | history
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [modalMode, setModalMode] = useState(null); // 'reschedule' | 'feedback' | null
@@ -17,30 +32,25 @@ const PTMPortal = () => {
     setModalMode(null);
     setError('');
   };
+  const dialogRef = useDialog(Boolean(selectedMeeting && modalMode), closeModal);
 
   // Video meeting state (Jitsi embed)
   const [videoMeetingId, setVideoMeetingId] = useState('');
   const [jitsiActive, setJitsiActive] = useState(false);
-  const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
-  // A stable, hard-to-guess room name derived from the meeting id — the teacher
-  // side derives the same string, so both land in the same room without sharing links.
+  // The room comes from the meeting record (a teacher-set link, or the
+  // server-generated unguessable `videoRoom` slug). It is never derived from the
+  // meeting id, so it can't be enumerated by anyone outside the meeting.
   const roomForMeeting = (meeting) => {
     if (!meeting) return '';
-    if (meeting.meetingLink) return meeting.meetingLink;
-    const id = String(meeting._id || meeting.id || '');
-    return id ? `EEC-PTM-${id}` : '';
+    return meeting.meetingLink || meeting.videoRoom || '';
   };
   const videoMeeting = useMemo(
     () => meetings.find((m) => String(m._id || m.id) === String(videoMeetingId)) || null,
     [meetings, videoMeetingId],
   );
   const videoRoom = roomForMeeting(videoMeeting);
-  const jitsiUrl = useMemo(() => {
-    if (!videoRoom) return '';
-    if (/^https?:\/\//.test(videoRoom)) return videoRoom;
-    return `https://meet.jit.si/${encodeURIComponent(videoRoom)}`;
-  }, [videoRoom]);
+  const jitsiUrl = useMemo(() => buildJitsiUrl(videoRoom), [videoRoom]);
   const videoEligible = useMemo(
     () => meetings.filter((m) => ['confirmed', 'scheduled', 'pending'].includes(String(m.status || '').toLowerCase())),
     [meetings],
@@ -90,19 +100,7 @@ const PTMPortal = () => {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/meeting/parent/my-meetings`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Unable to load meetings');
-      }
-
-      const data = await response.json();
+      const data = await parentApiJson('/api/meeting/parent/my-meetings', {}, navigate);
       setMeetings(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Parent meetings fetch error:', err);
@@ -111,7 +109,7 @@ const PTMPortal = () => {
     } finally {
       setLoading(false);
     }
-  }, [API_BASE_URL]);
+  }, [navigate]);
 
   useEffect(() => {
     fetchMeetings();
@@ -145,18 +143,7 @@ const PTMPortal = () => {
     try {
       setLoading(true);
       setError('');
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE_URL}/api/meeting/parent/confirm/${meetingId}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Unable to confirm meeting');
-      }
+      await parentApiJson(`/api/meeting/parent/confirm/${meetingId}`, { method: 'PUT' }, navigate);
       await fetchMeetings();
     } catch (err) {
       console.error('Confirm meeting error:', err);
@@ -167,17 +154,13 @@ const PTMPortal = () => {
   };
 
   const meetingAction = async (meetingId, { method, path, body }) => {
-    const token = localStorage.getItem('token');
     setError('');
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/meeting/parent/${path}/${meetingId}`, {
+      const payload = await parentApiJson(`/api/meeting/parent/${path}/${meetingId}`, {
         method,
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || 'Request failed');
+      }, navigate);
       await fetchMeetings();
       return payload;
     } catch (err) {
@@ -450,6 +433,10 @@ const PTMPortal = () => {
               <p className="text-xs text-gray-500 mb-3">
                 Pick a scheduled meeting to join its private room. Your child&apos;s teacher joins the same room from their portal.
               </p>
+              <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Each meeting has its own unlisted room. You&apos;ll wait in a lobby until the teacher admits you.
+              </p>
               {videoEligible.length === 0 ? (
                 <div className="h-[200px] flex items-center justify-center text-gray-500 text-sm">
                   You have no scheduled meetings to join.
@@ -481,10 +468,10 @@ const PTMPortal = () => {
                   </div>
                   {videoRoom && (
                     <div className="flex items-center gap-2 mb-3">
-                      <button onClick={() => window.open(jitsiUrl, '_blank', 'noopener')} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
+                      <button onClick={() => window.open(`${jitsiUrl}${JITSI_ROOM_CONFIG}`, '_blank', 'noopener')} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
                         <ExternalLink className="w-4 h-4" /> Open in new tab
                       </button>
-                      <button onClick={() => copyToClipboard(jitsiUrl)} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
+                      <button onClick={() => copyToClipboard(`${jitsiUrl}${JITSI_ROOM_CONFIG}`)} className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300">
                         <Copy className="w-4 h-4" /> Copy link
                       </button>
                     </div>
@@ -493,7 +480,7 @@ const PTMPortal = () => {
                     {jitsiActive && videoRoom ? (
                       <iframe
                         title="PTM Video Meeting"
-                        src={`${jitsiUrl}#config.prejoinPageEnabled=true&config.disableInviteFunctions=true`}
+                        src={`${jitsiUrl}${JITSI_ROOM_CONFIG}`}
                         className="w-full h-[480px]"
                         allow="camera; microphone; fullscreen; display-capture"
                       />
@@ -617,11 +604,11 @@ const PTMPortal = () => {
 
       {/* Reschedule Modal */}
       {selectedMeeting && modalMode === 'reschedule' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Request reschedule">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
-          <div className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ptm-reschedule-title" className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
             <div className="mb-3">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2"><ArrowLeftRight className="w-5 h-5"/> Request Reschedule</h3>
+              <h3 id="ptm-reschedule-title" className="text-lg font-semibold text-gray-900 flex items-center gap-2"><ArrowLeftRight className="w-5 h-5"/> Request Reschedule</h3>
               <p className="text-sm text-gray-600">{getTeacherName(selectedMeeting)} • {getMeetingSubject(selectedMeeting)}</p>
             </div>
             {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
@@ -649,11 +636,11 @@ const PTMPortal = () => {
 
       {/* Feedback Modal */}
       {selectedMeeting && modalMode === 'feedback' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Meeting feedback">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
-          <div className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
+          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ptm-feedback-title" className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
             <div className="mb-3">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2"><Star className="w-5 h-5"/> Meeting Feedback</h3>
+              <h3 id="ptm-feedback-title" className="text-lg font-semibold text-gray-900 flex items-center gap-2"><Star className="w-5 h-5"/> Meeting Feedback</h3>
               <p className="text-sm text-gray-600">{getTeacherName(selectedMeeting)} • {getMeetingSubject(selectedMeeting)}</p>
             </div>
             {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}

@@ -25,15 +25,9 @@ import {
   ChevronUp,
   LifeBuoy,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { formatStudentDisplay } from '../utils/studentDisplay';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-
-const authHeader = () => ({
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${localStorage.getItem('token')}`,
-});
+import { parentApiFetch, parentApiJson } from './parentApi';
 
 const getInitials = (name) => String(name || 'Student')
   .trim()
@@ -45,16 +39,16 @@ const getInitials = (name) => String(name || 'Student')
 
 // ── Weak Areas Card ───────────────────────────────────────────────────────────
 const WeakAreasCard = () => {
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/parent-dashboard/weak-areas`, { headers: authHeader() })
-      .then((r) => r.json())
+    parentApiJson('/api/parent-dashboard/weak-areas', {}, navigate)
       .then((d) => setItems(d.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [navigate]);
 
   const concernColor = (score) => {
     if (score < 40) return 'bg-red-100 text-red-700 border-red-200';
@@ -100,18 +94,18 @@ const WeakAreasCard = () => {
 
 // ── Teacher Remarks Feed ──────────────────────────────────────────────────────
 const RemarksFeedCard = () => {
+  const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [remarks, setRemarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/parent-dashboard/remarks-feed`, { headers: authHeader() })
-      .then((r) => r.json())
+    parentApiJson('/api/parent-dashboard/remarks-feed', {}, navigate)
       .then((d) => setRemarks(d.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [navigate]);
 
   const concernBadge = {
     low: 'bg-emerald-50 text-emerald-700 border-emerald-100',
@@ -171,6 +165,7 @@ const RemarksFeedCard = () => {
 
 // ── Home Support Tips Card ────────────────────────────────────────────────────
 const HomeSupportCard = ({ studentId, studentName }) => {
+  const navigate = useNavigate();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
@@ -179,9 +174,7 @@ const HomeSupportCard = ({ studentId, studentName }) => {
     if (!studentId) return;
     setLoading(true);
     try {
-      const r = await fetch(`${API_BASE}/api/parent-dashboard/home-support/${studentId}`, { headers: authHeader() });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d?.error || 'Could not load tips');
+      const d = await parentApiJson(`/api/parent-dashboard/home-support/${studentId}`, {}, navigate);
       setContent(d.data?.content || '');
     } catch {
       setContent('');
@@ -189,7 +182,7 @@ const HomeSupportCard = ({ studentId, studentName }) => {
       setLoading(false);
       setFetched(true);
     }
-  }, [studentId]);
+  }, [studentId, navigate]);
 
   const lines = content.split('\n').filter(Boolean);
 
@@ -228,6 +221,7 @@ const HomeSupportCard = ({ studentId, studentName }) => {
 
 // ── AI Digest Card (weekly / monthly) ────────────────────────────────────────
 const AIDigestCard = ({ studentId, studentName, type }) => {
+  const navigate = useNavigate();
   const [content, setContent] = useState('');
   const [generatedAt, setGeneratedAt] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -244,9 +238,7 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
     setLoading(true);
     setLoadError('');
     try {
-      const r = await fetch(`${API_BASE}/api/parent-dashboard/${endpoint}/${studentId}`, { headers: authHeader() });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d?.error || 'The report could not be generated right now.');
+      const d = await parentApiJson(`/api/parent-dashboard/${endpoint}/${studentId}`, {}, navigate);
       setContent(d.data?.content || '');
       setGeneratedAt(d.data?.generatedAt);
       if (!d.data?.content) setLoadError('No report content was returned. Please try again.');
@@ -256,7 +248,7 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
       setLoading(false);
       setFetched(true);
     }
-  }, [studentId, endpoint]);
+  }, [studentId, endpoint, navigate]);
 
   const lines = content.split('\n').filter(Boolean);
 
@@ -307,6 +299,7 @@ const ParentDashboard = ({
   parentName,
   onOpenSidebar,
 }) => {
+  const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
@@ -330,9 +323,9 @@ const ParentDashboard = ({
         if (!token) throw new Error('Auth token missing');
 
         const [attendanceRes, meetingsRes, feeRes] = await Promise.all([
-          fetch(`${API_BASE}/api/attendance/parent/children`, { headers: authHeader() }),
-          fetch(`${API_BASE}/api/meeting/parent/my-meetings`, { headers: authHeader() }),
-          fetch(`${API_BASE}/api/fees/parent/summary`, { headers: authHeader() }),
+          parentApiFetch('/api/attendance/parent/children', {}, navigate),
+          parentApiFetch('/api/meeting/parent/my-meetings', {}, navigate),
+          parentApiFetch('/api/fees/parent/summary', {}, navigate),
         ]);
 
         if (attendanceRes.ok) {
@@ -360,6 +353,7 @@ const ParentDashboard = ({
         }
         setLastUpdatedAt(new Date());
       } catch (err) {
+        if (err?.code === 'expired') return;
         console.error('Dashboard fetch error:', err);
         setError('Failed to refresh dashboard data.');
       } finally {
@@ -367,7 +361,7 @@ const ParentDashboard = ({
       }
     };
     fetchData();
-  }, []);
+  }, [navigate]);
 
   const getGreeting = () => {
     const h = currentTime.getHours();

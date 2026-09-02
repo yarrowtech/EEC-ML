@@ -48,6 +48,7 @@ import ChildGrowthAnalytics from './ChildGrowthAnalytics';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
+import { useDialog } from './useDialog';
 
 const MENU_ITEMS = [
   { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
@@ -81,6 +82,7 @@ const ParentPortal = () => {
   const location = useLocation();
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
+  const logoutDialogRef = useDialog(showLogoutConfirm, () => setShowLogoutConfirm(false));
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
   useEffect(() => {
@@ -88,22 +90,23 @@ const ParentPortal = () => {
       const token = localStorage.getItem('token');
       if (!token) return;
       try {
-        const res = await fetch(`${API_BASE}/api/parent/auth/profile`, {
+        const res = await apiFetch(`${API_BASE}/api/parent/auth/profile`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             authorization: `Bearer ${token}`,
           },
-        });
+        }, navigate);
         if (!res.ok) return;
         const data = await res.json();
         setParentProfile(data);
       } catch (err) {
+        if (err?.code === AUTH_NOTICE.EXPIRED) return;
         console.error('Failed to load parent profile', err);
       }
     };
     loadParentProfile();
-  }, [API_BASE]);
+  }, [API_BASE, navigate]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -351,13 +354,26 @@ const ParentPortal = () => {
     <div className="min-h-screen bg-gray-100 flex relative">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+          <button
+            type="button"
+            className="absolute inset-0 h-full w-full cursor-default"
+            aria-label="Cancel logout"
+            onClick={() => setShowLogoutConfirm(false)}
+          />
+          <div
+            ref={logoutDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="parent-logout-title"
+            tabIndex={-1}
+            className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden"
+          >
             <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
             <div className="p-6">
               <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
                 <LogOut className="w-6 h-6 text-red-500" />
               </div>
-              <h3 className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
+              <h3 id="parent-logout-title" className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
               <p className="text-sm text-gray-500 text-center mt-1">
                 Are you sure you want to log out? Any unsaved changes will be lost.
               </p>

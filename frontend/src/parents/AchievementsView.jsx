@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
+import { useNavigate } from 'react-router-dom';
+import {
   Award, 
   Medal, 
   Trophy, 
@@ -18,10 +19,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatStudentDisplay } from '../utils/studentDisplay';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+import { parentApiJson } from './parentApi';
 
 const AchievementsView = () => {
+  const navigate = useNavigate();
   const [childrenReports, setChildrenReports] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -29,8 +30,7 @@ const AchievementsView = () => {
 
   useEffect(() => {
     const fetchRealAchievements = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
+      if (!localStorage.getItem('token')) {
         setError('Please login to view student achievements.');
         setLoading(false);
         return;
@@ -39,15 +39,7 @@ const AchievementsView = () => {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`${API_BASE}/api/parent/auth/achievements`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || 'Unable to load achievements');
-        }
+        const data = await parentApiJson('/api/parent/auth/achievements', {}, navigate);
 
         const children = (Array.isArray(data.children) ? data.children : []).map((c) => ({
           ...c,
@@ -199,8 +191,8 @@ const AchievementsView = () => {
             color: 'bg-indigo-50 text-indigo-600',
             trend: 'Last 30 days'
           },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow group">
+        ].map((stat) => (
+          <div key={stat.label} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow group">
             <div className="flex justify-between items-start mb-4">
               <div className={`p-3 rounded-xl ${stat.color} transition-transform group-hover:scale-110`}>
                 <stat.icon size={20} />
@@ -208,7 +200,7 @@ const AchievementsView = () => {
             </div>
             <div>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-              <h2 className="text-2xl font-bold text-slate-900">{stat.value}</h2>
+              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
               <p className="text-[10px] font-medium text-slate-500 mt-2">{stat.trend}</p>
             </div>
           </div>

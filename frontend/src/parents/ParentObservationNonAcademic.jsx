@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { 
-  CheckCircle, 
+import { useNavigate } from 'react-router-dom';
+import {
+  CheckCircle,
   Clock, 
   Eye, 
   User, 
@@ -24,8 +25,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatStudentDisplay } from '../utils/studentDisplay';
-
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+import { parentApiJson } from './parentApi';
 
 const POSITIVE_OPTIONS = ['Excellent', 'Good', 'Average', 'Needs Support'];
 const SCORE_OPTIONS = ['High', 'Medium', 'Low'];
@@ -82,6 +82,7 @@ const parseSortNumber = (value) => {
 };
 
 const ParentObservationNonAcademic = () => {
+  const navigate = useNavigate();
   const [children, setChildren] = useState([]);
   const [sessionOptions, setSessionOptions] = useState([]);
   const [classOptions, setClassOptions] = useState([]);
@@ -107,14 +108,10 @@ const ParentObservationNonAcademic = () => {
         const userType = localStorage.getItem('userType');
         if (!token || userType !== 'Parent') throw new Error('Please login as a parent to manage observations.');
 
-        const [childrenRes, observationsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/attendance/parent/children`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API_BASE_URL}/api/observations/parent`, { headers: { Authorization: `Bearer ${token}` } }),
+        const [childrenPayload, observationsPayload] = await Promise.all([
+          parentApiJson('/api/attendance/parent/children', {}, navigate),
+          parentApiJson('/api/observations/parent', {}, navigate),
         ]);
-        const childrenPayload = await childrenRes.json().catch(() => ({}));
-        const observationsPayload = await observationsRes.json().catch(() => ({}));
-        if (!childrenRes.ok) throw new Error(childrenPayload?.error || 'Unable to load children');
-        if (!observationsRes.ok) throw new Error(observationsPayload?.error || 'Unable to load observations');
 
         const childOptions = (childrenPayload.children || []).map((entry) => ({
           id: entry.student?._id || entry.studentId,
@@ -202,16 +199,14 @@ const ParentObservationNonAcademic = () => {
     try {
       setSubmitting(true);
       setError('');
-      const token = localStorage.getItem('token');
       const selectedLines = [];
       SECTIONS.forEach((section) => section.fields.forEach((f) => {
         if (ratings[f.label]) selectedLines.push(`${f.label}: ${ratings[f.label]}`);
       }));
       const remarkLines = REMARK_FIELDS.map((f) => `${f}: ${remarks[f] || '-'}`);
 
-      const res = await fetch(`${API_BASE_URL}/api/observations/parent`, {
+      const saved = await parentApiJson('/api/observations/parent', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId,
           category: 'Parent Observation (Non-Academic)',
@@ -222,9 +217,7 @@ const ParentObservationNonAcademic = () => {
           moodRating,
           date,
         }),
-      });
-      const saved = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(saved?.error || 'Unable to submit observation');
+      }, navigate);
 
       setObservations((prev) => [saved, ...prev]);
       setRatings(buildRatings());

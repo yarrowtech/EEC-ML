@@ -8,6 +8,8 @@ import {
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
 import { AUTH_LOGOUT_EVENT } from '../utils/authSession';
+import { useDialog } from './useDialog';
+import { parentApiJson } from './parentApi';
 
 const resolveApiBaseUrl = () => {
   const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '').replace(/\/api$/, '');
@@ -24,17 +26,10 @@ const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PARENT_CHAT_ME_KEY = 'parent_chat_me_id_v1';
 
-const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
-
-const apiFetch = async (path, options = {}) => {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(options.headers || {}) },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
-};
+// Delegates to the shared parent wrapper: attaches the token, parses JSON, throws
+// on non-2xx, and on 401 clears the session + fires AUTH_LOGOUT_EVENT (which this
+// screen already listens for to tear down the socket).
+const apiFetch = (path, options = {}) => parentApiJson(path, options);
 
 const formatTime = (ts) => {
   if (!ts) return '';
@@ -324,6 +319,7 @@ const Avatar = ({ src, name = '', size = 'sm', ring = false, themeColor = '#22c5
 };
 
 const TeacherModal = ({ teacher, onClose, theme }) => {
+  const dialogRef = useDialog(Boolean(teacher), onClose);
   if (!teacher) return null;
   const t = theme || THEMES.green;
 
@@ -338,9 +334,17 @@ const TeacherModal = ({ teacher, onClose, theme }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="parent-chat-teacher-name"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="h-24 relative" style={{ background: `linear-gradient(90deg, ${t.color}, ${t.hover})` }}>
-          <button onClick={onClose} className="absolute top-3 right-3 h-7 w-7 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors">
+          <button onClick={onClose} aria-label="Close" className="absolute top-3 right-3 h-7 w-7 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors">
             <X className="h-4 w-4 text-white" />
           </button>
         </div>
@@ -350,7 +354,7 @@ const TeacherModal = ({ teacher, onClose, theme }) => {
         </div>
 
         <div className="text-center px-6 pb-4">
-          <h2 className="text-lg font-bold text-gray-900">{name}</h2>
+          <h2 id="parent-chat-teacher-name" className="text-lg font-bold text-gray-900">{name}</h2>
           <span className="inline-flex items-center gap-1.5 mt-1 px-3 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: t.lighter, color: t.color }}>
             <GraduationCap className="h-3.5 w-3.5" /> Teacher
           </span>

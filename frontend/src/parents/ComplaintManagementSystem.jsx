@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle, FileText, Loader2, Plus, Send } from 'lucide-react';
 import { formatStudentDisplay } from '../utils/studentDisplay';
+import { parentApiJson } from './parentApi';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const STATUS_LABELS = {
   open: 'Open',
   in_progress: 'In Progress',
@@ -25,6 +26,7 @@ const resolveAssignee = (complaint) => {
 };
 
 const ComplaintManagementSystem = () => {
+  const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +47,7 @@ const ComplaintManagementSystem = () => {
   const isAcademicCategory = (form.category || '').toLowerCase().includes('academic');
 
   const fetchComplaints = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!localStorage.getItem('token')) {
       setError('Please login to view complaints.');
       setLoading(false);
       return;
@@ -55,16 +56,7 @@ const ComplaintManagementSystem = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/parent/auth/complaints`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to load complaints');
-      }
+      const data = await parentApiJson('/api/parent/auth/complaints', {}, navigate);
       setComplaints(Array.isArray(data.complaints) ? data.complaints : []);
       setChildren(Array.isArray(data.children) ? data.children : []);
       setForm((prev) => {
@@ -100,8 +92,7 @@ const ComplaintManagementSystem = () => {
 
   const handleFormSubmit = async (event) => {
     event.preventDefault();
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!localStorage.getItem('token')) {
       setSubmissionError('Please login to file a complaint.');
       return;
     }
@@ -121,18 +112,10 @@ const ComplaintManagementSystem = () => {
       if (!payload.studentId) {
         delete payload.studentId;
       }
-      const res = await fetch(`${API_BASE_URL}/api/parent/auth/complaints`, {
+      const data = await parentApiJson('/api/parent/auth/complaints', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to submit complaint');
-      }
+      }, navigate);
       setComplaints((prev) => [data, ...prev]);
       setForm({
         title: '',
@@ -238,8 +221,9 @@ const ComplaintManagementSystem = () => {
             <h2 className="text-lg font-semibold">Submit new complaint</h2>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-600">Title</label>
+            <label htmlFor="complaint-title" className="text-sm font-medium text-gray-600">Title</label>
             <input
+              id="complaint-title"
               type="text"
               value={form.title}
               onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
@@ -248,8 +232,9 @@ const ComplaintManagementSystem = () => {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-600">Details</label>
+            <label htmlFor="complaint-details" className="text-sm font-medium text-gray-600">Details</label>
             <textarea
+              id="complaint-details"
               value={form.description}
               onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
               rows={4}
@@ -259,8 +244,9 @@ const ComplaintManagementSystem = () => {
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-600">Category</label>
+              <label htmlFor="complaint-category" className="text-sm font-medium text-gray-600">Category</label>
               <select
+                id="complaint-category"
                 value={form.category}
                 onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
@@ -278,8 +264,9 @@ const ComplaintManagementSystem = () => {
               </p>
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-600">Priority</label>
+              <label htmlFor="complaint-priority" className="text-sm font-medium text-gray-600">Priority</label>
               <select
+                id="complaint-priority"
                 value={form.priority}
                 onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm capitalize"
@@ -294,10 +281,11 @@ const ComplaintManagementSystem = () => {
           </div>
           {children.length > 0 && (
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-600">
+              <label htmlFor="complaint-child" className="text-sm font-medium text-gray-600">
                 Related child {isAcademicCategory ? '(required for academic issues)' : '(optional)'}
               </label>
               <select
+                id="complaint-child"
                 value={form.studentId}
                 onChange={(e) => setForm((prev) => ({ ...prev, studentId: e.target.value }))}
                 disabled={!isAcademicCategory}
@@ -352,16 +340,19 @@ const ComplaintManagementSystem = () => {
             </div>
             <input
               type="search"
+              aria-label="Search complaints by ticket or title"
               placeholder="Search by ticket or title"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-transparent w-full sm:w-64"
             />
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
+          <div className="flex flex-wrap gap-2 text-sm" role="group" aria-label="Filter complaints by status">
             {['all', 'open', 'in_progress', 'resolved'].map((status) => (
               <button
                 key={status}
+                type="button"
+                aria-pressed={statusFilter === status}
                 onClick={() => setStatusFilter(status)}
                 className={`px-3 py-1.5 rounded-full border ${
                   statusFilter === status

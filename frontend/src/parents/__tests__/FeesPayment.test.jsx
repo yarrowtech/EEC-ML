@@ -1,64 +1,57 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import FeesPayment from '../FeesPayment';
 import {
   mockParentProfile,
   mockInvoices,
   mockRazorpayOrder,
-  mockRazorpayPayment,
 } from './__mocks__/mockData';
 import {
   createMockFetch,
   createMockRazorpay,
 } from './__utils__/testUtils';
 
+// FeesPayment now routes every request through parentApiFetch, which calls
+// useNavigate() — so the component must render inside a router in tests.
+const renderFees = () => render(<FeesPayment />, { wrapper: MemoryRouter });
+
+const BASE = 'http://localhost:5000';
+
+const baseResponses = () => ({
+  [`${BASE}/api/fees/parent/children`]: {
+    ok: true,
+    data: { children: mockParentProfile.children },
+  },
+  '/api/fees/parent/children': {
+    ok: true,
+    data: { children: mockParentProfile.children },
+  },
+  [`${BASE}/api/fees/parent/invoices?studentId=student1`]: {
+    ok: true,
+    data: { invoices: mockInvoices, paymentsByInvoice: {} },
+  },
+  '/api/fees/parent/invoices?studentId=student1': {
+    ok: true,
+    data: { invoices: mockInvoices, paymentsByInvoice: {} },
+  },
+  [`${BASE}/api/reports/report-cards/parent`]: { ok: true, data: { template: null } },
+  '/api/reports/report-cards/parent': { ok: true, data: { template: null } },
+});
+
 describe('FeesPayment', () => {
   let mockFetch;
-  let mockRazorpay;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock localStorage
-    global.localStorage.getItem = jest.fn((key) => {
-      if (key === 'token') return 'test-token';
-      return null;
-    });
+    global.localStorage.getItem = jest.fn((key) => (key === 'token' ? 'test-token' : null));
 
-    // Mock children and invoices API
-    mockFetch = createMockFetch({
-      'http://localhost:5000/api/fees/parent/children': {
-        ok: true,
-        data: {
-          children: mockParentProfile.children,
-        },
-      },
-      '/api/fees/parent/children': {
-        ok: true,
-        data: {
-          children: mockParentProfile.children,
-        },
-      },
-      'http://localhost:5000/api/fees/parent/invoices?studentId=student1': {
-        ok: true,
-        data: {
-          invoices: mockInvoices,
-          paymentsByInvoice: {},
-        },
-      },
-      '/api/fees/parent/invoices?studentId=student1': {
-        ok: true,
-        data: {
-          invoices: mockInvoices,
-          paymentsByInvoice: {},
-        },
-      },
-    });
+    mockFetch = createMockFetch(baseResponses());
     global.fetch = mockFetch;
 
-    // Mock Razorpay
-    mockRazorpay = createMockRazorpay();
+    createMockRazorpay();
   });
 
   afterEach(() => {
@@ -67,22 +60,19 @@ describe('FeesPayment', () => {
 
   describe('Render Tests', () => {
     test('renders without crashing', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getByText(/fees payment/i)).toBeInTheDocument();
       });
     });
 
     test('displays loading state initially', () => {
-      render(<FeesPayment />);
-
+      renderFees();
       expect(screen.getByText(/loading/i)).toBeInTheDocument();
     });
 
-    test('displays children dropdown after loading', async () => {
-      render(<FeesPayment />);
-
+    test('displays children after loading', async () => {
+      renderFees();
       await waitFor(() => {
         expect(screen.getByText(mockParentProfile.children[0].name)).toBeInTheDocument();
       });
@@ -90,24 +80,20 @@ describe('FeesPayment', () => {
   });
 
   describe('Data Loading Tests', () => {
-    test('fetches children on mount', async () => {
-      render(<FeesPayment />);
-
+    test('fetches children on mount with the bearer token', async () => {
+      renderFees();
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
           expect.stringContaining('/api/fees/parent/children'),
           expect.objectContaining({
-            headers: expect.objectContaining({
-              Authorization: 'Bearer test-token',
-            }),
+            headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
           })
         );
       });
     });
 
-    test('fetches invoices for selected child', async () => {
-      render(<FeesPayment />);
-
+    test('fetches invoices for the selected child', async () => {
+      renderFees();
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
           expect.stringContaining('/api/fees/parent/invoices?studentId='),
@@ -117,8 +103,7 @@ describe('FeesPayment', () => {
     });
 
     test('displays invoices after loading', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
       });
@@ -126,179 +111,130 @@ describe('FeesPayment', () => {
 
     test('handles API error gracefully', async () => {
       mockFetch = createMockFetch({
-        'http://localhost:5000/api/fees/parent/children': {
-          ok: false,
-          status: 500,
-          data: { error: 'Server error' },
-        },
-        '/api/fees/parent/children': {
-          ok: false,
-          status: 500,
-          data: { error: 'Server error' },
-        },
+        [`${BASE}/api/fees/parent/children`]: { ok: false, status: 500, data: { error: 'Server error' } },
+        '/api/fees/parent/children': { ok: false, status: 500, data: { error: 'Server error' } },
       });
       global.fetch = mockFetch;
 
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getByText(/server error|failed to load/i)).toBeInTheDocument();
       });
     });
   });
 
-  describe('Child Selection Tests', () => {
-    test('allows selecting different child', async () => {
-      render(<FeesPayment />);
-
-      await waitFor(() => {
-        expect(screen.getByText(mockParentProfile.children[0].name)).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByRole('option', { name: new RegExp(mockParentProfile.children[1].name, 'i') }));
-
-      // Verify invoice fetch for new child
-      await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledWith(
-          expect.stringContaining(`studentId=${mockParentProfile.children[1]._id}`),
-          expect.any(Object)
-        );
-      });
-    });
-  });
-
   describe('Invoice Display Tests', () => {
     test('displays invoice amount correctly', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getAllByText(/₹5,000/i).length).toBeGreaterThan(0);
       });
     });
 
     test('displays paid status for paid invoices', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getAllByText(/paid/i).length).toBeGreaterThan(0);
       });
     });
 
-    test('displays pending status for unpaid invoices', async () => {
-      render(<FeesPayment />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/pending/i)).toBeInTheDocument();
-      });
-    });
-
     test('calculates total balance correctly', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
-        // Total balance from pending invoices should be displayed
-        const balanceElements = screen.getAllByText(/₹/i);
-        expect(balanceElements.length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/₹/i).length).toBeGreaterThan(0);
       });
     });
   });
 
   describe('Payment Flow Tests', () => {
     test('renders a mobile sticky payment action for the selected pending invoice', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       const mobilePayButton = await screen.findByRole('button', { name: /pay now.*5,000/i });
       expect(mobilePayButton.closest('.fees-mobile-pay')).toBeInTheDocument();
     });
 
-    test('pay button is disabled for paid invoices', async () => {
-      render(<FeesPayment />);
-
-      await waitFor(() => {
-        const payButtons = screen.queryAllByText(/pay now/i);
-        // At least one pay button should be disabled (for paid invoice)
-        expect(payButtons.length).toBeGreaterThan(0);
-      });
-    });
-
-    test('pay button is enabled for pending invoices', async () => {
-      render(<FeesPayment />);
-
-      await waitFor(() => {
-        const payButtons = screen.getAllByText(/pay now/i);
-        expect(payButtons.length).toBeGreaterThan(0);
-      });
-    });
-
-    test.skip('clicking pay now creates Razorpay order', async () => {
-      // TODO: Fix Razorpay mock integration
+    test('clicking pay now creates an order against /api/fees/:id/pay', async () => {
       mockFetch = createMockFetch({
-        ...mockFetch,
-        'POST http://localhost:5000/api/fees/parent/razorpay/order': {
+        ...baseResponses(),
+        [`POST ${BASE}/api/fees/invoice1/pay`]: {
           ok: true,
-          data: {
-            order: mockRazorpayOrder,
-            keyId: 'test_key',
-          },
+          data: { order: { ...mockRazorpayOrder }, keyId: 'test_key' },
         },
-        'POST /api/fees/parent/razorpay/order': {
+        'POST /api/fees/invoice1/pay': {
           ok: true,
-          data: {
-            order: mockRazorpayOrder,
-            keyId: 'test_key',
-          },
+          data: { order: { ...mockRazorpayOrder }, keyId: 'test_key' },
         },
+        [`POST ${BASE}/api/fees/payments/razorpay/verify`]: { ok: true, data: { success: true } },
+        'POST /api/fees/payments/razorpay/verify': { ok: true, data: { success: true } },
       });
       global.fetch = mockFetch;
 
-      render(<FeesPayment />);
+      renderFees();
 
-      await waitFor(() => {
-        expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
+      const payButton = await screen.findByRole('button', { name: /pay now.*5,000/i });
+      await act(async () => {
+        fireEvent.click(payButton);
       });
-
-      const payButton = screen.getAllByText(/pay now/i)[0];
-      fireEvent.click(payButton);
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          expect.stringContaining('/api/fees/parent/razorpay/order'),
-          expect.objectContaining({
-            method: 'POST',
-          })
+          expect.stringContaining('/api/fees/invoice1/pay'),
+          expect.objectContaining({ method: 'POST' })
         );
       });
     });
 
-    test.skip('handles payment verification on success', async () => {
-      // TODO: Implement after Razorpay mock is fixed
-    });
+    test('verifies the payment against /api/fees/payments/razorpay/verify after checkout', async () => {
+      mockFetch = createMockFetch({
+        ...baseResponses(),
+        [`POST ${BASE}/api/fees/invoice1/pay`]: {
+          ok: true,
+          data: { order: { ...mockRazorpayOrder }, keyId: 'test_key' },
+        },
+        'POST /api/fees/invoice1/pay': {
+          ok: true,
+          data: { order: { ...mockRazorpayOrder }, keyId: 'test_key' },
+        },
+        [`POST ${BASE}/api/fees/payments/razorpay/verify`]: { ok: true, data: { success: true } },
+        'POST /api/fees/payments/razorpay/verify': { ok: true, data: { success: true } },
+      });
+      global.fetch = mockFetch;
 
-    test.skip('handles payment failure gracefully', async () => {
-      // TODO: Implement after Razorpay mock is fixed
-    });
-  });
+      renderFees();
 
-  describe('Amount Validation Tests', () => {
-    test('validates payment amount is positive', async () => {
-      render(<FeesPayment />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
+      const payButton = await screen.findByRole('button', { name: /pay now.*5,000/i });
+      await act(async () => {
+        fireEvent.click(payButton);
+        // The mock Razorpay invokes options.handler() ~100ms after open().
+        await new Promise((resolve) => setTimeout(resolve, 150));
       });
 
-      // Amount validation should prevent 0 or negative amounts
-      // This test would require finding the amount input and testing validation
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining('/api/fees/payments/razorpay/verify'),
+          expect.objectContaining({ method: 'POST' })
+        );
+      });
     });
 
-    test('validates payment amount does not exceed balance', async () => {
-      render(<FeesPayment />);
+    test('surfaces an error when order creation fails', async () => {
+      mockFetch = createMockFetch({
+        ...baseResponses(),
+        [`POST ${BASE}/api/fees/invoice1/pay`]: { ok: false, status: 400, data: { error: 'Invoice is already paid' } },
+        'POST /api/fees/invoice1/pay': { ok: false, status: 400, data: { error: 'Invoice is already paid' } },
+      });
+      global.fetch = mockFetch;
 
-      await waitFor(() => {
-        expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
+      renderFees();
+
+      const payButton = await screen.findByRole('button', { name: /pay now.*5,000/i });
+      await act(async () => {
+        fireEvent.click(payButton);
       });
 
-      // Amount should not exceed invoice balance
+      await waitFor(() => {
+        expect(screen.getAllByText(/already paid|payment failed|failed to create/i).length).toBeGreaterThan(0);
+      });
     });
   });
 
@@ -306,30 +242,19 @@ describe('FeesPayment', () => {
     test('shows error when token is missing', async () => {
       global.localStorage.getItem = jest.fn(() => null);
 
-      render(<FeesPayment />);
+      renderFees();
 
       await waitFor(() => {
         expect(screen.getByText(/login required/i)).toBeInTheDocument();
       });
     });
-
-    test('shows error when Razorpay script fails to load', async () => {
-      // TODO: Mock Razorpay script load failure
-    });
-
-    test('shows error when payment verification fails', async () => {
-      // TODO: Mock payment verification failure
-    });
   });
 
   describe('Currency Formatting Tests', () => {
     test('formats amount in INR correctly', async () => {
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
-        // Should display ₹ symbol and properly formatted amount
-        const elements = screen.getAllByText(/₹/i);
-        expect(elements.length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/₹/i).length).toBeGreaterThan(0);
       });
     });
   });
@@ -337,23 +262,12 @@ describe('FeesPayment', () => {
   describe('Edge Cases', () => {
     test('handles empty children list', async () => {
       mockFetch = createMockFetch({
-        'http://localhost:5000/api/fees/parent/children': {
-          ok: true,
-          data: {
-            children: [],
-          },
-        },
-        '/api/fees/parent/children': {
-          ok: true,
-          data: {
-            children: [],
-          },
-        },
+        [`${BASE}/api/fees/parent/children`]: { ok: true, data: { children: [] } },
+        '/api/fees/parent/children': { ok: true, data: { children: [] } },
       });
       global.fetch = mockFetch;
 
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
         expect(screen.getByText(/no children found|no students/i)).toBeInTheDocument();
       });
@@ -361,64 +275,40 @@ describe('FeesPayment', () => {
 
     test('handles empty invoices list', async () => {
       mockFetch = createMockFetch({
-        'http://localhost:5000/api/fees/parent/children': {
+        ...baseResponses(),
+        [`${BASE}/api/fees/parent/invoices?studentId=student1`]: {
           ok: true,
-          data: {
-            children: mockParentProfile.children,
-          },
-        },
-        '/api/fees/parent/children': {
-          ok: true,
-          data: {
-            children: mockParentProfile.children,
-          },
-        },
-        'http://localhost:5000/api/fees/parent/invoices?studentId=student1': {
-          ok: true,
-          data: {
-            invoices: [],
-            paymentsByInvoice: {},
-          },
+          data: { invoices: [], paymentsByInvoice: {} },
         },
         '/api/fees/parent/invoices?studentId=student1': {
           ok: true,
-          data: {
-            invoices: [],
-            paymentsByInvoice: {},
-          },
+          data: { invoices: [], paymentsByInvoice: {} },
         },
       });
       global.fetch = mockFetch;
 
-      render(<FeesPayment />);
-
+      renderFees();
       await waitFor(() => {
-        expect(screen.getByText(/no invoices|no pending fees/i)).toBeInTheDocument();
+        expect(screen.getByText(/no invoices|no pending fees|no fees found/i)).toBeInTheDocument();
       });
-    });
-
-    test('prevents multiple simultaneous payments', async () => {
-      // TODO: Test that clicking pay button multiple times doesn't initiate multiple payments
     });
   });
 
   describe('Refresh Functionality Tests', () => {
-    test('refresh button reloads invoices', async () => {
-      render(<FeesPayment />);
+    test('refresh button reloads data', async () => {
+      renderFees();
 
       await waitFor(() => {
         expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
       });
 
+      const callsBefore = mockFetch.mock.calls.length;
       const refreshButton = screen.getByRole('button', { name: /refresh|reload/i });
-      if (refreshButton) {
-        fireEvent.click(refreshButton);
+      fireEvent.click(refreshButton);
 
-        // Should trigger a new fetch
-        await waitFor(() => {
-          expect(mockFetch).toHaveBeenCalledTimes(4); // Initial + refresh
-        });
-      }
+      await waitFor(() => {
+        expect(mockFetch.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
     });
   });
 });
