@@ -554,7 +554,7 @@ const LoginForm = () => {
                     <User className="w-3.5 h-3.5 text-amber-500" />
                   </div>
                   <input
-                    id="username"
+                    id="login-username"
                     type="text"
                     name="username"
                     aria-label="User ID"
