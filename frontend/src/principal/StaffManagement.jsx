@@ -194,19 +194,24 @@ const StaffManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/70">Faculty operations</p>
-            <h1 className="text-3xl font-bold mt-2">Staff Management</h1>
-            <p className="text-white/80 mt-2">
-              Keep track of teachers, support staff, and administrative coverage with real-time signals.
-            </p>
+      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50">
+              <Users className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Faculty Operations</p>
+              <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">Staff Management</h1>
+              <p className="mt-1 max-w-xl text-sm text-slate-500">
+                Keep track of teachers, support staff, and administrative coverage with real-time signals.
+              </p>
+            </div>
           </div>
-          <div className="bg-white/10 rounded-2xl p-4 min-w-[220px] backdrop-blur">
-            <p className="text-sm text-white/70">Total workforce</p>
-            <p className="text-3xl font-bold">{totalTeamMembers.toLocaleString()}</p>
-            <p className="text-xs text-white/70 mt-1">
+          <div className="min-w-55 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs text-slate-500">Total workforce</p>
+            <p className="text-3xl font-bold text-slate-900">{totalTeamMembers.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-slate-400">
               {totalTeachers.toLocaleString()} teachers · {supportStaff.toLocaleString()} support · {admins.toLocaleString()} admins
             </p>
           </div>
@@ -389,7 +394,7 @@ const StaffManagement = () => {
                 )}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="flex items-center justify-center min-h-[220px]">
+                <div className="flex items-center justify-center min-h-55">
                   {totalTeachers ? (
                     <Pie data={teacherActivityChartData} />
                   ) : (

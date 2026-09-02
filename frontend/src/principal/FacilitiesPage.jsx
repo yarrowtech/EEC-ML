@@ -44,9 +44,16 @@ const FacilitiesPage = () => {
 
   return (
     <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="space-y-6">
-      <MotionDiv variants={itemVariants} className="rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-xl sm:p-7">
-        <h1 className="text-2xl font-semibold">Facilities</h1>
-        <p className="mt-1 text-sm text-slate-300">Buildings, floors, and rooms across your campus</p>
+      <MotionDiv variants={itemVariants} className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm sm:p-7">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50">
+            <Building2 className="h-6 w-6 text-indigo-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Facilities</h1>
+            <p className="mt-1 text-sm text-slate-500">Buildings, floors, and rooms across your campus</p>
+          </div>
+        </div>
       </MotionDiv>
 
       {error && (

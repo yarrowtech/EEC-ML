@@ -174,28 +174,33 @@ const NotificationCenter = ({
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/80">Principal alerts hub</p>
-            <h1 className="text-3xl font-bold mt-2">Notification Center</h1>
-            <p className="text-white/80 mt-2 max-w-3xl">
-              Track urgent alerts, finance updates, and academic notices pulled straight from the live feed. Filter, search, and close items.
-            </p>
+      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50">
+              <Bell className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Principal Alerts Hub</p>
+              <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">Notification Center</h1>
+              <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                Track urgent alerts, finance updates, and academic notices pulled straight from the live feed. Filter, search, and close items.
+              </p>
+            </div>
           </div>
-          <div className="bg-white/15 rounded-2xl p-4 min-w-[240px]">
-            <p className="text-sm text-white/70">Unread alerts</p>
-            <p className="text-3xl font-bold">{priorityStats.unread}</p>
-            <div className="flex items-center justify-between text-xs text-white/70 mt-2">
+          <div className="min-w-60 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-xs text-slate-500">Unread alerts</p>
+            <p className="text-3xl font-bold text-slate-900">{priorityStats.unread}</p>
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
               <span>High priority</span>
               <span>{priorityStats.high}</span>
             </div>
             <button
               onClick={handleRefresh}
               disabled={loading}
-              className="mt-3 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 bg-white/20 rounded-xl hover:bg-white/30 disabled:opacity-60"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-60"
             >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
               Refresh feed
             </button>
           </div>

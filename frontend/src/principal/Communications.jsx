@@ -228,25 +228,30 @@ export default function Communications() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-950 rounded-2xl p-8 text-white shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-white/80">Principal Broadcast Hub</p>
-            <h1 className="text-3xl font-bold mt-2">Communications</h1>
-            <p className="text-white/80 mt-2 max-w-2xl">
-              Filter your school directory and send targeted announcements via email or SMS without leaving the dashboard.
-            </p>
+      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50">
+              <MessageSquare className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Principal Broadcast Hub</p>
+              <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">Communications</h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                Filter your school directory and send targeted announcements via email or SMS without leaving the dashboard.
+              </p>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-3 min-w-[240px]">
+          <div className="grid min-w-60 grid-cols-3 gap-3">
             {roleStats.map((stat) => {
               const Icon = stat.icon;
               return (
-                <div key={stat.key} className="bg-white/15 rounded-2xl p-3 text-center">
-                  <div className="flex items-center justify-center gap-1 text-sm text-white/80">
-                    <Icon className="w-4 h-4" />
+                <div key={stat.key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3 text-center">
+                  <div className="flex items-center justify-center gap-1 text-xs font-medium text-slate-500">
+                    <Icon className="h-4 w-4" />
                     {stat.label}
                   </div>
-                  <p className="text-2xl font-bold mt-1">{stat.count}</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">{stat.count}</p>
                 </div>
               );
             })}
