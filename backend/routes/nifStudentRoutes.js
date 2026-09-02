@@ -9,6 +9,7 @@ const AcademicYear = require('../models/AcademicYear');
 const { generatePassword } = require('../utils/generator');
 const { hashPasswordsBulk } = require('../utils/passwordHash');
 const { buildRollAllocator } = require('../utils/rollAllocator');
+const { deriveGuardianMeta } = require('../utils/guardianMeta');
 
 const router = express.Router();
 
@@ -428,6 +429,7 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
       `${String(email || '').trim().toLowerCase()}|${String(mobile || '').trim()}`;
 
     const linkParent = async (studentUser, row, payload, parent) => {
+      const guardian = deriveGuardianMeta(payload);
       let parentUser = null;
       const parentLookupFilter = ParentUser.buildContactLookupFilter({
         email: parent.email,
@@ -457,6 +459,8 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           name: parent.name,
           mobile: parent.mobile,
           email: parent.email,
+          relationship: guardian.relationship,
+          occupation: guardian.occupation,
           childrenIds: [studentUser._id],
           children: [row.name || payload.name],
           grade: [payload.grade || ''],
@@ -486,6 +490,12 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
         const existingGrades = new Set(parentUser.grade || []);
         if (payload.grade && !existingGrades.has(payload.grade)) {
           parentUser.grade = [...(parentUser.grade || []), payload.grade];
+        }
+        if (guardian.relationship && (!parentUser.relationship || parentUser.relationship === 'Parent')) {
+          parentUser.relationship = guardian.relationship;
+        }
+        if (guardian.occupation && !String(parentUser.occupation || '').trim()) {
+          parentUser.occupation = guardian.occupation;
         }
         await parentUser.save();
       }

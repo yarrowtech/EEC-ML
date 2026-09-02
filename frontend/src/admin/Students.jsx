@@ -62,6 +62,32 @@ const escapeHtml = (value) => {
 };
 
 const STUDENTS_CACHE_PREFIX = "admin_students_cache_v1";
+
+// Cache key + reader at module scope so the very first render can hydrate from
+// sessionStorage — no loader flash when navigating back to the students page.
+const studentsCacheKey = () => {
+  const token = localStorage.getItem("token");
+  if (!token) return `${STUDENTS_CACHE_PREFIX}_anonymous`;
+  try {
+    const base64 = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64));
+    return `${STUDENTS_CACHE_PREFIX}_${payload?.id || "unknown"}_${payload?.schoolId || "school"}_${payload?.campusId || "campus"}`;
+  } catch {
+    return `${STUDENTS_CACHE_PREFIX}_fallback`;
+  }
+};
+
+const readStudentsCache = () => {
+  try {
+    const raw = sessionStorage.getItem(studentsCacheKey());
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    if (Array.isArray(c?.students) && c.students.length > 0) {
+      return { students: c.students, parents: Array.isArray(c.parents) ? c.parents : [] };
+    }
+  } catch { /* ignore corrupt cache */ }
+  return null;
+};
 const DRAFTS_API = `${API_BASE}/api/student/auth/enrollment-drafts`;
 const ENROLL_STEP_LABELS = [
   "Student Personal Information",
@@ -175,8 +201,12 @@ const BlockingProgressModal = ({ open, accent = "amber", title, statusText, extr
 const Students = ({ setShowAdminHeader }) => {
   const navigate = useNavigate(); 
 
-  const [studentData, setStudentData] = useState([]);
-  const [studentsLoading, setStudentsLoading] = useState(true); // first paint shows the loader, not the empty state
+  const [studentData, setStudentData] = useState(() => {
+    const cached = readStudentsCache();
+    return cached ? cached.students.filter((s) => !shouldHideLeavingStudent(s)) : [];
+  });
+  // Loader only on a genuine cold start (no cached list to hydrate from).
+  const [studentsLoading, setStudentsLoading] = useState(() => !readStudentsCache());
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -231,7 +261,7 @@ const Students = ({ setShowAdminHeader }) => {
   const [sessionFilter, setSessionFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
-  const [parentDirectory, setParentDirectory] = useState([]);
+  const [parentDirectory, setParentDirectory] = useState(() => readStudentsCache()?.parents || []);
   const [parentSearchTerm, setParentSearchTerm] = useState("");
   const [editSelectedAcademicYearId, setEditSelectedAcademicYearId] = useState("");
   const [selectedExistingParent, setSelectedExistingParent] = useState(null);
@@ -660,20 +690,7 @@ const Students = ({ setShowAdminHeader }) => {
     setShowWellbeingModal(true);
   };
 
-  const getStudentsCacheKey = useCallback(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return `${STUDENTS_CACHE_PREFIX}_anonymous`;
-    try {
-      const base64 = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/");
-      const payload = JSON.parse(atob(base64));
-      const adminId = payload?.id || "unknown";
-      const schoolId = payload?.schoolId || "school";
-      const campusId = payload?.campusId || "campus";
-      return `${STUDENTS_CACHE_PREFIX}_${adminId}_${schoolId}_${campusId}`;
-    } catch {
-      return `${STUDENTS_CACHE_PREFIX}_fallback`;
-    }
-  }, []);
+  const getStudentsCacheKey = useCallback(() => studentsCacheKey(), []);
 
   const fetchParents = async () => {
     const res = await fetch(`${API_BASE}/api/admin/users/get-parents`, {
@@ -690,31 +707,27 @@ const Students = ({ setShowAdminHeader }) => {
     return Array.isArray(data) ? data : [];
   };
 
-  const refreshStudents = async ({ useCache = false, showLoader = false } = {}) => {
+  const refreshStudents = async ({ useCache = false, showLoader = false, _attempt = 0 } = {}) => {
     // refreshStudents() is fired from many places (import, archive, restore,
     // edit, delete, the manual Refresh button); without this, an older call
     // that's still in flight can resolve after a newer one and silently
     // overwrite fresh data with stale data (e.g. new imports "disappearing"
     // until a hard page refresh).
     const requestToken = ++refreshRequestTokenRef.current;
-    if (showLoader) setStudentsLoading(true);
     let servedFromCache = false;
+    let studentsApplied = false;
     if (useCache) {
-      try {
-        const cachedRaw = sessionStorage.getItem(getStudentsCacheKey());
-        if (cachedRaw) {
-          const cached = JSON.parse(cachedRaw);
-          if (Array.isArray(cached?.students)) {
-            setStudentData(cached.students.filter((student) => !shouldHideLeavingStudent(student)));
-            setParentDirectory(Array.isArray(cached?.parents) ? cached.parents : []);
-            servedFromCache = true;
-            if (showLoader) setStudentsLoading(false);
-          }
-        }
-      } catch (err) {
-        console.warn("Unable to read students cache", err);
+      // Only a *non-empty* cached list counts as "ready" — an empty array (from
+      // a prior failed / rate-limited load) must not stand in for real data.
+      const cached = readStudentsCache();
+      if (cached) {
+        setStudentData(cached.students.filter((student) => !shouldHideLeavingStudent(student)));
+        setParentDirectory(cached.parents);
+        servedFromCache = true;
       }
     }
+    // Loader only when there's nothing to show yet.
+    if (showLoader && !servedFromCache) setStudentsLoading(true);
 
     try {
     const [studentsResult, parentsResult, invoicesResult] = await Promise.allSettled([
@@ -724,7 +737,7 @@ const Students = ({ setShowAdminHeader }) => {
           "Content-Type": "application/json",
           authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-      }).then((res) => (res.ok ? res.json() : [])),
+      }).then(async (res) => ({ ok: res.ok, data: res.ok ? await res.json() : [] })),
       fetchParents(),
       fetch(`${API_BASE}/api/fees/invoices`, {
         method: "GET",
@@ -737,12 +750,35 @@ const Students = ({ setShowAdminHeader }) => {
 
     // A newer refreshStudents() call started (and possibly already finished)
     // while this one was in flight — applying this stale response now would
-    // clobber the fresher data, so drop it.
+    // clobber the fresher data, so drop it. The newer call owns the loader.
     if (refreshRequestTokenRef.current !== requestToken) return;
 
+    // If the students request itself failed (network / rate limit), don't wipe
+    // whatever is already on screen — and keep the loader up if there's nothing
+    // to show, rather than falsely rendering "No students found".
+    const studentsOk =
+      studentsResult.status === "fulfilled" && studentsResult.value?.ok === true;
+    if (!studentsOk) {
+      // finally keeps the loader up (studentsApplied stays false). Auto-retry
+      // once so a transient blip on first load self-heals without a manual refresh.
+      if (
+        showLoader &&
+        !servedFromCache &&
+        _attempt < 3 &&
+        refreshRequestTokenRef.current === requestToken
+      ) {
+        setTimeout(() => {
+          if (refreshRequestTokenRef.current === requestToken) {
+            refreshStudents({ showLoader: true, _attempt: _attempt + 1 }).catch(console.error);
+          }
+        }, 3000);
+      }
+      return;
+    }
+
     const students =
-      studentsResult.status === "fulfilled" && Array.isArray(studentsResult.value)
-        ? studentsResult.value
+      Array.isArray(studentsResult.value?.data)
+        ? studentsResult.value.data
         : [];
     const activeStudents = students.filter((student) => !shouldHideLeavingStudent(student));
     const parents = parentsResult.status === "fulfilled" ? parentsResult.value : [];
@@ -799,12 +835,15 @@ const Students = ({ setShowAdminHeader }) => {
           },
         };
       });
+      studentsApplied = true;
       setStudentData(withFees);
       try {
-        sessionStorage.setItem(
-          getStudentsCacheKey(),
-          JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
-        );
+        if (withFees.length > 0) {
+          sessionStorage.setItem(
+            getStudentsCacheKey(),
+            JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
+          );
+        }
       } catch (err) {
         console.warn("Unable to cache students data", err);
       }
@@ -859,17 +898,30 @@ const Students = ({ setShowAdminHeader }) => {
       };
     });
 
+    studentsApplied = true;
     setStudentData(enriched);
     try {
-      sessionStorage.setItem(
-        getStudentsCacheKey(),
-        JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
-      );
+      if (enriched.length > 0) {
+        sessionStorage.setItem(
+          getStudentsCacheKey(),
+          JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
+        );
+      }
     } catch (err) {
       console.warn("Unable to cache students data", err);
     }
     } finally {
-      if (showLoader && !servedFromCache) setStudentsLoading(false);
+      // Only the latest call touches the loader. Clear it on success; on a
+      // failed fetch (studentsApplied === false) leave it up so the first visit
+      // shows "Loading student data…" instead of a false empty state.
+      if (
+        showLoader &&
+        !servedFromCache &&
+        studentsApplied &&
+        refreshRequestTokenRef.current === requestToken
+      ) {
+        setStudentsLoading(false);
+      }
     }
   };
 

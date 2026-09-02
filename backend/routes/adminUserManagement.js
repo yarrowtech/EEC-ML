@@ -19,6 +19,7 @@ const ClassModel = require('../models/Class');
 const { syncAllocationGroupThreads, syncTimetableGroupThreads } = require('../utils/chatGroupProvisioning');
 const { generatePassword } = require('../utils/generator');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
+const { deriveGuardianMeta } = require('../utils/guardianMeta');
 const {
   getNextStudentSequence,
   getNextEmployeeSequence,
@@ -506,13 +507,36 @@ router.post('/bulk-import-csv', adminAuth, async (req, res) => {
   return res.status(200).json(results);
 });
 
+// Short-lived in-memory caches for the student / parent directory listings so
+// repeat page loads are instant. TTL is deliberately tiny and every student /
+// parent mutation in this file clears both maps, so a stale read can only ever
+// be a few seconds behind a change made from elsewhere (enrol, bulk import).
+const DIRECTORY_LIST_TTL_MS = 15 * 1000;
+const studentsListCache = new Map(); // key -> { data, expires }
+const parentsListCache = new Map();
+const directoryCacheKey = (req) =>
+  `${req.schoolId || 'x'}:${req.campusId || 'x'}:${req.isSuperAdmin ? 'super' : 'admin'}`;
+const invalidateDirectoryCaches = () => {
+  studentsListCache.clear();
+  parentsListCache.clear();
+};
+// Back-compat alias — existing call sites use this name.
+const invalidateParentsListCache = invalidateDirectoryCaches;
+const PARENTS_LIST_TTL_MS = DIRECTORY_LIST_TTL_MS;
+
 router.get("/get-students", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    const cacheKey = directoryCacheKey(req);
+    const cached = studentsListCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.status(200).json(cached.data);
+    }
     const filter = buildScopedFilter(req);
     filter.isArchived = { $ne: true };
     filter.status = { $nin: EXITED_STUDENT_STATUSES };
     const students = await StudentUser.find(filter).select('-password').lean();
+    studentsListCache.set(cacheKey, { data: students, expires: Date.now() + DIRECTORY_LIST_TTL_MS });
     res.status(200).json(students);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -533,6 +557,12 @@ router.get("/get-teachers", adminAuth, async (req, res) => {
 router.get("/get-parents", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    const cacheKey = directoryCacheKey(req);
+    const cachedEntry = parentsListCache.get(cacheKey);
+    if (cachedEntry && cachedEntry.expires > Date.now()) {
+      return res.status(200).json(cachedEntry.data);
+    }
+
     const filter = buildScopedFilter(req);
     const schoolId = filter.schoolId || req.schoolId;
     const activeYear = schoolId
@@ -563,9 +593,15 @@ router.get("/get-parents", adminAuth, async (req, res) => {
       .select('-password')
       .populate({
         path: 'childrenIds',
-        select: 'name grade section performance address pinCode status isArchived academicYear',
+        select: 'name grade section performance address pinCode status isArchived academicYear'
+          + ' guardianName guardianRelation fatherName fatherOccupation motherName motherOccupation',
       })
       .lean();
+
+    // Backfill relationship / occupation for parents that still carry the old
+    // defaults, using whichever linked student names them as guardian. Persist
+    // the fix once so it doesn't recompute on every load.
+    const guardianBackfills = [];
     const withResolvedAddress = parents
       .map((parent) => {
       const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
@@ -600,8 +636,40 @@ router.get("/get-parents", adminAuth, async (req, res) => {
         .map((child) => String(child?.grade || '').trim())
         .filter(Boolean);
 
+      // Relationship / occupation: keep an admin-set value, otherwise derive it
+      // from the linked student that names this parent as guardian.
+      let relationship = String(parent.relationship || '').trim();
+      let occupation = String(parent.occupation || '').trim();
+      const needsRelationship = !relationship || relationship === 'Parent';
+      if (needsRelationship || !occupation) {
+        const source =
+          (populatedChildren.length ? populatedChildren : children).find((c) => {
+            const gn = String(c?.guardianName || '').trim().toLowerCase();
+            const pn = String(parent.name || '').trim().toLowerCase();
+            return gn && pn && gn === pn;
+          }) || populatedChildren[0] || children[0] || null;
+        if (source) {
+          const meta = deriveGuardianMeta(source);
+          if (needsRelationship && meta.relationship) relationship = meta.relationship;
+          if (!occupation && meta.occupation) occupation = meta.occupation;
+        }
+      }
+      if (
+        (relationship && relationship !== String(parent.relationship || '').trim()) ||
+        (occupation && occupation !== String(parent.occupation || '').trim())
+      ) {
+        guardianBackfills.push({
+          updateOne: {
+            filter: { _id: parent._id },
+            update: { $set: { relationship: relationship || 'Guardian', occupation } },
+          },
+        });
+      }
+
       return {
         ...parent,
+        relationship: relationship || 'Parent',
+        occupation,
         childrenIds: children,
         children: childNames.length > 0 ? childNames : parent.children,
         grade: childGrades.length > 0 ? childGrades : parent.grade,
@@ -609,6 +677,18 @@ router.get("/get-parents", adminAuth, async (req, res) => {
       };
     })
       .filter(Boolean);
+
+    if (guardianBackfills.length) {
+      ParentUser.bulkWrite(guardianBackfills, { ordered: false }).catch((e) =>
+        console.error('Parent relationship/occupation backfill failed:', e?.message || e)
+      );
+    }
+
+    parentsListCache.set(cacheKey, {
+      data: withResolvedAddress,
+      // If we just wrote backfills, expire fast so the next read reflects them.
+      expires: Date.now() + (guardianBackfills.length ? 2000 : PARENTS_LIST_TTL_MS),
+    });
     res.status(200).json(withResolvedAddress);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -716,6 +796,7 @@ router.post('/password-reset/reset', adminAuth, async (req, res) => {
       user.lastLoginAt = null;
     }
     await user.save();
+    if (role === 'parent') invalidateParentsListCache();
 
     return res.json({
       message: 'Password reset successful',
@@ -1013,7 +1094,17 @@ router.put('/students/:id', adminAuth, async (req, res) => {
     const motherNameChanged =
       Object.prototype.hasOwnProperty.call(payload, 'motherName') &&
       String(existing.motherName || '').trim() !== String(updated.motherName || '').trim();
-    if (guardianNameChanged || fatherNameChanged || motherNameChanged) {
+    const guardianPhoneChanged =
+      Object.prototype.hasOwnProperty.call(payload, 'guardianPhone') &&
+      String(existing.guardianPhone || '').trim() !== String(updated.guardianPhone || '').trim();
+    const guardianEmailChanged =
+      Object.prototype.hasOwnProperty.call(payload, 'guardianEmail') &&
+      String(existing.guardianEmail || '').trim().toLowerCase() !== String(updated.guardianEmail || '').trim().toLowerCase();
+    const guardianMetaChanged =
+      ['guardianRelation', 'fatherOccupation', 'motherOccupation'].some((k) =>
+        Object.prototype.hasOwnProperty.call(payload, k) &&
+        String(existing[k] || '').trim() !== String(updated[k] || '').trim());
+    if (guardianNameChanged || fatherNameChanged || motherNameChanged || guardianPhoneChanged || guardianEmailChanged || guardianMetaChanged) {
       try {
         // Prefer whichever name field the admin actually just edited (in
         // guardian > father > mother order) rather than a static fallback
@@ -1029,14 +1120,30 @@ router.put('/students/:id', adminAuth, async (req, res) => {
             updated.motherName ||
             ''
         ).trim();
-        if (nextParentName) {
+        const parentSet = {};
+        if (nextParentName) parentSet.name = nextParentName;
+        if (guardianPhoneChanged && String(updated.guardianPhone || '').trim()) {
+          parentSet.mobile = String(updated.guardianPhone).trim();
+        }
+        if (guardianEmailChanged && String(updated.guardianEmail || '').trim()) {
+          parentSet.email = String(updated.guardianEmail).trim().toLowerCase();
+        }
+        // Guardian relationship + matching occupation (Father → father's) —
+        // only when the admin actually edited those fields, so a phone-only
+        // edit doesn't reset a hand-picked relationship.
+        if (guardianMetaChanged) {
+          const guardianMeta = deriveGuardianMeta(updated);
+          if (guardianMeta.relationship) parentSet.relationship = guardianMeta.relationship;
+          if (guardianMeta.occupation) parentSet.occupation = guardianMeta.occupation;
+        }
+        if (Object.keys(parentSet).length) {
           await ParentUser.updateMany(
             { childrenIds: updated._id },
-            { $set: { name: nextParentName } }
+            { $set: parentSet }
           );
         }
       } catch (syncErr) {
-        console.error('Parent name sync failed after student update:', syncErr?.message || syncErr);
+        console.error('Parent sync failed after student update:', syncErr?.message || syncErr);
       }
     }
     try {
@@ -1065,6 +1172,7 @@ router.put('/students/:id', adminAuth, async (req, res) => {
         console.error('Student update chat-group sync failed:', syncErr?.message || syncErr);
       }
     }
+    invalidateParentsListCache();
     return res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1138,6 +1246,7 @@ const runBulkDeleteJob = async (jobId, { studentDocs, campusId }) => {
     job.status = 'failed';
     job.error = err.message || 'Bulk delete failed';
   } finally {
+    invalidateParentsListCache();
     job.finishedAt = Date.now();
     setTimeout(() => bulkDeleteJobs.delete(jobId), BULK_DELETE_JOB_TTL_MS).unref?.();
   }
@@ -1262,6 +1371,7 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
       }
     }
 
+    invalidateParentsListCache();
     return res.json({
       message: 'Deleted successfully',
       deletedStudentId: removedStudent._id,
@@ -1276,7 +1386,55 @@ router.delete('/students/:id', adminAuth, async (req, res) => {
 router.put('/parents/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
-    await updateByScope(ParentUser, req, res);
+    const filter = buildScopedIdFilter(req, req.params.id);
+    if (!filter) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const existing = await ParentUser.findOne(filter);
+    if (!existing) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    const payload = sanitizeUpdatePayload(req);
+    const updated = await ParentUser.findOneAndUpdate(filter, payload, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // Keep every linked student's guardian info in step with the parent record
+    // so the same edit shows up on /admin/students too.
+    try {
+      const childIds = Array.isArray(existing.childrenIds) ? existing.childrenIds : [];
+      if (childIds.length) {
+        const has = (k) => Object.prototype.hasOwnProperty.call(payload, k);
+        const guardianSet = {};
+        if (has('name') && String(payload.name || '').trim() !== String(existing.name || '').trim()) {
+          guardianSet.guardianName = String(payload.name || '').trim();
+        }
+        if (has('mobile') && String(payload.mobile || '').trim() !== String(existing.mobile || '').trim()) {
+          guardianSet.guardianPhone = String(payload.mobile || '').trim();
+        }
+        if (has('email') &&
+          String(payload.email || '').trim().toLowerCase() !== String(existing.email || '').trim().toLowerCase()) {
+          guardianSet.guardianEmail = String(payload.email || '').trim().toLowerCase();
+        }
+        if (has('relationship') && String(payload.relationship || '').trim() !== String(existing.relationship || '').trim()) {
+          guardianSet.guardianRelation = String(payload.relationship || '').trim();
+        }
+        if (Object.keys(guardianSet).length) {
+          await StudentUser.updateMany({ _id: { $in: childIds } }, { $set: guardianSet });
+        }
+      }
+    } catch (syncErr) {
+      console.error('Student guardian sync failed after parent update:', syncErr?.message || syncErr);
+    }
+
+    invalidateParentsListCache();
+    return res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1285,6 +1443,7 @@ router.put('/parents/:id', adminAuth, async (req, res) => {
 router.delete('/parents/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    invalidateParentsListCache();
     await deleteByScope(ParentUser, req, res);
   } catch (err) {
     res.status(500).json({ error: err.message });

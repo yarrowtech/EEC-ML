@@ -8,6 +8,7 @@ import {
   MapPin,
   Users,
   Eye,
+  EyeOff,
   Edit2,
   GraduationCap,
   ChevronsLeft,
@@ -18,11 +19,39 @@ import {
   CheckCircle,
   RotateCcw,
   Loader2,
+  KeyRound,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 
 const PARENTS_PER_PAGE = 8;
+const PARENTS_CACHE_PREFIX = 'admin_parents_cache_v1';
+
+// sessionStorage key scoped to the logged-in admin / school / campus so a
+// different login never sees a stale list.
+const getParentsCacheKey = () => {
+  const token = localStorage.getItem('token');
+  if (!token) return `${PARENTS_CACHE_PREFIX}_anonymous`;
+  try {
+    const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64));
+    return `${PARENTS_CACHE_PREFIX}_${payload?.id || 'x'}_${payload?.schoolId || 'x'}_${payload?.campusId || 'x'}`;
+  } catch {
+    return `${PARENTS_CACHE_PREFIX}_fallback`;
+  }
+};
+
+// Non-empty cached list, or null. Used to hydrate the first render so navigating
+// back to /admin/parents shows the table instantly instead of a loader flash.
+const readParentsCache = () => {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(getParentsCacheKey()) || 'null');
+    if (Array.isArray(c?.parents) && c.parents.length > 0) return c.parents;
+  } catch { /* ignore corrupt cache */ }
+  return null;
+};
 
 const inputClass =
   'w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-all bg-white';
@@ -32,13 +61,40 @@ const toastOk = (title) =>
 const toastErr = (title, text) =>
   Swal.fire({ icon: 'error', title, text, toast: true, position: 'top-end', showConfirmButton: false, timer: 2500 });
 
+// Small copy-to-clipboard button that flashes a checkmark on success.
+const CopyButton = ({ value, label = 'Copy' }) => {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={!value || value === '—'}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(String(value));
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch { /* clipboard blocked */ }
+      }}
+      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition active:scale-95 disabled:opacity-40 ${
+        copied
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+          : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
+      }`}
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+      {copied ? 'Copied' : label}
+    </button>
+  );
+};
+
 const ParentsManagement = ({ setShowAdminHeader }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGrade, setFilterGrade] = useState('');
   const [filterRelationship, setFilterRelationship] = useState('');
-  const [parents, setParents] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [parents, setParents] = useState(() => readParentsCache() || []);
+  // Loader only on a genuine cold start (no cached list to hydrate from).
+  const [isLoading, setIsLoading] = useState(() => !readParentsCache());
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [showChildrenModal, setShowChildrenModal] = useState(false);
   const [selectedParent, setSelectedParent] = useState(null);
@@ -53,6 +109,10 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
   const [deleteConfirmChild, setDeleteConfirmChild] = useState(null);
   const [selectedParentIds, setSelectedParentIds] = useState([]);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [credsParent, setCredsParent] = useState(null);
+  const [credsPwVisible, setCredsPwVisible] = useState(false);
+  const [credsResetLoading, setCredsResetLoading] = useState(false);
+  const [credsResetResult, setCredsResetResult] = useState(null);
   const tableBodyScrollRef = useRef(null);
   const tableHeaderRef = useRef(null);
 
@@ -117,7 +177,22 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
   const handleFilterRelationship = (val) => { setFilterRelationship(val); setCurrentPage(1); };
   const clearFilters = () => { setSearchTerm(''); setFilterGrade(''); setFilterRelationship(''); setCurrentPage(1); };
 
-  const fetchParents = useCallback(async () => {
+  const fetchParents = useCallback(async ({ useCache = false } = {}) => {
+    let servedFromCache = false;
+    if (useCache) {
+      try {
+        const raw = sessionStorage.getItem(getParentsCacheKey());
+        if (raw) {
+          const cached = JSON.parse(raw);
+          // Only a non-empty cached list counts as "ready" — an empty array
+          // (from a prior failed load) must not stop the loader.
+          if (Array.isArray(cached?.parents) && cached.parents.length > 0) {
+            setParents(cached.parents);
+            servedFromCache = true;
+          }
+        }
+      } catch { /* ignore corrupt cache */ }
+    }
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/get-parents`, {
         method: 'GET',
@@ -131,7 +206,6 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
       const normalized = (Array.isArray(data) ? data : []).map((parent, idx) => {
         const children = Array.isArray(parent.children) ? parent.children : [];
         const grades = Array.isArray(parent.grade) ? parent.grade : Array.isArray(parent.grades) ? parent.grades : [];
-        const engagementMetrics = parent.engagementMetrics || parent.metrics || {};
 
         // Build children details from populated childrenIds or fallback
         const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
@@ -170,6 +244,14 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
         const firstStudentAddress =
           mappedChildrenDetails.find((child) => String(child?.address || '').trim())?.address || '';
 
+        const lastLoginAt = parent.lastLoginAt ? new Date(parent.lastLoginAt) : null;
+        let loginLabel = 'Never logged in';
+        if (lastLoginAt && !Number.isNaN(lastLoginAt.getTime())) {
+          const days = Math.floor((Date.now() - lastLoginAt.getTime()) / 86400000);
+          loginLabel =
+            days <= 0 ? 'Active today' : days === 1 ? 'Active yesterday' : `Active ${days}d ago`;
+        }
+
         return {
           id: parent._id || parent.id || idx,
           name: parent.name || 'Unnamed Parent',
@@ -182,35 +264,58 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
           occupation: parent.occupation || '—',
           address: String(parent.address || '').trim() || firstStudentAddress || '—',
           joinDate: parent.createdAt ? new Date(parent.createdAt).toISOString().slice(0, 10) : '—',
+          lastLoginAt: lastLoginAt && !Number.isNaN(lastLoginAt.getTime()) ? lastLoginAt.toISOString() : null,
+          loginLabel,
+          hasLoggedIn: Boolean(lastLoginAt && !Number.isNaN(lastLoginAt.getTime())),
+          initialPassword: parent.initialPassword || '',
           emergencyContact: parent.emergencyContact || parent.mobile || '—',
           relationship: parent.relationship || 'Parent',
           contactPreference: parent.contactPreference || parent.preferredContact || '—',
-          communicationStatus: parent.communicationStatus || '—',
-          engagementLevel: parent.engagementLevel || '—',
-          engagementMetrics: {
-            communicationRate: engagementMetrics.communicationRate ?? 0,
-            eventAttendance: engagementMetrics.eventAttendance ?? 0,
-            meetingParticipation: engagementMetrics.meetingParticipation ?? 0,
-            responsiveness: engagementMetrics.responsiveness ?? 0,
-            totalInteractions: engagementMetrics.totalInteractions ?? 0,
-            lastContactDays: engagementMetrics.lastContactDays ?? null,
-          },
-          recentActivities: Array.isArray(parent.recentActivities) ? parent.recentActivities : [],
           childrenDetails: mappedChildrenDetails,
         };
       });
       setParents(normalized);
+      try {
+        if (normalized.length > 0) {
+          sessionStorage.setItem(
+            getParentsCacheKey(),
+            JSON.stringify({ parents: normalized, cachedAt: Date.now() })
+          );
+        }
+      } catch { /* storage full / disabled */ }
+      return { ok: true };
     } catch (err) {
       console.error('Error fetching parents:', err);
-      toastErr('Unable to load parents', err.message || 'Please try again');
-      setParents([]);
+      if (!servedFromCache) {
+        toastErr('Unable to load parents', err.message || 'Please try again');
+        setParents([]);
+      }
+      return { ok: false };
     }
   }, []);
 
   useEffect(() => {
     setShowAdminHeader?.(true);
-    setIsLoading(true);
-    fetchParents().finally(() => setIsLoading(false));
+    // `parents` / `isLoading` are already hydrated from the cache in useState;
+    // this just refreshes in the background (and retries a transient failure).
+    const cacheHit = readParentsCache() !== null;
+    let cancelled = false;
+    let attempt = 0;
+    const load = () => {
+      fetchParents({ useCache: true }).then((r) => {
+        if (cancelled) return;
+        if (r?.ok || cacheHit) {
+          setIsLoading(false);
+        } else if (attempt < 3) {
+          attempt += 1;
+          setTimeout(load, 3000);
+        } else {
+          setIsLoading(false);
+        }
+      });
+    };
+    load();
+    return () => { cancelled = true; };
   }, [setShowAdminHeader, fetchParents]);
 
   const handleRefreshTableData = async () => {
@@ -304,6 +409,57 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
     } finally {
       setChildActionLoadingId('');
       setDeleteConfirmChild(null);
+    }
+  };
+
+  const openCredentials = (parent) => {
+    setCredsParent(parent);
+    setCredsPwVisible(false);
+    setCredsResetResult(null);
+  };
+
+  const closeCredentials = () => {
+    setCredsParent(null);
+    setCredsResetResult(null);
+  };
+
+  // Kept for the (currently hidden) "Reset Password" action in the credentials
+  // modal — flip the button back on in the JSX to use it.
+  // eslint-disable-next-line no-unused-vars
+  const handleResetParentPassword = async () => {
+    if (!credsParent?.id || credsResetLoading) return;
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: 'Reset parent password?',
+      html: `<p>A new temporary password will be generated for <strong>${credsParent.name || 'this parent'}</strong>. They must use it to log in and change it.</p>`,
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Reset',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#16A34A',
+    });
+    if (!confirm.isConfirmed) return;
+    setCredsResetLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/password-reset/reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ role: 'parent', userId: credsParent.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.message || 'Failed to reset password');
+      setCredsResetResult({
+        loginId: data.loginId || credsParent.loginUsername || '—',
+        password: data.password || '—',
+      });
+      toastOk('Password reset');
+      fetchParents();
+    } catch (err) {
+      toastErr('Unable to reset password', err.message);
+    } finally {
+      setCredsResetLoading(false);
     }
   };
 
@@ -463,7 +619,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                 title={`Delete ${selectedParentIds.length} selected parent(s)`}
               >
                 {bulkDeleteLoading ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                {bulkDeleteLoading ? 'Deleting...' : 'Delete Selected'}
+                {bulkDeleteLoading ? 'Deleting...' : 'Delete All'}
               </button>
             )}
             <button
@@ -584,8 +740,8 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                     </th>
                     <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[22%]">Parent</th>
                     <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[20%]">Contact</th>
-                    <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[25%]">Children &amp; Grades</th>
-                    <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[13%]">Communication</th>
+                    <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[25%]">Children</th>
+                    <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[13%]">Login</th>
                     <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[15%]">Actions</th>
                   </tr>
                 </thead>
@@ -679,17 +835,20 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                               </div>
                             </td>
 
-                            {/* Children & Grades */}
+                            {/* Children */}
                             <td className="border-b border-gray-100 px-2 py-2.5">
                               <div className="space-y-1.5">
                                 {(parent.childrenDetails.length ? parent.childrenDetails : parent.children).slice(0, 2).map((child, idx) => {
-                                  const name = typeof child === 'string' ? child : child.name;
-                                  const grade = typeof child === 'string' ? parent.grades[idx] : child.grade;
+                                  const isStr = typeof child === 'string';
+                                  const name = isStr ? child : child.name;
+                                  const grade = isStr ? parent.grades[idx] : child.grade;
+                                  const section = isStr ? '' : child.section;
+                                  const cls = [grade, section].filter((v) => v && v !== '—').join(' - ') || '—';
                                   return (
-                                    <div key={idx} className="flex items-center gap-1.5">
+                                    <div key={idx} className="flex items-center gap-1.5 min-w-0">
                                       <GraduationCap size={12} className="text-emerald-500 flex-shrink-0" />
                                       <span className="text-xs font-medium text-gray-900 truncate">{name || '—'}</span>
-                                      <span className="text-xs text-gray-500 flex-shrink-0">({grade || '—'})</span>
+                                      <span className="text-[11px] text-gray-500 flex-shrink-0">· {cls}</span>
                                     </div>
                                   );
                                 })}
@@ -708,14 +867,22 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                               </div>
                             </td>
 
-                            {/* Communication */}
-                            <td className="border-b border-gray-100 px-2 py-2.5 text-xs text-gray-600">
-                              <div className="font-medium text-gray-900">{parent.contactPreference}</div>
-                              <div className="text-gray-500">
-                                {parent.engagementMetrics.lastContactDays != null
-                                  ? `Last: ${parent.engagementMetrics.lastContactDays}d ago`
-                                  : 'Last: —'}
-                              </div>
+                            {/* Login */}
+                            <td className="border-b border-gray-100 px-2 py-2.5 text-xs">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${
+                                  parent.hasLoggedIn
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-gray-100 text-gray-500'
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    parent.hasLoggedIn ? 'bg-emerald-500' : 'bg-gray-400'
+                                  }`}
+                                />
+                                {parent.loginLabel}
+                              </span>
                             </td>
 
                             {/* Actions */}
@@ -725,9 +892,16 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                             >
                               <div className="flex items-center gap-1 justify-center flex-wrap">
                                 <button
+                                  onClick={() => openCredentials(parent)}
+                                  className="inline-flex items-center px-1.5 py-1 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs transition"
+                                  title="View Credentials"
+                                >
+                                  <KeyRound size={14} />
+                                </button>
+                                <button
                                   onClick={() => openChildrenModal(parent)}
                                   className="inline-flex items-center px-1.5 py-1 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs transition"
-                                  title="View Students"
+                                  title="View Details"
                                 >
                                   <Eye size={14} />
                                 </button>
@@ -979,6 +1153,112 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
           )}
         </AnimatePresence>
 
+        {/* Parent Credentials Modal */}
+        <AnimatePresence>
+          {credsParent && (
+            <Motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+            >
+              <Motion.div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                initial={{ opacity: 0, y: 20, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
+              >
+                <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 text-white">
+                      <KeyRound size={17} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Parent Credentials</h3>
+                      <p className="text-xs text-emerald-100 mt-0.5">{credsParent.name}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closeCredentials}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/20 transition-all"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  {/* Login ID */}
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Login ID</p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="flex-1 font-mono text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 truncate">
+                        {credsParent.loginUsername || '—'}
+                      </span>
+                      <CopyButton value={credsParent.loginUsername} />
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Password</p>
+                    {credsResetResult ? (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="flex-1 font-mono text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 truncate">
+                          {credsResetResult.password}
+                        </span>
+                        <CopyButton value={credsResetResult.password} />
+                      </div>
+                    ) : credsParent.hasLoggedIn ? (
+                      <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        Password reset by the user
+                        {credsParent.lastLoginAt
+                          ? ` at ${new Date(credsParent.lastLoginAt).toLocaleString()}`
+                          : ''}
+                      </div>
+                    ) : credsParent.initialPassword ? (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="flex-1 font-mono text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 truncate">
+                          {credsPwVisible ? credsParent.initialPassword : '••••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCredsPwVisible((v) => !v)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-600 hover:bg-emerald-100 transition active:scale-95"
+                        >
+                          {credsPwVisible ? <EyeOff size={13} /> : <Eye size={13} />}
+                          {credsPwVisible ? 'Hide' : 'Show'}
+                        </button>
+                        <CopyButton value={credsParent.initialPassword} />
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 text-sm text-gray-400">Not available</div>
+                    )}
+                  </div>
+
+                  {/* {!credsResetResult && (
+                    <button
+                      type="button"
+                      onClick={handleResetParentPassword}
+                      disabled={credsResetLoading}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition disabled:opacity-60"
+                    >
+                      {credsResetLoading ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+                      {credsResetLoading ? 'Resetting…' : 'Reset Password'}
+                    </button>
+                  )} */}
+                  {credsResetResult && (
+                    <p className="text-xs text-gray-500">
+                      Share this temporary password with the parent. They&apos;ll be asked to change it on first login.
+                    </p>
+                  )}
+                </div>
+              </Motion.div>
+            </Motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Edit Parent Modal */}
         <AnimatePresence>
           {showEditModal && editForm && (
@@ -999,7 +1279,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                 <div className="sticky top-0 bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
                   <div>
                     <h3 className="text-base font-bold text-white">Edit Parent</h3>
-                    <p className="text-xs text-emerald-100 mt-0.5">Update parent information</p>
+                    <p className="text-xs text-emerald-100 mt-0.5">Name, phone &amp; email changes also update the linked students</p>
                   </div>
                   <button
                     onClick={() => { setShowEditModal(false); setEditForm(null); setEditSaveError(''); }}
@@ -1085,7 +1365,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
           )}
         </AnimatePresence>
 
-        {/* Children Modal */}
+        {/* Parent Details Modal */}
         <AnimatePresence>
           {showChildrenModal && selectedParent && (
             <Motion.div
@@ -1103,7 +1383,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                 transition={{ duration: 0.2, ease: [0.34, 1.1, 0.64, 1] }}
               >
                 {/* Header */}
-                <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 pt-6 pb-10 relative flex-shrink-0">
+                <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 pt-3 pb-3 relative flex-shrink-0">
                   <button
                     onClick={() => setShowChildrenModal(false)}
                     className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
@@ -1115,15 +1395,45 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                       {(selectedParent.name || 'NA').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-white">Students of {selectedParent.name}</h2>
-                      <p className="text-emerald-200 text-sm mt-0.5 font-mono">Login: {selectedParent.loginUsername}</p>
+                      <h2 className="text-lg font-bold text-white">{selectedParent.name}</h2>
+                      <p className="text-emerald-100 text-xs mt-0.5">
+                        {selectedParent.relationship}
+                        <span className="mx-1.5 text-emerald-300">·</span>
+                        <span className="font-mono">{selectedParent.loginUsername}</span>
+                        <span className="mx-1.5 text-emerald-300">·</span>
+                        {selectedParent.loginLabel}
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 {/* Body */}
-                <div className="flex-1 overflow-y-auto mt-5">
-                  <div className="bg-white rounded-t-2xl px-6 pt-5 pb-6">
+                <div className="flex-1 overflow-y-auto mt-0.5">
+                  <div className="bg-white rounded-t-2xl px-6 pt-5 pb-6 space-y-5">
+                    {/* Parent info */}
+                    <div>
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Parent Details</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 rounded-xl border border-gray-100 bg-gray-50/50 p-4">
+                        {[
+                          ['Mobile', selectedParent.mobile],
+                          ['Email', selectedParent.email],
+                          ['Occupation', selectedParent.occupation],
+                          ['Emergency contact', selectedParent.emergencyContact],
+                          ['Contact preference', selectedParent.contactPreference],
+                          ['Added on', selectedParent.joinDate],
+                          ['Address', selectedParent.address],
+                        ].map(([label, value]) => (
+                          <div key={label} className={label === 'Address' ? 'sm:col-span-2' : ''}>
+                            <dt className="text-[11px] uppercase tracking-wide text-gray-400">{label}</dt>
+                            <dd className="text-sm text-gray-800 break-words">{value && value !== '—' ? value : '—'}</dd>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Linked Students ({(selectedParent.childrenDetails || []).length})
+                    </p>
                     {(selectedParent.childrenDetails || []).length === 0 ? (
                       <div className="text-center py-10">
                         <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-3">
@@ -1170,7 +1480,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                   <Edit2 size={12} />
                                   Edit
                                 </button>
-                                <button
+                                {/* <button
                                   type="button"
                                   onClick={() => setDeleteConfirmChild(child)}
                                   disabled={childActionLoadingId === String(child.id)}
@@ -1178,7 +1488,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                 >
                                   <Trash2 size={12} />
                                   Delete
-                                </button>
+                                </button> */}
                               </div>
                             </div>
                           </div>

@@ -28,6 +28,7 @@ const adminAuth = require('../middleware/adminAuth');
 const { generatePassword } = require('../utils/generator');
 const { logger } = require('../utils/logger');
 const { buildRollAllocator } = require('../utils/rollAllocator');
+const { deriveGuardianMeta } = require('../utils/guardianMeta');
 const extractPopulatedDoc = (doc) => {
   if (doc && typeof doc.toJSON === 'function') {
     return doc.toJSON();
@@ -681,6 +682,19 @@ router.post('/register', adminAuth, async (req, res) => {
       (resolvedName ? `Parent of ${resolvedName}` : '');
     const parentMobile = guardianPhone || fatherPhone || motherPhone || '';
     const parentEmail = guardianEmail || '';
+
+    // The guardian's relationship + occupation come from whichever parent the
+    // admin picked as the guardian in the enrolment form, so the /admin/parents
+    // record isn't left as a generic "Parent" with no occupation.
+    const { relationship: guardianRelationship, occupation: guardianOccupation } = deriveGuardianMeta({
+      guardianName,
+      guardianRelation,
+      fatherName,
+      fatherOccupation,
+      motherName,
+      motherOccupation,
+    });
+
     if (parentName && (parentMobile || parentEmail)) {
       let parentUser = null;
       const parentLookupFilter = ParentUser.buildContactLookupFilter({
@@ -725,6 +739,8 @@ router.post('/register', adminAuth, async (req, res) => {
           name: parentName,
           mobile: parentMobile,
           email: parentEmail,
+          relationship: guardianRelationship,
+          occupation: guardianOccupation,
           childrenIds: [studentUser._id],
           children: [resolvedName],
           grade: [resolvedGrade],
@@ -747,6 +763,14 @@ router.post('/register', adminAuth, async (req, res) => {
         const existingGrades = new Set(parentUser.grade || []);
         if (resolvedGrade && !existingGrades.has(resolvedGrade)) {
           parentUser.grade = [...(parentUser.grade || []), resolvedGrade];
+        }
+        // Backfill relationship / occupation if the linked parent doesn't have
+        // them yet — don't clobber values an admin may have set on purpose.
+        if (guardianRelationship && (!parentUser.relationship || parentUser.relationship === 'Parent')) {
+          parentUser.relationship = guardianRelationship;
+        }
+        if (guardianOccupation && !String(parentUser.occupation || '').trim()) {
+          parentUser.occupation = guardianOccupation;
         }
         await parentUser.save();
       }

@@ -641,11 +641,8 @@
     }
   },
   "src/admin/pages/ParentsManagement.jsx": {
-    "no-unused-vars": {
-      "count": 10
-    },
     "react/prop-types": {
-      "count": 1
+      "count": 3
     }
   },
   "src/admin/pages/PaymentGatewaySettings.jsx": {
