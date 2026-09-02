@@ -3809,7 +3809,7 @@ const Students = ({ setShowAdminHeader }) => {
               )}
               <span className="relative flex items-center gap-2">
                 {isImporting ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                {isImporting ? `Importing... ${importProgress}%` : "Bulk Upload"}
+                {isImporting ? `Importing...` : "Bulk Upload"}
               </span>
             </button>
             <input
@@ -4000,7 +4000,7 @@ const Students = ({ setShowAdminHeader }) => {
             {/* Rounded card clips the corners. Header sits in its own div so the
                 body scrollbar starts *below* the header, not through it. */}
             <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              {isImporting && (
+              {/* {isImporting && (
                 <div className="shrink-0 bg-blue-50/95 border-b border-blue-200">
                   <div className="flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700">
                     <Loader2 size={13} className="animate-spin" />
@@ -4013,7 +4013,7 @@ const Students = ({ setShowAdminHeader }) => {
                     />
                   </div>
                 </div>
-              )}
+              )} */}
               {/* Header (does not scroll vertically; horizontal scroll synced to body) */}
               <div ref={tableHeaderRef} className="shrink-0 overflow-hidden border-b border-gray-200 table-scroll-gutter">
                 <table className="w-full min-w-[980px] border-collapse table-fixed">
