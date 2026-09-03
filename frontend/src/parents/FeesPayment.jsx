@@ -679,7 +679,7 @@ const FeesPayment = () => {
                       </span>
                       <span className="fees-invoice-amount text-sm font-semibold text-slate-800">{formatCurrency(isPaid ? getInvoiceTotal(invoice) : balance)}</span>
                       <span className={`fees-status-pill fees-invoice-status ${statusClass}`}>{status}</span>
-                      <span className={`fees-invoice-date text-xs ${isOverdue ? 'text-red-400' : 'text-slate-400'}`}>{isPaid ? 'Paid' : 'Due'}: {formatShortDate(isPaid ? (latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt) : invoice.dueDate)}</span>
+                      {isPaid && <span className="fees-invoice-date text-xs text-slate-400">Paid: {formatShortDate(latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt)}</span>}
                     </button>
 
                     {isSelected && (
@@ -709,7 +709,7 @@ const FeesPayment = () => {
               <section className="mt-3 rounded-xl border border-white/70 bg-white/35 p-4" aria-label="Installment breakdown">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div><h3 className="text-xs font-semibold text-slate-700">Installment plan</h3><p className="text-[11px] text-slate-400">Installments unlock in payment order</p></div>
-                  <span className="text-sm font-bold text-slate-800">{formatCurrency(selectedBalance)} due</span>
+                  <span className="text-sm font-bold text-slate-800">{formatCurrency(selectedBalance)}</span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {installmentBreakdown.map((installment) => (

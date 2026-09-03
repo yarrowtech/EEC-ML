@@ -107,7 +107,7 @@ const AcademicReport = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50/50 p-4 font-sans antialiased sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       <PageHeader
         title="Report Card"
         icon={BarChart3}
@@ -125,7 +125,7 @@ const AcademicReport = () => {
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <User size={13} /> Child
             </p>
             {childOptions.length === 0
@@ -133,7 +133,7 @@ const AcademicReport = () => {
               : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />}
           </div>
           <div className="space-y-1.5">
-            <span id="academic-view-label" className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <span id="academic-view-label" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <Filter size={13} /> View
             </span>
             <div role="group" aria-labelledby="academic-view-label" className="inline-flex gap-1 rounded-xl bg-slate-100 p-1" data-flat>
@@ -196,9 +196,9 @@ const AcademicReport = () => {
               </div>
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{stat.label}</p>
-              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-              <p className="text-[10px] font-medium text-slate-500 mt-2">{stat.trend}</p>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{stat.label}</p>
+              <p className="text-2xl font-semibold text-slate-900">{stat.value}</p>
+              <p className="mt-2 text-xs font-medium text-slate-500">{stat.trend}</p>
             </div>
           </div>
         ))}
@@ -216,10 +216,16 @@ const AcademicReport = () => {
         </div>
         
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {selectedReport?.subjects.map((subject, idx) => (
+          {selectedReport?.subjects.map((subject, idx) => {
+            const subjectExams = selectedReport.exams.filter((exam) => String(exam.subject || '').trim().toLowerCase() === String(subject.name || '').trim().toLowerCase());
+            const latestExam = subjectExams[subjectExams.length - 1];
+            return (
             <div key={idx} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/50 hover:bg-white hover:shadow-sm transition-all group">
               <div className="flex justify-between items-start mb-3">
-                <span className="font-bold text-slate-800">{subject.name}</span>
+                <div className="min-w-0">
+                  <span className="block truncate font-semibold text-slate-800">{subject.name}</span>
+                  {latestExam && <span className="mt-1 block truncate text-xs text-slate-500">{latestExam.term || 'General'} · {latestExam.examName || 'Assessment'}</span>}
+                </div>
                 <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black border ${gradeBadgeClass(subject.grade)}`}>
                   {subject.grade}
                 </span>
@@ -240,7 +246,8 @@ const AcademicReport = () => {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
           {(!selectedReport || selectedReport.subjects.length === 0) && !loading && (
             <p className="col-span-full text-center text-slate-400 py-8 text-sm font-medium italic">
               No subject data available for this report.
@@ -257,7 +264,7 @@ const AcademicReport = () => {
               <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white">
                 <FileText size={16} />
               </div>
-              <h2 className="text-lg font-bold text-slate-900">Assessment History</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Assessment History</h2>
             </div>
             {selectedReport?.generatedAt && (
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full">
@@ -288,7 +295,8 @@ const AcademicReport = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {selectedReport.exams.map((exam, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                    <React.Fragment key={idx}>
+                    <tr className={`hover:bg-slate-50/50 transition-colors group ${exam.remarks ? 'border-b-0' : ''}`}>
                       <td className="px-6 py-5">
                         <div className="font-bold text-slate-900">{exam.examName}</div>
                         <div className="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-wider">
@@ -338,6 +346,20 @@ const AcademicReport = () => {
                         </div>
                       </td>
                     </tr>
+                    {exam.remarks && (
+                      <tr className="bg-slate-50/40">
+                        <td colSpan={6} className="px-6 pb-5 pt-0">
+                          <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-2">
+                            <User size={13} className="mt-0.5 shrink-0 text-amber-600" />
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Teacher Remarks</p>
+                              <p className="mt-0.5 text-sm text-slate-700">{exam.remarks}</p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>

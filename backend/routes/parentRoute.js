@@ -72,7 +72,7 @@ const fetchParentStudents = async ({ parent, schoolId }) => {
       ...baseFilter,
       _id: { $in: childIds },
     })
-      .select('name grade section')
+      .select('name grade section studentCode username roll admissionNumber')
       .lean();
   }
 
@@ -87,7 +87,7 @@ const fetchParentStudents = async ({ parent, schoolId }) => {
         ...baseFilter,
         name: { $in: validNames },
       })
-        .select('name grade section')
+        .select('name grade section studentCode username roll admissionNumber')
         .lean();
     }
   }
@@ -634,6 +634,10 @@ router.get('/complaints', authParent, async (req, res) => {
         name: student.name || 'Student',
         grade: student.grade || '',
         section: student.section || '',
+        studentCode: student.studentCode || '',
+        username: student.username || '',
+        roll: student.roll || '',
+        admissionNumber: student.admissionNumber || '',
       })),
     });
   } catch (err) {

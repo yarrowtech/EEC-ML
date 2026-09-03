@@ -364,11 +364,45 @@ const ParentPortal = () => {
     if (blob.includes('health') || blob.includes('wellbeing')) return '/parents/health';
     if (blob.includes('complaint') || blob.includes('issue')) return '/parents/complaints';
     if (blob.includes('meeting') || blob.includes('ptm')) return '/parents/ptm';
-    if (blob.includes('result') || blob.includes('exam')) return '/parents/results';
+    if (blob.includes('result') || blob.includes('exam')) return '/parents/academic';
     if (blob.includes('chat') || blob.includes('message')) return '/parents/chat';
     if (blob.includes('holiday')) return '/parents/holidays';
+    if (blob.includes('routine') || blob.includes('timetable') || blob.includes('schedule') || blob.includes('period')) return '/parents/routine';
+    if (blob.includes('observation')) return '/parents/parent-observation';
+    if (blob.includes('excuse') || blob.includes('leave request')) return '/parents/excuse-letters';
     return '/parents';
   }, []);
+
+  // Unread notifications bucketed by the sidebar destination they resolve to,
+  // so every nav button can show its own count (e.g. a routine update → "1").
+  const sectionBadges = useMemo(() => {
+    const counts = {};
+    notifications.forEach((item) => {
+      if (!item || item.isRead) return;
+      const path = normalizePath(resolveNotifPath(item));
+      if (!path || path === '/parents') return;
+      counts[path] = (counts[path] || 0) + 1;
+    });
+    return counts;
+  }, [notifications, resolveNotifPath]);
+
+  const badgeFor = useCallback(
+    (path) => sectionBadges[normalizePath(path)] || 0,
+    [sectionBadges],
+  );
+
+  // Visiting a section clears its badge by marking those notifications read.
+  useEffect(() => {
+    if (currentPath === '/parents') return;
+    const stale = notifications.filter(
+      (item) => item && !item.isRead && normalizePath(resolveNotifPath(item)) === currentPath,
+    );
+    if (stale.length === 0) return;
+    stale.forEach((item) => {
+      const id = String(item?._id || item?.id || '');
+      if (id) markRead(id);
+    });
+  }, [currentPath, notifications, resolveNotifPath, markRead]);
   const {
     showPermissionModal,
     pendingCount,
@@ -528,6 +562,7 @@ const ParentPortal = () => {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const targetPath = normalizePath(item.path);
+                const badgeCount = badgeFor(item.path);
                 const isRootLink = targetPath === '/parents';
                 const isActive = isRootLink
                   ? currentPath === targetPath
@@ -551,15 +586,27 @@ const ParentPortal = () => {
                       }
                     `}
                   >
-                    <Icon
-                      className={`flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-gray-600'}`}
-                      size={sidebarOpen ? 19 : 18}
-                    />
+                    <span className="relative flex-shrink-0">
+                      <Icon
+                        className={`transition-colors duration-200 ${isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-gray-600'}`}
+                        size={sidebarOpen ? 19 : 18}
+                      />
+                      {!sidebarOpen && badgeCount > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      )}
+                    </span>
                     {sidebarOpen && (
                       <div className="ml-3 flex-1 min-w-0">
                         <div className="font-medium text-sm">{item.label}</div>
                         <div className="text-xs text-gray-400 truncate">{item.description}</div>
                       </div>
+                    )}
+                    {sidebarOpen && badgeCount > 0 && (
+                      <span className="ml-2 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
+                        {badgeCount > 9 ? '9+' : badgeCount}
+                      </span>
                     )}
                   </Link>
                 );
@@ -766,6 +813,7 @@ const ParentPortal = () => {
           <div className="mx-auto flex max-w-md items-center justify-around">
             {BOTTOM_NAV.map(({ icon: Icon, label, path }) => {
               const active = isNavActive(path);
+              const badgeCount = badgeFor(path);
               return (
                 <button
                   key={path}
@@ -774,8 +822,13 @@ const ParentPortal = () => {
                   onClick={() => goTo(path)}
                   className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${active ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
                 >
-                  <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-100' : ''}`}>
+                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-100' : ''}`}>
                     <Icon className="h-5 w-5" />
+                    {badgeCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+                        {badgeCount > 9 ? '9+' : badgeCount}
+                      </span>
+                    )}
                   </span>
                   <span className="text-[10px]">{label}</span>
                 </button>
@@ -840,6 +893,7 @@ const ParentPortal = () => {
                     {group.items.map((item) => {
                       const Icon = item.icon;
                       const active = isNavActive(item.path);
+                      const badgeCount = badgeFor(item.path);
                       return (
                         <button
                           key={item.path}
@@ -849,10 +903,15 @@ const ParentPortal = () => {
                           className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 active:bg-slate-100'}`}
                         >
                           <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
-                          <span className="min-w-0">
+                          <span className="min-w-0 flex-1">
                             <span className="block text-sm font-medium">{item.label}</span>
                             <span className="block truncate text-xs text-slate-400">{item.description}</span>
                           </span>
+                          {badgeCount > 0 && (
+                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
+                              {badgeCount > 9 ? '9+' : badgeCount}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

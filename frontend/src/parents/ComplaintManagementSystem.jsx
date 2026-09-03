@@ -289,6 +289,9 @@ const ComplaintManagementSystem = () => {
                   <option key={child.studentId} value={child.studentId}>
                     {formatStudentDisplay({
                       name: child.name,
+                      username: child.username,
+                      studentCode: child.studentCode,
+                      admissionNumber: child.admissionNumber,
                       studentId: child.studentId,
                       roll: child.roll || child.rollNo || child.rollNumber,
                       section: child.section,

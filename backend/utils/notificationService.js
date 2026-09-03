@@ -249,6 +249,29 @@ class NotificationService {
       relatedEntity: null
     });
   }
+
+  /**
+   * Notify students & parents of a class/section that its weekly routine changed.
+   */
+  static async notifyTimetableUpdated({ schoolId, campusId, classId, sectionId, className = '', sectionName = '', createdBy = null }) {
+    const scope = className
+      ? `${className}${sectionName ? ` - ${sectionName}` : ''}`
+      : 'your class';
+    return await this.createNotification({
+      schoolId,
+      campusId: campusId || null,
+      title: 'Class Routine Updated',
+      message: `The weekly class routine for ${scope} has been updated. Open Class Routine to see the latest timetable.`,
+      audience: 'All',
+      type: 'general',
+      priority: 'medium',
+      category: 'academic',
+      classId: classId || null,
+      sectionId: sectionId || null,
+      createdBy,
+      relatedEntity: null
+    });
+  }
 }
 
 module.exports = NotificationService;

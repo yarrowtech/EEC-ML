@@ -15,6 +15,26 @@ const {
   generateTimetable,
 } = require('../utils/timetableGenerator');
 const { syncTimetableGroupThreads } = require('../utils/chatGroupProvisioning');
+const NotificationService = require('../utils/notificationService');
+
+const notifyRoutineUpdated = async ({ schoolId, campusId, classId, sectionId }) => {
+  try {
+    const [classDoc, sectionDoc] = await Promise.all([
+      classId ? ClassModel.findById(classId).select('name').lean() : null,
+      sectionId ? Section.findById(sectionId).select('name').lean() : null,
+    ]);
+    await NotificationService.notifyTimetableUpdated({
+      schoolId,
+      campusId: campusId || null,
+      classId: classId || null,
+      sectionId: sectionId || null,
+      className: classDoc?.name || '',
+      sectionName: sectionDoc?.name || '',
+    });
+  } catch (err) {
+    console.error('Failed to send class routine update notification:', err);
+  }
+};
 
 const router = express.Router();
 
@@ -290,6 +310,7 @@ router.post('/', adminAuth, async (req, res) => {
       { new: true, upsert: true }
     );
     await syncTimetableGroupThreads({ schoolId, campusId: campusId || null });
+    await notifyRoutineUpdated({ schoolId, campusId, classId, sectionId: resolveSectionId(sectionId) });
 
     res.json(updated);
   } catch (err) {
@@ -370,6 +391,7 @@ router.post('/day', adminAuth, async (req, res) => {
         entries: dayEntries,
       });
       await syncTimetableGroupThreads({ schoolId, campusId: campusId || null });
+      await notifyRoutineUpdated({ schoolId, campusId, classId, sectionId: normalizedSectionId });
       return res.json(created);
     }
 
@@ -379,6 +401,7 @@ router.post('/day', adminAuth, async (req, res) => {
     existing.entries = [...remainingEntries, ...dayEntries];
     await existing.save();
     await syncTimetableGroupThreads({ schoolId, campusId: campusId || null });
+    await notifyRoutineUpdated({ schoolId, campusId, classId, sectionId: normalizedSectionId });
 
     res.json(existing);
   } catch (err) {

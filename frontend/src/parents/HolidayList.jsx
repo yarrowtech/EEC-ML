@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { CalendarCheck2, CalendarDays, Download, Loader2 } from 'lucide-react';
@@ -256,10 +256,43 @@ const HolidayList = () => {
     }
   };
 
-  const upcomingHolidayCount = holidays.filter((item) => !isPastHoliday(
-    item.startDate || item.date,
-    item.endDate || item.startDate || item.date,
-  )).length;
+  const startOf = (item) => new Date(item.startDate || item.date).getTime() || 0;
+
+  const { upcoming, past } = useMemo(() => {
+    const up = [];
+    const pa = [];
+    holidays.forEach((item) => {
+      (isPastHoliday(
+        item.startDate || item.date,
+        item.endDate || item.startDate || item.date,
+      ) ? pa : up).push(item);
+    });
+    up.sort((a, b) => startOf(a) - startOf(b)); // soonest first
+    pa.sort((a, b) => startOf(b) - startOf(a)); // most recent past first
+    return { upcoming: up, past: pa };
+  }, [holidays]);
+
+  const upcomingHolidayCount = upcoming.length;
+
+  const renderRow = (item, isPast) => (
+    <tr key={item._id} className="group bg-white/40 shadow-sm backdrop-blur-xl transition hover:bg-white/65 hover:shadow-md">
+      <td className={`rounded-l-2xl border-y border-l border-white/80 px-4 py-4 ${isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+        {formatDateRange(item.startDate || item.date, item.endDate || item.startDate || item.date)}
+      </td>
+      <td className={`rounded-r-2xl border-y border-r border-white/80 px-4 py-4 font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+        {item.name}
+      </td>
+    </tr>
+  );
+
+  const groupHeader = (label, count) => (
+    <tr>
+      <td colSpan={2} className="px-4 pb-1 pt-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</span>
+        <span className="ml-2 text-xs font-medium text-slate-400">{count}</span>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-violet-50/70 to-cyan-50/60 p-3 sm:p-5 lg:p-7">
@@ -326,31 +359,19 @@ const HolidayList = () => {
           ) : holidays.length === 0 ? (
             <div className="p-5"><EmptyState icon={CalendarDays} title="No holidays announced yet" hint="Holidays appear here once the school publishes them." /></div>
           ) : (
-            <div className="overflow-x-auto p-3 sm:p-5">
+            <div className="max-h-[60vh] overflow-y-auto overflow-x-auto p-3 sm:p-5">
               <table className="min-w-full border-separate border-spacing-y-2 text-sm">
-                <thead>
-                  <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-                    <th className="px-4 py-2 font-semibold">Date Range</th>
-                    <th className="px-4 py-2 font-semibold">Holiday Name</th>
+                <thead className="sticky top-0 z-10">
+                  <tr className="text-left text-xs uppercase tracking-wider text-slate-500 [&>th]:bg-white/80 [&>th]:backdrop-blur-xl">
+                    <th className="rounded-l-lg px-4 py-2 font-semibold">Date Range</th>
+                    <th className="rounded-r-lg px-4 py-2 font-semibold">Holiday Name</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {holidays.map((item) => {
-                    const isPast = isPastHoliday(
-                      item.startDate || item.date,
-                      item.endDate || item.startDate || item.date,
-                    );
-                    return (
-                      <tr key={item._id} className="group bg-white/40 shadow-sm backdrop-blur-xl transition hover:bg-white/65 hover:shadow-md">
-                        <td className={`rounded-l-2xl border-y border-l border-white/80 px-4 py-4 ${isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                          {formatDateRange(item.startDate || item.date, item.endDate || item.startDate || item.date)}
-                        </td>
-                        <td className={`rounded-r-2xl border-y border-r border-white/80 px-4 py-4 font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                          {item.name}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {upcoming.length > 0 && groupHeader('Upcoming', `${upcoming.length}`)}
+                  {upcoming.map((item) => renderRow(item, false))}
+                  {past.length > 0 && groupHeader('Past', `${past.length}`)}
+                  {past.map((item) => renderRow(item, true))}
                 </tbody>
               </table>
             </div>
