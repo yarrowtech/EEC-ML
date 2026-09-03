@@ -1,3 +1,5 @@
+import { AUTH_NOTICE, logoutAndRedirect } from './authSession';
+
 const DEFAULT_TTL_MS = 2 * 60 * 1000;
 
 const getStorage = () => {
@@ -98,6 +100,14 @@ export const fetchCachedJson = async (url, options = {}) => {
   }
 
   const response = await fetch(normalizedUrl, withStudentAuthorization(fetchOptions));
+  if (response.status === 401 || response.status === 403) {
+    // Central auth-failure handling for the student data layer: wipe the
+    // session and bounce to login (AuthSessionManager listens for the event).
+    logoutAndRedirect({ notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
+    const authError = new Error('Session expired');
+    authError.code = AUTH_NOTICE.EXPIRED;
+    throw authError;
+  }
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {

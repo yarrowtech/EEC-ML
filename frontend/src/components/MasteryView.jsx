@@ -35,21 +35,30 @@ const getLevel = (score) => LEVELS.find((l) => score >= l.min) || LEVELS[LEVELS.
 // ── Topic Row ───────────────────────────────────────────────────────────────
 const TopicRow = ({ item }) => {
   const level = getLevel(item.score);
+  const topicName = item.topicTitle || item.topicId;
   return (
     <Motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm"
+      aria-label={`${topicName}: ${item.score} percent, ${level.label}, ${item.attemptCount} attempt${item.attemptCount !== 1 ? 's' : ''}`}
     >
       {/* Emoji + title */}
-      <span className="text-xl shrink-0">{level.emoji}</span>
+      <span className="text-xl shrink-0" aria-hidden="true">{level.emoji}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-800 truncate">{item.topicTitle || item.topicId}</p>
+        <p className="text-sm font-semibold text-slate-800 truncate">{topicName}</p>
         {item.chapterTitle && (
           <p className="text-xs text-slate-400 truncate">{item.chapterTitle}</p>
         )}
         {/* Progress bar */}
-        <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+        <div
+          className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden"
+          role="progressbar"
+          aria-valuenow={item.score}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${topicName} mastery`}
+        >
           <Motion.div
             initial={{ width: 0 }}
             animate={{ width: `${item.score}%` }}
@@ -65,7 +74,7 @@ const TopicRow = ({ item }) => {
         <p className="text-[10px] text-slate-400">{item.attemptCount} attempt{item.attemptCount !== 1 ? 's' : ''}</p>
       </div>
 
-      {/* Level badge */}
+      {/* Level badge (text label hidden on small screens but announced via row aria-label) */}
       <span className={`hidden sm:inline-flex shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-bold ${level.badge}`}>
         {level.label}
       </span>
@@ -85,11 +94,12 @@ const SubjectAccordion = ({ subject, topics }) => {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
         className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-slate-100/70 transition-colors"
       >
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg`}
           style={{ background: `var(--subject-bg, #f1f5f9)` }}>
-          <BookOpen className="size-4 text-slate-500" />
+          <BookOpen className="size-4 text-slate-500" aria-hidden="true" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-slate-800">{subject}</p>
@@ -97,14 +107,23 @@ const SubjectAccordion = ({ subject, topics }) => {
         </div>
 
         {/* Mini progress bar */}
-        <div className="hidden sm:block w-24 h-1.5 rounded-full bg-slate-200 overflow-hidden mx-3">
+        <div
+          className="hidden sm:block w-24 h-1.5 rounded-full bg-slate-200 overflow-hidden mx-3"
+          role="progressbar"
+          aria-valuenow={avg}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${subject} average mastery`}
+        >
           <div className={`h-full rounded-full ${level.bar}`} style={{ width: `${avg}%` }} />
         </div>
 
         <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-bold mr-2 ${level.badge}`}>
           {avg}% {level.label}
         </span>
-        {open ? <ChevronDown className="size-4 text-slate-400 shrink-0" /> : <ChevronRight className="size-4 text-slate-400 shrink-0" />}
+        {open
+          ? <ChevronDown className="size-4 text-slate-400 shrink-0" aria-hidden="true" />
+          : <ChevronRight className="size-4 text-slate-400 shrink-0" aria-hidden="true" />}
       </button>
 
       {/* Topics */}
@@ -154,10 +173,12 @@ const MasteryView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isDemo, setIsDemo] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const fetchScores = async () => {
     setLoading(true);
     setError('');
+    setLoadFailed(false);
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/mastery/student`, {
@@ -174,10 +195,10 @@ const MasteryView = () => {
         setIsDemo(false);
       }
     } catch (err) {
-      // On error still show demo so the page isn't blank
+      // Show demo so the page isn't blank, but tell the student it's not their data.
       setScores(DEMO_SCORES);
       setIsDemo(true);
-      setError('');
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -223,8 +244,26 @@ const MasteryView = () => {
         </button>
       </div>
 
+      {/* Load-failure banner — distinct from the "no quizzes yet" sample state */}
+      {loadFailed && (
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3" role="alert">
+          <span className="text-lg shrink-0" aria-hidden="true">⚠️</span>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-rose-800">Couldn&apos;t load your mastery data</p>
+            <p className="text-xs text-rose-700 mt-0.5">Showing sample data below. </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchScores}
+            className="shrink-0 rounded-lg bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800 hover:bg-rose-200"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Demo banner */}
-      {isDemo && (
+      {isDemo && !loadFailed && (
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
           <span className="text-lg shrink-0">🎯</span>
           <div>

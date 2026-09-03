@@ -7,20 +7,38 @@ const ENCRYPTED_PREFIX = 'enc:v1';
 const STUDENT_SENSITIVE_FIELDS = ['mobile', 'email', 'address', 'aadharNumber', 'guardianPhone', 'guardianEmail'];
 let warnedDerivedEncryptionKey = false;
 
+// Only these environments may fall back to a key derived from JWT_SECRET.
+// Anything else — production, staging, or an UNSET NODE_ENV — must configure a
+// dedicated STUDENT_DATA_ENCRYPTION_KEY. (Previously the guard keyed off
+// `=== 'production'` only, so an unset NODE_ENV silently used the derived key.)
+const DERIVED_KEY_ALLOWED_ENVS = new Set(['development', 'test']);
+
 const resolveEncryptionKey = () => {
   const raw = String(process.env.STUDENT_DATA_ENCRYPTION_KEY || '').trim();
   if (!raw) {
+<<<<<<< HEAD
+=======
+    if (!DERIVED_KEY_ALLOWED_ENVS.has(process.env.NODE_ENV)) {
+      throw new Error(
+        'STUDENT_DATA_ENCRYPTION_KEY must be set explicitly outside development (hex:<64> or base64:<44>). '
+        + 'Never derive the key that protects student PII (incl. Aadhaar) from JWT_SECRET.'
+      );
+    }
+    // Development/test only: derive from JWT_SECRET (never the DB connection string).
+>>>>>>> 2d009888 (Student Profiel audit and fixed)
     const fallbackSecret = String(
       process.env.JWT_SECRET
       || process.env.SUPER_ADMIN_INCOMING_SECRET
-      || process.env.MONGODB_URL
-      || process.env.MONGODB_URI
       || ''
     ).trim();
     if (!fallbackSecret) return null;
     if (!warnedDerivedEncryptionKey) {
       warnedDerivedEncryptionKey = true;
+<<<<<<< HEAD
       console.warn('[StudentUser] STUDENT_DATA_ENCRYPTION_KEY not set. Using derived fallback key from existing env secret. Set STUDENT_DATA_ENCRYPTION_KEY explicitly for production key management.');
+=======
+      console.warn('[StudentUser] STUDENT_DATA_ENCRYPTION_KEY not set. Using derived fallback key from JWT_SECRET (development/test only). Set STUDENT_DATA_ENCRYPTION_KEY explicitly.');
+>>>>>>> 2d009888 (Student Profiel audit and fixed)
     }
     return crypto.createHash('sha256').update(fallbackSecret).digest();
   }

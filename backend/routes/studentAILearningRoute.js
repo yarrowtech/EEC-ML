@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const StudentUser = require('../models/StudentUser');
 const authStudent = require('../middleware/authStudent');
+const MasteryScore = require('../models/MasteryScore');
+const PracticeAttempt = require('../models/PracticeAttempt');
 const { logger } = require('../utils/logger');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
@@ -62,7 +64,7 @@ router.get('/courses/:studentId', authStudent, async (req, res) => {
 });
 
 // Generate AI content for a topic
-router.post('/generate-content', async (req, res) => {
+router.post('/generate-content', authStudent, async (req, res) => {
   // #swagger.tags = ['Student AI Learning']
   try {
     const { topic, subject, contentType, difficulty } = req.body;
@@ -142,26 +144,58 @@ router.get('/progress/:studentId', authStudent, async (req, res) => {
       targetId: studentId,
     });
     if (!ensureStudentAccess(req, res, studentId)) return;
-    
-    // Mock progress data - in real implementation, this would come from a progress tracking system
+
+    // Real progress derived from the student's own mastery + practice records.
+    // Degrade gracefully — a stats query failure should not blank the page.
+    const [masteryRows, weekAttempts] = await Promise.all([
+      MasteryScore.find({ studentId }).lean().catch(() => []),
+      PracticeAttempt.countDocuments({
+        studentId,
+        createdAt: { $gte: new Date(Date.now() - 7 * 86400000) },
+      }).catch(() => 0),
+    ]);
+
+    const bySubject = {};
+    for (const row of masteryRows) {
+      const key = row.subject || 'General';
+      if (!bySubject[key]) bySubject[key] = { total: 0, sum: 0, mastered: 0 };
+      bySubject[key].total += 1;
+      bySubject[key].sum += Number(row.score) || 0;
+      if ((Number(row.score) || 0) >= 75) bySubject[key].mastered += 1;
+    }
+    const subjectProgress = {};
+    Object.entries(bySubject).forEach(([subject, s]) => {
+      subjectProgress[subject] = {
+        completed: s.mastered,
+        total: s.total,
+        percentage: s.total ? Math.round(s.sum / s.total) : 0,
+      };
+    });
+
+    const activeDays = new Set(
+      masteryRows
+        .map((r) => r.lastUpdated && new Date(r.lastUpdated).toISOString().slice(0, 10))
+        .filter(Boolean)
+    );
+
     const progress = {
       studentId,
-      totalTopicsStudied: 25,
-      completedCourses: 3,
-      currentStreak: 7,
+      totalTopicsStudied: masteryRows.length,
+      completedCourses: Object.values(subjectProgress).filter((s) => s.total > 0 && s.completed === s.total).length,
+      currentStreak: 0, // see /api/student-dashboard/learning-streak for the streak calc
+      totalActiveDays: activeDays.size,
       weeklyGoal: 5,
-      weeklyProgress: 4,
-      subjectProgress: {
-        'Mathematics': { completed: 15, total: 20, percentage: 75 },
-        'Physics': { completed: 8, total: 15, percentage: 53 },
-        'Chemistry': { completed: 12, total: 18, percentage: 67 },
-        'Biology': { completed: 6, total: 12, percentage: 50 }
-      },
-      recentActivity: [
-        { topic: 'Quadratic Equations', subject: 'Mathematics', date: new Date(), type: 'summary' },
-        { topic: 'Photosynthesis', subject: 'Biology', date: new Date(Date.now() - 86400000), type: 'mindmap' },
-        { topic: 'Chemical Bonding', subject: 'Chemistry', date: new Date(Date.now() - 172800000), type: 'quiz' }
-      ]
+      weeklyProgress: weekAttempts,
+      subjectProgress,
+      recentActivity: [...masteryRows]
+        .sort((a, b) => new Date(b.lastUpdated || 0) - new Date(a.lastUpdated || 0))
+        .slice(0, 5)
+        .map((r) => ({
+          topic: r.topicTitle || r.subject,
+          subject: r.subject || '',
+          date: r.lastUpdated || null,
+          type: 'mastery',
+        })),
     };
 
     res.status(200).json(progress);
@@ -188,7 +222,10 @@ router.get('/progress/:studentId', authStudent, async (req, res) => {
   }
 });
 
-// Save learning activity
+// Save learning activity.
+// NOTE: there is no dedicated activity-log collection yet — this endpoint
+// acknowledges the client event but does not fabricate downstream analytics.
+// Mastery/practice/flashcard progress is persisted by their own endpoints.
 router.post('/activity', authStudent, async (req, res) => {
   // #swagger.tags = ['Student AI Learning']
   try {
@@ -217,10 +254,9 @@ router.post('/activity', authStudent, async (req, res) => {
       timestamp: new Date()
     };
 
-    // Mock response
     res.status(200).json({
       success: true,
-      message: 'Activity logged successfully',
+      message: 'Activity received',
       activity
     });
     logStudentPortalEvent(req, {
@@ -260,36 +296,23 @@ router.get('/recommendations/:studentId', authStudent, async (req, res) => {
       targetId: studentId,
     });
     if (!ensureStudentAccess(req, res, studentId)) return;
-    
-    const recommendations = [
-      {
-        id: 1,
-        title: 'Review Quadratic Functions',
-        subject: 'Mathematics',
-        reason: 'You struggled with this topic in recent assignments',
-        difficulty: 'medium',
-        estimatedTime: 30,
-        type: 'review'
-      },
-      {
-        id: 2,
-        title: 'Explore Organic Chemistry Basics',
-        subject: 'Chemistry',
-        reason: 'Next topic in your curriculum',
-        difficulty: 'basic',
-        estimatedTime: 45,
-        type: 'preview'
-      },
-      {
-        id: 3,
-        title: 'Practice Physics Problems',
-        subject: 'Physics',
-        reason: 'Strengthen problem-solving skills',
-        difficulty: 'medium',
-        estimatedTime: 25,
-        type: 'practice'
-      }
-    ];
+
+    // Recommend the student's own weakest tracked topics for review.
+    const weakTopics = await MasteryScore.find({ studentId, score: { $lt: 60 } })
+      .sort({ score: 1, lastUpdated: 1 })
+      .limit(5)
+      .lean()
+      .catch(() => []);
+
+    const recommendations = weakTopics.map((t, i) => ({
+      id: String(t._id || i + 1),
+      title: `Review ${t.topicTitle || t.subject}`,
+      subject: t.subject || '',
+      reason: `Your current mastery here is ${Math.round(Number(t.score) || 0)}% — a review session should help.`,
+      difficulty: (Number(t.score) || 0) < 35 ? 'basic' : 'medium',
+      estimatedTime: 30,
+      type: 'review',
+    }));
 
     res.status(200).json(recommendations);
     logStudentPortalEvent(req, {

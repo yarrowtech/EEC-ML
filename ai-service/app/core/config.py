@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # When set, all /generate/* endpoints use OpenRouter instead of Ollama.
     # Recommended model: "google/gemini-flash-1.5" or "meta-llama/llama-3.3-70b-instruct"
     openrouter_api_key: str = ""
-    openrouter_model: str = "google/gemini-flash-1.5"
+    openrouter_model: str = "google/gemini-2.5-flash"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # Context window for OpenRouter models (most support 128k+)
     openrouter_num_ctx: int = 32768

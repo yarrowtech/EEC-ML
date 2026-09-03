@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AUTH_NOTICE, getTokenExpiryMs, logoutAndRedirect } from '../utils/authSession';
+import { AUTH_LOGOUT_EVENT, AUTH_NOTICE, getTokenExpiryMs, logoutAndRedirect } from '../utils/authSession';
 
 const POLL_INTERVAL_MS   = 30_000; // check every 30s (was 1s)
 const WARN_BEFORE_MS     = 5 * 60 * 1000; // warn 5 min before expiry
@@ -44,9 +44,18 @@ const AuthSessionManager = () => {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
+    // A data-layer 401/403 (e.g. from fetchCachedJson) dispatches this event
+    // after clearing the session — finish the job by redirecting to login.
+    const onForcedLogout = () => {
+      setShowWarning(false);
+      navigate('/', { replace: true, state: { authNotice: AUTH_NOTICE.EXPIRED } });
+    };
+    window.addEventListener(AUTH_LOGOUT_EVENT, onForcedLogout);
+
     return () => {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener(AUTH_LOGOUT_EVENT, onForcedLogout);
     };
   }, [navigate]);
 

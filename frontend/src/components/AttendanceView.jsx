@@ -63,8 +63,12 @@ const CircularProgress = ({ percentage, size = 140, strokeWidth = 10 }) => {
   const color = percentage >= 75 ? '#10b981' : percentage >= 50 ? '#f59e0b' : '#ef4444';
 
   return (
-    <div className="relative inline-flex items-center justify-center">
-      <svg width={size} height={size} className="-rotate-90">
+    <div
+      className="relative inline-flex items-center justify-center"
+      role="img"
+      aria-label={`Overall attendance ${percentage}%`}
+    >
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none"
           stroke="#e2e8f0" strokeWidth={strokeWidth} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none"
@@ -81,11 +85,18 @@ const CircularProgress = ({ percentage, size = 140, strokeWidth = 10 }) => {
 };
 
 /* ─── Mini Progress Bar ─── */
-const ProgressBar = ({ value, max, className = '' }) => {
+const ProgressBar = ({ value, max, className = '', label = 'Attendance' }) => {
   const pct = max ? Math.round((value / max) * 100) : 0;
   const color = pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
   return (
-    <div className={`h-2 w-full rounded-full bg-slate-100 ${className}`}>
+    <div
+      className={`h-2 w-full rounded-full bg-slate-100 ${className}`}
+      role="progressbar"
+      aria-valuenow={pct}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`${label}: ${pct}%`}
+    >
       <div className={`h-2 rounded-full transition-all duration-500 ${color}`}
         style={{ width: `${pct}%` }} />
     </div>
@@ -861,6 +872,7 @@ const AttendanceView = () => {
                   className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden transition">
                   {/* Week summary row */}
                   <button type="button" onClick={() => setExpandedWeek(isExpanded ? null : week.key)}
+                    aria-expanded={isExpanded}
                     className="flex w-full items-center justify-between p-4 hover:bg-slate-50 transition text-left">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold ${
@@ -884,8 +896,8 @@ const AttendanceView = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {/* Mini visual bar */}
-                      <div className="hidden sm:flex items-center gap-0.5">
+                      {/* Mini visual bar — decorative; counts are stated in text above */}
+                      <div className="hidden sm:flex items-center gap-0.5" aria-hidden="true">
                         {Array.from({ length: Math.min(week.total, 20) }).map((_, i) => {
                           const sorted = [...week.records].sort((a, b) => a.date.localeCompare(b.date));
                           const r = sorted[i];
@@ -899,8 +911,8 @@ const AttendanceView = () => {
                         })}
                       </div>
                       {isExpanded
-                        ? <ChevronUp className="h-4 w-4 text-slate-400" />
-                        : <ChevronDown className="h-4 w-4 text-slate-400" />}
+                        ? <ChevronUp className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                        : <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />}
                     </div>
                   </button>
 

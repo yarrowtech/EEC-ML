@@ -1042,56 +1042,25 @@ const buildStudentAttendancePayload = (
   };
 };
 
-// === Student marks attendance ===
-router.post('/mark', authStudent, async (req, res) => {
+// === Student self-marked attendance — REMOVED ===
+// Attendance is an official record: it feeds attendance-percentage stats,
+// streak trackers, system badges, and the figures shown to teachers, parents
+// and admins. Allowing a student to POST their own "present" entry was an
+// integrity hole with no teacher reconciliation step. Attendance is now written
+// only through the teacher/admin endpoints below.
+router.post('/mark', authStudent, (req, res) => {
   // #swagger.tags = ['Attendance']
-  try {
-    const status = normalizeStatus(req.body?.status);
-    const subject = req.body?.subject;
-    if (!VALID_STATUSES.has(status)) {
-      return res.status(400).json({ error: 'status must be present or absent' });
-    }
-    const schoolId = req.schoolId || req.user?.schoolId || null;
-    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
-    const student = await StudentUser.findOne({ _id: req.user.id, schoolId });
-
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    // Optional: prevent multiple entries for the same day
-    const today = new Date().toDateString();
-    const alreadyMarked = student.attendance.some(entry =>
-      new Date(entry.date).toDateString() === today
-    );
-    if (alreadyMarked) {
-      return res.status(400).json({ error: 'Attendance already marked for today' });
-    }
-
-    student.attendance.push({ status, subject });
-    await student.save();
-    res.status(200).json({ message: 'Attendance marked' });
-    logStudentPortalEvent(req, {
-      feature: 'attendance',
-      action: 'attendance.mark',
-      outcome: 'success',
-      statusCode: 200,
-      targetType: 'student',
-      targetId: req.user?.id,
-      attendanceStatus: status,
-      subject: subject || '',
-    });
-  } catch (err) {
-    logStudentPortalError(req, {
-      feature: 'attendance',
-      action: 'attendance.mark',
-      statusCode: 400,
-      err,
-      targetType: 'student',
-      targetId: req.user?.id,
-      attendanceStatus: req.body?.status,
-      subject: req.body?.subject,
-    });
-    res.status(400).json({ error: err.message });
-  }
+  logStudentPortalEvent(req, {
+    feature: 'attendance',
+    action: 'attendance.mark',
+    outcome: 'blocked',
+    statusCode: 403,
+    targetType: 'student',
+    targetId: req.user?.id,
+  });
+  return res.status(403).json({
+    error: 'Attendance can only be recorded by your teacher.',
+  });
 });
 
 // === Teacher can view students with monthly attendance summary ===

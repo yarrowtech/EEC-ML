@@ -60,6 +60,12 @@ const mockStudentObservation = {
 const mockWellbeing = {
   findOne: jest.fn(),
 };
+const mockMasteryScore = {
+  find: jest.fn(),
+};
+const mockPracticeAttempt = {
+  countDocuments: jest.fn(),
+};
 
 const mockBcryptCompare = jest.fn();
 const mockJwtSign = jest.fn();
@@ -116,6 +122,8 @@ jest.mock('../models/Section', () => mockSection);
 jest.mock('../models/SupportRequest', () => mockSupportRequest);
 jest.mock('../models/StudentObservation', () => mockStudentObservation);
 jest.mock('../models/Wellbeing', () => mockWellbeing);
+jest.mock('../models/MasteryScore', () => mockMasteryScore);
+jest.mock('../models/PracticeAttempt', () => mockPracticeAttempt);
 
 jest.mock('../models/Exam', () => ({}));
 jest.mock('../models/StudentJournalEntry', () => ({}));
@@ -204,6 +212,8 @@ describe('student portal logger coverage', () => {
     mockSupportRequest.find.mockReturnValue(makeQuery([]));
     mockStudentObservation.find.mockReturnValue(makeQuery([]));
     mockWellbeing.findOne.mockReturnValue(makeQuery(null));
+    mockMasteryScore.find.mockReturnValue(makeQuery([]));
+    mockPracticeAttempt.countDocuments.mockReturnValue(makeQuery(0));
     mockBcryptCompare.mockResolvedValue(true);
     mockJwtSign.mockReturnValue('jwt-token');
     mockIsStrongPassword.mockReturnValue(true);

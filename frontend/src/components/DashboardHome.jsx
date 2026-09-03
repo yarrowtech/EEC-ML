@@ -15,34 +15,66 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
-const authHdrs = () => ({ Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
+
+/** Small inline "this widget failed to load" card with a retry affordance, so a
+ *  backend error on a dashboard analytics endpoint is visible instead of the
+ *  card silently disappearing. */
+const CardError = ({ onRetry, label }) => (
+  <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+    <p className="text-sm font-semibold text-gray-700">{label}</p>
+    <p className="mt-1 text-xs text-gray-500">Couldn&apos;t load this right now.</p>
+    <button
+      type="button"
+      onClick={onRetry}
+      className="mt-2 rounded-lg bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-200"
+    >
+      Retry
+    </button>
+  </div>
+);
+
+/** Fetch-with-state hook for the dashboard cards: tracks loading + error and
+ *  exposes a reload() the CardError button calls. */
+const useCardData = (url, pick) => {
+  const [state, setState] = useState({ data: null, loading: true, error: false });
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setState((s) => ({ ...s, loading: true, error: false }));
+    fetchCachedJson(url, { ttlMs: 5 * 60 * 1000, forceRefresh: nonce > 0 })
+      .then((r) => { if (alive) setState({ data: pick(r), loading: false, error: false }); })
+      .catch((err) => {
+        if (!alive) return;
+        // An auth failure is already being handled globally — don't also show a retry card.
+        if (err?.code === 'expired') return;
+        setState({ data: null, loading: false, error: true });
+      });
+    return () => { alive = false; };
+  }, [url, nonce]); // `pick` is a stable inline mapper per card — intentionally not a dep
+  return { ...state, reload: () => setNonce((n) => n + 1) };
+};
 
 const ProgressTrendChart = () => {
-  const [chartData, setChartData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: chartData, loading, error, reload } = useCardData(
+    `${API_BASE}/api/exam/results/me`,
+    (r) => {
+      const results = r?.data?.data || [];
+      return [...results]
+        .filter((x) => x.marks != null && x.examId?.date)
+        .sort((a, b) => new Date(a.examId.date) - new Date(b.examId.date))
+        .slice(-10)
+        .map((x) => ({
+          name: x.examId?.title
+            ? x.examId.title.slice(0, 12)
+            : new Date(x.examId.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          marks: Number(x.marks),
+          subject: x.examId?.subject || '',
+        }));
+    }
+  );
 
-  useEffect(() => {
-    fetchCachedJson(`${API_BASE}/api/exam/results/me`, { ttlMs: 5 * 60 * 1000 })
-      .then((r) => {
-        const results = r?.data?.data || [];
-        const sorted = [...results]
-          .filter((r) => r.marks != null && r.examId?.date)
-          .sort((a, b) => new Date(a.examId.date) - new Date(b.examId.date))
-          .slice(-10)
-          .map((r) => ({
-            name: r.examId?.title
-              ? r.examId.title.slice(0, 12)
-              : new Date(r.examId.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            marks: Number(r.marks),
-            subject: r.examId?.subject || '',
-          }));
-        setChartData(sorted);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading || chartData.length < 2) return null;
+  if (error) return <CardError label="Score Trend" onRetry={reload} />;
+  if (loading || !chartData || chartData.length < 2) return null;
 
   return (
     <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
@@ -155,15 +187,12 @@ const tierColor = (score) => score >= 80 ? 'bg-emerald-200' : score >= 60 ? 'bg-
 const tierText = (score) => score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-red-600';
 
 const MasteryTopicsCard = () => {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    fetchCachedJson(`${API_BASE}/api/student-dashboard/mastery-topics`, { ttlMs: 5 * 60 * 1000 })
-      .then((r) => setData(r?.data?.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-  if (loading || !data.length) return null;
+  const { data, loading, error, reload } = useCardData(
+    `${API_BASE}/api/student-dashboard/mastery-topics`,
+    (r) => r?.data?.data || []
+  );
+  if (error) return <CardError label="Topic Mastery" onRetry={reload} />;
+  if (loading || !data || !data.length) return null;
   return (
     <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
       <p className="mb-3 text-sm font-black text-gray-800">Topic Mastery</p>
@@ -188,12 +217,11 @@ const MasteryTopicsCard = () => {
 };
 
 const LearningStreakCard = () => {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    fetchCachedJson(`${API_BASE}/api/student-dashboard/learning-streak`, { ttlMs: 5 * 60 * 1000 })
-      .then((r) => setData(r?.data?.data || null))
-      .catch(() => {});
-  }, []);
+  const { data, error, reload } = useCardData(
+    `${API_BASE}/api/student-dashboard/learning-streak`,
+    (r) => r?.data?.data || null
+  );
+  if (error) return <CardError label="Learning streak" onRetry={reload} />;
   if (!data) return null;
   return (
     <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3 shadow-sm flex items-center gap-3">
@@ -209,15 +237,12 @@ const LearningStreakCard = () => {
 };
 
 const TimeBySubjectCard = () => {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    fetchCachedJson(`${API_BASE}/api/student-dashboard/time-by-subject`, { ttlMs: 5 * 60 * 1000 })
-      .then((r) => setData(r?.data?.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-  if (loading || !data.length) return null;
+  const { data, loading, error, reload } = useCardData(
+    `${API_BASE}/api/student-dashboard/time-by-subject`,
+    (r) => r?.data?.data || []
+  );
+  if (error) return <CardError label="Time Spent by Subject" onRetry={reload} />;
+  if (loading || !data || !data.length) return null;
   const max = Math.max(...data.map((d) => d.totalMinutes), 1);
   return (
     <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
@@ -240,14 +265,11 @@ const TimeBySubjectCard = () => {
 };
 
 const FlashcardStatsCard = () => {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    fetchCachedJson(`${API_BASE}/api/student-dashboard/flashcard-stats`, { ttlMs: 5 * 60 * 1000 })
-      .then((r) => setData(r?.data?.data || null))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, loading, error, reload } = useCardData(
+    `${API_BASE}/api/student-dashboard/flashcard-stats`,
+    (r) => r?.data?.data || null
+  );
+  if (error) return <CardError label="Flashcard Recall" onRetry={reload} />;
   if (loading || !data || data.totalAttempts === 0) return null;
   return (
     <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">

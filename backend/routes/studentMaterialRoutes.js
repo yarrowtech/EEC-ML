@@ -12,16 +12,54 @@ router.use((req, res, next) => {
   next();
 });
 
-// Helper: Get student's class and section
+// Helper: Get student's class and section.
+// StudentUser stores the class name in `grade` and the section name in
+// `section` (strings); some legacy records may also carry classId/sectionId.
 const getStudentClassSection = async (studentId) => {
   const student = await StudentUser.findById(studentId).lean();
   if (!student) return null;
   return {
-    className: student.className,
-    sectionName: student.sectionName,
-    classId: student.classId,
-    sectionId: student.sectionId
+    className: student.className || student.grade || '',
+    sectionName: student.sectionName || student.section || '',
+    classId: student.classId || null,
+    sectionId: student.sectionId || null,
   };
+};
+
+// Build the class/section access filter for a student. Returns `null` when the
+// student has no resolvable class — callers must then return an empty result,
+// never an unfiltered query.
+const buildMaterialAccessFilter = (studentInfo) => {
+  const conditions = [];
+  if (studentInfo.classId && studentInfo.sectionId) {
+    conditions.push({ classId: studentInfo.classId, sectionId: studentInfo.sectionId });
+  }
+  const className = String(studentInfo.className || '').trim();
+  const sectionName = String(studentInfo.sectionName || '').trim();
+  if (className) {
+    conditions.push(sectionName ? { className, sectionName } : { className });
+  }
+  return conditions.length ? { $or: conditions } : null;
+};
+
+// Resolve the student's class/section access filter once for the mutating
+// tracking routes (view / download / complete / quiz / poll) so a student can
+// only act on a material actually assigned to their class.
+const requireMaterialAccess = async (req, res, next) => {
+  try {
+    const studentInfo = await getStudentClassSection(req.userId);
+    if (!studentInfo) {
+      return res.status(400).json({ success: false, message: 'Student profile not found' });
+    }
+    const accessFilter = buildMaterialAccessFilter(studentInfo);
+    if (!accessFilter) {
+      return res.status(404).json({ success: false, message: 'Material not found or not accessible' });
+    }
+    req.materialAccessFilter = accessFilter;
+    next();
+  } catch (error) {
+    next(error);
+  }
 };
 
 // LIST: Get all available materials for student
@@ -38,17 +76,17 @@ router.get('/', async (req, res, next) => {
       });
     }
 
-    const accessFilters = [
-      { classId: studentInfo.classId, sectionId: studentInfo.sectionId },
-      { className: studentInfo.className, sectionName: studentInfo.sectionName }
-    ];
+    const accessFilter = buildMaterialAccessFilter(studentInfo);
+    if (!accessFilter) {
+      return res.json({ success: true, materials: [], total: 0, page: 1, limit: parseInt(limit), pages: 0 });
+    }
 
     const filters = {
       schoolId: req.schoolId,
       status: 'published',
       materialType: { $ne: 'folder' },
       $and: [
-        { $or: accessFilters },
+        accessFilter,
         {
           $or: [
             { expiresAt: { $exists: false } },
@@ -107,15 +145,17 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
+    const accessFilter = buildMaterialAccessFilter(studentInfo);
+    if (!accessFilter) {
+      return res.status(404).json({ success: false, message: 'Material not found or not accessible' });
+    }
+
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
       schoolId: req.schoolId,
       status: 'published',
       materialType: { $ne: 'folder' },
-      $or: [
-        { classId: studentInfo.classId, sectionId: studentInfo.sectionId },
-        { className: studentInfo.className, sectionName: studentInfo.sectionName }
-      ]
+      ...accessFilter,
     }).lean();
 
     if (!material) {
@@ -144,10 +184,11 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // TRACK VIEW: Record when student views material
-router.post('/:id/view', async (req, res, next) => {
+router.post('/:id/view', requireMaterialAccess, async (req, res, next) => {
   try {
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       status: 'published'
     });
@@ -196,12 +237,13 @@ router.post('/:id/view', async (req, res, next) => {
 });
 
 // TRACK DOWNLOAD: Record when student downloads file
-router.post('/:id/download', async (req, res, next) => {
+router.post('/:id/download', requireMaterialAccess, async (req, res, next) => {
   try {
     const { attachmentName } = req.body;
 
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       status: 'published'
     });
@@ -246,10 +288,11 @@ router.post('/:id/download', async (req, res, next) => {
 });
 
 // MARK COMPLETE: Student marks material as complete
-router.post('/:id/complete', async (req, res, next) => {
+router.post('/:id/complete', requireMaterialAccess, async (req, res, next) => {
   try {
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       status: 'published'
     });
@@ -286,10 +329,11 @@ router.post('/:id/complete', async (req, res, next) => {
 });
 
 // QUIZ: Start quiz attempt
-router.post('/:id/quiz/attempt', async (req, res, next) => {
+router.post('/:id/quiz/attempt', requireMaterialAccess, async (req, res, next) => {
   try {
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       hasQuiz: true,
       status: 'published'
@@ -374,7 +418,7 @@ router.post('/:id/quiz/attempt', async (req, res, next) => {
 });
 
 // QUIZ: Submit quiz attempt
-router.post('/:id/quiz/submit', async (req, res, next) => {
+router.post('/:id/quiz/submit', requireMaterialAccess, async (req, res, next) => {
   try {
     const { answers, timeSpent } = req.body;
 
@@ -387,6 +431,7 @@ router.post('/:id/quiz/submit', async (req, res, next) => {
 
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       hasQuiz: true,
       status: 'published'
@@ -521,7 +566,7 @@ const gradeAnswer = (question, selectedAnswer) => {
 };
 
 // POLL: Vote on poll
-router.post('/:id/poll/vote', async (req, res, next) => {
+router.post('/:id/poll/vote', requireMaterialAccess, async (req, res, next) => {
   try {
     const { selectedOptions } = req.body;
 
@@ -534,6 +579,7 @@ router.post('/:id/poll/vote', async (req, res, next) => {
 
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       hasPoll: true,
       status: 'published'
@@ -607,10 +653,11 @@ router.post('/:id/poll/vote', async (req, res, next) => {
 });
 
 // GET: Get quiz history for student
-router.get('/:id/quiz/attempts', async (req, res, next) => {
+router.get('/:id/quiz/attempts', requireMaterialAccess, async (req, res, next) => {
   try {
     const material = await TeachingMaterial.findOne({
       _id: req.params.id,
+      ...req.materialAccessFilter,
       schoolId: req.schoolId,
       hasQuiz: true,
       status: 'published'

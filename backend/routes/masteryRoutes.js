@@ -93,9 +93,19 @@ router.post('/update', authStudent, async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+<<<<<<< HEAD
     const attempts = doc.attemptCount;
     const blended  = attempts <= 1 ? numericScore : Math.round((doc.score * 0.7) + (numericScore * 0.3));
     const finalScore = Math.max(doc.score, blended);
+=======
+    const prev = doc.score || 0;
+    // First attempt seeds directly (still capped); later attempts blend so a
+    // student can't ratchet straight to the ceiling by re-submitting.
+    const blended = doc.attemptCount <= 1
+      ? numericScore
+      : Math.round((prev * 0.7) + (numericScore * 0.3));
+    const finalScore = Math.max(prev, blended);
+>>>>>>> 2d009888 (Student Profiel audit and fixed)
     doc.score = finalScore;
     await doc.save();
 
@@ -267,7 +277,9 @@ router.post('/lesson-complete', authStudent, async (req, res) => {
 
     // Weighted blend: lesson self-rating carries 30% weight
     const prev = doc.score || 0;
-    const blended = doc.attemptCount <= 1 ? ratingScore : Math.round((prev * 0.7) + (ratingScore * 0.3));
+    const blended = doc.attemptCount <= 1
+      ? ratingScore
+      : Math.round((prev * 0.7) + (ratingScore * 0.3));
     doc.score = Math.max(prev, blended);
     await doc.save();
 

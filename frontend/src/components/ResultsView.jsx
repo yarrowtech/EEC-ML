@@ -46,12 +46,18 @@ const formatDate = (value) => {
 };
 
 /* SVG circular progress ring — mirrors the attendance ring on the dashboard */
-const Ring = ({ pct = 0, size = 104, stroke = 10, color = '#10b981', bg = '#e5e7eb' }) => {
+const Ring = ({ pct = 0, size = 104, stroke = 10, color = '#10b981', bg = '#e5e7eb', label = 'Score' }) => {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ - (Math.min(100, Math.max(0, pct)) / 100) * circ;
   return (
-    <svg width={size} height={size} className="-rotate-90">
+    <svg
+      width={size}
+      height={size}
+      className="-rotate-90"
+      role="img"
+      aria-label={`${label}: ${Math.round(pct)}%`}
+    >
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={bg} strokeWidth={stroke} />
       <circle
         cx={size / 2} cy={size / 2} r={r} fill="none"
@@ -855,8 +861,8 @@ const TermTimeline = ({ cards }) => {
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 shadow-sm">
-      <p className="text-sm font-black text-indigo-900 mb-4">Exam-wise Progress</p>
-      <div className="flex items-end gap-3 overflow-x-auto pb-2">
+      <p className="text-sm font-black text-indigo-900 mb-4" id="exam-progress-heading">Exam-wise Progress</p>
+      <div className="flex items-end gap-3 overflow-x-auto pb-2" role="group" aria-labelledby="exam-progress-heading">
         {data.map((d, i) => (
           <div key={i} className="flex flex-col items-center gap-1 min-w-[56px]">
             {/* <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-500">#{d.order}</span> */}
@@ -865,6 +871,7 @@ const TermTimeline = ({ cards }) => {
               initial={{ height: 0 }}
               animate={{ height: `${Math.round((d.pct / max) * 96)}px` }}
               transition={{ delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+              aria-hidden="true"
               className={`w-10 rounded-t-xl ${d.pct >= 80 ? 'bg-emerald-500' : d.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
             />
             <span className="text-[10px] text-indigo-600/70 text-center leading-tight">{d.name}</span>
@@ -1069,7 +1076,14 @@ const ExamCard = ({ exam, onDownload, downloadingReportCard, showDownload }) => 
                           )}
                         </div>
                       </div>
-                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden"
+                        role="progressbar"
+                        aria-valuenow={Math.round(subjPct)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${subject.name || 'Subject'} score`}
+                      >
                         <div className={`h-full rounded-full ${subjTier.bar}`} style={{ width: `${subjPct}%` }} />
                       </div>
                     </div>

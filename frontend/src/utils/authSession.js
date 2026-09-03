@@ -24,14 +24,43 @@ const resolveApiBaseUrl = () => {
   return 'http://localhost:5000';
 };
 
+// Keys / key-prefixes that hold user-scoped data (dashboard snapshots, cached
+// API responses, points, chat history, E2EE material). These must not survive a
+// logout on a shared device.
+const SENSITIVE_LS_KEYS = ['token', 'userType', 'studentDashboardCacheV1'];
+const SENSITIVE_LS_PREFIXES = [
+  'student-api-cache:',
+  'parent-api-cache:',
+  'teacher-api-cache:',
+  'eec_points',
+  'eec_points_awarded_',
+  'chatCache',
+  'chat_e2ee_',
+  'tutorChatHistory',
+  'learningContinuity',
+];
+
+const purgeSensitiveLocalStorage = () => {
+  try {
+    SENSITIVE_LS_KEYS.forEach((k) => localStorage.removeItem(k));
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key && SENSITIVE_LS_PREFIXES.some((p) => key.startsWith(p))) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ignore storage access errors
+  }
+};
+
 export const clearAuthData = ({ clearAllLocalStorage = false } = {}) => {
   if (clearAllLocalStorage) {
-    localStorage.clear();
+    try { localStorage.clear(); } catch { /* ignore */ }
     resetBrowserBranding();
     return;
   }
-  localStorage.removeItem('token');
-  localStorage.removeItem('userType');
+  purgeSensitiveLocalStorage();
   resetBrowserBranding();
 };
 
