@@ -1602,7 +1602,7 @@ router.get('/parent/children', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section roll studentCode admissionNumber username attendance')
+        .select('name grade section roll studentCode admissionNumber username academicYear attendance')
         .lean();
     }
 
@@ -1613,7 +1613,7 @@ router.get('/parent/children', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section roll studentCode admissionNumber username attendance')
+          .select('name grade section roll studentCode admissionNumber username academicYear attendance')
           .lean();
       }
     }
@@ -1641,6 +1641,7 @@ router.get('/parent/children', authParent, async (req, res) => {
           studentCode: student.studentCode || '',
           username: student.username || '',
           admissionNumber: student.admissionNumber || '',
+          academicYear: student.academicYear || '',
         },
         month: monthRange.key,
         summary: buildSummary(attendance),

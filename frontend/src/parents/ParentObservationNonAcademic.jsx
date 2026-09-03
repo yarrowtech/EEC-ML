@@ -118,7 +118,7 @@ const ParentObservationNonAcademic = () => {
           id: entry.student?._id || entry.studentId,
           name: entry.student?.name || 'Student',
           roll: entry.student?.roll || entry.student?.rollNo || entry.student?.rollNumber,
-          session: entry.student?.session || '',
+          session: entry.student?.academicYear || entry.student?.academicYearName || entry.student?.session || '',
           className: entry.student?.grade || '',
           section: entry.student?.section || entry.student?.sectionName || '',
           studentCode: entry.student?.studentCode || '',
@@ -277,7 +277,7 @@ const ParentObservationNonAcademic = () => {
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden transition-all">
             <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white">
+                <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center text-violet-700">
                   <FileEdit size={16} />
                 </div>
                 <h2 className="text-lg font-bold text-slate-900">New Observation</h2>
@@ -299,9 +299,10 @@ const ParentObservationNonAcademic = () => {
                         id="obs-session"
                         value={selectedSession}
                         onChange={(e) => setSelectedSession(e.target.value)}
-                        className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all cursor-pointer group-hover:bg-white"
+                        className="w-full appearance-none bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all cursor-pointer"
+                        style={{ colorScheme: 'light' }}
                       >
-                        <option value="">All Years</option>
+                        <option value="">Select Year</option>
                         {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                       <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={14} />
@@ -410,13 +411,13 @@ const ParentObservationNonAcademic = () => {
               </div>
 
               {/* Assessment Status Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-4 py-3 px-6 bg-slate-900 rounded-2xl text-white">
+              <div className="flex flex-wrap items-center justify-between gap-4 py-3 px-6 bg-violet-50 border border-violet-100 rounded-2xl text-slate-700">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <ClipboardList size={16} className="text-violet-400" />
                     <span className="text-xs font-bold uppercase tracking-wider">{selectedCount} Fields Rated</span>
                   </div>
-                  <div className="h-4 w-px bg-slate-700" />
+                  <div className="h-4 w-px bg-violet-200" />
                   <div className="flex items-center gap-2">
                     <Activity size={16} className="text-emerald-400" />
                     <span className="text-xs font-bold uppercase tracking-wider">
@@ -424,7 +425,7 @@ const ParentObservationNonAcademic = () => {
                     </span>
                   </div>
                 </div>
-                <div className="text-[11px] font-bold text-slate-400 italic">Progress autosaved in session</div>
+                <div className="text-[11px] font-bold text-slate-500 italic">Progress autosaved in session</div>
               </div>
 
               {/* Observation Sections */}
@@ -525,30 +526,30 @@ const ParentObservationNonAcademic = () => {
 
         {/* Sidebar Insights */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl shadow-slate-200">
+          <div className="bg-white border border-violet-100 rounded-3xl p-6 text-slate-800 shadow-sm">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
               <TrendingUp size={20} className="text-violet-400" />
               Quick Summary
             </h3>
             <div className="space-y-4">
-              <div className="bg-white/10 rounded-2xl p-4 flex items-center justify-between">
+              <div className="bg-violet-50 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Active Child</p>
+                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Active Child</p>
                   <p className="text-sm font-bold truncate max-w-[150px]">
                     {filteredChildren.find(c => String(c.id) === String(studentId))?.name || 'None Selected'}
                   </p>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-violet-500 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-violet-500 text-white flex items-center justify-center">
                   <User size={18} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Total Logs</p>
+                <div className="bg-violet-50 rounded-2xl p-4">
+                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Total Logs</p>
                   <p className="text-xl font-bold">{observations.length}</p>
                 </div>
-                <div className="bg-white/10 rounded-2xl p-4">
-                  <p className="text-[11px] font-bold text-violet-300 uppercase tracking-widest">Urgency</p>
+                <div className="bg-violet-50 rounded-2xl p-4">
+                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Urgency</p>
                   <p className={`text-xl font-bold ${concernLevel === 'high' ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {concernLevel.toUpperCase()}
                   </p>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Video, Phone, Users, Check, X, ArrowLeftRight, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
+import { Calendar, Clock, Video, Phone, Users, Check, X, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import PageHeader from './PageHeader';
 import Loading from './Loading';
@@ -22,12 +22,11 @@ const PTMPortal = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('upcoming'); // upcoming | history
   const [selectedMeeting, setSelectedMeeting] = useState(null);
-  const [modalMode, setModalMode] = useState(null); // 'reschedule' | 'feedback' | null
+  const [modalMode, setModalMode] = useState(null); // 'feedback' | null
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '', reason: '' });
   const [feedbackForm, setFeedbackForm] = useState({ rating: 0, comment: '' });
 
   const closeModal = () => {
@@ -161,35 +160,6 @@ const PTMPortal = () => {
       confirmMeeting(id);
     } else if (response === 'decline') {
       meetingAction(id, { method: 'PUT', path: 'decline', body: {} }).catch(() => {});
-    }
-  };
-
-  const handleRescheduleRequest = (meeting) => {
-    setSelectedMeeting(meeting);
-    setModalMode('reschedule');
-    setError('');
-    setRescheduleForm({ date: '', time: '', reason: '' });
-  };
-
-  const submitReschedule = async () => {
-    if (!selectedMeeting) return;
-    if (!rescheduleForm.reason.trim()) {
-      setError('Please tell the teacher why you need to reschedule.');
-      return;
-    }
-    try {
-      await meetingAction(getMeetingId(selectedMeeting), {
-        method: 'PUT',
-        path: 'reschedule',
-        body: {
-          requestedDate: rescheduleForm.date || undefined,
-          requestedTime: rescheduleForm.time || undefined,
-          reason: rescheduleForm.reason.trim(),
-        },
-      });
-      closeModal();
-    } catch {
-      /* error surfaced via state */
     }
   };
 
@@ -400,11 +370,6 @@ const PTMPortal = () => {
                           <Check className="h-4 w-4" /> Accept
                         </button>
                       )}
-                      {(pending || confirmed) && (
-                        <button onClick={() => handleRescheduleRequest(meeting)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                          Reschedule
-                        </button>
-                      )}
                       {pending && (
                         <button onClick={() => handleResponse(meeting, 'decline')} className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">
                           Decline
@@ -454,38 +419,6 @@ const PTMPortal = () => {
             })}
           </div>
         </section>
-      )}
-
-      {/* Reschedule Modal */}
-      {selectedMeeting && modalMode === 'reschedule' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={closeModal} aria-hidden="true" />
-          <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="ptm-reschedule-title" className="relative bg-white w-full max-w-lg rounded-xl shadow-xl border p-5">
-            <div className="mb-3">
-              <h3 id="ptm-reschedule-title" className="text-lg font-semibold text-gray-900 flex items-center gap-2"><ArrowLeftRight className="w-5 h-5"/> Request Reschedule</h3>
-              <p className="text-sm text-gray-600">{getTeacherName(selectedMeeting)} • {getMeetingSubject(selectedMeeting)}</p>
-            </div>
-            {error && <p role="alert" className="mb-3 text-sm text-red-600">{error}</p>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label htmlFor="ptm-rs-date" className="text-sm text-gray-700">Preferred date (optional)</label>
-                <input id="ptm-rs-date" type="date" value={rescheduleForm.date} onChange={e=>setRescheduleForm({...rescheduleForm, date:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
-              </div>
-              <div>
-                <label htmlFor="ptm-rs-time" className="text-sm text-gray-700">Preferred time (optional)</label>
-                <input id="ptm-rs-time" type="time" value={rescheduleForm.time} onChange={e=>setRescheduleForm({...rescheduleForm, time:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2"/>
-              </div>
-              <div className="sm:col-span-2">
-                <label htmlFor="ptm-rs-reason" className="text-sm text-gray-700">Reason <span className="text-red-500">*</span></label>
-                <textarea id="ptm-rs-reason" rows={3} value={rescheduleForm.reason} onChange={e=>setRescheduleForm({...rescheduleForm, reason:e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="Brief reason for rescheduling"/>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={closeModal} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
-              <button onClick={submitReschedule} disabled={loading} className="px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">Submit Request</button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Feedback Modal */}
