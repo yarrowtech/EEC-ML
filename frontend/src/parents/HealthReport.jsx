@@ -15,6 +15,9 @@ import {
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 
 const MOOD_LABELS = {
   excellent: 'Excellent',
@@ -85,52 +88,32 @@ const HealthReport = () => {
   );
 
   if (loading) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-slate-500" aria-live="polite" aria-busy="true">
-        <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
-        <p className="text-sm font-medium">Loading health records…</p>
-      </div>
-    );
+    return <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto"><Loading label="health records" rows={3} /></div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-5xl mx-auto">
-      <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-50 rounded-full -mr-32 -mt-32" />
-        <div className="relative space-y-2">
-          <div className="inline-flex items-center gap-2 bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-            <Heart size={14} />
-            <span>Health &amp; Wellbeing</span>
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-6 max-w-5xl mx-auto">
+      <PageHeader
+        title="Health Record"
+        icon={Heart}
+        subtitle="Medical details from enrolment plus counsellor wellbeing notes. Contact the school office to update anything."
+      >
+        {children.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Child</p>
+            <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Health Report</h1>
-          <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
-            Medical information recorded during enrolment, plus wellbeing notes from the school counsellor.
-            Contact the school office to update any of these details.
-          </p>
-        </div>
-      </header>
+        )}
+      </PageHeader>
 
-      {error && (
-        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="font-medium">{error}</p>
-        </div>
-      )}
+      {error && <ErrorState message={error} />}
 
       {!error && children.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
-          <Heart size={28} className="mx-auto mb-3 text-slate-300" />
-          <p className="text-sm font-medium text-slate-500">No health records available yet</p>
-          <p className="mt-1 text-xs text-slate-400">The school has not added medical details for your children.</p>
-        </div>
+        <EmptyState icon={Heart} title="No health records yet" hint="The school office maintains this — contact them to add medical details." />
       )}
 
       {children.length > 0 && (
         <>
-          <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <p className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Child</p>
-            <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
-          </section>
 
           {child && (
             <>

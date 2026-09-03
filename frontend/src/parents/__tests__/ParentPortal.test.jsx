@@ -340,7 +340,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const feesLink = screen.getByText('Fees');
+      const feesLink = screen.getAllByText('Fees')[0];
       fireEvent.click(feesLink);
 
       await waitFor(() => {
@@ -461,7 +461,7 @@ describe('ParentPortal', () => {
       });
     });
 
-    test('clicking menu item on mobile closes sidebar', async () => {
+    test('mobile "More" sheet lists navigation and closes after a pick', async () => {
       global.innerWidth = 500;
       mockMatchMedia(true); // Mobile
 
@@ -477,14 +477,15 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByLabelText('Open sidebar'));
-      const attendanceLink = screen.getByText('Attendance');
+      fireEvent.click(screen.getByLabelText('More'));
+      const sheet = await screen.findByRole('dialog', { name: 'Menu' });
+      const attendanceLink = within(sheet).getByText('Attendance');
       fireEvent.click(attendanceLink);
 
       await waitFor(() => {
-        const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('-translate-x-full');
+        expect(screen.getByTestId('attendance-report')).toBeInTheDocument();
       });
+      expect(screen.queryByRole('dialog', { name: 'Menu' })).not.toBeInTheDocument();
     });
 
     test('shows mobile menu button when sidebar is closed', async () => {
@@ -596,7 +597,7 @@ describe('ParentPortal', () => {
   });
 
   describe('Responsive Behavior', () => {
-    test('keeps the mobile sidebar closed initially and shows a backdrop after opening it', async () => {
+    test('mobile shell renders the app bar and bottom navigation', async () => {
       global.innerWidth = 500;
 
       render(
@@ -607,34 +608,68 @@ describe('ParentPortal', () => {
         </MemoryRouter>
       );
 
-      expect(screen.queryByLabelText('Close sidebar backdrop')).not.toBeInTheDocument();
-      fireEvent.click(screen.getByLabelText('Open sidebar'));
-      expect(await screen.findByLabelText('Close sidebar backdrop')).toBeInTheDocument();
-    });
-
-    test('clicking backdrop closes sidebar on mobile', async () => {
-      global.innerWidth = 500;
-
-      render(
-        <MemoryRouter initialEntries={['/parents']}>
-          <Routes>
-            <Route path="/parents/*" element={<ParentPortal />} />
-          </Routes>
-        </MemoryRouter>
-      );
-
-      fireEvent.click(screen.getByLabelText('Open sidebar'));
       await waitFor(() => {
-        const backdrop = screen.getByLabelText('Close sidebar backdrop');
-        expect(backdrop).toBeInTheDocument();
+        expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const backdrop = screen.getByLabelText('Close sidebar backdrop');
-      fireEvent.click(backdrop);
+      const bottomNav = screen.getByRole('navigation', { name: 'Primary' });
+      expect(within(bottomNav).getByText('Dashboard')).toBeInTheDocument();
+      expect(within(bottomNav).getByText('Fees')).toBeInTheDocument();
+      expect(within(bottomNav).getByLabelText('More')).toBeInTheDocument();
+    });
+
+    test('mobile bell opens the notifications sheet with items', async () => {
+      global.innerWidth = 500;
+      mockFetch = createMockFetch({
+        '/api/parent/auth/profile': { ok: true, data: mockParentProfile },
+        'http://localhost:5000/api/parent/auth/profile': { ok: true, data: mockParentProfile },
+        'http://localhost:5000/api/notifications/user': {
+          ok: true,
+          data: [{ _id: 'n1', title: 'Fee due soon', message: 'Pay by Friday', isRead: false, createdAt: new Date().toISOString(), type: 'fee' }],
+        },
+      });
+      global.fetch = mockFetch;
+
+      render(
+        <MemoryRouter initialEntries={['/parents']}>
+          <Routes>
+            <Route path="/parents/*" element={<ParentPortal />} />
+          </Routes>
+        </MemoryRouter>
+      );
 
       await waitFor(() => {
-        const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('-translate-x-full');
+        expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('dialog', { name: 'Notifications' })).not.toBeInTheDocument();
+      const appBar = screen.getByRole('banner');
+      fireEvent.click(within(appBar).getByLabelText('Notifications'));
+
+      const sheet = await screen.findByRole('dialog', { name: 'Notifications' });
+      await waitFor(() => {
+        expect(within(sheet).getByText('Fee due soon')).toBeInTheDocument();
+      });
+    });
+
+    test('opening then dismissing the mobile menu sheet', async () => {
+      global.innerWidth = 500;
+
+      render(
+        <MemoryRouter initialEntries={['/parents']}>
+          <Routes>
+            <Route path="/parents/*" element={<ParentPortal />} />
+          </Routes>
+        </MemoryRouter>
+      );
+
+      expect(screen.queryByRole('dialog', { name: 'Menu' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText('More'));
+      expect(await screen.findByRole('dialog', { name: 'Menu' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByLabelText('Close menu'));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'Menu' })).not.toBeInTheDocument();
       });
     });
   });

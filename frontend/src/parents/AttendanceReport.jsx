@@ -18,6 +18,9 @@ import {
 import { parentApiJson } from './parentApi';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 import { getLocalMonthKey } from './attendanceViewModel';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 
 const AttendanceReport = () => {
   const navigate = useNavigate();
@@ -75,59 +78,38 @@ const AttendanceReport = () => {
   }, [selectedChild]);
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
-      {/* Header Section */}
-      <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-              <CheckCircle2 size={14} />
-              <span>Presence Tracker</span>
-            </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Attendance Report</h1>
-            <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
-              Monitor your child's daily presence and punctuality. Data is refreshed in real-time as marked by the class teacher.
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {error && (
-        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="font-medium">{error}</p>
-        </div>
-      )}
-
-      {/* Control Panel */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
-              <User size={14} />
-              Student
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Attendance"
+        icon={CheckCircle2}
+        subtitle="Your child's daily presence, as marked by the class teacher."
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <User size={13} /> Student
             </p>
             {childOptions.length === 0
               ? <p className="text-sm text-slate-400">No children found</p>
               : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Student" />}
           </div>
-
-          <div className="space-y-2">
-            <label htmlFor="att-month" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
-              <Calendar size={14} />
-              Viewing Month
+          <div className="space-y-1.5">
+            <label htmlFor="att-month" className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <Calendar size={13} /> Month
             </label>
             <input
               id="att-month"
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all"
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none transition-all"
+              data-flat
             />
           </div>
         </div>
-      </section>
+      </PageHeader>
+
+      {error && <ErrorState message={error} />}
 
       {/* Stats Summary */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -191,32 +173,11 @@ const AttendanceReport = () => {
         </div>
 
         {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-4">
-            <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
-            <p className="text-sm font-medium text-slate-500 tracking-wide">Loading attendance…</p>
-          </div>
+          <div className="p-5"><Loading label="attendance" rows={4} /></div>
         ) : !selectedChild ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
-            <div className="p-4 bg-slate-50 rounded-full">
-              <User className="w-12 h-12 text-slate-300" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">No student selected</h3>
-              <p className="text-sm text-slate-500">Please choose a child to view their presence history.</p>
-            </div>
-          </div>
+          <div className="p-5"><EmptyState icon={User} title="No student selected" hint="Choose a child above to view their presence history." /></div>
         ) : records.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
-            <div className="p-4 bg-slate-50 rounded-full text-slate-300">
-              <Calendar size={48} />
-            </div>
-            <div className="max-w-xs mx-auto">
-              <h3 className="text-lg font-bold text-slate-900">No records found</h3>
-              <p className="text-sm text-slate-500">
-                Attendance hasn't been marked for the selected month or student yet.
-              </p>
-            </div>
-          </div>
+          <div className="p-5"><EmptyState icon={Calendar} title="No records this month" hint="Attendance hasn't been marked for this month yet — check back later." /></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">

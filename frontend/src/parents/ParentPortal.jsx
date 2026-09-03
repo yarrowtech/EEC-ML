@@ -12,7 +12,6 @@ import {
   AlertOctagon,
   FileEdit,
   FileText,
-  Menu,
   X,
   Award,
   Sun,
@@ -20,6 +19,7 @@ import {
   Clock,
   User,
   ChevronLeft,
+  MoreHorizontal,
   ChevronRight,
   ChevronDown,
   CheckCheck,
@@ -99,10 +99,21 @@ const NAV_GROUPS = [
   },
 ];
 
+// Mobile bottom-bar destinations. Everything else is one tap away via "More".
+const BOTTOM_NAV = [
+  { icon: Home, label: 'Dashboard', path: '/parents' },
+  { icon: BarChart2, label: 'Analytics', path: '/parents/analytics' },
+  { icon: Clock, label: 'Routine', path: '/parents/routine' },
+  { icon: CreditCard, label: 'Fees', path: '/parents/fees' },
+];
+
 const ParentPortal = () => {
   const prefersReducedMotion = useReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(() => (
     typeof window === 'undefined' ? true : window.innerWidth >= 1024
+  ));
+  const [isDesktop, setIsDesktop] = useState(() => (
+    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1024px)').matches
   ));
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -111,11 +122,14 @@ const ParentPortal = () => {
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
   const logoutDialogRef = useDialog(showLogoutConfirm, () => setShowLogoutConfirm(false));
+  const notifSheetRef = useDialog(showNotifications && !isDesktop, () => setShowNotifications(false));
+  const mobileMenuRef = useDialog(mobileMenuOpen, () => setMobileMenuOpen(false));
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
   useEffect(() => {
@@ -167,8 +181,10 @@ const ParentPortal = () => {
     const desktopQuery = window.matchMedia('(min-width: 1024px)');
     const handleBreakpointChange = (event) => {
       setSidebarOpen(event.matches);
+      setIsDesktop(event.matches);
       setProfileOpen(false);
       setShowNotifications(false);
+      setMobileMenuOpen(false);
     };
     desktopQuery.addEventListener?.('change', handleBreakpointChange);
     return () => desktopQuery.removeEventListener?.('change', handleBreakpointChange);
@@ -198,6 +214,17 @@ const ParentPortal = () => {
       ? location.pathname
       : location.pathname.replace(/^\/parent(\/|$)/, '/parents$1')
   );
+  const isNavActive = (path) => {
+    const target = normalizePath(path);
+    if (target === '/parents') return currentPath === target;
+    return currentPath === target || currentPath.startsWith(`${target}/`);
+  };
+  const goTo = (path) => {
+    navigate(path);
+    setMobileMenuOpen(false);
+    setShowNotifications(false);
+    setProfileOpen(false);
+  };
   const handleMenuClick = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setSidebarOpen(false);
@@ -413,26 +440,9 @@ const ParentPortal = () => {
           </div>
         </div>
       )}
-      {/* Mobile Sidebar Toggle */}
-      {!sidebarOpen && <button
-        className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-violet-600 text-white rounded-lg shadow-lg"
-        onClick={() => setSidebarOpen(true)}
-        aria-label="Open sidebar"
-      >
-        <Menu size={24} />
-      </button>}
-
-      {sidebarOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close sidebar backdrop"
-        />
-      )}
-
+      {/* Desktop sidebar only — on mobile the app bar + bottom nav take over. */}
       <div
-        className={`parent-sidebar fixed lg:relative h-[100dvh] min-h-0 shrink-0 bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex flex-col border-r border-gray-200 overflow-hidden
+        className={`parent-sidebar hidden lg:flex fixed lg:relative h-[100dvh] min-h-0 shrink-0 bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex-col border-r border-gray-200 overflow-hidden
           ${sidebarOpen ? 'w-[min(20rem,calc(100vw-1rem))] lg:w-80' : 'w-20'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -678,8 +688,47 @@ const ParentPortal = () => {
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col h-screen bg-slate-50">
-        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-2 sm:p-3">
-          <div className="h-full min-h-full rounded-[2rem] border border-white/80 bg-white/40 shadow-sm backdrop-blur-sm">
+        {/* Mobile app bar */}
+        <header className="lg:hidden sticky top-0 z-40 shrink-0 bg-violet-600 px-4 py-4 text-white shadow-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative shrink-0">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-semibold shadow-inner">
+                  {initials}
+                </div>
+                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold leading-tight tracking-tight">{parentName}</p>
+                <p className="text-xs font-medium text-violet-200">
+                  {childrenCount ? `${childrenCount} ${childrenCount === 1 ? 'child' : 'children'} enrolled` : 'Parent account'}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                aria-label="Notifications"
+                onClick={() => { setShowNotifications((v) => !v); setMobileMenuOpen(false); }}
+                className="relative rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-400" />}
+              </button>
+              <button
+                type="button"
+                aria-label="Account and menu"
+                onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
+                className="rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-0 sm:p-3">
+          <div className="h-full min-h-full sm:rounded-[2rem] sm:border sm:border-white/80 sm:bg-white/40 sm:shadow-sm sm:backdrop-blur-sm">
           <Suspense fallback={<PortalRouteFallback />}>
           <Routes>
             <Route
@@ -688,7 +737,6 @@ const ParentPortal = () => {
                 <ParentDashboard
                   parentName={parentProfile?.name}
                   childrenNames={Array.isArray(parentProfile?.children) ? parentProfile.children : []}
-                  onOpenSidebar={() => setSidebarOpen(true)}
                 />
               }
             />
@@ -712,6 +760,191 @@ const ParentPortal = () => {
           </Suspense>
           </div>
         </main>
+
+        {/* Mobile bottom navigation */}
+        <nav aria-label="Primary" className="lg:hidden shrink-0 border-t border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md">
+          <div className="mx-auto flex max-w-md items-center justify-around">
+            {BOTTOM_NAV.map(({ icon: Icon, label, path }) => {
+              const active = isNavActive(path);
+              return (
+                <button
+                  key={path}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => goTo(path)}
+                  className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${active ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
+                >
+                  <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-100' : ''}`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="text-[10px]">{label}</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-label="More"
+              aria-expanded={mobileMenuOpen}
+              onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
+              className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${mobileMenuOpen ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
+            >
+              <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${mobileMenuOpen ? 'bg-violet-100' : ''}`}>
+                <MoreHorizontal className="h-5 w-5" />
+              </span>
+              <span className="text-[10px]">More</span>
+            </button>
+          </div>
+        </nav>
+
+        {/* Mobile menu sheet — full navigation + account + logout */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden fixed inset-0 z-[120]">
+            <motion.button
+              type="button"
+              aria-label="Close menu"
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setMobileMenuOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
+            />
+            <motion.div
+              ref={mobileMenuRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menu"
+              tabIndex={-1}
+              className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
+              initial={{ y: prefersReducedMotion ? 0 : '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+            >
+              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200" aria-hidden="true" />
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-900">{parentName}</p>
+                    <p className="text-xs text-slate-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</p>
+                  </div>
+                </div>
+                <button type="button" aria-label="Close" onClick={() => setMobileMenuOpen(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                {NAV_GROUPS.map((group) => (
+                  <div key={group.heading || 'primary'} className="mb-1">
+                    {group.heading && <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.heading}</p>}
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isNavActive(item.path);
+                      return (
+                        <button
+                          key={item.path}
+                          type="button"
+                          onClick={() => goTo(item.path)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 active:bg-slate-100'}`}
+                        >
+                          <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">{item.label}</span>
+                            <span className="block truncate text-xs text-slate-400">{item.description}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </nav>
+              <div className="border-t border-slate-100 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 py-3 text-sm font-bold text-red-600 active:scale-[0.98]"
+                >
+                  <LogOut className="h-4 w-4" /> Logout
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Mobile notifications sheet */}
+        {showNotifications && !isDesktop && (
+          <div className="lg:hidden fixed inset-0 z-[130]">
+            <motion.button
+              type="button"
+              aria-label="Close notifications"
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setShowNotifications(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
+            />
+            <motion.div
+              ref={notifSheetRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Notifications"
+              tabIndex={-1}
+              className="absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
+              initial={{ y: prefersReducedMotion ? 0 : '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+            >
+              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200" aria-hidden="true" />
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <Bell size={16} className="text-violet-600" />
+                  <span className="text-sm font-bold text-slate-900">Notifications</span>
+                  {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
+                </div>
+                <div className="flex items-center gap-3">
+                  {unreadCount > 0 && (
+                    <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600">
+                      <CheckCheck size={12} /> Mark all read
+                    </button>
+                  )}
+                  <button type="button" aria-label="Close" onClick={() => setShowNotifications(false)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite">
+                {notifLoading && <p className="px-5 py-6 text-center text-xs text-slate-500">Loading notifications…</p>}
+                {!notifLoading && notifError && <p role="alert" className="px-5 py-5 text-xs text-red-600">{notifError}</p>}
+                {!notifLoading && !notifError && notifications.length === 0 && <p className="px-5 py-8 text-center text-xs text-slate-500">No notifications yet</p>}
+                {!notifLoading && !notifError && notifications.map((notification) => {
+                  const id = String(notification?._id || notification?.id || '');
+                  const isRead = Boolean(notification?.isRead);
+                  return (
+                    <button
+                      key={id || notification?.title}
+                      type="button"
+                      onClick={async () => {
+                        await markRead(id);
+                        setShowNotifications(false);
+                        navigate(resolveNotifPath(notification));
+                      }}
+                      className={`flex w-full items-start gap-2 px-5 py-3 text-left ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
+                    >
+                      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-slate-200' : 'bg-violet-500'}`} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-semibold text-slate-800">{notification?.title || 'Notification'}</span>
+                        {notification?.message && <span className="mt-0.5 block line-clamp-2 text-[11px] text-slate-500">{formatNotificationMessage(notification.message)}</span>}
+                        <span className="mt-1 block text-[10px] text-slate-400">{timeAgo(notification?.createdAt)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
     </div>
     <DesktopNotificationPermissionModal

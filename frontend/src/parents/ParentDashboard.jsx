@@ -4,7 +4,6 @@ import {
   Calendar,
   CreditCard,
   Video,
-  Menu,
   Clock,
   Users,
   Sparkles,
@@ -291,11 +290,13 @@ const AIDigestCard = ({ studentId, studentName, type }) => {
 
 const ParentDashboard = ({
   parentName,
-  onOpenSidebar,
 }) => {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [currentTime, setCurrentTime] = useState(new Date());
+  // School year runs April→March, so before April we're still in the prior term.
+  const termStartYear = currentTime.getMonth() >= 3 ? currentTime.getFullYear() : currentTime.getFullYear() - 1;
+  const academicTermLabel = `Academic Term ${termStartYear}–${String(termStartYear + 1).slice(-2)}`;
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const [childrenData, setChildrenData] = useState([]);
   const [meetings, setMeetings] = useState([]);
@@ -380,17 +381,6 @@ const ParentDashboard = ({
     });
   }, []);
 
-  const academicSession = useMemo(() => {
-    const year = currentTime.getFullYear();
-    const startYear = currentTime.getMonth() >= 3 ? year : year - 1;
-    return `${startYear}–${startYear + 1} Session`;
-  }, [currentTime]);
-
-  const lastUpdatedLabel = useMemo(() => {
-    if (!lastUpdatedAt) return loading ? 'Refreshing now' : 'Update unavailable';
-    return `Today, ${lastUpdatedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-  }, [lastUpdatedAt, loading]);
-
   const statsData = useMemo(() => {
     const nextMeeting = upcomingMeetings[0];
     const openInvoices = Number(feeSummary?.openInvoiceCount || 0);
@@ -467,75 +457,36 @@ const ParentDashboard = ({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6 space-y-6 max-w-7xl mx-auto">
-      <section className="relative isolate overflow-hidden rounded-[2rem] bg-slate-50 p-2 sm:p-4 lg:p-6">
-        <div className="absolute inset-0 -z-10 pointer-events-none" aria-hidden="true">
-          <motion.div
-            className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-300/30 blur-3xl sm:h-96 sm:w-96"
-            animate={prefersReducedMotion ? undefined : { x: [0, -32, 0], y: [0, 24, 0] }}
-            transition={{ repeat: Infinity, duration: 10, ease: 'easeInOut' }}
-          />
-          <motion.div
-            className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl sm:h-80 sm:w-80"
-            animate={prefersReducedMotion ? undefined : { x: [0, 32, 0], y: [0, -24, 0] }}
-            transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut', delay: 2 }}
-          />
-          <motion.div
-            className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-pink-300/10 blur-3xl"
-            animate={prefersReducedMotion ? undefined : { scale: [1, 1.2, 1], x: [0, 18, 0], y: [0, -18, 0] }}
-            transition={{ repeat: Infinity, duration: 16, ease: 'easeInOut', delay: 0.5 }}
-          />
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 28 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: 'easeOut' }}
-          className="w-full rounded-[1.75rem] border border-white/80 bg-white/60 p-4 shadow-2xl shadow-slate-900/10 backdrop-blur-xl sm:p-6 lg:p-8"
-        >
-          <div className="relative mb-6 flex w-full items-center justify-center border-b border-white/60 pb-5">
-            <motion.button
-              type="button"
-              whileHover={prefersReducedMotion ? undefined : { scale: 1.05 }}
-              whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
-              onClick={onOpenSidebar}
-              className="absolute left-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/60 lg:hidden"
-              aria-label="Open parent navigation"
-            >
-              <Menu size={20} />
-            </motion.button>
-            <span className="rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs font-medium text-slate-500 backdrop-blur-sm">
+    <div className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6 flex flex-col gap-4 sm:gap-6 max-w-7xl mx-auto">
+      <motion.section
+        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.5, ease: 'easeOut' }}
+        className="relative isolate overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-sky-50 via-violet-50 to-purple-50/60 p-5 shadow-sm sm:rounded-[1.75rem] sm:p-6 lg:p-8"
+      >
+        <div className="pointer-events-none absolute -bottom-6 -right-6 h-32 w-32 rounded-full bg-purple-200/50 blur-2xl sm:h-48 sm:w-48" aria-hidden="true" />
+        <div className="relative z-10">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="inline-flex items-center rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-semibold text-violet-800 shadow-sm">
+              {academicTermLabel}
+            </span>
+            <span className="text-xs font-medium text-slate-500">
               {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
             </span>
           </div>
-
-          <div className="mb-7 flex flex-col items-center text-center sm:mb-8">
-            <motion.h1
-              initial={{ opacity: 0, x: prefersReducedMotion ? 0 : -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: prefersReducedMotion ? 0 : 0.15, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="text-2xl font-bold tracking-tight text-slate-800 sm:text-3xl lg:text-4xl"
-            >
-              {getGreeting()}, <br className="sm:hidden" />
-              <span className="bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">{parentName || 'Parent Account'}</span>
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.5 }}
-              className="mt-1 max-w-xl text-center text-sm text-slate-500 sm:text-base"
-            >
-              Track academic progress, monitor wellbeing, and stay connected with the institution.
-            </motion.p>
-          </div>
-
+          <h1 className="text-xl font-extrabold leading-snug tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
+            {getGreeting()}, <span className="text-violet-600">{parentName || 'Parent Account'}</span>
+          </h1>
+          <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-600 sm:text-sm">
+            Track academic progress, monitor wellbeing, and stay connected with the school.
+          </p>
           {error && (
-            <div role="alert" className="mx-auto mb-4 max-w-xl rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-center text-sm text-rose-700">
+            <div role="alert" className="mt-4 max-w-xl rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
               {error}
             </div>
           )}
-        </motion.div>
-      </section>
+        </div>
+      </motion.section>
 
       <motion.section
         initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 16 }}

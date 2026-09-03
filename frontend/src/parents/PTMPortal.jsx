@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Clock, Video, Phone, Users, Check, X, ArrowLeftRight, Star, ExternalLink, Copy, ShieldCheck } from 'lucide-react';
 import { parentApiJson } from './parentApi';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 import { useDialog } from './useDialog';
 
 // Jitsi hash-config for a privacy-respecting room: show the prejoin screen,
@@ -254,16 +257,13 @@ const PTMPortal = () => {
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto">
-      <header className="mb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Parent-Teacher Meetings</h1>
-        <p className="mt-1 text-sm text-slate-500">Respond to meeting requests and join video calls.</p>
-      </header>
+      <PageHeader
+        title="Meetings"
+        icon={Video}
+        subtitle="Respond to meeting requests and join video calls."
+      />
 
-      {error && (
-        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4"><ErrorState message={error} /></div>}
 
       {/* Tabs */}
       <div className="mb-4 inline-flex rounded-xl bg-slate-100 p-1">
@@ -339,12 +339,16 @@ const PTMPortal = () => {
 
           <div className="divide-y divide-slate-100">
             {loading && activeMeetings.length === 0 && (
-              <p className="p-6 text-center text-sm text-slate-500" aria-live="polite">Loading meetings…</p>
+              <div className="p-4"><Loading label="meetings" rows={2} /></div>
             )}
             {!loading && filteredActive.length === 0 && (
-              <p className="p-8 text-center text-sm text-slate-500">
-                {activeMeetings.length === 0 ? 'No meetings scheduled yet.' : 'Nothing in this filter.'}
-              </p>
+              <div className="p-4">
+                <EmptyState
+                  icon={Video}
+                  title={activeMeetings.length === 0 ? 'No meetings scheduled' : 'Nothing in this filter'}
+                  hint={activeMeetings.length === 0 ? 'Requests from teachers will appear here.' : undefined}
+                />
+              </div>
             )}
             {filteredActive.map((meeting) => {
               const meetingId = getMeetingId(meeting);
@@ -422,7 +426,7 @@ const PTMPortal = () => {
           </div>
           <div className="divide-y divide-slate-100">
             {pastMeetings.length === 0 && (
-              <p className="p-8 text-center text-sm text-slate-500">No past meetings recorded.</p>
+              <div className="p-4"><EmptyState icon={Video} title="No past meetings" /></div>
             )}
             {pastMeetings.map((m) => {
               const meetingId = getMeetingId(m);
@@ -478,7 +482,7 @@ const PTMPortal = () => {
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={closeModal} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
-              <button onClick={submitReschedule} disabled={loading} className="px-3 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50">Submit Request</button>
+              <button onClick={submitReschedule} disabled={loading} className="px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">Submit Request</button>
             </div>
           </div>
         </div>
@@ -517,7 +521,7 @@ const PTMPortal = () => {
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={closeModal} className="px-3 py-2 rounded-lg border border-gray-300">Cancel</button>
-              <button onClick={submitFeedback} disabled={loading} className="px-3 py-2 rounded-lg bg-yellow-500 text-black disabled:opacity-50">Submit Feedback</button>
+              <button onClick={submitFeedback} disabled={loading} className="px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50">Submit Feedback</button>
             </div>
           </div>
         </div>

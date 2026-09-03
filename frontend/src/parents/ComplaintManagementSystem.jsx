@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, FileText, Loader2, Plus, Send } from 'lucide-react';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiJson } from './parentApi';
 
@@ -184,21 +187,12 @@ const ComplaintManagementSystem = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6 space-y-6">
-      <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">Parent Services</p>
-            <h1 className="text-2xl font-semibold text-gray-900 mt-1">Complaints & Support</h1>
-            <p className="text-sm text-gray-600 mt-2">
-              Submit issues directly to the school support desk and track the status in real time.
-            </p>
-          </div>
-          <div className="text-sm text-gray-500">
-            <p className="font-medium text-gray-800">{stats.total} tickets</p>
-            <p>Last updated {new Date().toLocaleDateString()}</p>
-          </div>
-        </div>
-      </section>
+      <PageHeader
+        title="Complaints"
+        icon={AlertCircle}
+        subtitle="Raise an issue with the school support desk and track its status."
+        actions={<span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{stats.total} tickets</span>}
+      />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -366,13 +360,11 @@ const ComplaintManagementSystem = () => {
           </div>
 
           {loading ? (
-            <div className="text-sm text-gray-500">Loading complaints…</div>
+            <Loading label="complaints" rows={3} />
           ) : error ? (
-            <div className="text-sm text-red-600 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" /> {error}
-            </div>
+            <ErrorState message={error} onRetry={fetchComplaints} />
           ) : filteredComplaints.length === 0 ? (
-            <div className="text-sm text-gray-500">No complaints found.</div>
+            <EmptyState icon={FileText} title="No complaints" hint={searchTerm || statusFilter !== 'all' ? 'Nothing matches this filter.' : "You haven't raised any yet."} />
           ) : (
             <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
               {filteredComplaints.map((complaint) => {

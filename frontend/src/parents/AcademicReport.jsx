@@ -20,6 +20,9 @@ import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { normalizeReportCard } from './reportCardShape';
 import { parentApiJson } from './parentApi';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 
 const AcademicReport = () => {
   const navigate = useNavigate();
@@ -104,62 +107,44 @@ const AcademicReport = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
-      {/* Header Section */}
-      <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-              <BarChart3 size={14} />
-              <span>Report Card</span>
-            </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Report Card</h1>
-            <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
-              Official marks, subject totals and assessment history, as published by the school.
-            </p>
-          </div>
-          
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Report Card"
+        icon={BarChart3}
+        subtitle="Official marks, subject totals and assessment history, as published by the school."
+        actions={(
           <button
             onClick={handleExport}
             disabled={!selectedReport || loading || isExporting}
-            className="flex items-center justify-center space-x-2 bg-slate-900 text-white px-6 py-3 rounded-2xl font-semibold hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-slate-200"
+            className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-95 disabled:opacity-50"
           >
-            {isExporting ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
-            <span>{isExporting ? 'Generating PDF...' : 'Export Snapshot'}</span>
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+            <span>{isExporting ? 'Generating…' : 'Export PDF'}</span>
           </button>
-        </div>
-      </header>
-
-      {/* Control Panel */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <User size={14} />
-              Child
+        )}
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <User size={13} /> Child
             </p>
             {childOptions.length === 0
               ? <p className="text-sm text-slate-400">No linked children</p>
               : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />}
           </div>
-
-          <div className="space-y-2">
-            <span id="academic-view-label" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <Filter size={14} />
-              Report View
+          <div className="space-y-1.5">
+            <span id="academic-view-label" className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <Filter size={13} /> View
             </span>
-            <div role="group" aria-labelledby="academic-view-label" className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-200">
+            <div role="group" aria-labelledby="academic-view-label" className="inline-flex gap-1 rounded-xl bg-slate-100 p-1" data-flat>
               {['detailed', 'summary'].map((view) => (
                 <button
                   key={view}
                   type="button"
                   onClick={() => setViewMode(view)}
                   aria-pressed={viewMode === view}
-                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${
-                    viewMode === view
-                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
-                      : 'text-slate-500 hover:text-slate-700'
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition ${
+                    viewMode === view ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   {view}
@@ -168,14 +153,9 @@ const AcademicReport = () => {
             </div>
           </div>
         </div>
+      </PageHeader>
 
-        {error && (
-          <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="font-medium">{error}</p>
-          </div>
-        )}
-      </section>
+      {error && <ErrorState message={error} />}
 
       {/* Stats Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -288,32 +268,11 @@ const AcademicReport = () => {
           </div>
 
           {loading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 space-y-4">
-              <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
-              <p className="text-sm font-medium text-slate-500 tracking-wide">Syncing academic records...</p>
-            </div>
+            <div className="p-5"><Loading label="report card" rows={4} /></div>
           ) : !selectedReport ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
-              <div className="p-4 bg-slate-50 rounded-full">
-                <User className="w-12 h-12 text-slate-300" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">No report available</h3>
-                <p className="text-sm text-slate-500">Could not retrieve academic records for this student.</p>
-              </div>
-            </div>
+            <div className="p-5"><EmptyState icon={User} title="No report card yet" hint="The school hasn't published a report card for this child." /></div>
           ) : selectedReport.exams.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-4">
-              <div className="p-4 bg-slate-50 rounded-full text-slate-300">
-                <FileText size={48} />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">No Exams Recorded</h3>
-                <p className="text-sm text-slate-500 max-w-xs mx-auto">
-                  Official exam results have not been published for this academic cycle.
-                </p>
-              </div>
-            </div>
+            <div className="p-5"><EmptyState icon={FileText} title="No exams recorded" hint="Exam results haven't been published for this cycle yet." /></div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">

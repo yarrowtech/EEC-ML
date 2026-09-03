@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, Calendar, Clock, FileText, RefreshCw, User } from 'lucide-react';
+import { Calendar, Clock, FileText, RefreshCw, User } from 'lucide-react';
 import { parentApiJson } from './parentApi';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 
 const STATUS_CONFIG = {
   approved: {
@@ -58,50 +61,30 @@ const ExcuseLetters = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="space-y-4" aria-busy="true" aria-live="polite">
-        <span className="sr-only">Loading excuse letters…</span>
-        <div className="h-20 rounded-2xl bg-white animate-pulse" />
-        {[1, 2, 3].map((item) => (
-          <div key={item} className="h-36 rounded-2xl bg-white animate-pulse" />
-        ))}
-      </div>
-    );
+    return <div className="p-1"><Loading label="excuse letters" rows={3} /></div>;
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
-            <FileText size={20} className="text-amber-600" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">Excuse Letters</h1>
-            <p className="text-xs text-gray-500">Leave requests submitted for your children</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={loadLetters}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-gray-500 hover:bg-indigo-50 hover:text-indigo-600"
-        >
-          <RefreshCw size={13} /> Reload
-        </button>
-      </div>
+      <PageHeader
+        title="Excuse Letters"
+        icon={FileText}
+        subtitle="Leave requests submitted for your children."
+        actions={(
+          <button
+            type="button"
+            onClick={loadLetters}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-violet-50 hover:text-violet-700"
+          >
+            <RefreshCw size={13} /> Reload
+          </button>
+        )}
+      />
 
-      {error && (
-        <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle size={15} /> {error}
-        </div>
-      )}
+      {error && <ErrorState message={error} onRetry={loadLetters} />}
 
       {letters.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 bg-white py-16 text-center">
-          <FileText size={28} className="mx-auto mb-3 text-gray-300" />
-          <p className="text-sm font-medium text-gray-500">No excuse letters yet</p>
-          <p className="mt-1 text-xs text-gray-400">Letters submitted by your children will appear here.</p>
-        </div>
+        <EmptyState icon={FileText} title="No excuse letters yet" hint="Leave requests your children submit at school will show up here." />
       ) : (
         <div className="space-y-3">
           {letters.map((letter) => {

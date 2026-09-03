@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -156,18 +156,30 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
   });
 };
 
-const loadRazorpayScript = () => new Promise((resolve) => {
-  if (window?.Razorpay) {
-    resolve(true);
-    return;
-  }
-  const script = document.createElement('script');
-  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-  script.async = true;
-  script.onload = () => resolve(true);
-  script.onerror = () => resolve(false);
-  document.body.appendChild(script);
-});
+// Single shared loader so the Fees screen can warm the script on mount and the
+// "Pay Now" click can reuse the same in-flight/settled promise instead of
+// racing a fresh <script> tag at the worst possible moment.
+let razorpayScriptPromise = null;
+const loadRazorpayScript = ({ retry = false } = {}) => {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (window.Razorpay) return Promise.resolve(true);
+  if (retry) razorpayScriptPromise = null;
+  if (razorpayScriptPromise) return razorpayScriptPromise;
+
+  razorpayScriptPromise = new Promise((resolve) => {
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    const script = existing || document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.addEventListener('load', () => resolve(true), { once: true });
+    script.addEventListener('error', () => {
+      razorpayScriptPromise = null; // allow a later retry
+      resolve(false);
+    }, { once: true });
+    if (!existing) document.body.appendChild(script);
+  });
+  return razorpayScriptPromise;
+};
 
 const getStoredToken = () => {
   try {
@@ -210,6 +222,8 @@ const FeesPayment = () => {
   const [pdfSchool, setPdfSchool] = useState(DEFAULT_PDF_SCHOOL);
   const [downloadingFeesCardId, setDownloadingFeesCardId] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  // idle → loading → ready | unreachable — drives the checkout fallback message.
+  const [razorpayState, setRazorpayState] = useState('idle');
 
   const childOptions = useMemo(
     () => children.map((child) => ({ id: String(child?._id || child?.id || ''), name: child?.name || 'Child' })),
@@ -319,6 +333,25 @@ const FeesPayment = () => {
     fetchPdfSchool();
   }, []);
 
+  // Warm the Razorpay checkout script as soon as the Fees screen opens, so a
+  // blocked or slow network surfaces before the parent commits to paying.
+  const warmRazorpay = useCallback((retry = false) => {
+    setRazorpayState((prev) => (prev === 'ready' ? prev : 'loading'));
+    return loadRazorpayScript({ retry }).then((ok) => {
+      setRazorpayState(ok ? 'ready' : 'unreachable');
+      return ok;
+    });
+  }, []);
+
+  useEffect(() => {
+    warmRazorpay();
+  }, [warmRazorpay]);
+
+  const officeContact = String(pdfSchool?.schoolContactLine || '').trim();
+  const paymentUnreachableMessage = officeContact
+    ? `Online payment isn't reachable right now — pay at the school office (${officeContact}) or try again in a moment.`
+    : "Online payment isn't reachable right now — pay at the school office or try again in a moment.";
+
   useEffect(() => {
     fetchInvoices(getChildId(selectedChild));
   }, [selectedChildId]);
@@ -392,7 +425,7 @@ const FeesPayment = () => {
       }, navigate);
       const orderData = await orderRes.json();
       if (!orderRes.ok) throw new Error(orderData?.error || 'Failed to create payment order');
-      if (!await loadRazorpayScript()) throw new Error('Unable to load Razorpay');
+      if (!(await warmRazorpay(true))) throw new Error(paymentUnreachableMessage);
       if (!orderData.keyId) throw new Error('Razorpay key is missing');
 
       const razorpay = new window.Razorpay({
@@ -508,7 +541,7 @@ const FeesPayment = () => {
   const isProcessingSelected = selectedInvoice && processingInvoiceId === selectedInvoice._id;
 
   return (
-    <div className={`fees-dashboard-page w-full px-4 py-4 md:p-30 ${selectedBalance > 0 ? 'pb-28 md:pb-8' : ''}`}>
+    <div className="fees-dashboard-page w-full px-4 py-4 pb-6 md:p-30">
       <section className="fees-glass-card mx-auto w-full max-w-6xl p-5 sm:p-6 md:p-8" aria-labelledby="fees-dashboard-title">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -571,6 +604,13 @@ const FeesPayment = () => {
             </div>
 
             {selectedChild && !getChildId(selectedChild) && <p className="rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-xs text-amber-700">This child is not linked to a student record. Please contact the school office.</p>}
+            {razorpayState === 'unreachable' && (
+              <p className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800" role="status">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1">{paymentUnreachableMessage}</span>
+                <button type="button" onClick={() => warmRazorpay(true)} className="font-semibold text-amber-900 underline underline-offset-2">Retry</button>
+              </p>
+            )}
             {error && <p className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-600" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</p>}
             {successMessage && <p className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs text-emerald-700" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> {successMessage}</p>}
 
@@ -673,7 +713,7 @@ const FeesPayment = () => {
       </section>
 
       {selectedInvoice && selectedBalance > 0 && (
-        <div className="fees-mobile-pay fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-[#fef7ff] via-[#fef7ff]/95 to-transparent px-4 pb-4 pt-8 md:hidden">
+        <div className="fees-mobile-pay sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-[#fef7ff] via-[#fef7ff]/95 to-transparent px-4 pb-4 pt-8 md:hidden">
           <button
             type="button"
             onClick={() => handlePayNow(selectedInvoice, activeInstallment?.remaining || selectedBalance)}

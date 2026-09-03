@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { CalendarCheck2, CalendarDays, Download, Loader2 } from 'lucide-react';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 import { parentApiFetch } from './parentApi';
 
 const formatDate = (value) => {
@@ -318,24 +320,11 @@ const HolidayList = () => {
           </div>
 
           {loading ? (
-            <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-sm text-slate-500" aria-live="polite">
-              <div className="rounded-2xl border border-white/80 bg-white/55 p-4 shadow-sm backdrop-blur-xl">
-                <Loader2 className="h-6 w-6 animate-spin text-violet-600" aria-hidden="true" />
-              </div>
-              Loading holidays…
-            </div>
+            <div className="p-5"><Loading label="holidays" rows={4} /></div>
           ) : error ? (
-            <div className="m-5 rounded-2xl border border-red-200/70 bg-red-50/60 p-5 text-sm text-red-700 backdrop-blur-xl" role="alert">
-              {error}
-            </div>
+            <div className="p-5"><ErrorState message={error} /></div>
           ) : holidays.length === 0 ? (
-            <div className="flex min-h-64 flex-col items-center justify-center p-8 text-center">
-              <div className="mb-4 rounded-2xl border border-white/80 bg-white/55 p-4 text-slate-400 shadow-sm backdrop-blur-xl">
-                <CalendarDays className="h-8 w-8" aria-hidden="true" />
-              </div>
-              <p className="font-semibold text-slate-700">No holidays announced yet</p>
-              <p className="mt-1 max-w-sm text-sm text-slate-500">New holidays will appear here when they are published by the school.</p>
-            </div>
+            <div className="p-5"><EmptyState icon={CalendarDays} title="No holidays announced yet" hint="Holidays appear here once the school publishes them." /></div>
           ) : (
             <div className="overflow-x-auto p-3 sm:p-5">
               <table className="min-w-full border-separate border-spacing-y-2 text-sm">

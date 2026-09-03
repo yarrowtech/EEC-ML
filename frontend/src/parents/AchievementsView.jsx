@@ -19,6 +19,9 @@ import {
 import toast from 'react-hot-toast';
 import { parentApiJson } from './parentApi';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
+import PageHeader from './PageHeader';
+import Loading from './Loading';
+import { EmptyState, ErrorState } from './StateBlock';
 
 const AchievementsView = () => {
   const navigate = useNavigate();
@@ -98,43 +101,23 @@ const AchievementsView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
-      {/* Header Section */}
-      <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-              <Award size={14} className="fill-yellow-500" />
-              <span>Wall of Fame</span>
-            </div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Student Achievements</h1>
-            <p className="text-slate-600 max-w-2xl text-sm sm:text-base leading-relaxed">
-              Celebrate your child's success. View official awards, medals, and certifications earned throughout the academic year.
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {error && (
-        <div role="alert" className="flex items-center gap-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-1">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="font-medium">{error}</p>
-        </div>
-      )}
-
-      {/* Control Panel */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-6">
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 ml-1">
-            <Users size={14} />
-            Child
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Achievements"
+        icon={Award}
+        subtitle="Awards, medals and certificates your child has earned this year."
+      >
+        <div className="space-y-1.5">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+            <Users size={13} /> Child
           </p>
           {childOptions.length === 0
             ? <p className="text-sm text-slate-400">No children found</p>
             : <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />}
         </div>
-      </section>
+      </PageHeader>
+
+      {error && <ErrorState message={error} />}
 
       {/* Stats Summary */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -201,20 +184,9 @@ const AchievementsView = () => {
 
         <div className="p-6">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-24 space-y-4">
-              <Loader2 className="w-10 h-10 text-violet-500 animate-spin" />
-              <p className="text-sm font-medium text-slate-500 tracking-wide">Loading achievements…</p>
-            </div>
+            <Loading label="achievements" rows={3} />
           ) : !selectedChild || selectedChild.achievements.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
-              <div className="p-6 bg-slate-50 rounded-full text-slate-200">
-                <Search size={48} />
-              </div>
-              <div className="max-w-xs mx-auto">
-                <h3 className="text-lg font-bold text-slate-900">No achievements yet</h3>
-                <p className="text-sm text-slate-500">Official awards and certificates will be listed here once they are recorded by the administration.</p>
-              </div>
-            </div>
+            <EmptyState icon={Award} title="No achievements yet" hint="Awards and certificates appear here once the school records them." />
           ) : (
             <div className="grid gap-6">
               {selectedChild.achievements.map((achievement, idx) => (
