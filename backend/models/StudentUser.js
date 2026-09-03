@@ -16,8 +16,6 @@ const DERIVED_KEY_ALLOWED_ENVS = new Set(['development', 'test']);
 const resolveEncryptionKey = () => {
   const raw = String(process.env.STUDENT_DATA_ENCRYPTION_KEY || '').trim();
   if (!raw) {
-<<<<<<< HEAD
-=======
     if (!DERIVED_KEY_ALLOWED_ENVS.has(process.env.NODE_ENV)) {
       throw new Error(
         'STUDENT_DATA_ENCRYPTION_KEY must be set explicitly outside development (hex:<64> or base64:<44>). '
@@ -25,7 +23,6 @@ const resolveEncryptionKey = () => {
       );
     }
     // Development/test only: derive from JWT_SECRET (never the DB connection string).
->>>>>>> 2d009888 (Student Profiel audit and fixed)
     const fallbackSecret = String(
       process.env.JWT_SECRET
       || process.env.SUPER_ADMIN_INCOMING_SECRET
@@ -34,11 +31,7 @@ const resolveEncryptionKey = () => {
     if (!fallbackSecret) return null;
     if (!warnedDerivedEncryptionKey) {
       warnedDerivedEncryptionKey = true;
-<<<<<<< HEAD
-      console.warn('[StudentUser] STUDENT_DATA_ENCRYPTION_KEY not set. Using derived fallback key from existing env secret. Set STUDENT_DATA_ENCRYPTION_KEY explicitly for production key management.');
-=======
       console.warn('[StudentUser] STUDENT_DATA_ENCRYPTION_KEY not set. Using derived fallback key from JWT_SECRET (development/test only). Set STUDENT_DATA_ENCRYPTION_KEY explicitly.');
->>>>>>> 2d009888 (Student Profiel audit and fixed)
     }
     return crypto.createHash('sha256').update(fallbackSecret).digest();
   }

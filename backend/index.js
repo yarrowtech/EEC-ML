@@ -109,9 +109,17 @@ const rateLimitIdentity = (req, bucket) => {
   return `${bucket}:ip:${getClientIp(req) || req.ip || 'unknown'}`;
 };
 
+const isAuthApiRequest = (req) => (
+  /^\/api\/(?:auth|(?:admin|teacher|staff|student|parent|principal)\/auth)(?:\/|$)/
+    .test(req.originalUrl || req.url || '')
+);
+
 const createApiLimiter = (bucket, { windowMs, max }) => rateLimit({
   windowMs, max,
-  skip: (req) => req.method === 'OPTIONS',
+  // Authentication endpoints have their own tighter limiter below. Keeping
+  // them out of the broad per-IP bucket prevents normal localhost/NAT traffic
+  // from locking every user out while preserving brute-force protection.
+  skip: (req) => req.method === 'OPTIONS' || (bucket === 'api:general' && isAuthApiRequest(req)),
   keyGenerator: (req) => rateLimitIdentity(req, bucket),
 });
 
