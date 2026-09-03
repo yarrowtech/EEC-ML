@@ -232,6 +232,52 @@ router.get('/parent', authParent, async (req, res) => {
   }
 });
 
+// Parent: submit an excuse letter to the student's class teacher.
+router.post('/parent', authParent, async (req, res) => {
+  try {
+    const parent = await ParentUser.findById(req.user.id).select('schoolId campusId childrenIds children name username email mobile').lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const schoolId = parent.schoolId || req.schoolId || null;
+    const campusId = parent.campusId || req.campusId || null;
+    const { studentId, dateFrom, dateTo, reason, reasonType, additionalNotes, emergencyContact } = req.body || {};
+    if (!schoolId || !studentId || !dateFrom || !dateTo || !String(reason || '').trim()) {
+      return res.status(400).json({ error: 'studentId, dateFrom, dateTo and reason are required' });
+    }
+    const childIdList = Array.isArray(parent.childrenIds) ? parent.childrenIds.map(String) : [];
+    let student = await StudentUser.findOne({
+      _id: studentId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      ...(childIdList.length ? { _id: { $in: childIdList } } : {}),
+    }).lean();
+    if (!student && Array.isArray(parent.children) && parent.children.length) {
+      const names = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
+      if (names.length) {
+        const namedChild = await StudentUser.findOne({ _id: studentId, schoolId, ...(campusId ? { campusId } : {}), name: { $in: names } }).lean();
+        if (namedChild) student = namedChild;
+      }
+    }
+    if (!student) return res.status(403).json({ error: 'Student is not linked to this parent account' });
+    const classCandidates = resolveClassCandidates(student.grade);
+    const classDoc = await ClassModel.findOne({ schoolId, ...(campusId ? { campusId } : {}), name: { $in: classCandidates } }).select('_id name').lean();
+    const sectionDoc = classDoc && student.section
+      ? await Section.findOne({ schoolId, ...(campusId ? { campusId } : {}), classId: classDoc._id, name: String(student.section).trim() }).select('_id name').lean()
+      : null;
+    if (!classDoc || !sectionDoc) return res.status(400).json({ error: 'Class or section not found for student' });
+    const created = await ExcuseLetter.create({
+      schoolId, campusId, studentId: student._id, studentName: student.name || 'Student',
+      rollNumber: student.roll ? String(student.roll) : '', classId: classDoc._id, sectionId: sectionDoc._id,
+      className: classDoc.name || '', sectionName: sectionDoc.name || '',
+      parentName: parent.name || parent.username || '', parentEmail: parent.email || '', parentPhone: parent.mobile || '',
+      dateFrom: new Date(dateFrom), dateTo: new Date(dateTo), reason: String(reason).trim(),
+      reasonType: String(reasonType || 'other'), additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
+    });
+    return res.status(201).json(created);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
 // Teacher: list letters for their class sections (class teacher only)
 router.get('/teacher', authTeacher, async (req, res) => {
   try {

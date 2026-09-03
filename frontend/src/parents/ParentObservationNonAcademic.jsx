@@ -246,13 +246,13 @@ const ParentObservationNonAcademic = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto font-sans antialiased">
       {/* Header */}
       <header className="relative overflow-hidden bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm group transition-all hover:shadow-md">
         <div className="absolute top-0 right-0 w-64 h-64 bg-violet-50 rounded-full -mr-32 -mt-32 transition-transform group-hover:scale-110 duration-700" />
         <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center space-x-2 bg-violet-100 text-violet-700 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide">
               <Eye size={14} />
               <span>Wellbeing tracker</span>
             </div>
@@ -280,7 +280,7 @@ const ParentObservationNonAcademic = () => {
                 <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center text-violet-700">
                   <FileEdit size={16} />
                 </div>
-                <h2 className="text-lg font-bold text-slate-900">New Observation</h2>
+                <h2 className="text-lg font-semibold text-slate-900">New Observation</h2>
               </div>
               <div className="flex items-center gap-2 text-xs font-bold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full">
                 <Calendar size={12} />
@@ -293,7 +293,7 @@ const ParentObservationNonAcademic = () => {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-session" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Academic Year</label>
+                    <label htmlFor="obs-session" className="ml-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Academic Year</label>
                     <div className="relative group">
                       <select
                         id="obs-session"
@@ -309,7 +309,7 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-class" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Class</label>
+                    <label htmlFor="obs-class" className="ml-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Class</label>
                     <div className="relative group">
                       <select
                         id="obs-class"
@@ -324,7 +324,7 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-section" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Section</label>
+                    <label htmlFor="obs-section" className="ml-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Section</label>
                     <div className="relative group">
                       <select
                         id="obs-section"
@@ -339,7 +339,7 @@ const ParentObservationNonAcademic = () => {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label htmlFor="obs-date" className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Report Date</label>
+                    <label htmlFor="obs-date" className="ml-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Report Date</label>
                     <input
                       id="obs-date"
                       type="date"
@@ -356,7 +356,7 @@ const ParentObservationNonAcademic = () => {
                       <Users size={16} className="text-slate-400" />
                       Select Child
                     </h3>
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-white px-2 py-1 rounded-md border border-slate-100">
+                    <span className="rounded-md border border-slate-100 bg-white px-2 py-1 text-xs font-medium text-slate-500">
                       {filteredChildren.length} children matching filters
                     </span>
                   </div>
@@ -391,7 +391,7 @@ const ParentObservationNonAcademic = () => {
                             <p className={`text-sm font-bold truncate ${String(studentId) === String(child.id) ? 'text-slate-900' : 'text-slate-700'}`}>
                               {child.name}
                             </p>
-                            <p className="text-[11px] font-semibold text-slate-400">
+                            <p className="text-xs font-medium text-slate-500">
                               {child.className} {child.section} • Roll {child.roll || '-'}
                             </p>
                           </div>
@@ -425,7 +425,7 @@ const ParentObservationNonAcademic = () => {
                     </span>
                   </div>
                 </div>
-                <div className="text-[11px] font-bold text-slate-500 italic">Progress autosaved in session</div>
+                <div className="text-xs font-medium italic text-slate-500">Progress autosaved in session</div>
               </div>
 
               {/* Observation Sections */}
@@ -437,7 +437,7 @@ const ParentObservationNonAcademic = () => {
                         <section.icon size={20} />
                       </div>
                       <div>
-                        <h3 className="text-lg font-extrabold text-slate-900">{section.title}</h3>
+                        <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
                         <p className="text-xs font-semibold text-slate-400">Section {sIdx + 1} Assessment</p>
                       </div>
                     </div>
@@ -465,7 +465,7 @@ const ParentObservationNonAcademic = () => {
                                   }`}
                                 >
                                   <span className="text-xl mb-1" aria-hidden="true">{getEmoji(opt)}</span>
-                                  <span className="text-[11px] font-bold text-center leading-tight uppercase tracking-tighter">{opt}</span>
+                                  <span className="text-center text-xs font-semibold leading-tight">{opt}</span>
                                 </button>
                               );
                             })}
@@ -484,7 +484,7 @@ const ParentObservationNonAcademic = () => {
                     <MessageSquare size={20} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-extrabold text-slate-900">Parent Remarks</h3>
+                    <h3 className="text-lg font-semibold text-slate-900">Parent Remarks</h3>
                     <p className="text-xs font-semibold text-slate-400">Additional Qualitative Feedback</p>
                   </div>
                 </div>
@@ -492,7 +492,7 @@ const ParentObservationNonAcademic = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {REMARK_FIELDS.map((f, idx) => (
                     <div key={f} className="space-y-2">
-                      <label htmlFor={`obs-remark-${idx}`} className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">{f}</label>
+                      <label htmlFor={`obs-remark-${idx}`} className="ml-1 text-xs font-semibold text-slate-600">{f}</label>
                       <textarea
                         id={`obs-remark-${idx}`}
                         rows={4}
@@ -534,7 +534,7 @@ const ParentObservationNonAcademic = () => {
             <div className="space-y-4">
               <div className="bg-violet-50 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Active Child</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Active Child</p>
                   <p className="text-sm font-bold truncate max-w-[150px]">
                     {filteredChildren.find(c => String(c.id) === String(studentId))?.name || 'None Selected'}
                   </p>
@@ -545,11 +545,11 @@ const ParentObservationNonAcademic = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-violet-50 rounded-2xl p-4">
-                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Total Logs</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Total Logs</p>
                   <p className="text-xl font-bold">{observations.length}</p>
                 </div>
                 <div className="bg-violet-50 rounded-2xl p-4">
-                  <p className="text-[11px] font-bold text-violet-600 uppercase tracking-widest">Urgency</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Urgency</p>
                   <p className={`text-xl font-bold ${concernLevel === 'high' ? 'text-rose-400' : 'text-emerald-400'}`}>
                     {concernLevel.toUpperCase()}
                   </p>
@@ -560,7 +560,7 @@ const ParentObservationNonAcademic = () => {
 
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Clock size={16} className="text-slate-400" />
                 Recent History
               </h2>
@@ -579,11 +579,11 @@ const ParentObservationNonAcademic = () => {
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-900">{obs.studentName}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-black border uppercase tracking-wider ${concernBadge(obs.concernLevel || 'low')}`}>
+                            <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${concernBadge(obs.concernLevel || 'low')}`}>
                               {obs.concernLevel || 'low'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                             <Calendar size={10} />
                             <span>{obs.recordedAt ? new Date(obs.recordedAt).toLocaleDateString() : obs.date}</span>
                           </div>
@@ -594,8 +594,8 @@ const ParentObservationNonAcademic = () => {
                       </p>
                       {obs.behaviorNotes && (
                         <div className="mt-3 pt-3 border-t border-slate-100/50">
-                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tighter mb-1">Qualitative Feedback</p>
-                          <p className="text-[11px] text-slate-500 line-clamp-3 whitespace-pre-line">
+                          <p className="mb-1 text-xs font-semibold text-slate-500">Qualitative Feedback</p>
+                          <p className="line-clamp-3 whitespace-pre-line text-xs leading-relaxed text-slate-500">
                             {obs.behaviorNotes}
                           </p>
                         </div>

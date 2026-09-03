@@ -156,6 +156,11 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
   });
 };
 
+const getNextInvoiceDueDate = (invoice) => {
+  const nextInstallment = getInstallmentBreakdown(invoice).find((installment) => !installment.isPaid);
+  return nextInstallment?.dueDate || invoice?.dueDate || null;
+};
+
 // Single shared loader so the Fees screen can warm the script on mount and the
 // "Pay Now" click can reuse the same in-flight/settled promise instead of
 // racing a fresh <script> tag at the worst possible moment.
@@ -516,12 +521,21 @@ const FeesPayment = () => {
     [sessionInvoices]
   );
 
-  const nearestDueDate = useMemo(() => pendingInvoices
-    .map((invoice) => invoice.dueDate)
-    .filter(Boolean)
-    .map((value) => new Date(value))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a - b)[0] || null, [pendingInvoices]);
+  const nearestDueDate = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return pendingInvoices
+      .map(getNextInvoiceDueDate)
+      .filter(Boolean)
+      .map((value) => new Date(value))
+      .filter((date) => !Number.isNaN(date.getTime()))
+      .map((date) => {
+        date.setHours(0, 0, 0, 0);
+        return date;
+      })
+      .filter((date) => date >= today)
+      .sort((a, b) => a - b)[0] || null;
+  }, [pendingInvoices]);
 
   const selectedInvoice = useMemo(
     () => sessionInvoices.find((invoice) => invoice._id === selectedInvoiceId) || null,
@@ -620,7 +634,7 @@ const FeesPayment = () => {
                 <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-600">{pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}</span>
               </div>
               <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
-                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Upcoming Due</p><p className="text-sm font-semibold text-amber-600">{nearestDueDate ? formatDate(nearestDueDate) : 'No dues'}</p></div>
+                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Upcoming Due</p><p className="text-sm font-semibold text-amber-600">{nearestDueDate ? formatDate(nearestDueDate) : 'No upcoming dues'}</p></div>
                 <span className="self-end text-xs text-slate-400">{getRelativeDueLabel(nearestDueDate)}</span>
               </div>
               <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
