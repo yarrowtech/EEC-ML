@@ -92,6 +92,14 @@ const portalNavigation = [
   { icon: Settings, label: 'Profile & Work', path: `${PORTAL_BASE}/settings` },
 ];
 
+const mobileNavigation = [
+  { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
+  { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
+  { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
+  { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
+  { icon: Menu, label: 'More', action: 'menu' },
+];
+
 const studentsLinks = [
   { label: 'Student List', to: 'students' },
   { label: 'Attendance', to: 'students/attendance' },
@@ -1007,6 +1015,7 @@ const TeacherPortalShell = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
+  const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
   const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute;
@@ -1477,7 +1486,7 @@ const TeacherPortalShell = () => {
       </aside>
 
       <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-20 w-full bg-slate-100 px-0 py-0">
+        <header className="sticky top-0 z-20 hidden w-full bg-slate-100 px-0 py-0 lg:block">
           <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
             <div className="min-w-0 px-16 text-center leading-none">
               <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
@@ -1640,14 +1649,58 @@ const TeacherPortalShell = () => {
           </div>
         </header>
 
-        <main className={`flex-1 min-h-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <header className="sticky top-0 z-30 bg-violet-600 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] text-white shadow-md lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
+              <span className="relative shrink-0">
+                {hasProfileImage ? (
+                  <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full border border-white/40 object-cover" />
+                ) : (
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-bold shadow-inner">{initialsLabel}</span>
+                )}
+                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" />
+              </span>
+              <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-purple-200">{teacherProfile.department || 'Academic workspace'}</span></span>
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="relative" ref={notificationsRef}>
+                <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
+                  <Bell size={19} />
+                  {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-400" />}
+                </button>
+                <AnimatePresence>
+                  {showNotifications && (
+                    <NotificationPopover
+                      notifications={notifications}
+                      unreadCount={unreadCount}
+                      loading={notifLoading}
+                      error={notifError}
+                      onMarkAllRead={markAllRead}
+                      onDismissNotification={dismissHeaderNotification}
+                      formatTime={timeAgo}
+                      onOpenNotification={async (notification) => {
+                        const id = String(notification?._id || notification?.id || '');
+                        if (!notification?.isRead) await markRead(id);
+                        setShowNotifications(false);
+                        navigate(resolveNotifPath(notification));
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Account details"><ChevronRight size={19} /></button>
+            </div>
+          </div>
+        </header>
+
+        <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <div className={isChatRoute
             ? 'flex h-full min-h-0 flex-col'
             : isSmartPlannerRoute
               ? 'h-full min-h-0'
               : isAttendanceRoute
                 ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                : 'min-h-full p-6'}>
+                : `min-h-full ${isDashboardRoute ? 'p-0 lg:p-6' : 'p-3 sm:p-6'}`}>
             <Routes>
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
@@ -1774,6 +1827,38 @@ const TeacherPortalShell = () => {
             </Routes>
           </div>
         </main>
+
+        <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md lg:hidden">
+          <div className="mx-auto flex max-w-md items-center justify-around">
+            {mobileNavigation.map((item) => {
+              const Icon = item.icon;
+              const active = item.action === 'menu'
+                ? sidebarOpen
+                : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
+              const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
+              const content = (
+                <>
+                  <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} /></span>
+                  {item.label}
+                </>
+              );
+
+              if (item.action === 'menu') {
+                return (
+                  <button key={item.label} type="button" onClick={() => setSidebarOpen(true)} aria-label="Open all teacher options" aria-expanded={sidebarOpen} className={itemClasses}>
+                    {content}
+                  </button>
+                );
+              }
+
+              return (
+                <NavLink key={item.path} to={item.path} aria-label={item.label} className={itemClasses}>
+                  {content}
+                </NavLink>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
     <DesktopNotificationPermissionModal

@@ -15,6 +15,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Brain,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -357,8 +358,150 @@ const TeacherDashboard = () => {
     show: { opacity: 1, y: 0 },
   };
 
+  const mobileClassLabel = classTeacherAllocations.length
+    ? classTeacherAllocations
+        .map((item) => {
+          const className = item?.classId?.name || item?.className || 'Class';
+          const sectionName = item?.sectionId?.name || item?.sectionName || '';
+          return `${className}${sectionName ? ` ${sectionName}` : ''}`;
+        })
+        .join(' • ')
+    : 'No class assigned';
+
+  const MobileSectionTitle = ({ children, meta }) => (
+    <div className="flex items-center justify-between px-1">
+      <h2 className="text-base font-bold text-slate-900">{children}</h2>
+      {meta && <span className="text-[11px] font-medium text-slate-400">{meta}</span>}
+    </div>
+  );
+
   return (
-    <div className="min-h-0 bg-slate-50 text-slate-950">
+    <div className="min-h-0 bg-[#f4f6fb] text-slate-950">
+      <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4 lg:hidden">
+        {dashboardError && (
+          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-700">
+            <AlertCircle size={16} /> {dashboardError}
+          </div>
+        )}
+
+        <section className="relative overflow-hidden rounded-2xl border border-white bg-[linear-gradient(135deg,#e0f2fe_0%,#f3e8ff_52%,#faf5ff_100%)] p-5 shadow-[0_12px_32px_-4px_rgba(124,58,237,0.1)]">
+          <div className="relative z-10">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-violet-800 shadow-sm">
+                Teacher workspace
+              </span>
+              <span className="text-[10px] font-medium text-slate-500">
+                {currentDateTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+            <h1 className="text-xl font-extrabold leading-snug tracking-tight text-slate-900">
+              {getGreeting()},<br /><span className="text-violet-600">{teacherName.split(' ')[0]}</span>
+            </h1>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              {dashboardLoading
+                ? 'Preparing your teaching workspace…'
+                : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} tasks waiting.`}
+            </p>
+          </div>
+          <div className="pointer-events-none absolute -bottom-8 -right-6 h-32 w-32 rounded-full bg-purple-200/60 blur-2xl" />
+        </section>
+
+        <section className="space-y-3">
+          <MobileSectionTitle meta="Live overview">My classroom</MobileSectionTitle>
+          <div className="space-y-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-[0_4px_20px_-2px_rgba(124,58,237,0.06)]">
+            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-700 text-sm font-bold text-white shadow-sm ring-2 ring-purple-100">
+                {teacherName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-base font-bold text-slate-900">{teacherName}</h2>
+                <p className="truncate text-[11px] font-medium text-slate-500">Class teacher • {mobileClassLabel}</p>
+              </div>
+              <Link to="/teacher/classes" aria-label="Open classes" className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+                <ChevronRight size={17} />
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              {[
+                { value: stats.totalStudents ?? 0, label: 'Students', icon: Users, to: '/teacher/classes', tone: 'text-violet-600' },
+                { value: `${stats.attendanceRate ?? 0}%`, label: 'Attendance', icon: ClipboardCheck, to: '/teacher/classes/current/students/attendance', tone: 'text-emerald-600' },
+                { value: pendingTasks, label: 'Tasks', icon: FileText, to: '/teacher/classes/current/assignments', tone: 'text-amber-600' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link key={item.label} to={item.to} className="flex min-h-[76px] flex-col items-center justify-center rounded-xl border border-purple-100/80 bg-[#faf8ff] p-2.5 transition active:scale-95">
+                    <span className={`text-lg font-black ${item.tone}`}>{item.value}</span>
+                    <span className="mt-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight text-slate-600"><Icon size={11} />{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Link to="/teacher/classes/current/students/attendance" className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm active:scale-[.98]">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><ClipboardCheck size={18} /></div>
+            <p className="text-xs font-bold text-slate-900">Mark attendance</p>
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">Record today’s class presence</p>
+          </Link>
+          <Link to="/teacher/lesson-plan" className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm active:scale-[.98]">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><Sparkles size={18} /></div>
+            <p className="text-xs font-bold text-slate-900">Plan with AI</p>
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">Create your next lesson faster</p>
+          </Link>
+        </div>
+
+        <section className="space-y-3">
+          <MobileSectionTitle meta={nextClass ? `Next ${nextClass.time}` : 'Today'}>Today’s schedule</MobileSectionTitle>
+          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+            {todaysClasses.length === 0 ? (
+              <div className="flex flex-col items-center py-5 text-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={18} /></div>
+                <p className="mt-2 text-xs font-semibold text-emerald-800">Your schedule is clear</p>
+                <p className="mt-1 text-[11px] text-emerald-600">No classes scheduled for today</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {todaysClasses.slice(0, 3).map((classItem, index) => (
+                  <div key={classItem.id || index} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><BookOpen size={17} /></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-slate-800">{classItem.subject || classItem.class}</p><p className="truncate text-[10px] text-slate-400">{classItem.class} {classItem.section ? `• ${classItem.section}` : ''}</p></div>
+                    <span className="text-[11px] font-bold text-slate-600">{classItem.time}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-800"><CheckCircle2 size={15} className="text-violet-600" />Priority tasks</div>
+            <span className="rounded-full border border-purple-100 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">{visibleDeadlines.length} pending</span>
+          </div>
+          {visibleDeadlines.length === 0 ? (
+            <div className="flex flex-col items-center py-5 text-center"><CheckCircle2 size={24} className="text-slate-300" /><p className="mt-2 text-xs font-medium text-slate-400">All caught up</p></div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {visibleDeadlines.slice(0, 3).map((task) => (
+                <Link key={deadlineKey(task)} to="/teacher/classes/current/assignments" className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+                  <span className="h-2 w-2 rounded-full bg-amber-400" />
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{task.title}</span>
+                  <span className="text-[10px] font-medium text-amber-700">{daysUntil(task.dueDate)}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="flex items-start gap-3.5 rounded-2xl border border-purple-100 bg-gradient-to-br from-violet-50 via-purple-50/50 to-white p-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-violet-600"><Brain size={20} /></div>
+          <div><h2 className="text-xs font-bold text-slate-900">Need teaching support?</h2><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">Use AI tools for lesson ideas, class insights, and differentiated activities.</p><Link to="/teacher/ai-tools" className="mt-2 inline-flex text-xs font-semibold text-violet-600">Open AI tools →</Link></div>
+        </section>
+      </div>
+
+      <div className="hidden lg:block">
       <div className="mx-auto max-w-[1800px] space-y-4 p-3 pt-0 sm:p-4 sm:pt-0 lg:p-5 lg:pt-0">
         {dashboardError && (
             <div className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -504,6 +647,7 @@ const TeacherDashboard = () => {
 
             </MotionSection>
           </MotionDiv>
+      </div>
       </div>
     </div>
   );
