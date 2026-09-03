@@ -49,7 +49,7 @@ const StatBlock = ({ tone = 'slate', label, value, sub, progress }) => {
   );
 };
 
-const SectionCard = ({ dot, title, badge, onClick, children }) => {
+const SectionCard = ({ dot, title, badge, children }) => {
   const content = (
     <>
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -68,9 +68,7 @@ const SectionCard = ({ dot, title, badge, onClick, children }) => {
       variants={itemVariants}
       className="rounded-3xl border border-slate-100 bg-white px-5 pb-6 pt-5 shadow-[0_4px_16px_rgba(0,0,0,0.02)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_40px_rgba(0,0,0,0.04)]"
     >
-      {onClick ? (
-        <button type="button" onClick={onClick} className="w-full text-left">{content}</button>
-      ) : content}
+      {content}
     </motion.section>
   );
 };
@@ -89,7 +87,6 @@ const AnalyticsPureWhiteDashboard = ({
   errors,
   currentMonthAttendance,
   onRetry,
-  onOpen,
 }) => {
   const attendance = currentMonthAttendance?.attendancePercentage;
   const mood = wellbeingData?.avgMood;
@@ -214,7 +211,7 @@ const AnalyticsPureWhiteDashboard = ({
           </div>
         </SectionCard>
 
-        <SectionCard dot="bg-emerald-500" title="Growth · Academic Performance" onClick={academicData ? () => onOpen('academic') : undefined} badge={<span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">This term</span>}>
+        <SectionCard dot="bg-emerald-500" title="Growth · Academic Performance" badge={<span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">This term</span>}>
           <div className="grid grid-cols-2 gap-3">
             <StatBlock tone="purple" label="Subjects Tracked" value={subjectCount} progress={Math.min(subjectCount * 10, 100)} sub={`${subjectCount} subjects with recorded evidence`} />
             <StatBlock tone="emerald" label="Exams Taken" value={examCount} progress={Math.min(examCount * 10, 100)} sub={`${examCount} assessment${examCount === 1 ? '' : 's'} available`} />
@@ -233,7 +230,7 @@ const AnalyticsPureWhiteDashboard = ({
       </motion.div>
 
       <motion.div variants={containerVariants} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SectionCard dot="bg-amber-500" title="Growth · Emotional Wellbeing" onClick={wellbeingData ? () => onOpen('wellbeing') : undefined} badge={<span className={`rounded-full border px-3 py-1 text-xs font-medium ${!wellbeingData ? 'border-slate-200 bg-slate-50 text-slate-500' : highConcern > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{!wellbeingData ? 'Awaiting data' : highConcern > 0 ? 'Needs review' : 'On track'}</span>}>
+        <SectionCard dot="bg-amber-500" title="Growth · Emotional Wellbeing" badge={<span className={`rounded-full border px-3 py-1 text-xs font-medium ${!wellbeingData ? 'border-slate-200 bg-slate-50 text-slate-500' : highConcern > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{!wellbeingData ? 'Awaiting data' : highConcern > 0 ? 'Needs review' : 'On track'}</span>}>
           <div className="grid grid-cols-2 gap-3">
             <StatBlock label="Observations" value={observations} sub={`${observations} recorded observation${observations === 1 ? '' : 's'}`} />
             <StatBlock tone="rose" label="High Concern" value={highConcern} progress={observations ? (highConcern / observations) * 100 : 0} sub="flagged for review" />
@@ -241,7 +238,7 @@ const AnalyticsPureWhiteDashboard = ({
           </div>
         </SectionCard>
 
-        <SectionCard dot="bg-purple-500" title="Growth · Skill Development" onClick={skillsData ? () => onOpen('skills') : undefined} badge={<span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">{trackedSkills ? `${trackedSkills} skills` : 'No skill data'}</span>}>
+        <SectionCard dot="bg-purple-500" title="Growth · Skill Development" badge={<span className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">{trackedSkills ? `${trackedSkills} skills` : 'No skill data'}</span>}>
           <div className="grid grid-cols-2 gap-3">
             <StatBlock tone="purple" label="Skills Tracked" value={trackedSkills || '—'} progress={trackedSkills ? skillScore || 0 : undefined} sub={trackedSkills ? `${masteredSkills} proficient · ${trackedSkills - masteredSkills} developing` : 'Awaiting skill evidence'} />
             <StatBlock tone="emerald" label="Domains" value={domains.length || '—'} progress={domains.length ? 100 : undefined} sub={domains.length ? domains.map((domain) => domain.name).join(' · ') : 'No domain evidence recorded'} />

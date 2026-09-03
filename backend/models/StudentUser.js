@@ -7,7 +7,7 @@ const ENCRYPTED_PREFIX = 'enc:v1';
 const STUDENT_SENSITIVE_FIELDS = ['mobile', 'email', 'address', 'aadharNumber', 'guardianPhone', 'guardianEmail'];
 let warnedDerivedEncryptionKey = false;
 
-// Only these environments may fall back to a key derived from JWT_SECRET.
+// Local development and tests may fall back to a key derived from JWT_SECRET.
 // Anything else — production, staging, or an UNSET NODE_ENV — must configure a
 // dedicated STUDENT_DATA_ENCRYPTION_KEY. (Previously the guard keyed off
 // `=== 'production'` only, so an unset NODE_ENV silently used the derived key.)

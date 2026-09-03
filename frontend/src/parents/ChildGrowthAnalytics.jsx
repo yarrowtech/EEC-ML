@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  TrendingUp,
   Heart,
   BookOpen,
   X,
@@ -24,7 +23,6 @@ import {
   Minus,
   Sparkles,
   MessageSquare,
-  Zap,
   Info,
 } from 'lucide-react';
 import {
@@ -47,7 +45,6 @@ import {
 } from 'recharts';
 import { parentApiJson } from './parentApi';
 import AnalyticsPureWhiteDashboard from './AnalyticsPureWhiteDashboard';
-import { useDialog } from './useDialog';
 import { useSharedChildSelection, childOptionKey } from './ChildSwitcher';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -788,9 +785,6 @@ const ChildGrowthAnalytics = () => {
   const [analyticsErrors, setAnalyticsErrors] = useState({});
   const [studentLoadError, setStudentLoadError] = useState('');
 
-  const [activeSidebar, setActiveSidebar] = useState(null); // 'academic' | 'wellbeing' | 'skills' | null
-  const closeAnalytics = useCallback(() => setActiveSidebar(null), []);
-  const analyticsDialogRef = useDialog(Boolean(activeSidebar), closeAnalytics);
 
   // Fetch student list from parent profile
   useEffect(() => {
@@ -869,7 +863,6 @@ const ChildGrowthAnalytics = () => {
   const handleSelectStudent = (id) => {
     const opt = childOptions.find((o) => o.id === String(id));
     if (opt) setChildKey(childOptionKey(opt));
-    setActiveSidebar(null);
   };
 
   const selectedStudent = students.find((s) => String(s._id) === String(selectedId));
@@ -923,53 +916,7 @@ const ChildGrowthAnalytics = () => {
             fetchWellbeing(selectedId);
             fetchSkills(selectedId);
           }}
-          onOpen={setActiveSidebar}
         />
-
-        {activeSidebar && (
-          <>
-            <button
-              type="button"
-              aria-label="Close analytics details"
-              className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
-              onClick={() => setActiveSidebar(null)}
-            />
-            <div
-              ref={analyticsDialogRef}
-              role="dialog"
-              aria-modal="true"
-              aria-label={`${activeSidebar} analytics details`}
-              tabIndex={-1}
-              className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-slate-50 shadow-2xl"
-              style={{ animation: 'analyticsSlideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-            >
-              {activeSidebar === 'academic' ? (
-                <AcademicSidebar
-                  data={academicData ? {
-                    ...academicData,
-                    attendanceSummary: {
-                      presentDays: selectedStudent.currentMonthAttendance?.presentDays ?? 0,
-                      totalDays: selectedStudent.currentMonthAttendance?.totalClasses ?? 0,
-                      attendancePct: selectedStudent.currentMonthAttendance?.attendancePercentage ?? null,
-                    },
-                  } : null}
-                  onClose={() => setActiveSidebar(null)}
-                />
-              ) : activeSidebar === 'wellbeing' ? (
-                <WellbeingSidebar data={wellbeingData} onClose={() => setActiveSidebar(null)} />
-              ) : (
-                <SkillsSidebar data={skillsData} onClose={() => setActiveSidebar(null)} />
-              )}
-            </div>
-          </>
-        )}
-
-        <style>{`
-          @keyframes analyticsSlideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        `}</style>
       </div>
     );
   }
@@ -1215,12 +1162,7 @@ const ChildGrowthAnalytics = () => {
       <motion.div variants={containerVariants} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
         {/* Academic Growth Card */}
-        <button
-          onClick={() => setActiveSidebar(activeSidebar === 'academic' ? null : 'academic')}
-          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 ${
-            activeSidebar === 'academic' ? 'border-indigo-400 ring-2 ring-indigo-200' : 'border-slate-100 hover:border-indigo-200'
-          }`}
-        >
+        <div className="text-left rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
           {/* Card top gradient */}
           <div className="bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 px-6 py-5 text-white">
             <div className="flex items-center justify-between mb-4">
@@ -1233,7 +1175,6 @@ const ChildGrowthAnalytics = () => {
                   <p className="text-sm font-black">Academic Performance</p>
                 </div>
               </div>
-              <ChevronRight size={18} className={`text-white/60 transition-transform duration-300 ${activeSidebar === 'academic' ? 'rotate-90' : 'group-hover:translate-x-1'}`} />
             </div>
             <div className="flex items-center gap-6">
               {loadingAcademic ? (
@@ -1272,26 +1213,17 @@ const ChildGrowthAnalytics = () => {
                   </div>
                 ))}
                 {academicData.subjectBreakdown.length > 4 && (
-                  <p className="text-[10px] text-indigo-500 font-bold mt-1">+{academicData.subjectBreakdown.length - 4} more subjects · tap to explore</p>
+                  <p className="text-[10px] text-indigo-500 font-bold mt-1">+{academicData.subjectBreakdown.length - 4} more subjects</p>
                 )}
               </div>
             ) : (
               <p className="text-xs text-slate-400 text-center py-2">No mastery data yet</p>
             )}
-            <div className="mt-3 flex items-center gap-2 pt-3 border-t border-slate-100">
-              <TrendingUp size={12} className="text-indigo-500" />
-              <p className="text-[11px] font-bold text-indigo-600">Tap to see full academic breakdown →</p>
-            </div>
           </div>
-        </button>
+        </div>
 
         {/* Emotional Wellbeing Card */}
-        <button
-          onClick={() => setActiveSidebar(activeSidebar === 'wellbeing' ? null : 'wellbeing')}
-          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 ${
-            activeSidebar === 'wellbeing' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-slate-100 hover:border-rose-200'
-          }`}
-        >
+        <div className="text-left rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
           <div className="bg-gradient-to-br from-rose-500 via-pink-500 to-fuchsia-600 px-6 py-5 text-white">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1303,7 +1235,6 @@ const ChildGrowthAnalytics = () => {
                   <p className="text-sm font-black">Emotional Wellbeing</p>
                 </div>
               </div>
-              <ChevronRight size={18} className={`text-white/60 transition-transform duration-300 ${activeSidebar === 'wellbeing' ? 'rotate-90' : 'group-hover:translate-x-1'}`} />
             </div>
 
             {loadingWellbeing ? (
@@ -1372,20 +1303,11 @@ const ChildGrowthAnalytics = () => {
             ) : (
               <p className="text-xs text-slate-400 text-center py-2">No wellbeing data yet</p>
             )}
-            <div className="mt-3 flex items-center gap-2 pt-3 border-t border-slate-100">
-              <Activity size={12} className="text-rose-500" />
-              <p className="text-[11px] font-bold text-rose-600">Tap to see full wellbeing breakdown →</p>
-            </div>
           </div>
-        </button>
+        </div>
 
         {/* Skill Development Card */}
-        <button
-          onClick={() => setActiveSidebar(activeSidebar === 'skills' ? null : 'skills')}
-          className={`group text-left rounded-2xl border overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 lg:col-span-2 ${
-            activeSidebar === 'skills' ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-100 hover:border-amber-200'
-          }`}
-        >
+        <div className="text-left rounded-2xl border border-slate-100 overflow-hidden shadow-sm lg:col-span-2">
           <div className="bg-gradient-to-br from-amber-500 via-orange-500 to-rose-500 px-6 py-5 text-white">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1397,7 +1319,6 @@ const ChildGrowthAnalytics = () => {
                   <p className="text-sm font-black">Skill Development</p>
                 </div>
               </div>
-              <ChevronRight size={18} className={`text-white/60 transition-transform duration-300 ${activeSidebar === 'skills' ? 'rotate-90' : 'group-hover:translate-x-1'}`} />
             </div>
 
             {loadingSkills ? (
@@ -1453,53 +1374,11 @@ const ChildGrowthAnalytics = () => {
             ) : (
               <p className="text-xs text-slate-400 text-center py-2">No skill data yet</p>
             )}
-            <div className="mt-3 flex items-center gap-2 pt-3 border-t border-slate-100">
-              <Zap size={12} className="text-amber-500" />
-              <p className="text-[11px] font-bold text-amber-600">Tap to see all 22 skill scores →</p>
-            </div>
           </div>
-        </button>
+        </div>
 
       </motion.div>
 
-      {/* Bottom hint when no sidebar is open */}
-      {!activeSidebar && (
-        <div className="flex items-center justify-center gap-2 py-3 text-slate-400">
-          <Eye size={14} />
-          <p className="text-xs font-semibold">Tap either card above to open the detailed analytics panel</p>
-        </div>
-      )}
-
-      {/* Slide-out sidebar overlay */}
-      {activeSidebar && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 transition-opacity"
-            onClick={() => setActiveSidebar(null)}
-          />
-          {/* Sidebar panel */}
-          <div
-            className="fixed top-0 right-0 h-full w-full max-w-md bg-slate-50 shadow-2xl z-50 flex flex-col"
-            style={{ animation: 'slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-          >
-            {activeSidebar === 'academic' ? (
-              <AcademicSidebar data={academicData} onClose={() => setActiveSidebar(null)} />
-            ) : activeSidebar === 'wellbeing' ? (
-              <WellbeingSidebar data={wellbeingData} onClose={() => setActiveSidebar(null)} />
-            ) : (
-              <SkillsSidebar data={skillsData} onClose={() => setActiveSidebar(null)} />
-            )}
-          </div>
-        </>
-      )}
-
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `}</style>
     </motion.div>
   );
 };
