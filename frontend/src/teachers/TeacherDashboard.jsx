@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion as framerMotion, useReducedMotion } from 'framer-motion';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import {
   Activity,
@@ -36,6 +37,21 @@ const getAcademicYearId = (item = {}) =>
   String(item?.classId?.academicYearId?._id || item?.classId?.academicYearId || '').trim();
 
 const cx = (...classes) => classes.filter(Boolean).join(' ');
+
+// Builds the same `class-section` slug TeacherPortal's ClassWorkspace uses to
+// resolve a specific allocation (see buildClassPath/slug matching in
+// TeacherPortal.jsx). classItem.class from the dashboard API is already
+// "ClassName-SectionName" (e.g. "5-A"), so schedule links can jump straight
+// to that class's attendance/teaching pages instead of the generic
+// `classes/current/...` shortcut, which always resolves to the teacher's
+// primary class-teacher allocation regardless of which class was clicked.
+const slugifyClassLabel = (label) => {
+  const slug = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return slug || 'current';
+};
+
+const classWorkspacePath = (classItem, subPath) =>
+  `/teacher/classes/${encodeURIComponent(slugifyClassLabel(classItem?.class))}/${subPath}`;
 
 const clampPercent = (value, fallback = 0) => {
   const numeric = Number.parseFloat(String(value ?? '').replace('%', ''));
@@ -614,7 +630,9 @@ const TeacherDashboard = () => {
                       subtitle="Compact signals only. Detailed analytics stay in reports."
                       action={<TimeframeToggle activeTimeframe={activeTimeframe} setActiveTimeframe={setActiveTimeframe} />}
                     />
-                    <div className="grid gap-3 p-5 sm:grid-cols-2">
+                    <div className="space-y-4 p-5">
+                      {analyticsSnapshot.length > 0 && <SnapshotChart metrics={analyticsSnapshot} />}
+                      <div className="grid gap-3 sm:grid-cols-2">
                       {analyticsSnapshot.map((metric) => (
                         <Link key={metric.label} to="/teacher/classes/current/reports" className={cx('rounded-2xl p-4 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/70', GLASS_INSET)}>
                           <div className="mb-4 flex items-start justify-between">
@@ -628,6 +646,7 @@ const TeacherDashboard = () => {
                           <Progress value={metric.progress} tone={metric.tone} />
                         </Link>
                       ))}
+                      </div>
                     </div>
                   </CardShell>
                 </div>
@@ -700,8 +719,8 @@ const ScheduleItem = ({ classItem, index, isNext, reduceMotion }) => (
         </div>
         <p className="mt-1 text-sm text-[#64748b]">{classItem.class} {classItem.section && `• ${classItem.section}`} {classItem.room && `• Room ${classItem.room}`}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link to="/teacher/classes/current/students/attendance" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/70 px-3 text-xs font-semibold text-[#64748b] transition hover:bg-white/90"><ClipboardCheck size={14} /> Attendance</Link>
-          <Link to="/teacher/classes/current/teaching" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open <ChevronRight size={14} /></Link>
+          <Link to={classWorkspacePath(classItem, 'students/attendance')} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/70 px-3 text-xs font-semibold text-[#64748b] transition hover:bg-white/90"><ClipboardCheck size={14} /> Attendance</Link>
+          <Link to={classWorkspacePath(classItem, 'teaching')} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open <ChevronRight size={14} /></Link>
         </div>
       </div>
       <div className="text-right">
@@ -711,6 +730,70 @@ const ScheduleItem = ({ classItem, index, isNext, reduceMotion }) => (
     </div>
   </MotionDiv>
 );
+
+// Bar-fill colors for the snapshot chart, matching the Progress/Badge tone
+// palette used across the rest of the dashboard.
+const TONE_HEX = {
+  emerald: '#10b981',
+  violet: '#8b5cf6',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+  sky: '#0ea5e9',
+};
+
+const SnapshotChartTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  return (
+    <div className="rounded-xl border border-white/70 bg-white/90 px-3 py-2 text-xs shadow-lg backdrop-blur-md">
+      <p className="font-semibold text-[#0f172a]">{point.label}</p>
+      <p className="mt-0.5 text-[#64748b]">{point.value}%</p>
+    </div>
+  );
+};
+
+// Compact bar chart summarizing the same signals as the tiles below it —
+// attendance rate plus up to three subject averages — so the "snapshot" is
+// scannable at a glance without leaving the dashboard for the full reports.
+const SnapshotChart = ({ metrics }) => {
+  const chartData = metrics.map((metric) => ({
+    label: metric.label,
+    shortLabel: metric.label.replace(/\s*average$/i, '').replace(/\s*rate$/i, ''),
+    value: clampPercent(metric.progress),
+    tone: metric.tone,
+  }));
+
+  return (
+    <div className={cx('rounded-2xl p-4', GLASS_INSET)}>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={chartData} margin={{ top: 6, right: 8, left: -20, bottom: 0 }} barSize={32}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
+          <XAxis
+            dataKey="shortLabel"
+            tick={{ fill: '#8e9aaf', fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: 'rgba(148,163,184,0.3)' }}
+          />
+          <YAxis
+            domain={[0, 100]}
+            tick={{ fill: '#8e9aaf', fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            width={32}
+            tickFormatter={(v) => `${v}%`}
+          />
+          <Tooltip cursor={{ fill: 'rgba(139,92,246,0.06)' }} content={<SnapshotChartTooltip />} />
+          <Bar dataKey="value" radius={[8, 8, 8, 8]}>
+            {chartData.map((entry) => (
+              <Cell key={entry.label} fill={TONE_HEX[entry.tone] || TONE_HEX.violet} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 const TimeframeToggle = ({ activeTimeframe, setActiveTimeframe }) => (
   <div className="flex rounded-xl border border-white/70 bg-white/50 p-1 backdrop-blur-sm">

@@ -137,6 +137,35 @@ const communicationSectionLinks = [
 const buildClassPath = (classId, section) =>
   `${PORTAL_BASE}/classes/${encodeURIComponent(classId || 'current')}${section ? `/${section}` : ''}`;
 
+// ── "current" class memory ───────────────────────────────────────────────────
+// Sidebar shortcuts (Chat, Student Feedback, Excuse Letters) and the dashboard's
+// quick-action tiles all link to `classes/current/...`. Previously "current"
+// always resolved to the teacher's class-teacher allocation when one existed
+// (see below), which meant a teacher who ALSO subject-teaches other classes
+// lost the ability to reach those other classes through any of those shortcuts
+// the moment they were made a class teacher for one class — everything just
+// snapped back to their homeroom class. We now remember whichever class the
+// teacher last explicitly opened (via Classes & Work, or a specific class
+// link) and let "current" resolve to that first, falling back to the
+// class-teacher allocation only when nothing has been chosen yet.
+const CURRENT_CLASS_STORAGE_KEY = 'teacher_current_class_v1';
+
+const rememberCurrentClass = ({ slug, className, sectionName, classMongoId, sectionMongoId, subjectName }) => {
+  if (!slug || slug === 'current') return;
+  try {
+    sessionStorage.setItem(CURRENT_CLASS_STORAGE_KEY, JSON.stringify({
+      slug, className, sectionName, classMongoId, sectionMongoId, subjectName,
+    }));
+  } catch { /* ignore storage errors (private browsing, quota, …) */ }
+};
+
+const readRememberedClass = () => {
+  try {
+    const raw = sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+
 const allocationAcademicYearId = (allocation) => String(
   allocation?.classId?.academicYearId?._id || allocation?.classId?.academicYearId || ''
 );
@@ -521,6 +550,14 @@ const ClassesHub = () => {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '') || 'current';
+    rememberCurrentClass({
+      slug,
+      className: selectedClass,
+      sectionName: selectedSection,
+      classMongoId: mongoId,
+      sectionMongoId,
+      subjectName: selectedSubject,
+    });
     navigate(buildClassPath(slug), {
       state: {
         className: selectedClass,
@@ -757,8 +794,24 @@ const ClassWorkspace = () => {
           yearData?._id ? String(yearData._id) : ''
         );
         if (cancelled || activeAllocations.length === 0) return;
-        // Prefer the class-teacher allocation; fall back to the first allocation.
-        const primary = activeAllocations.find((a) => a?.isClassTeacher) || activeAllocations[0];
+
+        // Prefer whichever class the teacher last explicitly opened (see
+        // rememberCurrentClass), so "current" doesn't keep snapping back to
+        // the homeroom class for a teacher who also subject-teaches
+        // elsewhere. Fall back to the class-teacher allocation, then the
+        // first allocation, if nothing was remembered (or it's stale).
+        const remembered = readRememberedClass();
+        const rememberedAllocation = remembered?.slug
+          ? activeAllocations.find((a) => {
+              const cn = String(a?.classId?.name || a?.className || '').trim();
+              const sn = String(a?.sectionId?.name || a?.sectionName || '').trim();
+              const itSlug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+              return itSlug === remembered.slug;
+            })
+          : null;
+        const primary = rememberedAllocation
+          || activeAllocations.find((a) => a?.isClassTeacher)
+          || activeAllocations[0];
         const cn = String(primary?.classId?.name || primary?.className || '').trim();
         const sn = String(primary?.sectionId?.name || primary?.sectionName || '').trim();
         if (!cn || !sn) return;
@@ -832,7 +885,20 @@ const ClassWorkspace = () => {
         if (!alloc || cancelled) return;
         const cn = alloc?.classId?.name || alloc?.className || '';
         const sn = alloc?.sectionId?.name || alloc?.sectionName || '';
-        if (!cancelled) { setClassName(cn); setSectionName(sn); }
+        if (!cancelled) {
+          setClassName(cn);
+          setSectionName(sn);
+          // Any direct navigation into a real class-section (not just the
+          // "Classes & Work" picker) keeps "current" in sync with it too.
+          rememberCurrentClass({
+            slug: classId,
+            className: cn,
+            sectionName: sn,
+            classMongoId: alloc?.classId?._id || alloc?.classId?.id || '',
+            sectionMongoId: alloc?.sectionId?._id || alloc?.sectionId?.id || '',
+            subjectName: alloc?.subjectId?.name || alloc?.subjectName || '',
+          });
+        }
       } catch { /* keep fallback */ }
     };
     load();
