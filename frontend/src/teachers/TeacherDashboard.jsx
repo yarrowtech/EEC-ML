@@ -64,18 +64,26 @@ const daysUntil = (value) => {
   return `${days}d left`;
 };
 
+// ── Glass design tokens ───────────────────────────────────────────────────────
+// Frosted-glass surfaces used throughout: semi-transparent white + blur/
+// saturate, soft white borders, and a gentle shadow. Kept as shared class
+// strings so every card/pill in the dashboard reads as one consistent system.
+const GLASS_PANEL = 'border border-white/70 bg-white/60 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-[1.8]';
+const GLASS_PANEL_SOLID = 'border border-white/80 bg-white/75 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.1)] backdrop-blur-xl backdrop-saturate-[1.8]';
+const GLASS_INSET = 'border border-white/70 bg-white/50 backdrop-blur-lg backdrop-saturate-[1.8]';
+
 const Badge = ({ children, tone = 'neutral', className = '' }) => {
   const tones = {
-    neutral: 'border-slate-200 bg-white text-slate-600',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    rose: 'border-rose-200 bg-rose-50 text-rose-700',
-    sky: 'border-sky-200 bg-sky-50 text-sky-700',
-    violet: 'border-violet-200 bg-violet-50 text-violet-700',
+    neutral: 'border-slate-200/70 bg-white/60 text-[#64748b]',
+    emerald: 'border-emerald-200/70 bg-emerald-50/80 text-emerald-700',
+    amber: 'border-amber-200/70 bg-[#fffbeb]/90 text-amber-700',
+    rose: 'border-rose-200/70 bg-rose-50/80 text-rose-700',
+    sky: 'border-sky-200/70 bg-sky-50/80 text-sky-700',
+    violet: 'border-violet-200/70 bg-violet-50/80 text-violet-700',
   };
 
   return (
-    <span className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold', tones[tone], className)}>
+    <span className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold backdrop-blur-sm', tones[tone], className)}>
       {children}
     </span>
   );
@@ -88,22 +96,22 @@ const CardShell = ({ children, className = '', delay = 0 }) => {
     <MotionSection
       initial={reduceMotion ? false : { opacity: 0, y: 14 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, delay }}
-      className={cx('rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm shadow-slate-200/70', className)}
+      transition={{ duration: 0.32, delay, ease: 'easeOut' }}
+      className={cx('rounded-2xl', GLASS_PANEL, className)}
     >
       {children}
     </MotionSection>
   );
 };
 const SectionHeader = ({ icon: Icon, title, subtitle, action }) => (
-  <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+  <div className="flex items-start justify-between gap-4 border-b border-white/60 px-5 py-4">
     <div className="flex items-start gap-3">
-      <div className="mt-0.5 rounded-xl bg-slate-100 p-2 text-slate-700">
+      <div className="mt-0.5 rounded-xl border border-white/70 bg-white/70 p-2 text-[#8b5cf6] shadow-sm backdrop-blur-sm">
         {React.createElement(Icon, { size: 18 })}
       </div>
       <div>
-        <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        <h2 className="text-base font-semibold text-[#0f172a]">{title}</h2>
+        {subtitle && <p className="mt-1 text-sm text-[#64748b]">{subtitle}</p>}
       </div>
     </div>
     {action}
@@ -113,33 +121,33 @@ const SectionHeader = ({ icon: Icon, title, subtitle, action }) => (
 const Progress = ({ value, tone = 'emerald' }) => {
   const tones = {
     emerald: 'bg-emerald-500',
-    amber: 'bg-amber-500',
+    amber: 'bg-amber-400',
     rose: 'bg-rose-500',
     sky: 'bg-sky-500',
-    violet: 'bg-violet-500',
+    violet: 'bg-[#8b5cf6]',
   };
 
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-      <div className={cx('h-full rounded-full transition-all duration-500', tones[tone])} style={{ width: `${clampPercent(value)}%` }} />
+    <div className="h-2 overflow-hidden rounded-full bg-white/70 ring-1 ring-white/70">
+      <div className={cx('h-full rounded-full transition-all duration-500 ease-out', tones[tone])} style={{ width: `${clampPercent(value)}%` }} />
     </div>
   );
 };
 
 const EmptyState = ({ icon: Icon, title, description }) => (
-  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
-    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 ring-1 ring-slate-200">
+  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300/70 bg-white/40 px-5 py-10 text-center backdrop-blur-sm">
+    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/70 bg-white/70 text-[#8e9aaf] shadow-sm">
       {React.createElement(Icon, { size: 22 })}
     </div>
-    <p className="font-semibold text-slate-950">{title}</p>
-    <p className="mt-1 max-w-xs text-sm leading-5 text-slate-500">{description}</p>
+    <p className="font-semibold text-[#0f172a]">{title}</p>
+    <p className="mt-1 max-w-xs text-sm leading-5 text-[#64748b]">{description}</p>
   </div>
 );
 
 const SkeletonGrid = () => (
   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
     {Array.from({ length: 4 }).map((_, index) => (
-      <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-200 bg-slate-100/80" />
+      <div key={index} className={cx('h-36 animate-pulse rounded-2xl', GLASS_INSET)} />
     ))}
   </div>
 );
@@ -351,11 +359,11 @@ const TeacherDashboard = () => {
 
   const pageVariants = reduceMotion ? {} : {
     hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.04 } },
+    show: { opacity: 1, transition: { staggerChildren: 0.05 } },
   };
   const itemVariants = reduceMotion ? {} : {
-    hidden: { opacity: 0, y: 12 },
-    show: { opacity: 1, y: 0 },
+    hidden: { opacity: 0, y: 14 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
   };
 
   const mobileClassLabel = classTeacherAllocations.length
@@ -370,68 +378,69 @@ const TeacherDashboard = () => {
 
   const MobileSectionTitle = ({ children, meta }) => (
     <div className="flex items-center justify-between px-1">
-      <h2 className="text-base font-bold text-slate-900">{children}</h2>
-      {meta && <span className="text-[11px] font-medium text-slate-400">{meta}</span>}
+      <h2 className="text-base font-bold text-[#0f172a]">{children}</h2>
+      {meta && <span className="text-[11px] font-medium text-[#8e9aaf]">{meta}</span>}
     </div>
   );
 
   return (
-    <div className="min-h-0 bg-[#f4f6fb] text-slate-950">
+    <div className="min-h-0 bg-[#f1f5f9] text-[#0f172a]">
       <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4 lg:hidden">
         {dashboardError && (
-          <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-700">
+          <div className={cx('flex items-center gap-2 rounded-2xl border-rose-200/70 bg-rose-50/80 px-4 py-3 text-xs font-medium text-rose-700 backdrop-blur-sm')}>
             <AlertCircle size={16} /> {dashboardError}
           </div>
         )}
 
-        <section className="relative overflow-hidden rounded-2xl border border-white bg-[linear-gradient(135deg,#e0f2fe_0%,#f3e8ff_52%,#faf5ff_100%)] p-5 shadow-[0_12px_32px_-4px_rgba(124,58,237,0.1)]">
+        <section className={cx('relative overflow-hidden rounded-2xl p-5', GLASS_PANEL_SOLID)}>
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.1),transparent_50%)]" />
           <div className="relative z-10">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-violet-800 shadow-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#8b5cf6] shadow-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 Teacher workspace
               </span>
-              <span className="text-[10px] font-medium text-slate-500">
+              <span className="text-[10px] font-medium text-[#64748b]">
                 {currentDateTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
               </span>
             </div>
-            <h1 className="text-xl font-extrabold leading-snug tracking-tight text-slate-900">
-              {getGreeting()},<br /><span className="text-violet-600">{teacherName.split(' ')[0]}</span>
+            <h1 className="text-xl font-extrabold leading-snug tracking-tight text-[#0f172a]">
+              {getGreeting()},<br /><span className="text-[#8b5cf6]">{teacherName.split(' ')[0]}</span>
             </h1>
-            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+            <p className="mt-2 text-xs leading-relaxed text-[#64748b]">
               {dashboardLoading
                 ? 'Preparing your teaching workspace…'
                 : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} tasks waiting.`}
             </p>
           </div>
-          <div className="pointer-events-none absolute -bottom-8 -right-6 h-32 w-32 rounded-full bg-purple-200/60 blur-2xl" />
         </section>
 
         <section className="space-y-3">
           <MobileSectionTitle meta="Live overview">My classroom</MobileSectionTitle>
-          <div className="space-y-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-[0_4px_20px_-2px_rgba(124,58,237,0.06)]">
-            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-700 text-sm font-bold text-white shadow-sm ring-2 ring-purple-100">
+          <div className={cx('space-y-4 rounded-2xl p-4', GLASS_PANEL)}>
+            <div className="flex items-center gap-3.5 border-b border-white/60 pb-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-sm font-bold text-white shadow-sm ring-2 ring-white/70">
                 {teacherName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T'}
               </div>
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-base font-bold text-slate-900">{teacherName}</h2>
-                <p className="truncate text-[11px] font-medium text-slate-500">Class teacher • {mobileClassLabel}</p>
+                <h2 className="truncate text-base font-bold text-[#0f172a]">{teacherName}</h2>
+                <p className="truncate text-[11px] font-medium text-[#64748b]">Class teacher • {mobileClassLabel}</p>
               </div>
-              <Link to="/teacher/classes" aria-label="Open classes" className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+              <Link to="/teacher/classes" aria-label="Open classes" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/70 text-[#8b5cf6] transition hover:-translate-y-0.5">
                 <ChevronRight size={17} />
               </Link>
             </div>
             <div className="grid grid-cols-3 gap-2 text-center">
               {[
-                { value: stats.totalStudents ?? 0, label: 'Students', icon: Users, to: '/teacher/classes', tone: 'text-violet-600' },
+                { value: stats.totalStudents ?? 0, label: 'Students', icon: Users, to: '/teacher/classes', tone: 'text-[#8b5cf6]' },
                 { value: `${stats.attendanceRate ?? 0}%`, label: 'Attendance', icon: ClipboardCheck, to: '/teacher/classes/current/students/attendance', tone: 'text-emerald-600' },
                 { value: pendingTasks, label: 'Tasks', icon: FileText, to: '/teacher/classes/current/assignments', tone: 'text-amber-600' },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
-                  <Link key={item.label} to={item.to} className="flex min-h-[76px] flex-col items-center justify-center rounded-xl border border-purple-100/80 bg-[#faf8ff] p-2.5 transition active:scale-95">
+                  <Link key={item.label} to={item.to} className={cx('flex min-h-[76px] flex-col items-center justify-center rounded-xl p-2.5 transition active:scale-95', GLASS_INSET)}>
                     <span className={`text-lg font-black ${item.tone}`}>{item.value}</span>
-                    <span className="mt-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight text-slate-600"><Icon size={11} />{item.label}</span>
+                    <span className="mt-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight text-[#64748b]"><Icon size={11} />{item.label}</span>
                   </Link>
                 );
               })}
@@ -440,34 +449,34 @@ const TeacherDashboard = () => {
         </section>
 
         <div className="grid grid-cols-2 gap-3">
-          <Link to="/teacher/classes/current/students/attendance" className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm active:scale-[.98]">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><ClipboardCheck size={18} /></div>
-            <p className="text-xs font-bold text-slate-900">Mark attendance</p>
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">Record today’s class presence</p>
+          <Link to="/teacher/classes/current/students/attendance" className={cx('rounded-2xl p-4 transition active:scale-[.98]', GLASS_PANEL)}>
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-emerald-50/80 text-emerald-600"><ClipboardCheck size={18} /></div>
+            <p className="text-xs font-bold text-[#0f172a]">Mark attendance</p>
+            <p className="mt-1 text-[10px] leading-4 text-[#8e9aaf]">Record today’s class presence</p>
           </Link>
-          <Link to="/teacher/lesson-plan" className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm active:scale-[.98]">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><Sparkles size={18} /></div>
-            <p className="text-xs font-bold text-slate-900">Plan with AI</p>
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">Create your next lesson faster</p>
+          <Link to="/teacher/lesson-plan" className={cx('rounded-2xl p-4 transition active:scale-[.98]', GLASS_PANEL)}>
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Sparkles size={18} /></div>
+            <p className="text-xs font-bold text-[#0f172a]">Plan with AI</p>
+            <p className="mt-1 text-[10px] leading-4 text-[#8e9aaf]">Create your next lesson faster</p>
           </Link>
         </div>
 
         <section className="space-y-3">
           <MobileSectionTitle meta={nextClass ? `Next ${nextClass.time}` : 'Today'}>Today’s schedule</MobileSectionTitle>
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className={cx('rounded-2xl p-4', GLASS_PANEL)}>
             {todaysClasses.length === 0 ? (
               <div className="flex flex-col items-center py-5 text-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={18} /></div>
-                <p className="mt-2 text-xs font-semibold text-emerald-800">Your schedule is clear</p>
-                <p className="mt-1 text-[11px] text-emerald-600">No classes scheduled for today</p>
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-emerald-50/80 text-emerald-600"><CheckCircle2 size={18} /></div>
+                <p className="mt-2 text-xs font-semibold text-[#0f172a]">Your schedule is clear</p>
+                <p className="mt-1 text-[11px] text-[#64748b]">No classes scheduled for today</p>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {todaysClasses.slice(0, 3).map((classItem, index) => (
-                  <div key={classItem.id || index} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><BookOpen size={17} /></div>
-                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-slate-800">{classItem.subject || classItem.class}</p><p className="truncate text-[10px] text-slate-400">{classItem.class} {classItem.section ? `• ${classItem.section}` : ''}</p></div>
-                    <span className="text-[11px] font-bold text-slate-600">{classItem.time}</span>
+                  <div key={classItem.id || index} className={cx('flex items-center gap-3 rounded-xl p-3', GLASS_INSET)}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><BookOpen size={17} /></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#0f172a]">{classItem.subject || classItem.class}</p><p className="truncate text-[10px] text-[#8e9aaf]">{classItem.class} {classItem.section ? `• ${classItem.section}` : ''}</p></div>
+                    <span className="text-[11px] font-bold text-[#64748b]">{classItem.time}</span>
                   </div>
                 ))}
               </div>
@@ -475,19 +484,19 @@ const TeacherDashboard = () => {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-800"><CheckCircle2 size={15} className="text-violet-600" />Priority tasks</div>
-            <span className="rounded-full border border-purple-100 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">{visibleDeadlines.length} pending</span>
+        <section className={cx('rounded-2xl p-4', GLASS_PANEL)}>
+          <div className="flex items-center justify-between border-b border-white/60 pb-3">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[#0f172a]"><CheckCircle2 size={15} className="text-[#8b5cf6]" />Priority tasks</div>
+            <span className="rounded-full border border-white/70 bg-violet-50/80 px-2 py-0.5 text-[10px] font-semibold text-[#8b5cf6]">{visibleDeadlines.length} pending</span>
           </div>
           {visibleDeadlines.length === 0 ? (
-            <div className="flex flex-col items-center py-5 text-center"><CheckCircle2 size={24} className="text-slate-300" /><p className="mt-2 text-xs font-medium text-slate-400">All caught up</p></div>
+            <div className="flex flex-col items-center py-5 text-center"><CheckCircle2 size={24} className="text-slate-300" /><p className="mt-2 text-xs font-medium text-[#8e9aaf]">All caught up</p></div>
           ) : (
             <div className="mt-3 space-y-2">
               {visibleDeadlines.slice(0, 3).map((task) => (
-                <Link key={deadlineKey(task)} to="/teacher/classes/current/assignments" className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+                <Link key={deadlineKey(task)} to="/teacher/classes/current/assignments" className={cx('flex items-center gap-3 rounded-xl p-3', GLASS_INSET)}>
                   <span className="h-2 w-2 rounded-full bg-amber-400" />
-                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{task.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#0f172a]">{task.title}</span>
                   <span className="text-[10px] font-medium text-amber-700">{daysUntil(task.dueDate)}</span>
                 </Link>
               ))}
@@ -495,41 +504,41 @@ const TeacherDashboard = () => {
           )}
         </section>
 
-        <section className="flex items-start gap-3.5 rounded-2xl border border-purple-100 bg-gradient-to-br from-violet-50 via-purple-50/50 to-white p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-violet-600"><Brain size={20} /></div>
-          <div><h2 className="text-xs font-bold text-slate-900">Need teaching support?</h2><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">Use AI tools for lesson ideas, class insights, and differentiated activities.</p><Link to="/teacher/ai-tools" className="mt-2 inline-flex text-xs font-semibold text-violet-600">Open AI tools →</Link></div>
+        <section className={cx('flex items-start gap-3.5 rounded-2xl p-4', GLASS_PANEL)}>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Brain size={20} /></div>
+          <div><h2 className="text-xs font-bold text-[#0f172a]">Need teaching support?</h2><p className="mt-0.5 text-[11px] leading-relaxed text-[#64748b]">Use AI tools for lesson ideas, class insights, and differentiated activities.</p><Link to="/teacher/ai-tools" className="mt-2 inline-flex text-xs font-semibold text-[#8b5cf6]">Open AI tools →</Link></div>
         </section>
       </div>
 
       <div className="hidden lg:block">
       <div className="mx-auto max-w-[1800px] space-y-4 p-3 pt-0 sm:p-4 sm:pt-0 lg:p-5 lg:pt-0">
         {dashboardError && (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 backdrop-blur-sm">
               <AlertCircle size={18} />
               {dashboardError}
             </div>
           )}
 
           <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="space-y-4">
-            <MotionSection variants={itemVariants} className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-5 text-white shadow-xl shadow-slate-300/40 sm:p-6 lg:p-7">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.35),transparent_34%),linear-gradient(135deg,rgba(14,165,233,0.26),transparent_42%)]" />
-              <div className="absolute right-6 top-6 hidden h-36 w-36 rounded-full border border-white/10 lg:block" />
+            <MotionSection variants={itemVariants} className={cx('relative overflow-hidden rounded-3xl p-5 sm:p-6 lg:p-7', GLASS_PANEL_SOLID)}>
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.16),transparent_45%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.12),transparent_45%)]" />
+              <div className="pointer-events-none absolute right-6 top-6 hidden h-36 w-36 rounded-full border border-white/60 lg:block" />
               <div className="relative grid gap-6 lg:grid-cols-[1.5fr_1fr] lg:items-end">
                 <div>
                   <div className="mb-5 flex flex-wrap items-center gap-2">
-                    <Badge tone="emerald" className="border-white/15 bg-white/10 text-white"><span className="h-2 w-2 rounded-full bg-emerald-300" />Live workspace</Badge>
-                    <Badge tone="neutral" className="border-white/15 bg-white/10 text-white">{dateStr}</Badge>
-                    <Badge tone="neutral" className="border-white/15 bg-white/10 text-white">{currentDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Badge>
+                    <Badge tone="emerald"><span className="h-2 w-2 rounded-full bg-emerald-400" />Live workspace</Badge>
+                    <Badge tone="neutral">{dateStr}</Badge>
+                    <Badge tone="neutral">{currentDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Badge>
                   </div>
-                  <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">{getGreeting()}, {teacherName.split(' ')[0]}.</h1>
-                  <p className="mt-3 max-w-2xl text-base leading-7 text-slate-200">
+                  <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-[#0f172a] sm:text-4xl">{getGreeting()}, {teacherName.split(' ')[0]}.</h1>
+                  <p className="mt-3 max-w-2xl text-base leading-7 text-[#64748b]">
                     {dashboardLoading
                       ? 'Loading today\'s timetable and workload…'
                       : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} pending evaluations. AI can prepare your next lesson, flag student risks, and clear routine work faster.`}
                   </p>
                   <div className="mt-5 flex flex-wrap gap-3">
-                    <Link to="/teacher/classes" className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5">Open classes <ArrowUpRight size={16} /></Link>
-                    <Link to="/teacher/lesson-plan" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">Ask AI <Sparkles size={16} /></Link>
+                    <Link to="/teacher/classes" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#8b5cf6] px-4 text-sm font-semibold text-white shadow-sm shadow-violet-300/50 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#7c4deb]">Open classes <ArrowUpRight size={16} /></Link>
+                    <Link to="/teacher/lesson-plan" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-4 text-sm font-semibold text-[#0f172a] backdrop-blur-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/80">Ask AI <Sparkles size={16} className="text-[#8b5cf6]" /></Link>
                   </div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -553,17 +562,17 @@ const TeacherDashboard = () => {
                   const Icon = stat.icon;
                   return (
                     <Link key={stat.label} to={stat.path} className="group">
-                      <CardShell delay={index * 0.03} className="h-full p-5 transition hover:-translate-y-1 hover:border-slate-300 hover:shadow-lg">
+                      <CardShell delay={index * 0.03} className="h-full p-5 transition duration-200 ease-out hover:-translate-y-1 hover:bg-white/75 hover:shadow-[0_16px_40px_-14px_rgba(15,23,42,0.18)]">
                         <div className="flex items-start justify-between gap-3">
-                          <div className={cx('rounded-2xl p-3', stat.tone === 'rose' ? 'bg-rose-50 text-rose-600' : stat.tone === 'amber' ? 'bg-amber-50 text-amber-600' : stat.tone === 'violet' ? 'bg-violet-50 text-violet-600' : stat.tone === 'sky' ? 'bg-sky-50 text-sky-600' : 'bg-emerald-50 text-emerald-600')}>
+                          <div className={cx('rounded-2xl border border-white/70 p-3', stat.tone === 'rose' ? 'bg-rose-50/80 text-rose-600' : stat.tone === 'amber' ? 'bg-[#fffbeb]/90 text-amber-600' : stat.tone === 'violet' ? 'bg-violet-50/80 text-[#8b5cf6]' : stat.tone === 'sky' ? 'bg-sky-50/80 text-sky-600' : 'bg-emerald-50/80 text-emerald-600')}>
                             <Icon size={21} />
                           </div>
                         </div>
                         <div className="mt-5">
                           <div className="flex items-end justify-between gap-3">
-                            <p className="text-3xl font-semibold tracking-tight text-slate-950">{stat.value}</p>
+                            <p className="text-3xl font-semibold tracking-tight text-[#0f172a]">{stat.value}</p>
                           </div>
-                          <p className="mt-1 text-sm font-medium text-slate-700">{stat.label}</p>
+                          <p className="mt-1 text-sm font-medium text-[#64748b]">{stat.label}</p>
                         </div>
                       </CardShell>
                     </Link>
@@ -575,11 +584,11 @@ const TeacherDashboard = () => {
             <MotionSection variants={itemVariants} className="grid gap-4 2xl:grid-cols-[1fr_360px]">
               <div className="space-y-4">
                 <CardShell>
-                  <SectionHeader icon={Zap} title="Workflow Actions" subtitle="Grouped by how teachers actually move through the day." action={<Link to="/teacher/classes" className="text-sm font-semibold text-slate-700 hover:text-slate-950">View modules</Link>} />
+                  <SectionHeader icon={Zap} title="Workflow Actions" subtitle="Grouped by how teachers actually move through the day." action={<Link to="/teacher/classes" className="text-sm font-semibold text-[#64748b] transition hover:text-[#0f172a]">View modules</Link>} />
                   <div className="grid gap-4 p-5 lg:grid-cols-2">
                     {workflowGroups.map((group) => (
                       <div key={group.title}>
-                        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">{group.title}</h3>
+                        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-[#8e9aaf]">{group.title}</h3>
                         <div className="space-y-3">
                           {group.items.map((item) => <WorkflowAction key={item.title} item={item} />)}
                         </div>
@@ -592,7 +601,7 @@ const TeacherDashboard = () => {
                   <CardShell>
                     <SectionHeader icon={Clock} title="Today's Schedule" subtitle={nextClass ? `Next: ${nextClass.subject || nextClass.class || 'Details unavailable'} ${nextClass.time}` : 'Your class timeline is clear.'} action={<Badge tone="emerald">Live</Badge>} />
                     <div className="max-h-[430px] space-y-3 overflow-y-auto p-5">
-                      {todaysClasses.length === 0 ? <EmptyState icon={Calendar} title="No classes scheduled today" description="Today’s schedule will appear here when timetable data is available." /> : todaysClasses.map((classItem, index) => (
+                      {todaysClasses.length === 0 ? <EmptyState icon={Calendar} title="No classes scheduled today" description="Today's schedule will appear here when timetable data is available." /> : todaysClasses.map((classItem, index) => (
                         <ScheduleItem key={classItem.id || `${classItem.subject}-${index}`} classItem={classItem} index={index} isNext={classItem.id === nextClass?.id} reduceMotion={reduceMotion} />
                       ))}
                     </div>
@@ -607,15 +616,15 @@ const TeacherDashboard = () => {
                     />
                     <div className="grid gap-3 p-5 sm:grid-cols-2">
                       {analyticsSnapshot.map((metric) => (
-                        <Link key={metric.label} to="/teacher/classes/current/reports" className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white">
+                        <Link key={metric.label} to="/teacher/classes/current/reports" className={cx('rounded-2xl p-4 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/70', GLASS_INSET)}>
                           <div className="mb-4 flex items-start justify-between">
                             <div>
-                              <p className="text-sm font-semibold text-slate-700">{metric.label}</p>
-                              <p className="mt-1 text-xs text-slate-500">{metric.helper}</p>
+                              <p className="text-sm font-semibold text-[#0f172a]">{metric.label}</p>
+                              <p className="mt-1 text-xs text-[#8e9aaf]">{metric.helper}</p>
                             </div>
-                            <ArrowUpRight size={16} className="text-slate-400" />
+                            <ArrowUpRight size={16} className="text-[#8e9aaf]" />
                           </div>
-                          <p className="mb-3 text-2xl font-semibold text-slate-950">{metric.value}</p>
+                          <p className="mb-3 text-2xl font-semibold text-[#0f172a]">{metric.value}</p>
                           <Progress value={metric.progress} tone={metric.tone} />
                         </Link>
                       ))}
@@ -638,7 +647,7 @@ const TeacherDashboard = () => {
                   <CardShell>
                     <SectionHeader icon={CheckCircle2} title="Priority Task Board" subtitle="Deadlines without report-page overload." action={<Badge tone="amber">{visibleDeadlines.length} pending</Badge>} />
                     <div className="max-h-[440px] space-y-3 overflow-y-auto p-5">
-                      {deadlineError && <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
+                      {deadlineError && <p className="rounded-xl border border-rose-200/70 bg-rose-50/80 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
                       {visibleDeadlines.length === 0 ? <EmptyState icon={CheckCircle2} title="All caught up" description="No upcoming deadlines are waiting for action." /> : visibleDeadlines.map((task, index) => <DeadlineTask key={deadlineKey(task)} task={task} index={index} onComplete={() => clearDeadline(task)} completing={completingDeadlineId === deadlineKey(task)} />)}
                     </div>
                   </CardShell>
@@ -654,22 +663,22 @@ const TeacherDashboard = () => {
 };
 
 const HeroChip = ({ label, value }) => (
-  <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-    <p className="text-xs uppercase tracking-wide text-slate-300">{label}</p>
-    <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+  <div className="rounded-2xl border border-white/70 bg-white/60 p-4 shadow-sm backdrop-blur-lg backdrop-saturate-[1.8]">
+    <p className="text-xs uppercase tracking-wide text-[#8e9aaf]">{label}</p>
+    <p className="mt-1 text-sm font-semibold text-[#0f172a]">{value}</p>
   </div>
 );
 
 const WorkflowAction = ({ item }) => {
   const Icon = item.icon;
   return (
-    <Link to={item.path} className="group flex min-h-[98px] gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-sm">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-slate-700 ring-1 ring-slate-200 transition group-hover:bg-slate-950 group-hover:text-white">
+    <Link to={item.path} className={cx('group flex min-h-[98px] gap-3 rounded-2xl p-4 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-[0_10px_28px_-14px_rgba(15,23,42,0.18)]', GLASS_INSET)}>
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-white/80 text-[#64748b] transition duration-200 ease-out group-hover:bg-[#8b5cf6] group-hover:text-white">
         <Icon size={20} />
       </div>
       <div className="min-w-0">
-        <p className="font-semibold text-slate-950">{item.title}</p>
-        <p className="mt-1 text-sm leading-5 text-slate-500">{item.description}</p>
+        <p className="font-semibold text-[#0f172a]">{item.title}</p>
+        <p className="mt-1 text-sm leading-5 text-[#64748b]">{item.description}</p>
       </div>
     </Link>
   );
@@ -679,34 +688,34 @@ const ScheduleItem = ({ classItem, index, isNext, reduceMotion }) => (
   <MotionDiv
     initial={reduceMotion ? false : { opacity: 0, x: -12 }}
     animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
-    transition={{ duration: 0.24, delay: index * 0.03 }}
-    className={cx('relative rounded-2xl border p-4 transition hover:border-slate-300 hover:bg-slate-50', isNext ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white')}
+    transition={{ duration: 0.26, delay: index * 0.04, ease: 'easeOut' }}
+    className={cx('relative rounded-2xl p-4 transition duration-200 ease-out hover:bg-white/70', isNext ? 'border border-emerald-200/70 bg-emerald-50/60 backdrop-blur-lg backdrop-saturate-[1.8]' : GLASS_INSET)}
   >
     <div className="flex items-start gap-3">
       <span className={cx('mt-1 h-12 w-1.5 rounded-full', isNext ? 'bg-emerald-500' : 'bg-slate-300')} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-slate-950">{classItem.subject}</h3>
+          <h3 className="font-semibold text-[#0f172a]">{classItem.subject}</h3>
           <Badge tone={isNext ? 'emerald' : 'neutral'}>{classItem.status}</Badge>
         </div>
-        <p className="mt-1 text-sm text-slate-500">{classItem.class} {classItem.section && `• ${classItem.section}`} {classItem.room && `• Room ${classItem.room}`}</p>
+        <p className="mt-1 text-sm text-[#64748b]">{classItem.class} {classItem.section && `• ${classItem.section}`} {classItem.room && `• Room ${classItem.room}`}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Link to="/teacher/classes/current/students/attendance" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:border-slate-300"><ClipboardCheck size={14} /> Attendance</Link>
-          <Link to="/teacher/classes/current/teaching" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white">Open <ChevronRight size={14} /></Link>
+          <Link to="/teacher/classes/current/students/attendance" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/70 px-3 text-xs font-semibold text-[#64748b] transition hover:bg-white/90"><ClipboardCheck size={14} /> Attendance</Link>
+          <Link to="/teacher/classes/current/teaching" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open <ChevronRight size={14} /></Link>
         </div>
       </div>
       <div className="text-right">
-        <p className="font-semibold text-slate-950">{classItem.time}</p>
-        <p className="mt-1 text-xs text-slate-500">{classItem.status === 'In progress' ? 'Happening now' : isNext ? 'Next class' : classItem.status}</p>
+        <p className="font-semibold text-[#0f172a]">{classItem.time}</p>
+        <p className="mt-1 text-xs text-[#8e9aaf]">{classItem.status === 'In progress' ? 'Happening now' : isNext ? 'Next class' : classItem.status}</p>
       </div>
     </div>
   </MotionDiv>
 );
 
 const TimeframeToggle = ({ activeTimeframe, setActiveTimeframe }) => (
-  <div className="flex rounded-xl bg-slate-100 p-1">
+  <div className="flex rounded-xl border border-white/70 bg-white/50 p-1 backdrop-blur-sm">
     {['weekly', 'monthly', 'yearly'].map((timeframe) => (
-      <button key={timeframe} type="button" onClick={() => setActiveTimeframe(timeframe)} className={cx('rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition', activeTimeframe === timeframe ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-950')}>
+      <button key={timeframe} type="button" onClick={() => setActiveTimeframe(timeframe)} className={cx('rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition duration-150 ease-out', activeTimeframe === timeframe ? 'bg-white text-[#0f172a] shadow-sm' : 'text-[#8e9aaf] hover:text-[#0f172a]')}>
         {timeframe}
       </button>
     ))}
@@ -714,37 +723,37 @@ const TimeframeToggle = ({ activeTimeframe, setActiveTimeframe }) => (
 );
 
 const ActivityItem = ({ activity, index, total }) => (
-  <div className="grid grid-cols-[auto_1fr_auto] gap-3 rounded-2xl p-3 transition hover:bg-slate-50">
+  <div className="grid grid-cols-[auto_1fr_auto] gap-3 rounded-2xl p-3 transition duration-200 ease-out hover:bg-white/60">
     <div className="relative">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Activity size={18} /></div>
-      {index < total - 1 && <span className="absolute left-1/2 top-11 h-5 w-px bg-slate-200" />}
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/70 text-[#64748b]"><Activity size={18} /></div>
+      {index < total - 1 && <span className="absolute left-1/2 top-11 h-5 w-px bg-slate-200/70" />}
     </div>
     <div className="min-w-0">
-      <p className="truncate text-sm font-semibold text-slate-950">{activity.message}</p>
-      <p className="mt-1 text-xs text-slate-500">{activity.class || 'Class update'} • {activity.time}</p>
+      <p className="truncate text-sm font-semibold text-[#0f172a]">{activity.message}</p>
+      <p className="mt-1 text-xs text-[#8e9aaf]">{activity.class || 'Class update'} • {activity.time}</p>
     </div>
-    <button className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="View activity"><Eye size={16} /></button>
+    <button className="flex h-9 w-9 items-center justify-center rounded-xl text-[#8e9aaf] transition hover:bg-white/70 hover:text-[#0f172a]" aria-label="View activity"><Eye size={16} /></button>
   </div>
 );
 
 const DeadlineTask = ({ task, index, onComplete, completing = false }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:bg-slate-50">
+  <div className={cx('rounded-2xl p-4 transition duration-200 ease-out hover:bg-white/70', GLASS_INSET)}>
     <div className="mb-3 flex items-center justify-between gap-2">
       <Badge tone={index === 0 ? 'rose' : 'amber'}>{daysUntil(task.dueDate)}</Badge>
-      <span className="text-xs font-semibold text-slate-400">{formatDate(task.dueDate)}</span>
+      <span className="text-xs font-semibold text-[#8e9aaf]">{formatDate(task.dueDate)}</span>
     </div>
-    <h3 className="font-semibold text-slate-950">{task.title}</h3>
-    <p className="mt-1 text-sm text-slate-500">{task.class || '-'}{task.subject ? ` • ${task.subject}` : ''}</p>
+    <h3 className="font-semibold text-[#0f172a]">{task.title}</h3>
+    <p className="mt-1 text-sm text-[#64748b]">{task.class || '-'}{task.subject ? ` • ${task.subject}` : ''}</p>
     <div className="mt-4 flex gap-2">
       <button
         type="button"
         onClick={onComplete}
         disabled={completing}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/60 px-3 text-xs font-semibold text-[#64748b] transition duration-150 ease-out hover:border-emerald-300/70 hover:bg-emerald-50/80 hover:text-emerald-700"
       >
         <CheckCircle2 size={14} /> {completing ? 'Completing…' : 'Mark complete'}
       </button>
-      <Link to="/teacher/classes/current/assignments" className="inline-flex h-8 items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white">Open task</Link>
+      <Link to="/teacher/classes/current/assignments" className="inline-flex h-8 items-center rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open task</Link>
     </div>
   </div>
 );

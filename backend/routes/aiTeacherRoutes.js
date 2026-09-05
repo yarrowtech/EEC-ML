@@ -8,6 +8,74 @@ const MasteryScore = require('../models/MasteryScore');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const {
+  buildTeacherAllocationScope,
+  scopeAllowsRequest,
+  studentIsWithinTeacherScope,
+  teacherHasClassAllocation,
+} = require('../utils/teacherAllocationScope');
+
+// ── Scope guards ──────────────────────────────────────────────────────────────
+// These AI endpoints accept class/section/student identifiers straight from
+// the request body and use them to pull real student data into LLM prompts.
+// Without a server-side check, any authenticated teacher could request a
+// report/summary for a class or student they aren't allocated to. Every
+// handler that reads class/section/student data validates against the
+// teacher's own TeacherAllocation records first.
+const requireClassNameScope = async (req, res, { className, section, subject } = {}) => {
+  const schoolId = req.schoolId;
+  const teacherId = req.user?.id || req.teacher?.id;
+  if (!schoolId || !teacherId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  const scope = await buildTeacherAllocationScope({ schoolId, campusId: req.campusId || null, teacherId });
+  if (className || section) {
+    if (!scope.length || !scopeAllowsRequest(scope, { grade: className, section, subject })) {
+      res.status(403).json({ error: 'You are not allocated to this class/section' });
+      return null;
+    }
+  }
+  return scope;
+};
+
+const requireClassIdScope = async (req, res, { classId, sectionId, subjectId } = {}) => {
+  const schoolId = req.schoolId;
+  const teacherId = req.user?.id || req.teacher?.id;
+  if (!schoolId || !teacherId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  if (!classId) return true;
+  const allowed = await teacherHasClassAllocation({
+    schoolId, campusId: req.campusId || null, teacherId, classId, sectionId, subjectId,
+  });
+  if (!allowed) {
+    res.status(403).json({ error: 'You are not allocated to this class' });
+    return false;
+  }
+  return true;
+};
+
+const requireStudentScope = async (req, res, studentId) => {
+  const schoolId = req.schoolId;
+  const teacherId = req.user?.id || req.teacher?.id;
+  if (!schoolId || !teacherId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section attendance').lean();
+  if (!student) {
+    res.status(404).json({ error: 'Student not found' });
+    return null;
+  }
+  const scope = await buildTeacherAllocationScope({ schoolId, campusId: req.campusId || null, teacherId });
+  if (!scope.length || !studentIsWithinTeacherScope(student, scope)) {
+    res.status(403).json({ error: 'You are not allocated to this student\'s class' });
+    return null;
+  }
+  return student;
+};
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -164,6 +232,7 @@ router.post('/ingest-file', authTeacher, async (req, res) => {
     if (!classId || !sectionId || !subjectId || !subjectName) {
       return res.status(400).json({ error: 'classId, sectionId, subjectId, and subjectName are required for AI indexing' });
     }
+    if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
 
     const schoolId = String(req.schoolId || '');
     const classDoc = await ClassModel.findOne({ _id: classId, schoolId }).select('academicYearId').lean();
@@ -206,6 +275,7 @@ router.post('/lesson-content', authTeacher, async (req, res) => {
   try {
     const { subject, topic, gradeLevel, chapterTitle, classId, sectionId, subjectId } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
 
     const payload = {
       mode: 'summarize',
@@ -251,7 +321,7 @@ router.post('/class-summary', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section, subject } = req.body || {};
-    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!(await requireClassNameScope(req, res, { className, section, subject }))) return;
 
     const filter = { schoolId };
     if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
@@ -325,6 +395,8 @@ router.post('/parent-report', authTeacher, async (req, res) => {
     const schoolId = req.schoolId;
     const { studentId, studentName, grade, section, subject } = req.body || {};
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+    const student = await requireStudentScope(req, res, studentId);
+    if (!student) return;
 
     const results = await ExamResult.find({
       schoolId, studentId, published: true,
@@ -335,7 +407,6 @@ router.post('/parent-report', authTeacher, async (req, res) => {
       .limit(20)
       .lean();
 
-    const student = await StudentUser.findById(studentId).select('name grade section attendance').lean();
     const att = student?.attendance || [];
     const attPct = att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
 
@@ -407,6 +478,7 @@ router.post('/generate-content', authTeacher, async (req, res) => {
   try {
     const { subject, topic, gradeLevel, classId, sectionId, subjectId, chapterTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
 
     const payload = {
       mode: 'explain',
@@ -565,6 +637,7 @@ router.post('/assignment-draft', authTeacher, async (req, res) => {
     if (!subject || !classId || !sectionId) {
       return res.status(400).json({ error: 'classId, sectionId, and subject are required' });
     }
+    if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
 
     const [classDoc, sectionDoc, subjectDoc] = await Promise.all([
       ClassModel.findOne({ _id: classId, schoolId }).select('name').lean(),
@@ -663,6 +736,7 @@ router.post('/idoweedo', authTeacher, async (req, res) => {
   try {
     const { subject, topic, gradeLevel, totalMinutes, classId, sectionId, chapterTitle } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    if (!(await requireClassIdScope(req, res, { classId, sectionId }))) return;
 
     const minutes = totalMinutes || 60;
     const payload = {
@@ -698,6 +772,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       classId, sectionId, subjectId, academicYearId,
     } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
     const chapter = chapterTitle || topicTitle || null;
     const requestedType = questionType || 'mcq';
     const safeCount = Math.min(20, Math.max(1, Number(count) || 5));
@@ -818,6 +893,7 @@ router.post('/generate-lesson-package', authTeacher, async (req, res) => {
 
     const { subject, topic, chapterTitle, gradeLevel, classId, sectionId } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
+    if (!(await requireClassIdScope(req, res, { classId, sectionId }))) return;
 
     const fullTopic = [chapterTitle, topic].filter(Boolean).join(' — ');
 
@@ -997,6 +1073,7 @@ router.post('/progress-summary', authTeacher, async (req, res) => {
     const schoolId = req.schoolId;
     const { studentId, studentName, grade, section } = req.body || {};
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+    if (!(await requireStudentScope(req, res, studentId))) return;
 
     const [student, results, mastery] = await Promise.all([
       StudentUser.findById(studentId).select('name grade section attendance').lean(),
@@ -1130,6 +1207,7 @@ router.post('/cohort-report', authTeacher, async (req, res) => {
     const schoolId = req.schoolId;
     const { className, section, subject } = req.body || {};
     if (!className) return res.status(400).json({ error: 'className is required' });
+    if (!(await requireClassNameScope(req, res, { className, section, subject }))) return;
 
     const StudentUserModel = require('../models/StudentUser');
     const MasteryScoreModel = require('../models/MasteryScore');

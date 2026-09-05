@@ -30,8 +30,6 @@ const componentMocks = {
   '../PracticeQuestions': 'Practice Questions',
   '../TeacherFeedbackPortal': 'Teacher Feedback',
   '../ExcuseLetters': 'Excuse Letters',
-  '../ExamManagement': 'Exam Management',
-  '../ResultManagement': 'Result Management',
   '../TestTeacherPortal': 'Test Portal',
 };
 

@@ -54,6 +54,7 @@ const requestLogger = require('./middleware/requestLogger');
 const tokenReplayTelemetry = require('./middleware/tokenReplayTelemetry');
 const tenantResolver = require('./middleware/tenantResolver');
 const adminActionLogger = require('./middleware/adminActionLogger');
+const portalActionLogger = require('./middleware/portalActionLogger');
 const rateLimit = require('./middleware/rateLimit');
 const { logSecurityEvent } = require('./utils/securityEventLogger');
 const { getClientIp } = require('./utils/request');
@@ -163,6 +164,10 @@ app.use(helmet({
 }));
 app.use(requestLogger);
 app.use(tokenReplayTelemetry);
+// Portal-wide action audit trail (student/parent/teacher/admin/etc. — see
+// PORTAL_ROUTE_PREFIXES in the middleware). Reads req.user/req.teacher/etc.
+// on res 'finish', so it's safe to register before per-route auth runs.
+app.use(portalActionLogger);
 app.use('/api', limiters.general);
 
 // Razorpay webhook must receive the raw body before express.json() parses it.

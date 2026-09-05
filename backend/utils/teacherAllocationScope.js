@@ -129,6 +129,31 @@ const allowedSubjectsForStudent = (student, scope = []) => {
   return new Set(matching.flatMap((item) => item.subjects.map(normalizeText)).filter(Boolean));
 };
 
+// Direct id-based allocation check — used by endpoints that operate on
+// classId/sectionId/subjectId (ObjectId refs) rather than class/section names.
+// Returns true if the teacher has ANY allocation for the given class (and,
+// when supplied, section/subject), or is the class teacher for it.
+const teacherHasClassAllocation = async ({ schoolId, campusId = null, teacherId, classId, sectionId = null, subjectId = null }) => {
+  if (!schoolId || !teacherId || !classId) return false;
+
+  const filter = {
+    schoolId,
+    teacherId,
+    classId,
+    ...buildCampusFilter(campusId),
+  };
+  if (sectionId) filter.sectionId = sectionId;
+
+  const allocations = await TeacherAllocation.find(filter).select('subjectId isClassTeacher').lean();
+  if (!allocations.length) return false;
+  if (!subjectId) return true;
+  return allocations.some((allocation) => (
+    allocation.isClassTeacher
+    || !allocation.subjectId
+    || String(allocation.subjectId) === String(subjectId)
+  ));
+};
+
 module.exports = {
   allowedSubjectsForStudent,
   buildTeacherAllocationScope,
@@ -137,4 +162,5 @@ module.exports = {
   scopeAllowsRequest,
   studentIsWithinTeacherScope,
   subjectIsAllowedForStudent,
+  teacherHasClassAllocation,
 };

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
-import { AUTH_LOGOUT_EVENT } from '../utils/authSession';
+import { AUTH_LOGOUT_EVENT, AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const resolveApiBaseUrl = () => {
   const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '').replace(/\/api$/, '');
@@ -26,11 +26,22 @@ const LAST_TEACHER_CHAT_ME_KEY = 'teacher_chat_me_id_v1';
 
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
+// This wrapper is module-level (no React Router `navigate` in scope), so a
+// 401/403 clears the session and does a hard redirect to login rather than a
+// client-side navigation — still fixes the previous stuck-spinner behavior
+// where an expired JWT just surfaced a generic "Request failed" error.
 const apiFetch = async (path, options = {}) => {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...authHeader(), ...(options.headers || {}) },
   });
+  if (res.status === 401 || res.status === 403) {
+    logoutAndRedirect({ notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
+    if (typeof window !== 'undefined') window.location.assign('/');
+    const authError = new Error('Session expired');
+    authError.code = AUTH_NOTICE.EXPIRED;
+    throw authError;
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;

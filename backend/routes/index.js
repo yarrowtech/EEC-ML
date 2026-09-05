@@ -52,7 +52,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/mock-exam', require('./mockExamRoutes'));
   app.use('/api/curriculum-map', require('./curriculumMapRoutes'));
   app.use('/api/teacher-allocations', writeHeavyApiLimiter, require('./teacherAllocationRoutes'));
-  app.use('/api/teacher-analytics', require('./teacherAnalyticsRoutes'));
+  app.use('/api/teacher-analytics', requireOrganizationDomain, writeHeavyApiLimiter, require('./teacherAnalyticsRoutes'));
   app.use('/api/excuse-letters', require('./excuseLetterRoutes'));
   app.use('/api/meeting', require('./meetingRoute'));
 

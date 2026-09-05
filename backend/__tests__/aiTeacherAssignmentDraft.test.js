@@ -34,6 +34,20 @@ describe('AI teacher assignment draft endpoint', () => {
     jest.doMock('../models/StudentUser', () => ({}));
     jest.doMock('../models/ExamResult', () => ({}));
     jest.doMock('../models/MasteryScore', () => ({}));
+    // The teacher is allocated to class-1/section-1/subject-1 — used by the
+    // scope guards in routes/aiTeacherRoutes.js (utils/teacherAllocationScope).
+    jest.doMock('../models/TeacherAllocation', () => ({
+      find: jest.fn(() => ({
+        select: jest.fn(() => ({
+          lean: jest.fn(() => Promise.resolve([
+            { subjectId: 'subject-1', isClassTeacher: false },
+          ])),
+        })),
+        populate: jest.fn(function populate() { return this; }),
+        lean: jest.fn(() => Promise.resolve([])),
+      })),
+    }));
+    jest.doMock('../models/Timetable', () => ({ find: jest.fn(() => ({ populate: jest.fn(function populate() { return this; }), lean: jest.fn(() => Promise.resolve([])) })) }));
 
     app = express();
     app.use(express.json());

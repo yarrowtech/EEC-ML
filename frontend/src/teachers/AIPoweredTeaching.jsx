@@ -546,12 +546,20 @@ const AIPoweredTeaching = () => {
 
   const handleDeleteChapter = async (id) => {
     const chapter = chapters.find((item) => item.id === id);
+    if (!chapter) return;
+
     const chapterTitle = String(chapter?.title || '').trim();
     const publishedChapterTitle = String(chapter?.publishedChapterTitle || chapterTitle).trim();
     const publishedPlanId = toIdString(chapter?.publishedPlanId);
     const isPublishedChapter = chapter?.status === 'published' && chapter?.isDraft === false;
 
-    if (!chapter) return;
+    // Destructive + irreversible (also unpublishes it if already live) —
+    // confirm before deleting, matching the confirm() pattern used elsewhere
+    // in the teacher portal for exam/result/question deletes.
+    const confirmMessage = isPublishedChapter
+      ? `Delete "${chapterTitle || 'this chapter'}"? This will also remove it from the published lesson plan.`
+      : `Delete "${chapterTitle || 'this chapter'}"? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
 
     const nextChapters = chapters.filter((ch) => ch.id !== id);
     setSidebarCollapsed(false);

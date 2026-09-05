@@ -1793,7 +1793,7 @@ const TeacherPortalShell = () => {
               <Route path="live-monitor" element={<LiveExamMonitor />} />
               <Route path="ptm" element={<ParentMeetings />} />
               <Route path="settings" element={<MyWorkPortal />} />
-              <Route path="test" element={<TestTeacherPortal />} />
+              {import.meta.env.DEV && <Route path="test" element={<TestTeacherPortal />} />}
 
               <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
               <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />

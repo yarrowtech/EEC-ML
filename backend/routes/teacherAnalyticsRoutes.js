@@ -9,6 +9,82 @@ const InterventionLog = require('../models/InterventionLog');
 const MasteryScore = require('../models/MasteryScore');
 const PracticeAttempt = require('../models/PracticeAttempt');
 const PracticeQuestion = require('../models/PracticeQuestion');
+const {
+  buildTeacherAllocationScope,
+  scopeAllowsRequest,
+  studentIsWithinTeacherScope,
+  teacherHasClassAllocation,
+} = require('../utils/teacherAllocationScope');
+
+// Id-based guard for endpoints keyed by classId rather than class/section names.
+const requireClassIdAllocation = async (req, res, { classId, sectionId, subjectId } = {}) => {
+  const schoolId = req.schoolId;
+  const teacherId = req.user?.id || req.teacher?.id;
+  if (!schoolId || !teacherId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+  if (!classId) {
+    // No class specified — caller must instead scope by teacherId directly.
+    return true;
+  }
+  const allowed = await teacherHasClassAllocation({
+    schoolId, campusId: req.campusId || null, teacherId, classId, sectionId, subjectId,
+  });
+  if (!allowed) {
+    res.status(403).json({ error: 'You are not allocated to this class' });
+    return false;
+  }
+  return true;
+};
+
+// ── Scope guard ───────────────────────────────────────────────────────────────
+// Every analytics endpoint reads a subset of students by class/section. This
+// resolves the requesting teacher's allocations and, when the request names a
+// specific className/section, confirms the teacher is actually allocated to
+// it. When no className/section is given, callers must instead intersect
+// their student query against the returned scope (see buildScopedStudentFilter).
+const requireTeacherScope = async (req, res, { className, section, subject } = {}) => {
+  const schoolId = req.schoolId;
+  const teacherId = req.user?.id || req.teacher?.id;
+  if (!schoolId || !teacherId) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  const scope = await buildTeacherAllocationScope({ schoolId, campusId: req.campusId || null, teacherId });
+  if (!scope.length) {
+    res.status(403).json({ error: 'No class allocations found for this teacher' });
+    return null;
+  }
+  if (className || section) {
+    if (!scopeAllowsRequest(scope, { grade: className, section, subject })) {
+      res.status(403).json({ error: 'You are not allocated to this class/section' });
+      return null;
+    }
+  }
+  return scope;
+};
+
+// Builds a student-query filter restricted to the teacher's allocated
+// class/section pairs, honoring an optional explicit className/section
+// (already validated against scope by requireTeacherScope).
+const buildScopedStudentFilter = (schoolId, scope, { className, section } = {}) => {
+  if (className || section) {
+    const filter = { schoolId };
+    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
+    if (section) filter.section = section;
+    return filter;
+  }
+  const or = [];
+  scope.forEach((item) => {
+    const classClause = { $or: [{ grade: item.className }, { grade: `Class ${item.className}` }] };
+    const clause = item.sectionName
+      ? { $and: [classClause, { section: item.sectionName }] }
+      : classClause;
+    or.push(clause);
+  });
+  return { schoolId, ...(or.length ? { $or: or } : {}) };
+};
 
 // ── Compute composite at-risk score for a student ────────────────────────────
 // Factors: attendance %, exam score avg, score trend (declining?), submission rate
@@ -58,22 +134,12 @@ const computeRiskScore = (student, examResults = []) => {
 router.get('/at-risk', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    const teacherId = req.user?.id || req.teacher?.id;
-    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section } = req.query;
 
-    // Get students allocated to this teacher
-    const allocations = await TeacherAllocation.find({ schoolId, teacherId })
-      .populate('classId', 'name')
-      .populate('sectionId', 'name')
-      .lean();
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
 
-    const filter = {
-      schoolId,
-      ...(className ? { $or: [{ grade: className }, { grade: `Class ${className}` }] } : {}),
-      ...(section ? { section } : {}),
-    };
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter)
       .select('name roll grade section attendance')
@@ -130,14 +196,12 @@ router.get('/at-risk', authTeacher, async (req, res) => {
 router.get('/class-trends', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    const teacherId = req.user?.id || req.teacher?.id;
-    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section } = req.query;
 
-    const filter = { schoolId };
-    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) filter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
+
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter).select('_id grade section attendance').lean();
     const studentIds = students.map((s) => s._id);
@@ -276,14 +340,13 @@ router.put('/interventions/:id/outcome', authTeacher, async (req, res) => {
 router.get('/at-risk-7day', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section } = req.query;
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const filter = { schoolId };
-    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) filter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
+
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter)
       .select('name roll grade section attendance')
@@ -377,13 +440,12 @@ router.get('/at-risk-7day', authTeacher, async (req, res) => {
 router.get('/misconceptions', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section } = req.query;
 
-    const studentFilter = { schoolId };
-    if (className) studentFilter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) studentFilter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
+
+    const studentFilter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(studentFilter).select('_id classId sectionId').lean();
     const studentIds = students.map((s) => s._id);
@@ -454,13 +516,12 @@ router.get('/misconceptions', authTeacher, async (req, res) => {
 router.get('/class-gaps', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section, subject } = req.query;
 
-    const filter = { schoolId };
-    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) filter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section, subject });
+    if (!scope) return;
+
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter).select('_id name').lean();
     const studentIds = students.map((s) => s._id);
@@ -517,13 +578,12 @@ router.get('/class-gaps', authTeacher, async (req, res) => {
 router.get('/student-mastery-all', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    if (!schoolId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section, subject } = req.query;
 
-    const studentFilter = { schoolId };
-    if (className) studentFilter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) studentFilter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section, subject });
+    if (!scope) return;
+
+    const studentFilter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(studentFilter)
       .select('name roll grade section')
@@ -593,6 +653,12 @@ router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
     const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section').lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
+    const scope = await requireTeacherScope(req, res);
+    if (!scope) return;
+    if (!studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'You are not allocated to this student\'s class' });
+    }
+
     const filter = { studentId: new mongoose.Types.ObjectId(studentId) };
     if (subject) filter.subject = { $regex: subject, $options: 'i' };
 
@@ -659,14 +725,12 @@ router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
 router.get('/term-comparison', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
-    const teacherId = req.user?.id || req.teacher?.id;
-    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { className, section, subject } = req.query;
 
-    const filter = { schoolId };
-    if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
-    if (section) filter.section = section;
+    const scope = await requireTeacherScope(req, res, { className, section, subject });
+    if (!scope) return;
+
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter).select('_id').lean();
     const studentIds = students.map((s) => s._id);
@@ -789,14 +853,14 @@ router.get('/cohort', authTeacher, async (req, res) => {
 router.get('/grade-book-csv', authTeacher, async (req, res) => {
   try {
     const schoolId  = req.schoolId;
-    const teacherId = req.user?.id;
-    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
-
     const { term, subject, className, sectionName } = req.query;
+
+    const scope = await requireTeacherScope(req, res, { className, section: sectionName, subject });
+    if (!scope) return;
 
     const filter = {
       schoolId,
-      ...(term    ? { 'examId.term': term }    : {}),
+      ...(term ? { 'examId.term': term } : {}),
     };
 
     const results = await ExamResult.find(filter)
@@ -804,17 +868,18 @@ router.get('/grade-book-csv', authTeacher, async (req, res) => {
       .populate('studentId', 'name grade section roll')
       .lean();
 
-    // Filter by teacher's subject/class scope
-    const allocations = await TeacherAllocation.find({ schoolId, teacherId }).lean();
-    const allocSet = new Set(allocations.map((a) => `${a.subject}|${a.className}`));
-
+    // Filter by teacher's actual class/section/subject allocation scope
+    // (name-based, resolved via buildTeacherAllocationScope — never the
+    // request's own className/subject query params, so a caller can't widen
+    // their own export beyond what they're allocated to).
     const scoped = results.filter((r) => {
       const subj = r.examId?.subject || '';
       const cls  = r.examId?.grade  || r.studentId?.grade || '';
+      const sect = r.examId?.section || r.studentId?.section || '';
       if (subject && subj !== subject) return false;
       if (className && cls !== className) return false;
-      if (sectionName && (r.examId?.section || r.studentId?.section) !== sectionName) return false;
-      return allocSet.has(`${subj}|${cls}`) || allocations.length === 0;
+      if (sectionName && sect !== sectionName) return false;
+      return scopeAllowsRequest(scope, { grade: cls, section: sect, subject: subj });
     });
 
     // Build CSV
@@ -837,9 +902,10 @@ router.get('/grade-book-csv', authTeacher, async (req, res) => {
 
     const csv = header + rows;
 
-    // Non-blocking email to admin
+    // Non-blocking email to admin — opt-in only (was previously silent/automatic
+    // on every export, with no audit trail of grade data leaving the system).
     const adminEmail = process.env.ADMIN_EMAIL;
-    if (adminEmail) {
+    if (adminEmail && String(req.query.notifyAdmin || '').toLowerCase() === 'true') {
       try {
         const { sendMail } = require('../utils/mailer');
         await sendMail({
@@ -866,8 +932,11 @@ router.get('/low-mastery', authTeacher, async (req, res) => {
     const teacherId = req.user?.id;
     if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const allocations = await TeacherAllocation.find({ schoolId, teacherId }).lean();
-    const subjects = [...new Set(allocations.map((a) => a.subject))];
+    const allocations = await TeacherAllocation.find({ schoolId, teacherId })
+      .populate('subjectId', 'name')
+      .lean();
+    const subjects = [...new Set(allocations.map((a) => a.subjectId?.name).filter(Boolean))];
+    if (!subjects.length) return res.json({ success: true, data: [] });
 
     const pipeline = [
       { $match: { schoolId: mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : schoolId, subject: { $in: subjects } } },
@@ -888,9 +957,11 @@ router.get('/mastery-heatmap', authTeacher, async (req, res) => {
   try {
     const { className, section } = req.query;
     const schoolId = req.schoolId;
-    const filter = { schoolId };
-    if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
-    if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
+
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
+
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
     const students = await StudentUser.find(filter).select('_id name roll grade section').lean();
 
     const studentIds = students.map((s) => s._id);
@@ -922,15 +993,17 @@ router.get('/improvement-trends', authTeacher, async (req, res) => {
   try {
     const { className, section, days = '7' } = req.query;
     const schoolId = req.schoolId;
+
+    const scope = await requireTeacherScope(req, res, { className, section });
+    if (!scope) return;
+
     const N = Math.min(parseInt(days, 10) || 7, 90);
     const now = Date.now();
     const DAY = 86400000;
     const recentStart = now - N * DAY;
     const priorStart = recentStart - N * DAY;
 
-    const filter = { schoolId };
-    if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
-    if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
     const students = await StudentUser.find(filter).select('_id name roll').lean();
 
     const StudentProgress = require('../models/StudentProgress');
@@ -962,6 +1035,10 @@ router.get('/improvement-trends', authTeacher, async (req, res) => {
 router.get('/bloom-distribution', authTeacher, async (req, res) => {
   try {
     const { subject, className } = req.query;
+
+    const scope = await requireTeacherScope(req, res, { className, subject });
+    if (!scope) return;
+
     const TeachingMaterial = require('../models/TeachingMaterial');
     const filter = { schoolId: req.schoolId };
     if (subject)   filter.subjectName = { $regex: subject, $options: 'i' };
@@ -986,6 +1063,8 @@ router.get('/bloom-distribution', authTeacher, async (req, res) => {
 router.get('/error-breakdown', authTeacher, async (req, res) => {
   try {
     const { subject, classId } = req.query;
+    if (!(await requireClassIdAllocation(req, res, { classId }))) return;
+
     const ErrorRecord  = require('../models/ErrorRecord');
     const studentIds   = await StudentUser.distinct('_id', {
       schoolId: req.schoolId,
@@ -1007,41 +1086,20 @@ router.get('/error-breakdown', authTeacher, async (req, res) => {
   }
 });
 
-// ── GET /api/teacher-analytics/at-risk?classId=&subject= ─────────────────────
-// Returns all at-risk students in the teacher's class with risk scores.
-router.get('/at-risk', authTeacher, async (req, res) => {
-  try {
-    const { classId, subject } = req.query;
-    const { computeAtRisk } = require('../services/mlEngine');
-
-    const studentFilter = { schoolId: req.schoolId };
-    if (classId) studentFilter.classId = classId;
-    const students = await StudentUser.find(studentFilter)
-      .select('_id name roll grade section')
-      .lean();
-
-    const results = await Promise.allSettled(
-      students.map(async (stu) => {
-        const risk = await computeAtRisk({ studentId: stu._id, schoolId: req.schoolId });
-        return { studentId: stu._id, name: stu.name, roll: stu.roll, grade: stu.grade, section: stu.section, ...risk };
-      })
-    );
-    const data = results
-      .filter((r) => r.status === 'fulfilled' && r.value.isAtRisk)
-      .map((r) => r.value)
-      .sort((a, b) => b.riskScore - a.riskScore);
-
-    return res.json({ success: true, data, total: data.length });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+// NOTE: a duplicate `GET /at-risk?classId=&subject=` handler (using
+// services/mlEngine.computeAtRisk) previously lived here. Express only ever
+// dispatches to the first-registered `/at-risk` handler (defined above), so
+// this second definition was permanently unreachable dead code and has been
+// removed. If the mlEngine-based scoring is still wanted, merge it into the
+// `/at-risk` handler above rather than re-adding a shadowed duplicate route.
 
 // ── GET /api/teacher-analytics/class-insights?classId=&subject= ──────────────
 // AI-generated narrative summary for the whole class, using actual mastery data.
 router.get('/class-insights', authTeacher, async (req, res) => {
   try {
     const { classId, subject, className } = req.query;
+    if (!(await requireClassIdAllocation(req, res, { classId }))) return;
+
     const MasteryScore = require('../models/MasteryScore');
     const axios = require('axios');
     const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';

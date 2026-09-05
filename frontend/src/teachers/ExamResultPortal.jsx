@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   CalendarDays, CheckCircle2, Clock3, Edit2,
@@ -119,6 +120,7 @@ const Modal = ({ onClose, title, children }) => (
 const ExamResultPortal = () => {
   const { classId: classSlug } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const token = localStorage.getItem('token');
 
   const [classMongoId, setClassMongoId] = useState('');
@@ -156,10 +158,16 @@ const ExamResultPortal = () => {
     const h = { Authorization: `Bearer ${token}`, ...(opts.headers || {}) };
     if (!(opts.body instanceof FormData)) h['Content-Type'] = 'application/json';
     const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: h });
+    if (res.status === 401 || res.status === 403) {
+      logoutAndRedirect({ navigate, notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
+      const authError = new Error('Session expired');
+      authError.code = AUTH_NOTICE.EXPIRED;
+      throw authError;
+    }
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d?.error || d?.message || 'Request failed');
     return d;
-  }, [token]);
+  }, [token, navigate]);
 
   // ── Load all data ─────────────────────────────────────────
   const loadAll = useCallback(async () => {

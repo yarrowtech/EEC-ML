@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Trash2, Edit3, Loader2, X, Plus, CheckCircle, HelpCircle, Sparkles, Brain } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -13,6 +14,8 @@ const emptyOptions = ['', '', '', ''];
 
 const PracticeQuestions = ({ initialType = '' }) => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const requestedType = initialType || searchParams.get('type');
   const [allocations, setAllocations] = useState([]);
   const [selectedAllocationId, setSelectedAllocationId] = useState('');
@@ -50,16 +53,35 @@ const PracticeQuestions = ({ initialType = '' }) => {
     return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   };
 
-  const loadAllocations = async () => {
+  // Shared fetch wrapper: redirects to login on an expired/invalid session
+  // instead of surfacing a generic "Request failed" error (previously each
+  // call site here parsed the response independently and never checked for
+  // 401/403).
+  const apiFetch = useCallback(async (path, options = {}) => {
     const headers = getAuthHeaders();
     if (!headers) {
-      setError('Login required');
-      return;
+      const authError = new Error('Login required');
+      authError.code = 'NO_TOKEN';
+      throw authError;
     }
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...headers, ...(options.headers || {}) },
+    });
+    if (res.status === 401 || res.status === 403) {
+      logoutAndRedirect({ navigate, notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
+      const authError = new Error('Session expired');
+      authError.code = AUTH_NOTICE.EXPIRED;
+      throw authError;
+    }
+    return res;
+  }, [navigate]);
+
+  const loadAllocations = async () => {
     setLoadingAllocations(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/teacher/dashboard/allocations`, { headers });
+      const res = await apiFetch('/api/teacher/dashboard/allocations');
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d?.error || 'Unable to load allocations');
@@ -69,18 +91,13 @@ const PracticeQuestions = ({ initialType = '' }) => {
       setAllocations(items);
     } catch (err) {
       console.error('Allocation load error:', err);
-      setError(err.message || 'Failed to load allocations');
+      if (err.code !== AUTH_NOTICE.EXPIRED) setError(err.message || 'Failed to load allocations');
     } finally {
       setLoadingAllocations(false);
     }
   };
 
   const loadQuestions = async () => {
-    const headers = getAuthHeaders();
-    if (!headers) {
-      setError('Login required');
-      return;
-    }
     setLoadingQuestions(true);
     setError('');
     try {
@@ -89,7 +106,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
       if (selectedAllocation?.sectionId?._id) params.set('sectionId', selectedAllocation.sectionId._id);
       if (selectedAllocation?.subjectId?._id) params.set('subjectId', selectedAllocation.subjectId._id);
       const query = params.toString();
-      const res = await fetch(`${API_BASE}/api/practice/teacher/questions${query ? `?${query}` : ''}`, { headers });
+      const res = await apiFetch(`/api/practice/teacher/questions${query ? `?${query}` : ''}`);
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d?.error || 'Unable to load questions');
@@ -98,7 +115,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
       setQuestions(Array.isArray(data?.questions) ? data.questions : []);
     } catch (err) {
       console.error('Questions load error:', err);
-      setError(err.message || 'Failed to load questions');
+      if (err.code !== AUTH_NOTICE.EXPIRED) setError(err.message || 'Failed to load questions');
     } finally {
       setLoadingQuestions(false);
     }
@@ -117,11 +134,6 @@ const PracticeQuestions = ({ initialType = '' }) => {
       setError('Select an allocation first');
       return;
     }
-    const headers = getAuthHeaders();
-    if (!headers) {
-      setError('Login required');
-      return;
-    }
     setSaving(true);
     setError('');
     try {
@@ -135,11 +147,10 @@ const PracticeQuestions = ({ initialType = '' }) => {
         correctAnswer: correctAnswer.trim(),
         explanation: explanation.trim(),
       };
-      const res = await fetch(
-        `${API_BASE}/api/practice/teacher/questions${editingId ? `/${editingId}` : ''}`,
+      const res = await apiFetch(
+        `/api/practice/teacher/questions${editingId ? `/${editingId}` : ''}`,
         {
           method: editingId ? 'PUT' : 'POST',
-          headers,
           body: JSON.stringify(payload),
         }
       );
@@ -151,7 +162,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
       await loadQuestions();
     } catch (err) {
       console.error('Question save error:', err);
-      setError(err.message || 'Failed to save question');
+      if (err.code !== AUTH_NOTICE.EXPIRED) setError(err.message || 'Failed to save question');
     } finally {
       setSaving(false);
     }
@@ -159,14 +170,11 @@ const PracticeQuestions = ({ initialType = '' }) => {
 
   const handleAIGenerate = async () => {
     if (!selectedAllocation) { setError('Select an allocation first'); return; }
-    const headers = getAuthHeaders();
-    if (!headers) { setError('Login required'); return; }
     setAiGenerating(true);
     setAiError('');
     try {
-      const res = await fetch(`${API_BASE}/api/ai-teacher/quiz-generate`, {
+      const res = await apiFetch('/api/ai-teacher/quiz-generate', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           subject: selectedAllocation.subjectId?.name || '',
           topic: selectedAllocation.subjectId?.name || '',
@@ -198,23 +206,23 @@ const PracticeQuestions = ({ initialType = '' }) => {
         setAiError('AI could not create a complete question. Please try again.');
       }
     } catch (err) {
-      setAiError(err.message || 'Failed to generate question');
+      if (err.code !== AUTH_NOTICE.EXPIRED) setAiError(err.message || 'Failed to generate question');
     } finally {
       setAiGenerating(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    const headers = getAuthHeaders();
-    if (!headers) {
-      setError('Login required');
-      return;
-    }
+  // Delete is destructive and irreversible, so it's gated behind a
+  // confirmation step (see the `deleteTarget` modal below) rather than
+  // firing straight from the trash-can button.
+  const confirmDelete = (question) => setDeleteTarget(question);
+  const cancelDelete = () => setDeleteTarget(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget._id;
     try {
-      const res = await fetch(`${API_BASE}/api/practice/teacher/questions/${id}`, {
-        method: 'DELETE',
-        headers,
-      });
+      const res = await apiFetch(`/api/practice/teacher/questions/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d?.error || 'Unable to delete question');
@@ -222,7 +230,9 @@ const PracticeQuestions = ({ initialType = '' }) => {
       setQuestions((prev) => prev.filter((q) => q._id !== id));
     } catch (err) {
       console.error('Question delete error:', err);
-      setError(err.message || 'Failed to delete question');
+      if (err.code !== AUTH_NOTICE.EXPIRED) setError(err.message || 'Failed to delete question');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -513,7 +523,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
                           <Edit3 size={14} />
                         </button>
                         <button
-                          onClick={() => handleDelete(q._id)}
+                          onClick={() => confirmDelete(q)}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 size={14} />
@@ -527,6 +537,44 @@ const PracticeQuestions = ({ initialType = '' }) => {
           </div>
         </div>
       </div>
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-question-title"
+          onClick={cancelDelete}
+          onKeyDown={(e) => { if (e.key === 'Escape') cancelDelete(); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-question-title" className="text-sm font-bold text-gray-900">Delete this question?</h3>
+            <p className="text-xs text-gray-500 mt-1.5 line-clamp-3">
+              {deleteTarget.question}
+            </p>
+            <p className="text-xs text-red-600 mt-2">This action cannot be undone.</p>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={cancelDelete}
+                type="button"
+                className="px-3.5 py-2 text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                type="button"
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
