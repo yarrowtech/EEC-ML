@@ -929,9 +929,16 @@ const isImageSrc = (src = "") =>
 const isPdfSrc = (src = "") =>
   /^data:application\/pdf/i.test(src) || /\.pdf(\?|$)/i.test(src) || /\/raw\/upload\//i.test(src);
 
+// Guards against legacy/imported records whose stored value is a local
+// filesystem path (e.g. "C:\...", "/home/...") rather than a real URL —
+// fetching or linking to that from an https page throws a browser security
+// error ("Content ... may not load or link to file:///").
+const isSafeSrc = (src = "") => /^(https?:\/\/|data:)/i.test(src);
+
 export function DocPreviewModal({ open, src, label, onClose }) {
-  const image = isImageSrc(src || "");
-  const pdf = !image && isPdfSrc(src || "");
+  const safeSrc = isSafeSrc(src || "");
+  const image = safeSrc && isImageSrc(src || "");
+  const pdf = safeSrc && !image && isPdfSrc(src || "");
   const [state, setState] = useState({ status: "idle", url: "" }); // idle | loading | ready | error
 
   useEffect(() => {
@@ -1011,8 +1018,14 @@ export function DocPreviewModal({ open, src, label, onClose }) {
           ) : (
             <div className="flex h-[30vh] flex-col items-center justify-center gap-2 text-sm text-gray-500">
               <FileText className="h-8 w-8 text-gray-300" />
-              {pdf ? "Could not load the preview." : "This file type can’t be previewed here."}
-              <a href={src} target="_blank" rel="noreferrer" className="font-semibold text-blue-600">Open in a new tab</a>
+              {!safeSrc
+                ? "This file's stored link is invalid and can't be opened."
+                : pdf
+                  ? "Could not load the preview."
+                  : "This file type can’t be previewed here."}
+              {safeSrc && (
+                <a href={src} target="_blank" rel="noreferrer" className="font-semibold text-blue-600">Open in a new tab</a>
+              )}
             </div>
           )}
         </div>

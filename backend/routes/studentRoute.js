@@ -528,6 +528,11 @@ router.post('/register', adminAuth, async (req, res) => {
       }));
   };
 
+  const sanitizeProfilePic = (value) => {
+    if (typeof value !== 'string') return '';
+    return /^(https?:\/\/|data:image\/)/i.test(value) ? value : '';
+  };
+
   try {
     const resolvedSchoolId = req.admin?.schoolId || schoolId || null;
     const resolvedCampusId = req.campusId || req.admin?.campusId || req.body?.campusId || null;
@@ -634,7 +639,7 @@ router.post('/register', adminAuth, async (req, res) => {
       address: address || '',
       permanentAddress: permanentAddress || '',
       pinCode: pinCode || '',
-      profilePic: profilePic || '',
+      profilePic: sanitizeProfilePic(profilePic),
       birthPlace: birthPlace || '',
       bloodGroup: bloodGroup || '',
       caste: caste || '',

@@ -61,6 +61,12 @@ const escapeHtml = (value) => {
     .replace(/'/g, "&#39;");
 };
 
+// Guards against legacy/imported records that stored a local filesystem path
+// (e.g. "C:\...", "/home/...") instead of a real URL — rendering that in an
+// <img src>/<a href> makes the browser throw a file:// security error.
+const isSafeImageUrl = (value) =>
+  typeof value === "string" && /^(https?:\/\/|data:image\/)/i.test(value);
+
 const STUDENTS_CACHE_PREFIX = "admin_students_cache_v1";
 
 // Cache key + reader at module scope so the very first render can hydrate from
@@ -4716,7 +4722,7 @@ const Students = ({ setShowAdminHeader }) => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white text-xl font-bold shadow-lg">
-                      {viewStudent.profilePic ? (
+                      {isSafeImageUrl(viewStudent.profilePic) ? (
                         <img src={viewStudent.profilePic} alt={viewStudent.name || "Student"} className="w-full h-full object-cover" />
                       ) : (
                         viewStudent.name?.charAt(0) || "?"
@@ -4847,13 +4853,13 @@ const Students = ({ setShowAdminHeader }) => {
                             <div className="flex flex-col gap-4 sm:flex-row">
                               <div className="shrink-0">
                                 <div className="h-24 w-24 overflow-hidden rounded-full border border-gray-200 bg-gray-100">
-                                  {s.profilePic ? (
+                                  {isSafeImageUrl(s.profilePic) ? (
                                     <img src={s.profilePic} alt={s.name || "Student"} className="h-full w-full object-cover" />
                                   ) : (
                                     <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-gray-300">{s.name?.charAt(0) || "?"}</div>
                                   )}
                                 </div>
-                                {s.profilePic && (
+                                {isSafeImageUrl(s.profilePic) && (
                                   <button
                                     type="button"
                                     onClick={() => setDocPreview({ src: s.profilePic, label: "Student Photograph" })}
@@ -5381,7 +5387,7 @@ const Students = ({ setShowAdminHeader }) => {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                      {editingStudent.profilePic ? (
+                      {isSafeImageUrl(editingStudent.profilePic) ? (
                         <img
                           src={editingStudent.profilePic}
                           alt={editingStudent.name || "Student"}

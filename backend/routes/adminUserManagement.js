@@ -869,6 +869,11 @@ router.post('/password-reset/reset', adminAuth, async (req, res) => {
 
 const sanitizeUpdatePayload = (req) => {
   const payload = stripProtectedFields({ ...req.body });
+  if (Object.prototype.hasOwnProperty.call(payload, 'profilePic')) {
+    payload.profilePic = /^(https?:\/\/|data:image\/)/i.test(payload.profilePic || '')
+      ? payload.profilePic
+      : '';
+  }
   if (!req.isSuperAdmin) {
     delete payload.schoolId;
     delete payload.campusId;
