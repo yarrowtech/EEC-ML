@@ -317,6 +317,14 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     return true;
   };
 
+  // Same "is this form about to make its year active" check as isYearActive,
+  // but for an in-progress form object (status/isActive), not a saved year.
+  const wouldFormBeActive = (form) => {
+    const status = String(form?.status || "").trim().toLowerCase();
+    if (status) return status === "active";
+    return Boolean(form?.isActive);
+  };
+
   const activeYears = useMemo(
     () => years.filter((year) => isYearActive(year)),
     [years]
@@ -929,6 +937,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       toast.error("Academic year name is required");
       return;
     }
+    if (mode !== "draft" && wouldFormBeActive(yearForm) && currentAcademicYear) {
+      toast.error(`"${currentAcademicYear.name}" is already the active academic year. Deactivate it first, then activate this one.`);
+      return;
+    }
     // Drafts are saved but never made the school's default academic year —
     // only "Save & Continue" respects the "make this the default" checkbox.
     const payload = mode === "draft"
@@ -1204,6 +1216,14 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   const updateYear = async (e) => {
     e.preventDefault();
+    if (
+      wouldFormBeActive(editingYear) &&
+      currentAcademicYear &&
+      String(currentAcademicYear._id) !== String(editingYear._id)
+    ) {
+      toast.error(`"${currentAcademicYear.name}" is already the active academic year. Deactivate it first, then activate this one.`);
+      return;
+    }
     await handleUpdate("/api/academic/years", editingYear._id, {
       name: editingYear.name,
       startDate: editingYear.startDate,
@@ -1333,6 +1353,24 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  /* Quick status change from the year card's kebab menu — keeps everything
+     else about the year unchanged, and reuses the same "one active year at a
+     time" guard as the Add/Edit forms. */
+  const quickSetYearStatus = async (year, nextStatus) => {
+    const nextIsActive = nextStatus === "active";
+    if (nextIsActive && currentAcademicYear && String(currentAcademicYear._id) !== String(year._id)) {
+      toast.error(`"${currentAcademicYear.name}" is already the active academic year. Deactivate it first, then activate this one.`);
+      return;
+    }
+    await handleUpdate("/api/academic/years", year._id, {
+      name: year.name,
+      startDate: year.startDate,
+      endDate: year.endDate,
+      isActive: nextIsActive,
+      status: nextStatus,
+    }, async () => { await loadAcademicData(); });
   };
 
   const deleteYear = (id) => handleDelete("/api/academic/years", id, "academic year", loadAcademicData);
@@ -2212,7 +2250,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         // whileHover={{ y: -6 }}
                         whileTap={{ scale: 0.97 }}
                         className={`group relative flex flex-col items-start gap-1 text-black overflow-hidden rounded-3xl p-5 text-left shadow-sm transition-shadow duration-300 hover:shadow-xl cursor-pointer ${isLive
-                            ? "bg-gradient-to-br from-violet-400 via-indigo-500 to-indigo-400 text-white shadow-blue-200"
+                            ? "bg-gradient-to-br from-violet-400 via-indigo-400 to-indigo-400 text-white shadow-blue-200"
                             : "border border-gray-200 bg-white hover:border-blue-200 hover:shadow-blue-100"
                           }`}
                       >
@@ -2251,37 +2289,45 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 <div
                                   role="menu"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 text-gray-700 shadow-lg"
+                                  className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 text-gray-700 shadow-lg"
                                 >
                                   <button
                                     type="button"
                                     role="menuitem"
+                                    onClick={() => { setOpenYearMenuId(null); quickSetYearStatus(year, isLive ? "upcoming" : "active"); }}
+                                    className={`flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left text-sm font-medium transition ${isLive ? "text-blue-600 hover:bg-blue-50" : "text-emerald-600 hover:bg-emerald-50"}`}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> Mark as {isLive ? "Upcoming" : "Active"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
                                     onClick={() => { setOpenYearMenuId(null); copyYearSetup(year); }}
-                                    disabled={deletingId === year._id}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" /> Copy
-                                  </button>
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenYearMenuId(null); setEditingYear(year); }}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-blue-50 hover:text-blue-600"
-                                  >
-                                    <Edit3 className="h-3.5 w-3.5" /> Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenYearMenuId(null); deleteYear(year._id); }}
-                                    disabled={deletingId === year._id}
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                                  >
-                                    {deletingId === year._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Delete
-                                  </button>
-                                </div>
-                              )}
-                            </div>
+                                  disabled={deletingId === year._id}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+                                >
+                                  <Copy className="h-3.5 w-3.5" /> Copy
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => { setOpenYearMenuId(null); setEditingYear(year); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-blue-50 hover:text-blue-600"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => { setOpenYearMenuId(null); deleteYear(year._id); }}
+                                  disabled={deletingId === year._id}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                                >
+                                  {deletingId === year._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           </div>
                         </div>
 
