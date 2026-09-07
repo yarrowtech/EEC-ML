@@ -568,66 +568,90 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     doc.save(`fees-report-${currentDate.replace(/\//g, '-')}.pdf`);
   };
 
-  const selectCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
-  const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-300 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
+  // ── Glass morphism design tokens ──────────────────────────────────────────
+  const glassCard =
+    'rounded-3xl border border-white/60 bg-white/55 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8]';
+  const selectCls =
+    'w-full rounded-xl border border-white/70 bg-white/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none backdrop-blur-md transition-all duration-200 focus:border-violet-300 focus:bg-white/85 focus:ring-4 focus:ring-violet-100';
+  const inputCls = selectCls;
+  const ghostBtn =
+    'inline-flex items-center gap-1.5 rounded-xl border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80';
 
   const STATUS_STYLE = {
-    paid:    { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',    dot: 'bg-emerald-500' },
-    partial: { bg: 'bg-amber-50 text-amber-700 border-amber-200',          dot: 'bg-amber-500'   },
-    due:     { bg: 'bg-red-50 text-red-700 border-red-200',                dot: 'bg-red-500'     },
+    paid:    { bg: 'bg-emerald-50/70 text-emerald-700 border-emerald-200/70', dot: 'bg-emerald-500' },
+    partial: { bg: 'bg-amber-50/70 text-amber-700 border-amber-200/70',       dot: 'bg-amber-500'   },
+    due:     { bg: 'bg-rose-50/70 text-rose-700 border-rose-200/70',          dot: 'bg-rose-500'    },
   };
   const statusStyle = (s) => STATUS_STYLE[s] || STATUS_STYLE.due;
 
   const CARD_CONFIG = [
-    { label: 'Total Students', value: summary.totalStudents, icon: Users,        bg: 'bg-indigo-50',  ic: 'text-indigo-500'  },
-    { label: 'Total Fees',     value: formatCurrency(summary.totalDue),       icon: IndianRupee,  bg: 'bg-violet-50',  ic: 'text-violet-500'  },
-    { label: 'Collected',      value: formatCurrency(summary.totalCollected),  icon: CheckCircle2, bg: 'bg-emerald-50', ic: 'text-emerald-500' },
-    { label: 'Pending',        value: formatCurrency(summary.totalPending),    icon: AlertCircle,  bg: 'bg-red-50',     ic: 'text-red-500'     },
+    { label: 'Total Students', value: summary.totalStudents,                 icon: Users,        ic: 'text-violet-500'  },
+    { label: 'Total Fees',     value: formatCurrency(summary.totalDue),       icon: IndianRupee,  ic: 'text-violet-500'  },
+    { label: 'Collected',      value: formatCurrency(summary.totalCollected), icon: CheckCircle2, ic: 'text-emerald-500' },
+    { label: 'Pending',        value: formatCurrency(summary.totalPending),   icon: AlertCircle,  ic: 'text-rose-500'    },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 space-y-5" style={{ fontFamily: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif" }}>
+    <div
+      className="relative min-h-screen overflow-hidden bg-[#f1f5f9] p-4 sm:p-6"
+      style={{ fontFamily: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif" }}
+    >
+      <style>{`
+        @keyframes fcFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        .fc-in { animation: fcFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+      `}</style>
+
+      {/* Ambient colour wash behind the frosted glass */}
+      <div className="pointer-events-none absolute -left-24 -top-32 h-80 w-80 rounded-full bg-violet-300/30 blur-3xl" />
+      <div className="pointer-events-none absolute -right-24 top-1/4 h-96 w-96 rounded-full bg-sky-300/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 left-1/3 h-80 w-80 rounded-full bg-emerald-200/25 blur-3xl" />
+
+      <div className="relative mx-auto max-w-[1400px] space-y-5">
 
       {/* ── Page header ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="fc-in flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-500 flex items-center justify-center shadow-md shadow-indigo-200">
-            <Wallet className="w-5 h-5 text-white" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_24px_rgba(139,92,246,0.25)] backdrop-blur-md">
+            <Wallet className="h-5 w-5 text-violet-500" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-slate-900 leading-tight">Fees Collection</h1>
-            <p className="text-xs text-slate-400 mt-0.5">Track invoices, collect payments, and manage fee structures</p>
+            <h1 className="text-xl font-semibold leading-tight tracking-tight text-slate-900">Fees Collection</h1>
+            <p className="mt-0.5 text-xs text-slate-500">Track invoices, collect payments, and manage fee structures</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={exportReport}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="h-3.5 w-3.5" />
             Export PDF
           </button>
           <button
             onClick={fetchRecords}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
           </button>
         </div>
       </div>
 
       {/* ── Summary cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {CARD_CONFIG.map((card) => (
-          <div key={card.label} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm flex items-center justify-between gap-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {CARD_CONFIG.map((card, i) => (
+          <div
+            key={card.label}
+            className="fc-in flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/55 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/70"
+            style={{ animationDelay: `${60 + i * 60}ms` }}
+          >
             <div>
-              <p className="text-xs text-slate-500 font-medium">{card.label}</p>
-              <p className="text-lg font-black text-slate-900 mt-1">{card.value}</p>
+              <p className="text-xs font-medium text-slate-500">{card.label}</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{card.value}</p>
             </div>
-            <div className={`w-10 h-10 rounded-2xl ${card.bg} flex items-center justify-center shrink-0`}>
-              <card.icon className={`w-5 h-5 ${card.ic}`} />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+              <card.icon className={`h-5 w-5 ${card.ic}`} />
             </div>
           </div>
         ))}
@@ -635,49 +659,49 @@ const FeesCollection = ({ setShowAdminHeader }) => {
 
       {/* ── Notices ── */}
       {fetchError && (
-        <div className="flex items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="fc-in flex items-center gap-2.5 rounded-2xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700 backdrop-blur-md">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           {fetchError}
         </div>
       )}
       {actionNotice.text && (
-        <div className={`flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm ${
+        <div className={`fc-in flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm backdrop-blur-md ${
           actionNotice.type === 'success'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            : 'border-red-200 bg-red-50 text-red-700'
+            ? 'border-emerald-200/70 bg-emerald-50/70 text-emerald-700'
+            : 'border-rose-200/70 bg-rose-50/70 text-rose-700'
         }`}>
           {actionNotice.type === 'success'
-            ? <CheckCircle2 className="w-4 h-4 shrink-0" />
-            : <AlertCircle className="w-4 h-4 shrink-0" />}
+            ? <CheckCircle2 className="h-4 w-4 shrink-0" />
+            : <AlertCircle className="h-4 w-4 shrink-0" />}
           {actionNotice.text}
         </div>
       )}
 
       {/* ── Bulk assign section ── */}
-      <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm space-y-5">
+      <div className={`fc-in space-y-5 p-6 ${glassCard}`} style={{ animationDelay: '120ms' }}>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
-            <FileText className="w-4 h-4 text-emerald-600" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+            <FileText className="h-4 w-4 text-emerald-500" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Assign Fee Structure to Class</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Auto-generate invoices for all students in a class using the active fee structure</p>
+            <h2 className="text-sm font-semibold text-slate-900">Assign Fee Structure to Class</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Auto-generate invoices for all students in a class using the active fee structure</p>
           </div>
         </div>
 
         {/* Step pills */}
         <div className="grid grid-cols-3 gap-2">
           {['Select Session / Class / Section', 'Verify Structure', 'Click Assign'].map((step, i) => (
-            <div key={step} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-              <span className="text-xs text-slate-600 font-medium">{step}</span>
+            <div key={step} className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/45 px-3 py-2 backdrop-blur-md">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">{i + 1}</span>
+              <span className="text-xs font-medium text-slate-600">{step}</span>
             </div>
           ))}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Session</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Session</label>
             <select
               value={bulkForm.academicYearId}
               onChange={(e) =>
@@ -697,7 +721,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Class</label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Class</label>
             <select
               value={bulkForm.classId}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, classId: e.target.value, section: '' }))}
@@ -711,7 +735,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Section <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Section <span className="font-normal normal-case text-slate-400">(optional)</span></label>
             <select
               value={bulkForm.section}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, section: e.target.value }))}
@@ -725,7 +749,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Due Date <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Due Date <span className="font-normal normal-case text-slate-400">(optional)</span></label>
             <input
               type="date"
               value={bulkForm.dueDate}
@@ -734,7 +758,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             />
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Invoice Title <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Invoice Title <span className="font-normal normal-case text-slate-400">(optional)</span></label>
             <input
               value={bulkForm.title}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, title: e.target.value }))}
@@ -746,40 +770,40 @@ const FeesCollection = ({ setShowAdminHeader }) => {
 
         {/* Status row */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className={`flex-1 min-w-[180px] rounded-xl border px-4 py-2.5 text-xs font-medium ${
+          <div className={`min-w-[180px] flex-1 rounded-xl border px-4 py-2.5 text-xs font-medium backdrop-blur-md ${
             matchedBulkStructure
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-slate-50 text-slate-400'
+              ? 'border-emerald-200/70 bg-emerald-50/70 text-emerald-700'
+              : 'border-white/70 bg-white/45 text-slate-400'
           }`}>
             <span className="font-semibold">Structure: </span>
             {matchedBulkStructure
               ? `${matchedBulkStructure.name || 'Structure'} · ₹${Number(matchedBulkStructure.totalAmount || 0).toLocaleString('en-IN')}`
               : (bulkForm.classId ? 'No active structure found for this class' : 'Select a class to see matched structure')}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+          <div className="rounded-xl border border-white/70 bg-white/45 px-4 py-2.5 text-xs text-slate-600 backdrop-blur-md">
             <span className="font-semibold">Academic Year: </span>
             {selectedBulkAcademicYear?.name || 'Not selected'}
           </div>
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-700">
+          <div className="rounded-xl border border-violet-200/70 bg-violet-50/70 px-4 py-2.5 text-xs text-violet-700 backdrop-blur-md">
             <span className="font-semibold">Target: </span>
             {bulkTargetSummary.className || 'No class'}{bulkTargetSummary.sectionName ? ` · ${bulkTargetSummary.sectionName}` : ''} · <span className="font-bold">{bulkTargetSummary.studentCount} students</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-50">
+        <div className="flex flex-wrap items-center gap-3 border-t border-white/50 pt-4">
           <button
             onClick={handleBulkGenerate}
             disabled={bulkLoading || Boolean(bulkAssignDisabledReason)}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 transition-all disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(16,185,129,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-600 disabled:opacity-50"
           >
-            {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Assign to Class Students
           </button>
           {bulkAssignDisabledReason && (
-            <span className="text-xs text-red-500 font-medium">{bulkAssignDisabledReason}</span>
+            <span className="text-xs font-medium text-rose-500">{bulkAssignDisabledReason}</span>
           )}
           {bulkStatus.text && (
-            <span className={`text-xs font-semibold ${bulkStatus.type === 'success' ? 'text-emerald-700' : 'text-red-600'}`}>
+            <span className={`text-xs font-semibold ${bulkStatus.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
               {bulkStatus.text}
             </span>
           )}
@@ -787,30 +811,30 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── Filters + Invoice list ── */}
-      <div className="rounded-3xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+      <div className={`fc-in overflow-hidden ${glassCard}`} style={{ animationDelay: '180ms' }}>
         {/* Filter bar */}
-        <div className="px-6 py-4 border-b border-slate-50 space-y-4">
+        <div className="space-y-4 border-b border-white/50 px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <ListFilter className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-bold text-slate-800">Filters</span>
+              <ListFilter className="h-4 w-4 text-slate-400" />
+              <span className="text-sm font-semibold text-slate-800">Filters</span>
               {!loading && (
-                <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">
+                <span className="rounded-full border border-violet-200/70 bg-violet-50/70 px-2 py-0.5 text-xs font-semibold text-violet-700">
                   {records.length} invoices
                 </span>
               )}
             </div>
-            <label className="inline-flex items-center gap-2 text-xs font-semibold text-red-600 cursor-pointer select-none">
+            <label className="inline-flex cursor-pointer select-none items-center gap-2 text-xs font-semibold text-rose-600">
               <input
                 type="checkbox"
                 checked={filters.overdue}
                 onChange={(e) => setFilters((prev) => ({ ...prev, overdue: e.target.checked }))}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-red-500 focus:ring-red-400"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-rose-500 focus:ring-rose-400"
               />
               Overdue only
             </label>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <select
               value={filters.academicYearId}
               onChange={(e) => setFilters((prev) => ({ ...prev, academicYearId: e.target.value, classId: '', section: '' }))}
@@ -836,7 +860,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               <option value="paid">Paid</option>
             </select>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
                 value={filters.search}
                 onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
@@ -851,25 +875,25 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-100">
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Student</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Adm. No</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Class</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Sec</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Fee</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Paid</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Outstanding</th>
-                <th className="px-5 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>
+              <tr className="border-b border-white/50 bg-white/30">
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Student</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Adm. No</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Class</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sec</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Fee</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Paid</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Outstanding</th>
+                <th className="px-5 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-white/50">
               {loading && (
                 <tr>
                   <td colSpan={9} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                        <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+                        <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
                       </div>
                       <p className="text-sm text-slate-400">Loading fee invoices…</p>
                     </div>
@@ -879,9 +903,9 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               {!loading && records.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-5 py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-14 h-14 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center">
-                        <FileText className="w-7 h-7 text-slate-200" />
+                    <div className="mx-auto flex max-w-sm flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300/70 py-10">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-white/50 backdrop-blur-md">
+                        <FileText className="h-7 w-7 text-slate-300" />
                       </div>
                       <p className="text-sm font-semibold text-slate-500">No invoices found</p>
                       <p className="text-xs text-slate-400">Try adjusting the filters above.</p>
@@ -893,10 +917,10 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 const ss = statusStyle(record.status);
                 const initials = (record.studentName || 'S').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
                 return (
-                  <tr key={record.invoiceId} className="hover:bg-slate-50/60 transition-colors">
+                  <tr key={record.invoiceId} className="transition-colors duration-150 hover:bg-white/50">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center shrink-0">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-xs font-bold text-violet-600">
                           {initials}
                         </div>
                         <span className="text-sm font-semibold text-slate-800">{record.studentName || '—'}</span>
@@ -906,29 +930,26 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                     <td className="px-5 py-3.5 text-sm text-slate-600">{record.className || '—'}</td>
                     <td className="px-5 py-3.5 text-sm text-slate-600">{record.section || '—'}</td>
                     <td className="px-5 py-3.5 text-right text-sm font-semibold text-slate-800">{formatCurrency(record.totalAmount)}</td>
-                    <td className="px-5 py-3.5 text-right text-sm text-emerald-600 font-medium">{formatCurrency(record.paidAmount)}</td>
-                    <td className="px-5 py-3.5 text-right text-sm font-bold text-red-500">
+                    <td className="px-5 py-3.5 text-right text-sm font-medium text-emerald-600">{formatCurrency(record.paidAmount)}</td>
+                    <td className="px-5 py-3.5 text-right text-sm font-semibold text-rose-500">
                       {Number(record.balanceAmount || 0) > 0 ? formatCurrency(record.balanceAmount) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5 text-center">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${ss.bg}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${ss.dot}`} />
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold backdrop-blur-md ${ss.bg}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${ss.dot}`} />
                         {(record.status || 'due').toUpperCase()}
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="inline-flex items-center gap-2">
-                        <button
-                          onClick={() => handleViewDetails(record)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
-                        >
+                        <button onClick={() => handleViewDetails(record)} className={ghostBtn}>
                           <Eye className="h-3 w-3" />
                           Details
                         </button>
                         {Number(record.balanceAmount || 0) > 0 && (
                           <button
                             onClick={() => handleOpenOnlinePayment(record)}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-violet-200/70 bg-violet-50/70 px-3 py-1.5 text-xs font-semibold text-violet-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-100/70"
                           >
                             <CreditCard className="h-3 w-3" />
                             Pay
@@ -947,16 +968,16 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       {/* ── Online Payment Modal ── */}
       {onlinePaymentModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={handleCloseOnlinePayment} />
-          <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-md" onClick={handleCloseOnlinePayment} />
+          <div className="fc-in relative w-full max-w-md overflow-hidden rounded-3xl border border-white/60 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.2)] backdrop-blur-2xl backdrop-saturate-[1.8]">
+            <div className="flex items-center justify-between border-b border-white/50 px-6 py-5">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <CreditCard className="w-4.5 h-4.5 text-indigo-600" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+                  <CreditCard className="h-4 w-4 text-violet-500" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Collect Online Payment</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <h3 className="text-base font-semibold text-slate-900">Collect Online Payment</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
                     {onlinePaymentModal.record?.studentName || 'Student'} · {onlinePaymentModal.record?.className || ''}{onlinePaymentModal.record?.section ? ` (${onlinePaymentModal.record.section})` : ''}
                   </p>
                 </div>
@@ -965,18 +986,18 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 type="button"
                 onClick={handleCloseOnlinePayment}
                 disabled={onlinePaymentLoading}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-50"
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-all duration-150 hover:bg-white/70 hover:text-slate-600 disabled:opacity-50"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="space-y-4 p-6">
+              <div className="flex items-center justify-between rounded-xl border border-amber-200/70 bg-amber-50/70 px-4 py-3 backdrop-blur-md">
                 <span className="text-xs font-semibold text-amber-700">Outstanding Balance</span>
-                <span className="text-sm font-black text-amber-800">{formatCurrency(onlinePaymentModal.record?.balanceAmount || 0)}</span>
+                <span className="text-sm font-semibold text-amber-800">{formatCurrency(onlinePaymentModal.record?.balanceAmount || 0)}</span>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Payment Amount</label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Payment Amount</label>
                 <input
                   type="number"
                   min="0"
@@ -988,7 +1009,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Notes <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Notes <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                 <input
                   type="text"
                   value={onlinePaymentModal.notes}
@@ -998,12 +1019,12 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-3 border-t border-white/50 px-6 py-4">
               <button
                 type="button"
                 onClick={handleCloseOnlinePayment}
                 disabled={onlinePaymentLoading}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-60"
+                className="rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-sm font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -1011,16 +1032,16 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 type="button"
                 onClick={handleStartOnlinePayment}
                 disabled={onlinePaymentLoading}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#4f46e5 0%,#6366f1 60%,#818cf8 100%)' }}
+                className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 disabled:opacity-60"
               >
-                {onlinePaymentLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                {onlinePaymentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
                 {onlinePaymentLoading ? 'Processing…' : 'Proceed to Razorpay'}
               </button>
             </div>
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

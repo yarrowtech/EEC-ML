@@ -424,85 +424,100 @@ const FeesManagement = ({ setShowAdminHeader }) => {
     }
   };
 
-  const iCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
-  const sCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
+  // ── Glass morphism design tokens ──────────────────────────────────────────
+  const glassCard =
+    'rounded-3xl border border-white/60 bg-white/55 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8]';
+  const glassInset =
+    'rounded-xl border border-white/70 bg-white/45 backdrop-blur-md backdrop-saturate-[1.8]';
+  const iCls =
+    'w-full rounded-xl border border-white/70 bg-white/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none backdrop-blur-md transition-all duration-200 focus:border-violet-300 focus:bg-white/85 focus:ring-4 focus:ring-violet-100';
+  const sCls = iCls;
+  const ghostBtn =
+    'inline-flex items-center gap-1.5 rounded-xl border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80';
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 space-y-5">
+    <div className="relative min-h-screen overflow-hidden bg-[#f1f5f9] p-4 sm:p-6">
+      <style>{`
+        @keyframes fmFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+        .fm-in { animation: fmFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+      `}</style>
+
+      {/* Ambient colour wash behind the frosted glass */}
+      <div className="pointer-events-none absolute -left-24 -top-32 h-80 w-80 rounded-full bg-violet-300/30 blur-3xl" />
+      <div className="pointer-events-none absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-sky-300/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 left-1/3 h-80 w-80 rounded-full bg-emerald-200/25 blur-3xl" />
+
+      <div className="relative mx-auto max-w-[1400px] space-y-5">
 
       {/* ── Page header ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="fm-in flex flex-wrap items-center justify-between gap-3" style={{ animationDelay: '0ms' }}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-500 flex items-center justify-center shadow-md shadow-indigo-200">
-            <Layers className="w-5 h-5 text-white" />
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_24px_rgba(139,92,246,0.25)] backdrop-blur-md">
+            <Layers className="h-5 w-5 text-violet-500" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-gray-900 leading-tight">Fee Structure Management</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Build class-wise fee structures with heads and installment plans</p>
+            <h1 className="text-xl font-semibold leading-tight tracking-tight text-slate-900">Fee Structure Management</h1>
+            <p className="mt-0.5 text-xs text-slate-500">Build class-wise fee structures with heads and installment plans</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={loadAll}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
           </button>
-          {/* <button
-            onClick={resetForm}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg,#4f46e5 0%,#6366f1 60%,#818cf8 100%)' }}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Structure
-          </button> */}
         </div>
       </div>
 
       {/* ── Stats cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
-          { label: 'Structures',     value: loading ? '…' : dashboardStats.count,                           icon: BookOpen,    bg: 'bg-indigo-50',  ic: 'text-indigo-500'  },
-          { label: 'Total Value',    value: loading ? '…' : money(dashboardStats.totalValue),               icon: IndianRupee, bg: 'bg-violet-50',  ic: 'text-violet-500'  },
-          { label: 'Average Value',  value: loading ? '…' : money(dashboardStats.averageValue),             icon: IndianRupee, bg: 'bg-emerald-50', ic: 'text-emerald-500' },
-          { label: 'Classes Covered',value: loading ? '…' : dashboardStats.classesCovered,                  icon: Layers,      bg: 'bg-amber-50',   ic: 'text-amber-500'   },
-        ].map((card) => (
-          <div key={card.label} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm flex items-center justify-between gap-3">
+          { label: 'Structures',      value: loading ? '…' : dashboardStats.count,               icon: BookOpen,    ic: 'text-violet-500'  },
+          { label: 'Total Value',     value: loading ? '…' : money(dashboardStats.totalValue),   icon: IndianRupee, ic: 'text-violet-500'  },
+          { label: 'Average Value',   value: loading ? '…' : money(dashboardStats.averageValue), icon: IndianRupee, ic: 'text-emerald-500' },
+          { label: 'Classes Covered', value: loading ? '…' : dashboardStats.classesCovered,      icon: Layers,      ic: 'text-amber-500'   },
+        ].map((card, i) => (
+          <div
+            key={card.label}
+            className={`fm-in flex items-center justify-between gap-3 rounded-2xl border border-white/60 bg-white/55 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/70`}
+            style={{ animationDelay: `${60 + i * 60}ms` }}
+          >
             <div>
-              <p className="text-xs text-gray-500 font-medium">{card.label}</p>
-              <p className="text-lg font-black text-gray-900 mt-1">{card.value}</p>
+              <p className="text-xs font-medium text-slate-500">{card.label}</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{card.value}</p>
             </div>
-            <div className={`w-10 h-10 rounded-2xl ${card.bg} flex items-center justify-center shrink-0`}>
-              <card.icon className={`w-5 h-5 ${card.ic}`} />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+              <card.icon className={`h-5 w-5 ${card.ic}`} />
             </div>
           </div>
         ))}
       </div>
 
       {/* ── Notices ── */}
-      {error  && <div className="flex items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle className="w-4 h-4 shrink-0" />{error}</div>}
-      {notice && <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"><CheckCircle2 className="w-4 h-4 shrink-0" />{notice}</div>}
+      {error  && <div className="fm-in flex items-center gap-2.5 rounded-2xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700 backdrop-blur-md"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+      {notice && <div className="fm-in flex items-center gap-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-700 backdrop-blur-md"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
 
       {/* ── Two-column layout ── */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_480px]">
 
         {/* ── Left: Saved Structures ── */}
-        <div className="rounded-3xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+        <div className={`fm-in overflow-hidden ${glassCard}`} style={{ animationDelay: '300ms' }}>
           {/* Filter bar */}
-          <div className="px-6 py-4 border-b border-gray-50 space-y-3">
+          <div className="space-y-3 border-b border-white/50 px-6 py-4">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-bold text-gray-800">Saved Structures</span>
+              <span className="text-sm font-semibold text-slate-800">Saved Structures</span>
               {!loading && (
-                <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-full">
+                <span className="rounded-full border border-violet-200/70 bg-violet-50/70 px-2.5 py-1 text-xs font-semibold text-violet-700">
                   {filteredStructures.length} {filteredStructures.length === 1 ? 'structure' : 'structures'}
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative sm:col-span-2 lg:col-span-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name…" className={`${iCls} pl-9`} />
               </div>
               <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className={sCls}>
@@ -526,74 +541,66 @@ const FeesManagement = ({ setShowAdminHeader }) => {
           </div>
 
           {/* Structure list */}
-          <div className="divide-y divide-gray-50 max-h-[620px] overflow-y-auto">
+          <div className="max-h-[620px] divide-y divide-white/50 overflow-y-auto">
             {loading && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                  <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+              <div className="flex flex-col items-center justify-center gap-3 py-16">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+                  <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
                 </div>
-                <p className="text-sm text-gray-400">Loading structures…</p>
+                <p className="text-sm text-slate-400">Loading structures…</p>
               </div>
             )}
             {!loading && filteredStructures.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <div className="w-14 h-14 rounded-3xl bg-gray-50 border border-gray-100 flex items-center justify-center">
-                  <BookOpen className="w-7 h-7 text-gray-200" />
+              <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300/70 py-14">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-white/50 backdrop-blur-md">
+                  <BookOpen className="h-7 w-7 text-slate-300" />
                 </div>
-                <p className="text-sm font-semibold text-gray-500">No structures found</p>
-                <p className="text-xs text-gray-400">Try adjusting filters or create a new structure.</p>
+                <p className="text-sm font-semibold text-slate-500">No structures found</p>
+                <p className="text-xs text-slate-400">Try adjusting filters or create a new structure.</p>
               </div>
             )}
-            {!loading && filteredStructures.map((item) => (
+            {!loading && filteredStructures.map((item, i) => (
               <div
                 key={item._id}
-                className={`px-6 py-4 transition-colors ${activeId === item._id ? 'bg-indigo-50/60 border-l-4 border-l-indigo-400' : 'hover:bg-gray-50/60 border-l-4 border-l-transparent'}`}
+                className={`fm-in px-6 py-4 transition-colors duration-150 ${activeId === item._id ? 'border-l-4 border-l-violet-400 bg-violet-50/50' : 'border-l-4 border-l-transparent hover:bg-white/50'}`}
+                style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-gray-900 truncate">{item.name || 'Unnamed'}</h3>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      <span className="inline-flex items-center rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                    <h3 className="truncate text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</h3>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center rounded-full border border-violet-200/70 bg-violet-50/70 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
                         {item.className || classNameById.get(String(item.classId)) || '—'}
                       </span>
-                      <span className="inline-flex items-center rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                      <span className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100/70 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                         {item.board || 'GENERAL'}
                       </span>
-                      <span className="inline-flex items-center rounded-full bg-rose-50 border border-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                      <span className="inline-flex items-center rounded-full border border-rose-200/70 bg-rose-50/70 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
                         Fine {money(item.lateFeeAmount || 0)}/day
                       </span>
                       {item.academicYearId && (
-                        <span className="inline-flex items-center rounded-full bg-violet-50 border border-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                        <span className="inline-flex items-center rounded-full border border-sky-200/70 bg-sky-50/70 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
                           {yearNameById.get(String(item.academicYearId)) || 'Academic Year'}
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-base font-black text-gray-900">{money(item.totalAmount)}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
+                  <div className="shrink-0 text-right">
+                    <p className="text-base font-semibold text-slate-900">{money(item.totalAmount)}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => editStructure(item)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all"
-                  >
-                    <Edit3 className="h-3 w-3" />
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => editStructure(item)} className={ghostBtn}>
+                    <Edit3 className="h-3 w-3 text-violet-500" />
                     Edit
                   </button>
-                  <button
-                    onClick={() => handleDownloadStructurePdf(item)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-all"
-                  >
-                    <Download className="h-3 w-3" />
+                  <button onClick={() => handleDownloadStructurePdf(item)} className={ghostBtn}>
+                    <Download className="h-3 w-3 text-emerald-500" />
                     PDF
                   </button>
-                  <button
-                    onClick={() => deleteStructure(item)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 transition-all"
-                  >
-                    <Trash2 className="h-3 w-3" />
+                  <button onClick={() => deleteStructure(item)} className={ghostBtn}>
+                    <Trash2 className="h-3 w-3 text-rose-500" />
                     Delete
                   </button>
                 </div>
@@ -603,24 +610,24 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         </div>
 
         {/* ── Right: Form Builder ── */}
-        <div className="rounded-3xl border border-gray-100 bg-white shadow-sm xl:sticky xl:top-6 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto">
+        <div className={`fm-in ${glassCard} xl:sticky xl:top-6 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto`} style={{ animationDelay: '360ms' }}>
           {/* Form header */}
-          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-50">
+          <div className="flex items-center justify-between border-b border-white/50 px-6 py-5">
             <div>
-              <h2 className="text-sm font-bold text-gray-900">{activeId ? 'Edit Structure' : 'Create Structure'}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Fill all 3 steps then save</p>
+              <h2 className="text-sm font-semibold text-slate-900">{activeId ? 'Edit Structure' : 'Create Structure'}</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Fill all 3 steps then save</p>
             </div>
             {activeId && (
               <button
                 onClick={resetForm}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-all duration-150 hover:bg-white/70 hover:text-slate-600"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="space-y-6 p-6">
             {/* Step indicators */}
             <div className="grid grid-cols-3 gap-2">
               {[
@@ -630,13 +637,13 @@ const FeesManagement = ({ setShowAdminHeader }) => {
               ].map((step) => (
                 <div
                   key={step.label}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all ${
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold backdrop-blur-md transition-all duration-200 ${
                     step.done
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-gray-200 bg-gray-50 text-gray-400'
+                      ? 'border-emerald-200/70 bg-emerald-50/70 text-emerald-700'
+                      : 'border-white/70 bg-white/45 text-slate-400'
                   }`}
                 >
-                  {step.done && <CheckCircle2 className="w-3.5 h-3.5" />}
+                  {step.done && <CheckCircle2 className="h-3.5 w-3.5" />}
                   {step.label}
                 </div>
               ))}
@@ -644,17 +651,17 @@ const FeesManagement = ({ setShowAdminHeader }) => {
 
             {/* Step 1 — Basics */}
             <div className="space-y-3">
-              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Step 1 — Basics</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 1 — Basics</p>
               <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Board</label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Board</label>
                 <select value={form.board} onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))} className={sCls}>
                   {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Structure Name <span className="text-red-400">*</span></label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Structure Name <span className="text-rose-400">*</span></label>
                 <input
                   value={form.name}
                   onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
@@ -663,7 +670,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Session <span className="text-red-400">*</span></label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Session <span className="text-rose-400">*</span></label>
                 <select
                   value={form.academicYearId}
                   onChange={(e) =>
@@ -681,7 +688,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Class <span className="text-red-400">*</span></label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Class <span className="text-rose-400">*</span></label>
                 <select
                   value={form.classId}
                   onChange={(e) =>
@@ -699,9 +706,9 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Late Fine Amount (Per Day)</label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Late Fine Amount (Per Day)</label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₹</span>
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
                   <input
                     type="number"
                     min="0"
@@ -711,35 +718,32 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                     className={`${iCls} pl-7`}
                   />
                 </div>
-                <p className="text-[11px] text-gray-400">Auto-added daily after due date while invoice remains unpaid.</p>
+                <p className="text-[11px] text-slate-400">Auto-added daily after due date while invoice remains unpaid.</p>
               </div>
             </div>
 
             {/* Step 2 — Fee Heads */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Step 2 — Fee Heads</p>
-                <button
-                  onClick={addHead}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 2 — Fee Heads</p>
+                <button onClick={addHead} className={ghostBtn}>
+                  <Plus className="h-3.5 w-3.5 text-violet-500" />
                   Add Head
                 </button>
               </div>
 
               {form.feeHeads.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 py-6 text-center text-xs text-gray-400">
+                <div className="rounded-xl border border-dashed border-slate-300/70 bg-white/30 py-6 text-center text-xs text-slate-400">
                   No fee heads added — click "Add Head" above.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {form.feeHeads.map((item, index) => (
-                    <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+                    <div key={index} className={`space-y-2 p-3 ${glassInset}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Head {index + 1}</span>
-                        <button onClick={() => removeHead(index)} className="w-6 h-6 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all">
-                          <X className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Head {index + 1}</span>
+                        <button onClick={() => removeHead(index)} className="flex h-6 w-6 items-center justify-center rounded-lg text-rose-400 transition-all duration-150 hover:bg-rose-50/70 hover:text-rose-600">
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
                       <select
@@ -765,7 +769,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                         />
                       )}
                       <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₹</span>
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
                         <input
                           type="number"
                           min="0"
@@ -777,9 +781,9 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                       </div>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2.5">
-                    <span className="text-xs font-semibold text-indigo-700">Heads Total</span>
-                    <span className="text-sm font-black text-indigo-900">{money(formTotal)}</span>
+                  <div className="flex items-center justify-between rounded-xl border border-violet-200/70 bg-violet-50/70 px-4 py-2.5 backdrop-blur-md">
+                    <span className="text-xs font-semibold text-violet-700">Heads Total</span>
+                    <span className="text-sm font-semibold text-violet-900">{money(formTotal)}</span>
                   </div>
                 </div>
               )}
@@ -788,28 +792,25 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             {/* Step 3 — Installments */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Step 3 — Installments</p>
-                <button
-                  onClick={addInstallment}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 3 — Installments</p>
+                <button onClick={addInstallment} className={ghostBtn}>
+                  <Plus className="h-3.5 w-3.5 text-violet-500" />
                   Add Installment
                 </button>
               </div>
 
               {form.installments.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 py-6 text-center text-xs text-gray-400">
+                <div className="rounded-xl border border-dashed border-slate-300/70 bg-white/30 py-6 text-center text-xs text-slate-400">
                   No installments — fee will be collected as a lump sum.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {form.installments.map((item, index) => (
-                    <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+                    <div key={index} className={`space-y-2 p-3 ${glassInset}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Installment {index + 1}</span>
-                        <button onClick={() => removeInstallment(index)} className="w-6 h-6 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 transition-all">
-                          <X className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Installment {index + 1}</span>
+                        <button onClick={() => removeInstallment(index)} className="flex h-6 w-6 items-center justify-center rounded-lg text-rose-400 transition-all duration-150 hover:bg-rose-50/70 hover:text-rose-600">
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
                       <input
@@ -820,7 +821,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                       />
                       <div className="grid grid-cols-2 gap-2">
                         <div className="relative">
-                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₹</span>
+                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
                           <input
                             type="number"
                             min="0"
@@ -845,25 +846,26 @@ const FeesManagement = ({ setShowAdminHeader }) => {
 
             {/* Totals summary */}
             {(form.feeHeads.length > 0 || form.installments.length > 0) && (
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 divide-y divide-gray-200 overflow-hidden">
+              <div className="divide-y divide-white/50 overflow-hidden rounded-2xl border border-white/70 bg-white/45 backdrop-blur-md">
                 <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-xs font-semibold text-gray-600">Fee Heads Total</span>
-                  <span className="text-sm font-bold text-gray-900">{money(formTotal)}</span>
+                  <span className="text-xs font-semibold text-slate-600">Fee Heads Total</span>
+                  <span className="text-sm font-semibold text-slate-900">{money(formTotal)}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-xs font-semibold text-gray-600">Installments Total</span>
-                  <span className="text-sm font-bold text-gray-900">{money(installmentTotal)}</span>
+                  <span className="text-xs font-semibold text-slate-600">Installments Total</span>
+                  <span className="text-sm font-semibold text-slate-900">{money(installmentTotal)}</span>
                 </div>
-                <div className={`flex items-center justify-between px-4 py-3 ${differenceTotal === 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
-                  <span className={`text-xs font-bold ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {differenceTotal === 0 ? '✓ Balanced' : 'Difference'}
+                <div className={`flex items-center justify-between px-4 py-3 ${differenceTotal === 0 ? 'bg-emerald-50/70' : 'bg-amber-50/70'}`}>
+                  <span className={`flex items-center gap-1.5 text-xs font-semibold ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {differenceTotal === 0 && <CheckCircle2 className="h-3.5 w-3.5" />}
+                    {differenceTotal === 0 ? 'Balanced' : 'Difference'}
                   </span>
-                  <span className={`text-sm font-black ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  <span className={`text-sm font-semibold ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
                     {differenceTotal === 0 ? 'Matched' : money(Math.abs(differenceTotal))}
                   </span>
                 </div>
                 {configuredInstallments > 0 && differenceTotal !== 0 && (
-                  <div className="px-4 py-2.5 bg-amber-50">
+                  <div className="bg-amber-50/70 px-4 py-2.5">
                     <p className="text-[11px] text-amber-700">Last installment will be auto-adjusted on save to match the total.</p>
                   </div>
                 )}
@@ -871,18 +873,17 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-1 border-t border-gray-50">
+            <div className="flex items-center justify-end gap-3 border-t border-white/50 pt-4">
               <button
                 onClick={resetForm}
-                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
+                className="rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-sm font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80"
               >
                 Reset
               </button>
               <button
                 onClick={saveStructure}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-md transition-all disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#4f46e5 0%,#6366f1 60%,#818cf8 100%)' }}
+                className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 disabled:opacity-60"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {saving ? 'Saving…' : activeId ? 'Update Structure' : 'Save Structure'}
@@ -890,6 +891,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
