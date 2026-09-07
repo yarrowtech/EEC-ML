@@ -31,7 +31,10 @@ import {
   Upload,
   Archive,
   ArchiveRestore,
-  CheckCircle
+  CheckCircle,
+  FileText,
+  Info,
+  FileClock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -40,6 +43,183 @@ const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replac
 
 const TEACHERS_CACHE_PREFIX = 'admin_teachers_cache_v1';
 const TEACHERS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// Same step-wizard layout as StudentEnrollWizard.jsx's Enrollment Steps rail.
+const TEACHER_STEPS = [
+  { key: 'basic', label: 'Basic Information', hint: 'Name, DOB, gender, photo' },
+  { key: 'contact', label: 'Contact Details', hint: 'Phone, email, address' },
+  { key: 'professional', label: 'Professional Information', hint: 'Qualification, experience, designation' },
+  { key: 'academic', label: 'Academic Assignment', hint: 'Classes, sections, subjects' },
+  { key: 'access', label: 'Login & Access', hint: 'Role and account status' },
+  { key: 'documents', label: 'Documents', hint: 'ID proof, certificates' },
+  { key: 'additional', label: 'Additional', hint: 'Emergency contact, notes' },
+  { key: 'review', label: 'Review & Submit', hint: 'Verify everything before saving' },
+];
+
+// Same visual pattern as StudentEnrollWizard's StepRail, recolored sky/blue
+// to match the Teachers page instead of the Students page's yellow theme.
+function TeacherStepRail({ step, maxVisited, onJump }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h3 className="mb-4 text-sm font-bold text-gray-900">Teacher Details Steps</h3>
+      <ol className="relative space-y-1">
+        {TEACHER_STEPS.map((s, i) => {
+          const state = i < step ? 'done' : i === step ? 'active' : 'todo';
+          const reachable = i <= maxVisited;
+          return (
+            <li key={s.key} className="relative">
+              {i < TEACHER_STEPS.length - 1 && (
+                <span
+                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${
+                    i < step ? 'bg-sky-300' : 'bg-gray-200'
+                  }`}
+                />
+              )}
+              <button
+                type="button"
+                disabled={!reachable}
+                onClick={() => reachable && onJump(i)}
+                className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                  state === 'active' ? 'bg-sky-50' : reachable ? 'hover:bg-gray-50' : 'cursor-default'
+                }`}
+              >
+                <span
+                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
+                    state === 'done'
+                      ? 'bg-emerald-600 text-white'
+                      : state === 'active'
+                        ? 'bg-sky-600 text-white ring-4 ring-sky-100'
+                        : 'border border-gray-300 bg-white text-gray-400'
+                  }`}
+                >
+                  {state === 'done' ? <Check className="h-4 w-4" /> : i + 1}
+                </span>
+                <span className="min-w-0 pt-0.5">
+                  <span
+                    className={`block text-sm font-semibold leading-tight ${
+                      state === 'active' ? 'text-sky-700' : state === 'done' ? 'text-gray-800' : 'text-gray-500'
+                    }`}
+                  >
+                    {s.label}
+                  </span>
+                  <span className={`mt-0.5 block text-xs ${state === 'done' ? 'text-emerald-500' : 'text-gray-400'}`}>
+                    {state === 'done' ? 'Completed' : s.hint}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+const TEACHER_DOC_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp';
+const MAX_TEACHER_DOC_BYTES = 5 * 1024 * 1024;
+
+// Same row layout as StudentEnrollWizard's DocRow — a real file picker that
+// uploads straight to Cloudinary and stores the returned URL, with its own
+// upload/progress/preview/remove state, self-contained per field.
+function TeacherDocRow({ label, required, hint, value, onUpload, onRemove }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState('');
+
+  const pick = async (file) => {
+    setError('');
+    if (file.size > MAX_TEACHER_DOC_BYTES) {
+      toast.error(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 5 MB.`);
+      return;
+    }
+    setUploading(true);
+    setProgress(0);
+    try {
+      await onUpload(file, (pct) => setProgress(pct));
+      toast.success(`${label} uploaded.`);
+    } catch (e) {
+      setError(e?.message || 'Upload failed. Try again.');
+      toast.error(e?.message || 'Upload failed. Try again.');
+    } finally {
+      setUploading(false);
+      setProgress(null);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${value ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
+            <FileText className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-800">
+              {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+            </p>
+            <p className="truncate text-xs text-gray-400">{hint || 'PDF / JPG / PNG · max 5 MB'}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {value ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+              <Check className="h-3.5 w-3.5" /> Uploaded
+            </span>
+          ) : uploading ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading {progress != null ? `${progress}%` : '…'}
+            </span>
+          ) : (
+            <span className="text-xs text-gray-400">Not uploaded</span>
+          )}
+
+          {value && (
+            <a href={value} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Preview">
+              <Eye className="h-4 w-4" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" /> {value ? 'Replace' : 'Upload'}
+          </button>
+          {value && onRemove && (
+            <button type="button" onClick={onRemove} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600" title="Remove">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {uploading && (
+        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="h-full rounded-full bg-sky-500 transition-[width] duration-200"
+            style={{ width: `${progress ?? 8}%` }}
+          />
+        </div>
+      )}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={TEACHER_DOC_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) pick(f);
+        }}
+      />
+      {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
 
 const AVATAR_COLORS = [
   { bg: 'bg-violet-100', text: 'text-violet-700' },
@@ -166,6 +346,8 @@ const Teachers = ({setShowAdminHeader}) => {
   const [archivedTeachers, setArchivedTeachers] = useState([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [unarchivingTeacherId, setUnarchivingTeacherId] = useState(null);
+  const [selectedArchivedIds, setSelectedArchivedIds] = useState([]);
+  const [isBulkUnarchiving, setIsBulkUnarchiving] = useState(false);
   const bulkFileInputRef = useRef(null);
 
   const principalIdentitySet = useMemo(() => {
@@ -192,24 +374,63 @@ const Teachers = ({setShowAdminHeader}) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
 
-  const [newTeacher, setNewTeacher] = useState({
+  const NEW_TEACHER_INITIAL = {
+    // Basic Information
     name: '',
-    email: '',
-    mobile: '',
-    subject: '',
-    department: '',
-    experience: '',
-    qualification: '',
-    status: 'Active',
-    joiningDate: '',
+    dob: '',
     gender: '',
+    profilePic: '',
+    // Contact Details
+    mobile: '',
+    email: '',
+    alternatePhone: '',
     address: '',
+    city: '',
+    district: '',
+    state: '',
     pinCode: '',
-    location: '',
-    avatar: ''
-  });
+    // Professional Information
+    qualification: '',
+    specialization: '',
+    experience: '',
+    joiningDate: '',
+    designation: '',
+    employeeType: '',
+    department: '',
+    // Academic Assignment
+    classesAssigned: [],
+    sectionsAssigned: [],
+    subjectsAssigned: [],
+    subject: '', // kept for backward-compat with the existing table/list display
+    classTeacherOf: '',
+    // Login & Access
+    accountStatus: 'Active',
+    status: 'Active',
+    // Documents
+    documents: {
+      aadhaarUrl: '',
+      qualificationCertUrl: '',
+      experienceCertUrl: '',
+      appointmentLetterUrl: '',
+    },
+    // Additional
+    emergencyContactName: '',
+    emergencyContact: '',
+    bloodGroup: '',
+    notes: '',
+  };
+  const [newTeacher, setNewTeacher] = useState({ ...NEW_TEACHER_INITIAL });
   const [formErrors, setFormErrors] = useState({});
   const [formTouched, setFormTouched] = useState({});
+
+  /* -------------------- Add-Teacher drafts (auto-save, like Students) -------------------- */
+  const [activeTeacherDraftId, setActiveTeacherDraftId] = useState(null);
+  const [teacherDrafts, setTeacherDrafts] = useState([]);
+  const [showTeacherDraftsModal, setShowTeacherDraftsModal] = useState(false);
+  const [deletingTeacherDraftId, setDeletingTeacherDraftId] = useState(null);
+  const [teacherDraftSaveState, setTeacherDraftSaveState] = useState('idle'); // idle | pending | saving | saved | error
+  const [teacherFormStep, setTeacherFormStep] = useState(0);
+  const [maxVisitedTeacherStep, setMaxVisitedTeacherStep] = useState(0);
 
   // Filter teachers based on search and status
   const filteredTeachers = teachers.filter(teacher => {
@@ -524,6 +745,7 @@ const Teachers = ({setShowAdminHeader}) => {
     fetchTeachers({ useCache: true }).catch(err => {
       console.error("Error fetching teachers:", err);
     });
+    loadTeacherDrafts();
   }, [setShowAdminHeader]);
 
   useEffect(() => {
@@ -581,6 +803,41 @@ const Teachers = ({setShowAdminHeader}) => {
     }
   };
 
+  // Comma-separated text → array, for the Classes/Sections/Subjects Assigned
+  // fields (keeps the form a plain text input instead of needing a whole
+  // separate multi-select component for something this simple).
+  const handleAddTeacherListChange = (field) => (e) => {
+    const list = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+    setNewTeacher((prev) => ({ ...prev, [field]: list }));
+  };
+
+  // Upload a photo/document to Cloudinary; reports progress and returns the
+  // hosted URL. Same XHR-to-shared-endpoint pattern as Students'
+  // uploadEnrollDocument, just pointed at the teacher_* folders.
+  const uploadTeacherFile = (file, folder, onProgress) =>
+    new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', folder);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/uploads/cloudinary/single`);
+      xhr.setRequestHeader('authorization', `Bearer ${localStorage.getItem('token')}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data?.files?.[0]?.secure_url) {
+          resolve(data.files[0].secure_url);
+        } else {
+          reject(new Error(data?.message || `Upload failed (${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.send(fd);
+    });
+
   const handleFormBlur = (e) => {
     const { name } = e.target;
     setFormTouched(prev => ({ ...prev, [name]: true }));
@@ -589,49 +846,164 @@ const Teachers = ({setShowAdminHeader}) => {
   };
 
   const resetTeacherForm = () => {
-    setNewTeacher({
-      name: '',
-      email: '',
-      mobile: '',
-      subject: '',
-      department: '',
-      experience: '',
-      qualification: '',
-      status: 'Active',
-      joiningDate: '',
-      gender: '',
-      address: '',
-      pinCode: '',
-      location: '',
-      avatar: ''
-    });
+    setNewTeacher({ ...NEW_TEACHER_INITIAL });
     setEditingTeacherId(null);
+    setActiveTeacherDraftId(null);
     setFormErrors({});
     setFormTouched({});
+    setTeacherFormStep(0);
+    setMaxVisitedTeacherStep(0);
   };
 
   const handleEditTeacher = (teacher) => {
     const teacherId = teacher?._id || teacher?.id;
     if (!teacherId) return;
     setEditingTeacherId(teacherId);
+    setActiveTeacherDraftId(null);
+    setTeacherFormStep(0);
+    setMaxVisitedTeacherStep(TEACHER_STEPS.length - 1); // editing: every step already has data, all reachable
     setNewTeacher({
       name: teacher?.name || '',
-      email: teacher?.email || '',
-      mobile: teacher?.mobile || '',
-      subject: teacher?.subject || '',
-      department: teacher?.department || '',
-      experience: teacher?.experience || '',
-      qualification: teacher?.qualification || '',
-      status: teacher?.status || 'Active',
-      joiningDate: teacher?.joiningDate || '',
+      dob: teacher?.dob || '',
       gender: teacher?.gender || '',
+      profilePic: teacher?.profilePic || '',
+      mobile: teacher?.mobile || '',
+      email: teacher?.email || '',
+      alternatePhone: teacher?.alternatePhone || '',
       address: teacher?.address || '',
+      city: teacher?.city || '',
+      district: teacher?.district || '',
+      state: teacher?.state || '',
       pinCode: teacher?.pinCode || '',
-      location: teacher?.location || '',
-      avatar: teacher?.avatar || ''
+      qualification: teacher?.qualification || '',
+      specialization: teacher?.specialization || '',
+      experience: teacher?.experience || '',
+      joiningDate: teacher?.joiningDate || '',
+      designation: teacher?.designation || '',
+      employeeType: teacher?.employeeType || '',
+      department: teacher?.department || '',
+      classesAssigned: Array.isArray(teacher?.classesAssigned) ? teacher.classesAssigned : [],
+      sectionsAssigned: Array.isArray(teacher?.sectionsAssigned) ? teacher.sectionsAssigned : [],
+      subjectsAssigned: Array.isArray(teacher?.subjectsAssigned) ? teacher.subjectsAssigned : [],
+      subject: teacher?.subject || '',
+      classTeacherOf: teacher?.classTeacherOf || '',
+      accountStatus: teacher?.accountStatus || 'Active',
+      status: teacher?.status || 'Active',
+      documents: {
+        aadhaarUrl: teacher?.documents?.aadhaarUrl || '',
+        qualificationCertUrl: teacher?.documents?.qualificationCertUrl || '',
+        experienceCertUrl: teacher?.documents?.experienceCertUrl || '',
+        appointmentLetterUrl: teacher?.documents?.appointmentLetterUrl || '',
+      },
+      emergencyContactName: teacher?.emergencyContactName || '',
+      emergencyContact: teacher?.emergencyContact || '',
+      bloodGroup: teacher?.bloodGroup || '',
+      notes: teacher?.notes || '',
     });
     setShowAddForm(true);
   };
+
+  const teacherDraftAuthHeaders = () => ({
+    'Content-Type': 'application/json',
+    authorization: `Bearer ${localStorage.getItem('token')}`,
+  });
+
+  const loadTeacherDrafts = async () => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/enrollment-drafts`, {
+        headers: teacherDraftAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setTeacherDrafts(Array.isArray(data.data) ? data.data : []);
+    } catch {
+      /* offline / ignore */
+    }
+  };
+
+  const saveTeacherDraft = async ({ silent = false } = {}) => {
+    const payload = {
+      id: activeTeacherDraftId || undefined,
+      label: newTeacher.name?.trim() || 'Untitled draft',
+      step: teacherFormStep,
+      data: { newTeacher },
+    };
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/enrollment-drafts`, {
+      method: 'POST',
+      headers: teacherDraftAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not save draft');
+    if (data?.data?._id) setActiveTeacherDraftId(data.data._id);
+    if (data?.data) {
+      setTeacherDrafts((prev) => {
+        const rest = prev.filter((d) => d._id !== data.data._id);
+        return [data.data, ...rest];
+      });
+    }
+    if (!silent) await loadTeacherDrafts();
+    return data.data;
+  };
+
+  const deleteTeacherDraft = async (id) => {
+    setDeletingTeacherDraftId(id);
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/enrollment-drafts/${id}`, {
+        method: 'DELETE',
+        headers: teacherDraftAuthHeaders(),
+      });
+    } catch {
+      /* ignore */
+    }
+    if (activeTeacherDraftId === id) setActiveTeacherDraftId(null);
+    setTeacherDrafts((prev) => prev.filter((d) => d._id !== id));
+    setDeletingTeacherDraftId(null);
+  };
+
+  const resumeTeacherDraft = (draft) => {
+    const d = draft?.data || {};
+    const step = Number(draft?.step) || 0;
+    setNewTeacher({ ...NEW_TEACHER_INITIAL, ...(d.newTeacher || {}) });
+    setActiveTeacherDraftId(draft._id);
+    setEditingTeacherId(null);
+    setTeacherFormStep(step);
+    setMaxVisitedTeacherStep(step);
+    setShowTeacherDraftsModal(false);
+    setShowAddForm(true);
+  };
+
+  const startNewTeacherForm = () => {
+    resetTeacherForm();
+    setShowAddForm(true);
+  };
+
+  // Auto-save the Add Teacher form as a draft, 2.5s after the last edit —
+  // mirrors StudentEnrollWizard's auto-save exactly. New teachers only;
+  // editing an existing teacher never creates/updates a draft.
+  const lastTeacherDraftSnapshot = useRef('');
+  const teacherAutoSaveTimer = useRef(null);
+  useEffect(() => {
+    if (!showAddForm || editingTeacherId) return undefined;
+    const hasContent = (newTeacher.name || '').trim().length > 1;
+    const snapshot = JSON.stringify({ newTeacher, teacherFormStep });
+    if (!hasContent || snapshot === lastTeacherDraftSnapshot.current) return undefined;
+    setTeacherDraftSaveState((prev) => (prev === 'saving' ? prev : 'pending'));
+    if (teacherAutoSaveTimer.current) clearTimeout(teacherAutoSaveTimer.current);
+    teacherAutoSaveTimer.current = setTimeout(async () => {
+      lastTeacherDraftSnapshot.current = snapshot;
+      setTeacherDraftSaveState('saving');
+      try {
+        await saveTeacherDraft({ silent: true });
+        setTeacherDraftSaveState('saved');
+        setTimeout(() => setTeacherDraftSaveState('idle'), 2500);
+      } catch {
+        setTeacherDraftSaveState('error');
+        setTimeout(() => setTeacherDraftSaveState('idle'), 3000);
+      }
+    }, 2500);
+    return () => teacherAutoSaveTimer.current && clearTimeout(teacherAutoSaveTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newTeacher, teacherFormStep, showAddForm, editingTeacherId]);
 
   const handleAddTeacherSubmit = async (e) => {
     e.preventDefault();
@@ -654,7 +1026,25 @@ const Teachers = ({setShowAdminHeader}) => {
         joiningDate: newTeacher.joiningDate,
         gender: newTeacher.gender,
         address: newTeacher.address,
-        pinCode: newTeacher.pinCode
+        pinCode: newTeacher.pinCode,
+        dob: newTeacher.dob,
+        alternatePhone: newTeacher.alternatePhone,
+        city: newTeacher.city,
+        district: newTeacher.district,
+        state: newTeacher.state,
+        specialization: newTeacher.specialization,
+        designation: newTeacher.designation,
+        employeeType: newTeacher.employeeType,
+        classesAssigned: newTeacher.classesAssigned,
+        sectionsAssigned: newTeacher.sectionsAssigned,
+        subjectsAssigned: newTeacher.subjectsAssigned,
+        classTeacherOf: newTeacher.classTeacherOf,
+        accountStatus: newTeacher.accountStatus,
+        documents: newTeacher.documents,
+        emergencyContactName: newTeacher.emergencyContactName,
+        emergencyContact: newTeacher.emergencyContact,
+        bloodGroup: newTeacher.bloodGroup,
+        notes: newTeacher.notes,
       };
 
       const isEditMode = Boolean(editingTeacherId);
@@ -681,6 +1071,8 @@ const Teachers = ({setShowAdminHeader}) => {
         setSubmitStatus({ type: 'success', message: 'Teacher updated successfully.' });
       } else {
         setSubmitStatus(null);
+        // The teacher is now real — the draft it was saved from is stale, drop it.
+        if (activeTeacherDraftId) deleteTeacherDraft(activeTeacherDraftId).catch(() => {});
         toast.success(
           data?.emailSent
             ? 'Teacher added and credentials emailed.'
@@ -913,6 +1305,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
   const openArchiveModal = () => {
     setShowArchiveModal(true);
+    setSelectedArchivedIds([]);
     fetchArchivedTeachers();
   };
 
@@ -931,12 +1324,61 @@ const Teachers = ({setShowAdminHeader}) => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to unarchive teacher');
       setArchivedTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
+      setSelectedArchivedIds((prev) => prev.filter((id) => id !== String(teacherId)));
       fetchTeachers({ useCache: false }).catch(console.error);
       toast.success(`${teacher.name || 'Teacher'} restored.`);
     } catch (error) {
       toast.error(error.message || 'Unable to unarchive teacher');
     } finally {
       setUnarchivingTeacherId(null);
+    }
+  };
+
+  const toggleArchivedSelection = (teacherId) => {
+    if (!teacherId) return;
+    const id = String(teacherId);
+    setSelectedArchivedIds((prev) => {
+      const set = new Set(prev.map(String));
+      if (set.has(id)) set.delete(id); else set.add(id);
+      return Array.from(set);
+    });
+  };
+
+  const archivedTeacherIds = useMemo(
+    () => archivedTeachers.map((t) => String(t._id || t.id)).filter(Boolean),
+    [archivedTeachers]
+  );
+  const isAllArchivedSelected = archivedTeacherIds.length > 0
+    && archivedTeacherIds.every((id) => selectedArchivedIds.includes(id));
+
+  const toggleSelectAllArchived = () => {
+    setSelectedArchivedIds(isAllArchivedSelected ? [] : archivedTeacherIds);
+  };
+
+  const handleBulkUnarchiveTeachers = async () => {
+    if (!selectedArchivedIds.length || isBulkUnarchiving) return;
+    setIsBulkUnarchiving(true);
+    const ids = [...selectedArchivedIds];
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/unarchive`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to restore teachers');
+      const idSet = new Set(ids.map(String));
+      setArchivedTeachers((prev) => prev.filter((item) => !idSet.has(String(item._id || item.id))));
+      setSelectedArchivedIds([]);
+      fetchTeachers({ useCache: false }).catch(console.error);
+      toast.success(`${data?.unarchived ?? ids.length} teacher(s) restored.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to restore teachers');
+    } finally {
+      setIsBulkUnarchiving(false);
     }
   };
 
@@ -1172,7 +1614,15 @@ const Teachers = ({setShowAdminHeader}) => {
   return (
     // Same page shell as /admin/students and /admin/parents — plain header,
     // filter bar, content card — recolored sky-blue instead of yellow/emerald.
-    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
+    // overflow-hidden is intentionally NOT set here (unlike the inner div
+    // below) — every modal in this file is a fixed-position child of this
+    // outer div, and overflow:hidden on an ancestor clips fixed-position
+    // descendants' painting to that ancestor's box, not just its layout.
+    // That was cutting the modal backdrop off a bit short of the true
+    // bottom of the viewport. The page's own scroll is already fully
+    // contained by the flex/min-h-0 sizing further down, so this isn't
+    // needed for that.
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
@@ -1186,15 +1636,22 @@ const Teachers = ({setShowAdminHeader}) => {
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
             <button
-              onClick={() => {
-                resetTeacherForm();
-                setShowAddForm(true);
-              }}
+              onClick={startNewTeacherForm}
               className="bg-sky-500 text-white px-3 py-2 rounded-full hover:bg-sky-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
               <Plus size={15} /> Add
             </button>
-            
+            <button
+              onClick={() => { setShowTeacherDraftsModal(true); loadTeacherDrafts(); }}
+              className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <FileClock size={15} /> Drafts
+              {teacherDrafts.length > 0 && (
+                <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-sky-100 px-1.5 text-xs font-semibold text-sky-700">
+                  {teacherDrafts.length}
+                </span>
+              )}
+            </button>
             <button
               onClick={downloadTeacherDemoTemplate}
               className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -1365,6 +1822,16 @@ const Teachers = ({setShowAdminHeader}) => {
             <table className="w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
+                  <th className="w-10 px-4 py-3.5 text-left">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                      checked={isAllFilteredSelected}
+                      disabled={filteredTeacherIds.length === 0}
+                      onChange={toggleSelectAllFilteredTeachers}
+                      aria-label="Select all teachers"
+                    />
+                  </th>
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher</th>
                   {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
                   {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject & Dept</th> */}
@@ -1379,8 +1846,18 @@ const Teachers = ({setShowAdminHeader}) => {
                   const avatarColor = getAvatarColor(teacher.name);
                   const teacherInitials = (teacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
                   const teacherIsPrincipal = principalIdentitySet.has(String(teacher?.email || '').trim().toLowerCase());
+                  const teacherId = String(teacher._id || teacher.id || '');
                   return (
                     <tr key={teacher._id || teacher.id} className="hover:bg-sky-50/30 transition-colors">
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                          checked={selectedTeacherIds.includes(teacherId)}
+                          onChange={() => toggleTeacherSelection(teacherId)}
+                          aria-label={`Select ${teacher.name || 'teacher'}`}
+                        />
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
@@ -1510,6 +1987,16 @@ const Teachers = ({setShowAdminHeader}) => {
                             onClick={() => handleEditTeacher(teacher)}
                           >
                             <Edit2 size={15} />
+                          </button>
+                          <button
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
+                            title="Archive"
+                            onClick={() => handleArchiveTeacher(teacher)}
+                            disabled={archivingTeacherId === (teacher._id || teacher.id)}
+                          >
+                            {archivingTeacherId === (teacher._id || teacher.id)
+                              ? <Loader2 size={15} className="animate-spin" />
+                              : <Archive size={15} />}
                           </button>
                           <button
                             className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all disabled:opacity-40"
@@ -1752,41 +2239,77 @@ const Teachers = ({setShowAdminHeader}) => {
               : 'border-gray-200 focus:ring-sky-400 focus:border-transparent'
           }`;
         const hasErrors = Object.values(formErrors).some(Boolean);
+        const isLastTeacherStep = teacherFormStep === TEACHER_STEPS.length - 1;
+        const goToTeacherStep = (i) => {
+          setTeacherFormStep(i);
+          setMaxVisitedTeacherStep((prev) => Math.max(prev, i));
+        };
+        // Same "one page per step" layout as StudentEnrollWizard.jsx —
+        // full-screen takeover with a step rail on the right, not a small
+        // centered dialog.
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
-
-              {/* Modal header */}
-              <div className="flex-shrink-0 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center shadow-md shadow-sky-200">
-                    {editingTeacherId ? <Edit2 size={17} className="text-white" /> : <Plus size={17} className="text-white" />}
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-gray-900">{editingTeacherId ? 'Edit Teacher' : 'Add New Teacher'}</h2>
-                    <p className="text-xs text-gray-400">{editingTeacherId ? 'Update the teacher\'s information' : 'Fill in all required fields to register a teacher'}</p>
-                  </div>
+          <Motion.div
+            className="fixed inset-0 z-50 flex flex-col bg-slate-50"
+            initial={{ opacity: 0, y: 14, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {/* Header */}
+            <header className="flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-sky-50 to-blue-50 px-6 py-3.5 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sky-500 text-white">
+                  {editingTeacherId ? <Edit2 className="h-5 w-5" /> : <GraduationCap className="h-6 w-6" />}
+                </span>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900">{editingTeacherId ? 'Edit Teacher' : 'Add New Teacher'}</h1>
+                  <p className="text-xs text-gray-500">
+                    {editingTeacherId ? `Update ${newTeacher.name || 'the teacher'}'s details` : 'Complete all steps to register a new teacher'}
+                  </p>
                 </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {!editingTeacherId && teacherDraftSaveState !== 'idle' && (
+                  <span className="text-xs font-medium text-gray-400 flex items-center gap-1.5">
+                    {teacherDraftSaveState === 'pending' && 'Unsaved changes'}
+                    {teacherDraftSaveState === 'saving' && (<><Loader2 size={12} className="animate-spin" /> Saving draft...</>)}
+                    {teacherDraftSaveState === 'saved' && (<><Check size={12} className="text-emerald-500" /> Draft saved</>)}
+                    {teacherDraftSaveState === 'error' && 'Draft save failed'}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => { setShowAddForm(false); resetTeacherForm(); }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                  className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white p-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
                 >
-                  <XCircle size={18} />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
+            </header>
 
-              {/* Scrollable body */}
-              <form onSubmit={handleAddTeacherSubmit} className="flex flex-col flex-1 overflow-hidden" noValidate>
-                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            {/* Body */}
+            <form onSubmit={handleAddTeacherSubmit} className="flex-1 overflow-y-auto" noValidate>
+              <div className="mx-auto max-w-6xl p-5 lg:p-6">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  {/* form card */}
+                  <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-7 space-y-6">
 
-                  {/* Section: Basic Info */}
+                  {/* Section: Basic Information */}
+                  {teacherFormStep === 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <User size={13} className="text-sky-500" />
                       <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Basic Information</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                      {editingTeacherId && (
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Employee ID</label>
+                          <input type="text" readOnly value={teachers.find((t) => (t._id || t.id) === editingTeacherId)?.empId || '—'}
+                            className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
+                          <p className="mt-1 text-[11px] text-gray-400">Auto-generated, cannot be changed</p>
+                        </div>
+                      )}
 
                       {/* Full Name */}
                       <div>
@@ -1812,6 +2335,21 @@ const Teachers = ({setShowAdminHeader}) => {
                         )}
                       </div>
 
+                      {/* Date of Birth */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Birth</label>
+                        <div className="relative">
+                          <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <input
+                            type="date"
+                            name="dob"
+                            value={newTeacher.dob}
+                            onChange={handleAddTeacherChange}
+                            className={`${fieldClass('dob')} pl-9`}
+                          />
+                        </div>
+                      </div>
+
                       {/* Gender */}
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1.5">Gender</label>
@@ -1827,6 +2365,56 @@ const Teachers = ({setShowAdminHeader}) => {
                           <option value="female">Female</option>
                           <option value="other">Other</option>
                         </select>
+                      </div>
+
+                      {/* Profile Photo */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Profile Photo</label>
+                        <TeacherDocRow
+                          label="Profile Photo"
+                          value={newTeacher.profilePic}
+                          onUpload={async (file, onProgress) => {
+                            const url = await uploadTeacherFile(file, 'teacher_profiles', onProgress);
+                            setNewTeacher((prev) => ({ ...prev, profilePic: url }));
+                          }}
+                          onRemove={() => setNewTeacher((prev) => ({ ...prev, profilePic: '' }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* Section: Contact Details */}
+                  {teacherFormStep === 1 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Phone size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Contact Details</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                      {/* Mobile */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Mobile Number <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <input
+                            type="tel"
+                            name="mobile"
+                            value={newTeacher.mobile}
+                            onChange={handleAddTeacherChange}
+                            onBlur={handleFormBlur}
+                            placeholder="e.g., 9876543210"
+                            className={`${fieldClass('mobile')} pl-9`}
+                          />
+                        </div>
+                        {fe('mobile') && (
+                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                            <XCircle size={11} /> {formErrors.mobile}
+                          </p>
+                        )}
                       </div>
 
                       {/* Email */}
@@ -1854,43 +2442,99 @@ const Teachers = ({setShowAdminHeader}) => {
                         )}
                       </div>
 
-                      {/* Mobile */}
+                      {/* Alternate Phone */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Contact Number <span className="text-red-500">*</span>
-                        </label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Alternate Phone</label>
                         <div className="relative">
                           <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <input
                             type="tel"
-                            name="mobile"
-                            value={newTeacher.mobile}
+                            name="alternatePhone"
+                            value={newTeacher.alternatePhone}
                             onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., 9876543210"
-                            className={`${fieldClass('mobile')} pl-9`}
+                            placeholder="Optional"
+                            className={`${fieldClass('alternatePhone')} pl-9`}
                           />
                         </div>
-                        {fe('mobile') && (
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+                        <div className="relative">
+                          <MapPin size={14} className="absolute left-3 top-3 text-gray-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            name="address"
+                            value={newTeacher.address}
+                            onChange={handleAddTeacherChange}
+                            placeholder="Street address"
+                            className={`${fieldClass('address')} pl-9`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* City */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">City</label>
+                        <input type="text" name="city" value={newTeacher.city} onChange={handleAddTeacherChange}
+                          placeholder="e.g., Kolkata" className={fieldClass('city')} />
+                      </div>
+
+                      {/* District */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">District</label>
+                        <input type="text" name="district" value={newTeacher.district} onChange={handleAddTeacherChange}
+                          placeholder="e.g., Kolkata" className={fieldClass('district')} />
+                      </div>
+
+                      {/* State */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">State</label>
+                        <input type="text" name="state" value={newTeacher.state} onChange={handleAddTeacherChange}
+                          placeholder="e.g., West Bengal" className={fieldClass('state')} />
+                      </div>
+
+                      {/* Pin Code */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">PIN Code</label>
+                        <div className="relative">
+                          <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            name="pinCode"
+                            value={newTeacher.pinCode}
+                            onChange={handleAddTeacherChange}
+                            onBlur={handleFormBlur}
+                            placeholder="e.g., 110001"
+                            maxLength={10}
+                            className={`${fieldClass('pinCode')} pl-9`}
+                          />
+                        </div>
+                        {fe('pinCode') && (
                           <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.mobile}
+                            <XCircle size={11} /> {formErrors.pinCode}
                           </p>
                         )}
                       </div>
                     </div>
                   </div>
+                  )}
 
-                  {/* Section: Academic Details */}
+                  {/* Section: Professional Information */}
+                  {teacherFormStep === 2 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <GraduationCap size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Academic Details</span>
+                      <Briefcase size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Professional Information</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                       {/* Qualification */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Qualification</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Qualification <span className="text-red-500">*</span>
+                        </label>
                         <div className="relative">
                           <Award size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <input
@@ -1905,43 +2549,18 @@ const Teachers = ({setShowAdminHeader}) => {
                         </div>
                       </div>
 
-                      {/* Subject */}
+                      {/* Specialization */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Subject</label>
-                        <div className="relative">
-                          <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="subject"
-                            value={newTeacher.subject}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., Mathematics"
-                            className={`${fieldClass('subject')} pl-9`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Department */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department</label>
-                        <div className="relative">
-                          <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="department"
-                            value={newTeacher.department}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., Science"
-                            className={`${fieldClass('department')} pl-9`}
-                          />
-                        </div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Specialization</label>
+                        <input type="text" name="specialization" value={newTeacher.specialization} onChange={handleAddTeacherChange}
+                          placeholder="e.g., Organic Chemistry" className={fieldClass('specialization')} />
                       </div>
 
                       {/* Experience */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Experience (years)</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Total Teaching Experience (years) <span className="text-red-500">*</span>
+                        </label>
                         <div className="relative">
                           <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <input
@@ -1965,7 +2584,9 @@ const Teachers = ({setShowAdminHeader}) => {
 
                       {/* Joining Date */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Joining Date</label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Joining Date <span className="text-red-500">*</span>
+                        </label>
                         <div className="relative">
                           <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <input
@@ -1983,86 +2604,315 @@ const Teachers = ({setShowAdminHeader}) => {
                           </p>
                         )}
                       </div>
+
+                      {/* Designation */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Designation <span className="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="designation" value={newTeacher.designation} onChange={handleAddTeacherChange}
+                          placeholder="e.g., PGT, TGT, Senior Teacher" className={fieldClass('designation')} />
+                      </div>
+
+                      {/* Employee Type */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Employee Type <span className="text-red-500">*</span>
+                        </label>
+                        <select name="employeeType" value={newTeacher.employeeType} onChange={handleAddTeacherChange} className={fieldClass('employeeType')}>
+                          <option value="">Select type</option>
+                          <option value="Full-time">Full-time</option>
+                          <option value="Part-time">Part-time</option>
+                          <option value="Contract">Contract</option>
+                          <option value="Visiting">Visiting</option>
+                        </select>
+                      </div>
+
+                      {/* Department */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department</label>
+                        <div className="relative">
+                          <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            name="department"
+                            value={newTeacher.department}
+                            onChange={handleAddTeacherChange}
+                            onBlur={handleFormBlur}
+                            placeholder="e.g., Science"
+                            className={`${fieldClass('department')} pl-9`}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
+                  )}
 
-                  {/* Section: Location */}
+                  {/* Section: Academic Assignment */}
+                  {teacherFormStep === 3 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <MapPin size={13} className="text-rose-500" />
-                      <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Location</span>
+                      <GraduationCap size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Academic Assignment</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+
+                      {/* Subject (single, drives the table's Subject column) */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Primary Subject</label>
                         <div className="relative">
-                          <MapPin size={14} className="absolute left-3 top-3 text-gray-400 pointer-events-none" />
+                          <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                           <input
                             type="text"
-                            name="address"
-                            value={newTeacher.address}
+                            name="subject"
+                            value={newTeacher.subject}
                             onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="Street, City, State"
-                            className={`${fieldClass('address')} pl-9`}
+                            placeholder="e.g., Mathematics"
+                            className={`${fieldClass('subject')} pl-9`}
                           />
                         </div>
                       </div>
+
+                      {/* Class Teacher Of */}
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Pin Code</label>
-                        <div className="relative">
-                          <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="pinCode"
-                            value={newTeacher.pinCode}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., 110001"
-                            maxLength={10}
-                            className={`${fieldClass('pinCode')} pl-9`}
-                          />
-                        </div>
-                        {fe('pinCode') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.pinCode}
-                          </p>
-                        )}
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class Teacher Of</label>
+                        <input type="text" name="classTeacherOf" value={newTeacher.classTeacherOf} onChange={handleAddTeacherChange}
+                          placeholder="e.g., Class 5 - A" className={fieldClass('classTeacherOf')} />
+                      </div>
+
+                      {/* Classes Assigned */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Classes Assigned <span className="text-red-500">*</span>
+                        </label>
+                        <input type="text" value={newTeacher.classesAssigned.join(', ')} onChange={handleAddTeacherListChange('classesAssigned')}
+                          placeholder="e.g., Class 5, Class 6" className={fieldClass('classesAssigned')} />
+                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
+                      </div>
+
+                      {/* Sections Assigned */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Sections Assigned <span className="text-red-500">*</span>
+                        </label>
+                        <input type="text" value={newTeacher.sectionsAssigned.join(', ')} onChange={handleAddTeacherListChange('sectionsAssigned')}
+                          placeholder="e.g., A, B" className={fieldClass('sectionsAssigned')} />
+                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
+                      </div>
+
+                      {/* Subjects Assigned */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          Subjects Assigned <span className="text-red-500">*</span>
+                        </label>
+                        <input type="text" value={newTeacher.subjectsAssigned.join(', ')} onChange={handleAddTeacherListChange('subjectsAssigned')}
+                          placeholder="e.g., Mathematics, Science" className={fieldClass('subjectsAssigned')} />
+                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
                       </div>
                     </div>
                   </div>
+                  )}
+
+                  {/* Section: Login & Access */}
+                  {teacherFormStep === 4 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <KeyRound size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Login & Access</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {!editingTeacherId && (
+                        <div className="md:col-span-2 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
+                          <Info size={14} className="mt-0.5 flex-shrink-0" />
+                          Username and a temporary password are generated automatically on save — you'll see them right after, with an option to email or copy them.
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Role</label>
+                        <input type="text" readOnly value="Teacher" className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Account Status</label>
+                        <select name="accountStatus" value={newTeacher.accountStatus} onChange={handleAddTeacherChange} className={fieldClass('accountStatus')}>
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* Section: Documents */}
+                  {teacherFormStep === 5 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <FileText size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Documents</span>
+                    </div>
+                    <div className="space-y-3">
+                      <TeacherDocRow
+                        label="Aadhaar / ID Proof"
+                        value={newTeacher.documents.aadhaarUrl}
+                        onUpload={async (file, onProgress) => {
+                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: url } }));
+                        }}
+                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: '' } }))}
+                      />
+                      <TeacherDocRow
+                        label="Qualification Certificate"
+                        value={newTeacher.documents.qualificationCertUrl}
+                        onUpload={async (file, onProgress) => {
+                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: url } }));
+                        }}
+                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: '' } }))}
+                      />
+                      <TeacherDocRow
+                        label="Experience Certificate"
+                        value={newTeacher.documents.experienceCertUrl}
+                        onUpload={async (file, onProgress) => {
+                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: url } }));
+                        }}
+                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: '' } }))}
+                      />
+                      <TeacherDocRow
+                        label="Appointment Letter"
+                        value={newTeacher.documents.appointmentLetterUrl}
+                        onUpload={async (file, onProgress) => {
+                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: url } }));
+                        }}
+                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: '' } }))}
+                      />
+                    </div>
+                  </div>
+                  )}
+
+                  {/* Section: Additional */}
+                  {teacherFormStep === 6 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Info size={13} className="text-rose-500" />
+                      <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Additional</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Name</label>
+                        <input type="text" name="emergencyContactName" value={newTeacher.emergencyContactName} onChange={handleAddTeacherChange}
+                          className={fieldClass('emergencyContactName')} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Number</label>
+                        <input type="tel" name="emergencyContact" value={newTeacher.emergencyContact} onChange={handleAddTeacherChange}
+                          className={fieldClass('emergencyContact')} />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Blood Group</label>
+                        <select name="bloodGroup" value={newTeacher.bloodGroup} onChange={handleAddTeacherChange} className={fieldClass('bloodGroup')}>
+                          <option value="">Select</option>
+                          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                            <option key={bg} value={bg}>{bg}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Notes / Remarks</label>
+                        <textarea name="notes" value={newTeacher.notes} onChange={handleAddTeacherChange} rows={2}
+                          className={fieldClass('notes')} />
+                      </div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* Section: Review & Submit */}
+                  {isLastTeacherStep && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Check size={13} className="text-emerald-500" />
+                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Review & Submit</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                        <div><dt className="text-xs text-gray-400">Full Name</dt><dd className="font-medium text-gray-800">{newTeacher.name || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Mobile</dt><dd className="font-medium text-gray-800">{newTeacher.mobile || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Email</dt><dd className="font-medium text-gray-800">{newTeacher.email || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Designation</dt><dd className="font-medium text-gray-800">{newTeacher.designation || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Employee Type</dt><dd className="font-medium text-gray-800">{newTeacher.employeeType || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Classes Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.classesAssigned.join(', ') || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Sections Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.sectionsAssigned.join(', ') || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Subjects Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.subjectsAssigned.join(', ') || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Class Teacher Of</dt><dd className="font-medium text-gray-800">{newTeacher.classTeacherOf || '—'}</dd></div>
+                        <div><dt className="text-xs text-gray-400">Account Status</dt><dd className="font-medium text-gray-800">{newTeacher.accountStatus}</dd></div>
+                      </div>
+                      {!editingTeacherId && (
+                        <div className="mt-4 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
+                          <Info size={14} className="mt-0.5 flex-shrink-0" />
+                          Username and a temporary password will be generated automatically once saved.
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Required fields note */}
                   <p className="text-xs text-gray-400"><span className="text-red-500">*</span> Required fields</p>
-                </div>
 
-                {/* Footer */}
-                <div className="flex-shrink-0 border-t border-gray-100 px-6 py-4">
                   {hasErrors && Object.values(formTouched).some(Boolean) && (
-                    <p className="text-xs text-red-500 flex items-center gap-1.5 mb-3">
+                    <p className="text-xs text-red-500 flex items-center gap-1.5">
                       <XCircle size={13} />
                       Please fix the errors above before submitting.
                     </p>
                   )}
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddForm(false); resetTeacherForm(); }}
-                      className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-600 text-white hover:from-sky-700 hover:to-sky-700 transition-all shadow-md shadow-sky-200 text-sm font-semibold flex items-center gap-2"
-                    >
-                      {editingTeacherId ? <><Check size={15} /> Update Teacher</> : <><Plus size={15} /> Add Teacher</>}
-                    </button>
+                  </div>
+
+                  {/* right rail */}
+                  <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+                    <TeacherStepRail step={teacherFormStep} maxVisited={maxVisitedTeacherStep} onJump={goToTeacherStep} />
+                  </aside>
+                </div>
+              </div>
+
+              {/* Footer — Back / Next / Submit */}
+              <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4 lg:px-6">
+                <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddForm(false); resetTeacherForm(); }}
+                    className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <div className="flex items-center gap-3">
+                    {teacherFormStep > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTeacherFormStep((s) => Math.max(0, s - 1))}
+                        className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                      >
+                        Back
+                      </button>
+                    )}
+                    {!isLastTeacherStep ? (
+                      <button
+                        type="button"
+                        onClick={() => goToTeacherStep(teacherFormStep + 1)}
+                        className="px-6 py-2.5 rounded-xl bg-sky-600 text-white hover:bg-sky-700 transition-all shadow-md shadow-sky-200 text-sm font-semibold flex items-center gap-2"
+                      >
+                        Next Step
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-600 text-white hover:from-sky-700 hover:to-sky-700 transition-all shadow-md shadow-sky-200 text-sm font-semibold flex items-center gap-2"
+                      >
+                        {editingTeacherId ? <><Check size={15} /> Update Teacher</> : <><Plus size={15} /> Add Teacher</>}
+                      </button>
+                    )}
                   </div>
                 </div>
-              </form>
-            </div>
-          </div>
+              </div>
+            </form>
+          </Motion.div>
         );
       })()}
 
@@ -2335,6 +3185,171 @@ const Teachers = ({setShowAdminHeader}) => {
                   'Delete'
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showArchiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Archive size={18} className="text-sky-600" />
+                <h3 className="text-base font-bold text-gray-900">Archived Teachers</h3>
+                <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">
+                  {archivedTeachers.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowArchiveModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {!loadingArchived && archivedTeachers.length > 0 && (
+              <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
+                <label className="flex items-center gap-2 text-xs font-medium text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    checked={isAllArchivedSelected}
+                    onChange={toggleSelectAllArchived}
+                  />
+                  {isAllArchivedSelected ? 'Deselect All' : 'Select All'}
+                </label>
+                {selectedArchivedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleBulkUnarchiveTeachers}
+                    disabled={isBulkUnarchiving}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700 transition-colors text-xs font-medium disabled:opacity-60"
+                  >
+                    {isBulkUnarchiving
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : <ArchiveRestore size={14} />}
+                    {isBulkUnarchiving ? 'Restoring...' : `Restore Selected (${selectedArchivedIds.length})`}
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-auto">
+              {loadingArchived ? (
+                <div className="flex items-center justify-center gap-2 text-gray-400 py-16">
+                  <Loader2 size={18} className="animate-spin" />
+                  Loading archived teachers...
+                </div>
+              ) : archivedTeachers.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                    <Archive size={24} className="text-sky-300" />
+                  </div>
+                  <p className="text-gray-500 font-medium text-sm">No archived teachers</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {archivedTeachers.map((teacher) => {
+                    const teacherId = String(teacher._id || teacher.id || '');
+                    return (
+                      <div key={teacherId} className="flex items-center justify-between gap-3 px-6 py-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer flex-shrink-0"
+                            checked={selectedArchivedIds.includes(teacherId)}
+                            onChange={() => toggleArchivedSelection(teacherId)}
+                            aria-label={`Select ${teacher.name || 'teacher'}`}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{teacher.name || 'Unnamed Teacher'}</p>
+                            <p className="text-xs text-gray-400">
+                              ID: {teacher.employeeCode || teacher.empId || '—'} · Archived {teacher.archivedAt ? new Date(teacher.archivedAt).toLocaleDateString() : '—'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleUnarchiveTeacher(teacher)}
+                          disabled={unarchivingTeacherId === teacherId}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50 flex-shrink-0"
+                        >
+                          {unarchivingTeacherId === teacherId
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <ArchiveRestore size={14} />}
+                          Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTeacherDraftsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <FileClock size={18} className="text-sky-600" />
+                <h3 className="text-base font-bold text-gray-900">Draft Teachers</h3>
+                <span className="text-xs px-1.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">
+                  {teacherDrafts.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTeacherDraftsModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
+              {teacherDrafts.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                    <FileClock size={24} className="text-sky-300" />
+                  </div>
+                  <p className="text-gray-500 font-medium text-sm">No saved drafts</p>
+                  <p className="text-gray-400 text-xs mt-1">Partially filled "Add Teacher" forms are saved here automatically.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {teacherDrafts.map((draft) => (
+                    <div key={draft._id} className="flex items-center justify-between gap-3 px-6 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{draft.label || 'Untitled draft'}</p>
+                        <p className="text-xs text-gray-400">Last saved {draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => resumeTeacherDraft(draft)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium"
+                        >
+                          Resume
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteTeacherDraft(draft._id)}
+                          disabled={deletingTeacherDraftId === draft._id}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all disabled:opacity-40"
+                          title="Delete draft"
+                        >
+                          {deletingTeacherDraftId === draft._id
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Trash2 size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

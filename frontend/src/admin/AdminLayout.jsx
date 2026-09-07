@@ -83,7 +83,16 @@ const AdminLayout = ({
           />
         )}
 
-        <main className="flex-1 overflow-x-hidden bg-gray-50">
+        {/* overflow-x-hidden used to live here, but CSS resolves a lone
+            non-'visible' overflow-x by also switching overflow-y to 'auto'
+            (spec: a 'visible'/non-'visible' pair on the two axes forces the
+            'visible' one to 'auto') — so this was a real clipping/scroll
+            container on both axes, and it clipped every admin page's
+            fixed-position modal backdrops short of the true viewport
+            bottom, since it wraps every page's content. Pages that need
+            horizontal-scroll containment already wrap their own wide
+            content (tables, etc.) in their own overflow-x-auto box. */}
+        <main className="flex-1 bg-gray-50">
           {children}
         </main>
       </div>

@@ -35,6 +35,43 @@ const teacherUserSchema = new mongoose.Schema({
   lastLoginAt: { type: Date, default: null },
   isArchived: { type: Boolean, default: false, index: true },
   archivedAt: { type: Date, default: null },
+
+  // Basic Information
+  dob: { type: String, default: '' },
+
+  // Contact Details
+  alternatePhone: { type: String, default: '' },
+  city: { type: String, default: '' },
+  district: { type: String, default: '' },
+  state: { type: String, default: '' },
+
+  // Professional Information
+  specialization: { type: String, default: '' },
+  designation: { type: String, default: '' },
+  employeeType: { type: String, default: '' }, // Full-time / Part-time / Contract / Visiting
+
+  // Academic Assignment
+  classesAssigned: { type: [String], default: [] },
+  sectionsAssigned: { type: [String], default: [] },
+  subjectsAssigned: { type: [String], default: [] },
+  classTeacherOf: { type: String, default: '' },
+
+  // Login & Access — distinct from the computed attendance `status`
+  // (Present/Absent/On Leave) already used elsewhere on this model.
+  accountStatus: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
+
+  // Documents (Cloudinary URLs)
+  documents: {
+    aadhaarUrl: { type: String, default: '' },
+    qualificationCertUrl: { type: String, default: '' },
+    experienceCertUrl: { type: String, default: '' },
+    appointmentLetterUrl: { type: String, default: '' },
+  },
+
+  // Additional
+  emergencyContactName: { type: String, default: '' },
+  bloodGroup: { type: String, default: '' },
+  notes: { type: String, default: '' },
 }, { timestamps: true });
 
 teacherUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });

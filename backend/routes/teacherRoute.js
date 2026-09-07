@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const TeacherUser = require('../models/TeacherUser');
+const TeacherEnrollmentDraft = require('../models/TeacherEnrollmentDraft');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { generatePassword } = require('../utils/generator');
@@ -40,7 +42,32 @@ router.post('/register', adminAuth, async (req, res) => {
     address,
     pinCode,
     joiningDate,
-    joinDate
+    joinDate,
+    // Basic Information
+    dob,
+    // Contact Details
+    alternatePhone,
+    city,
+    district,
+    state,
+    // Professional Information
+    specialization,
+    designation,
+    employeeType,
+    // Academic Assignment
+    classesAssigned,
+    sectionsAssigned,
+    subjectsAssigned,
+    classTeacherOf,
+    // Login & Access
+    accountStatus,
+    // Documents
+    documents,
+    // Additional
+    emergencyContactName,
+    emergencyContact,
+    bloodGroup,
+    notes,
   } = req.body;
 
   try {
@@ -93,7 +120,30 @@ router.post('/register', adminAuth, async (req, res) => {
       experience,
       address,
       pinCode,
-      joiningDate: joiningDate || joinDate
+      joiningDate: joiningDate || joinDate,
+      dob: dob || '',
+      alternatePhone: alternatePhone || '',
+      city: city || '',
+      district: district || '',
+      state: state || '',
+      specialization: specialization || '',
+      designation: designation || '',
+      employeeType: employeeType || '',
+      classesAssigned: Array.isArray(classesAssigned) ? classesAssigned : [],
+      sectionsAssigned: Array.isArray(sectionsAssigned) ? sectionsAssigned : [],
+      subjectsAssigned: Array.isArray(subjectsAssigned) ? subjectsAssigned : [],
+      classTeacherOf: classTeacherOf || '',
+      accountStatus: accountStatus === 'Inactive' ? 'Inactive' : 'Active',
+      documents: {
+        aadhaarUrl: documents?.aadhaarUrl || '',
+        qualificationCertUrl: documents?.qualificationCertUrl || '',
+        experienceCertUrl: documents?.experienceCertUrl || '',
+        appointmentLetterUrl: documents?.appointmentLetterUrl || '',
+      },
+      emergencyContactName: emergencyContactName || '',
+      emergencyContact: emergencyContact || '',
+      bloodGroup: bloodGroup || '',
+      notes: notes || '',
     });
 
     await user.save();
@@ -370,6 +420,92 @@ router.put('/profile', authTeacher, async (req, res) => {
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+/* ───────────────────────── Teacher enrollment drafts (admin) ─────────────────────────
+   Mirrors the "Student enrollment drafts" section of routes/studentRoute.js exactly —
+   an opaque save-as-you-go draft of the Add Teacher form, scoped to school/campus. */
+
+const resolveTeacherDraftScope = (req) => ({
+  schoolId: req.admin?.schoolId || req.schoolId || req.body?.schoolId || null,
+  campusId: req.campusId || req.admin?.campusId || req.body?.campusId || null,
+});
+
+const teacherDraftScopeFilter = ({ schoolId, campusId }) => {
+  const filter = { schoolId };
+  if (campusId) filter.campusId = campusId;
+  return filter;
+};
+
+const MAX_TEACHER_DRAFTS_PER_SCOPE = 30;
+
+router.get('/enrollment-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    const scope = resolveTeacherDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const drafts = await TeacherEnrollmentDraft.find(teacherDraftScopeFilter(scope))
+      .sort({ updatedAt: -1 })
+      .limit(MAX_TEACHER_DRAFTS_PER_SCOPE)
+      .lean();
+    return res.json({ success: true, data: drafts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/enrollment-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    const scope = resolveTeacherDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+    const { id, label, step, data } = req.body || {};
+    const doc = {
+      label: String(label || '').trim().slice(0, 120) || 'Untitled draft',
+      step: Number.isFinite(Number(step)) ? Math.max(0, Math.floor(Number(step))) : 0,
+      data: data && typeof data === 'object' ? data : {},
+    };
+
+    if (id && mongoose.isValidObjectId(id)) {
+      const updated = await TeacherEnrollmentDraft.findOneAndUpdate(
+        { _id: id, ...teacherDraftScopeFilter(scope) },
+        { $set: doc },
+        { new: true }
+      ).lean();
+      if (!updated) return res.status(404).json({ error: 'Draft not found' });
+      return res.json({ success: true, data: updated });
+    }
+
+    const count = await TeacherEnrollmentDraft.countDocuments(teacherDraftScopeFilter(scope));
+    if (count >= MAX_TEACHER_DRAFTS_PER_SCOPE) {
+      return res.status(400).json({ error: `Draft limit reached (${MAX_TEACHER_DRAFTS_PER_SCOPE}). Delete an old draft first.` });
+    }
+
+    const created = await TeacherEnrollmentDraft.create({
+      ...scope,
+      ...doc,
+      createdBy: req.admin?.username || req.admin?.id || '',
+    });
+    return res.status(201).json({ success: true, data: created.toObject() });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/enrollment-drafts/:id', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    const scope = resolveTeacherDraftScope(req);
+    if (!scope.schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid draft id' });
+    const removed = await TeacherEnrollmentDraft.findOneAndDelete({ _id: id, ...teacherDraftScopeFilter(scope) }).lean();
+    if (!removed) return res.status(404).json({ error: 'Draft not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 

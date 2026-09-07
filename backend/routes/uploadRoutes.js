@@ -20,6 +20,7 @@ const ALLOWED_FOLDERS = new Set([
   "smart_learning_materials",
   "teacher_expenses",
   "teacher_profiles",
+  "teacher_documents",
   "exam-routines",
   "admin-avatars",
   "school-logos",

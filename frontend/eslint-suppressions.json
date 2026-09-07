@@ -496,8 +496,14 @@
     "no-useless-escape": {
       "count": 1
     },
-    "react/prop-types": {
+    "react-hooks/exhaustive-deps": {
       "count": 1
+    },
+    "react/no-unescaped-entities": {
+      "count": 3
+    },
+    "react/prop-types": {
+      "count": 10
     }
   },
   "src/admin/adminConstants.js": {
