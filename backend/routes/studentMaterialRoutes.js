@@ -5,6 +5,8 @@ const TeachingMaterial = require('../models/TeachingMaterial');
 const StudentUser = require('../models/StudentUser');
 const authStudent = require('../middleware/authStudent');
 
+const STUDENT_PLACEMENT_FIELDS = 'classId sectionId className sectionName grade section';
+
 // Middleware to ensure student is authenticated
 router.use(authStudent);
 router.use((req, res, next) => {
@@ -16,7 +18,11 @@ router.use((req, res, next) => {
 // StudentUser stores the class name in `grade` and the section name in
 // `section` (strings); some legacy records may also carry classId/sectionId.
 const getStudentClassSection = async (studentId) => {
-  const student = await StudentUser.findById(studentId).lean();
+  // Material access only depends on placement. Excluding encrypted PII keeps
+  // this route independent from the student-profile decryption lifecycle.
+  const student = await StudentUser.findById(studentId)
+    .select(STUDENT_PLACEMENT_FIELDS)
+    .lean();
   if (!student) return null;
   return {
     className: student.className || student.grade || '',

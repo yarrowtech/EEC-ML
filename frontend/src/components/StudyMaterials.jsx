@@ -57,7 +57,10 @@ const StudyMaterials = () => {
         },
       });
 
-      if (!response.ok) throw new Error('Failed to fetch materials');
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || payload?.error || 'Failed to fetch materials');
+      }
 
       const data = await response.json();
       setMaterials(data.materials || []);
@@ -100,11 +103,31 @@ const StudyMaterials = () => {
     });
   };
 
-  const getInlineDocumentUrl = (rawUrl = '') => {
+  const getSafeAttachmentUrl = (rawUrl = '') => {
     const url = String(rawUrl || '').trim();
     if (!url) return '';
-    if (url.includes('docs.google.com/gview')) return url;
-    return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+
+    try {
+      const resolved = new URL(url, `${API_BASE}/`);
+      return ['http:', 'https:'].includes(resolved.protocol) ? resolved.href : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const getAttachmentOpenUrl = (attachment = {}) => {
+    const url = getSafeAttachmentUrl(attachment?.url);
+    if (!url || url.includes('docs.google.com/gview')) return url;
+
+    const fileName = String(attachment?.name || '').toLowerCase();
+    const mimeType = String(attachment?.type || '').toLowerCase();
+    const needsDocumentViewer = /\.(docx?|pptx?|xlsx?)(?:$|[?#])/i.test(url)
+      || /\.(docx?|pptx?|xlsx?)$/i.test(fileName)
+      || /(word|powerpoint|presentation|excel|spreadsheet)/i.test(mimeType);
+
+    return needsDocumentViewer
+      ? `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`
+      : url;
   };
 
   // Track when a student views a material
@@ -340,15 +363,9 @@ const StudyMaterials = () => {
                             <div className="mt-4 grid grid-cols-1 gap-3">
                               {attachments.map((attachment, idx) => {
                                 const FileIcon = getFileIcon(attachment?.type);
-                                return (
-                                  <a
-                                    key={idx}
-                                    href={getInlineDocumentUrl(attachment?.url)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={() => trackMaterialView(material._id)}
-                                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50"
-                                  >
+                                const openUrl = getAttachmentOpenUrl(attachment);
+                                const attachmentBody = (
+                                  <>
                                     <div className="rounded-xl bg-white p-2 shadow-sm">
                                       <FileIcon className="h-5 w-5 text-sky-600" />
                                     </div>
@@ -357,14 +374,36 @@ const StudyMaterials = () => {
                                         {attachment?.name || `File ${idx + 1}`}
                                       </p>
                                       <p className="mt-0.5 text-xs text-slate-500">
-                                        {formatFileSize(attachment?.size) || 'Open attachment'}
+                                        {openUrl
+                                          ? (formatFileSize(attachment?.size) || 'Open attachment')
+                                          : 'Unavailable — ask your teacher to upload this file again'}
                                       </p>
                                     </div>
-                                    <div className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                                      Open
-                                      <ArrowUpRight className="h-3.5 w-3.5" />
+                                    <div className={`inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-sm ${openUrl ? 'text-slate-700' : 'text-slate-400'}`}>
+                                      {openUrl ? 'Open' : 'Unavailable'}
+                                      {openUrl && <ArrowUpRight className="h-3.5 w-3.5" />}
                                     </div>
+                                  </>
+                                );
+
+                                return openUrl ? (
+                                  <a
+                                    key={attachment?._id || attachment?.url || idx}
+                                    href={openUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => trackMaterialView(material._id)}
+                                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50"
+                                  >
+                                    {attachmentBody}
                                   </a>
+                                ) : (
+                                  <div
+                                    key={attachment?._id || attachment?.url || idx}
+                                    className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+                                  >
+                                    {attachmentBody}
+                                  </div>
                                 );
                               })}
                             </div>

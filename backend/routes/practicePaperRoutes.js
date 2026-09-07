@@ -10,6 +10,12 @@ const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const StudentUser = require('../models/StudentUser');
 
+const STUDENT_PLACEMENT_FIELDS = 'classId sectionId className sectionName grade section';
+
+const findStudentPlacement = (studentId) => StudentUser.findById(studentId)
+  .select(STUDENT_PLACEMENT_FIELDS)
+  .lean();
+
 // Helper: Resolve denormalized names
 const resolveDenormalizedNames = async (classId, sectionId, subjectId) => {
   const result = {};
@@ -350,7 +356,7 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
     const { subject, paperType, page = 1, limit = 20 } = req.query;
 
     // Get student's class and section
-    const student = await StudentUser.findById(req.userId).lean();
+    const student = await findStudentPlacement(req.userId);
     if (!student) {
       return res.status(400).json({
         success: false,
@@ -408,7 +414,7 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
 // GET SINGLE: Get paper details to start attempt
 router.get('/student/papers/:id', authStudent, async (req, res, next) => {
   try {
-    const student = await StudentUser.findById(req.userId).lean();
+    const student = await findStudentPlacement(req.userId);
     if (!student) {
       return res.status(400).json({
         success: false,
@@ -479,7 +485,7 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
       });
     }
 
-    const student = await StudentUser.findById(req.userId).lean();
+    const student = await findStudentPlacement(req.userId);
     if (!student) {
       return res.status(400).json({
         success: false,
@@ -675,7 +681,7 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
 // GET RESULTS: Get student's attempt history
 router.get('/student/papers/:id/attempts', authStudent, async (req, res, next) => {
   try {
-    const student = await StudentUser.findById(req.userId).lean();
+    const student = await findStudentPlacement(req.userId);
     if (!student) {
       return res.status(400).json({
         success: false,
