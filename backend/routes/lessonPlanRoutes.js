@@ -2024,6 +2024,9 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const studentId = req.user?.id || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
     if (!studentId) return res.status(400).json({ error: 'studentId is required' });
+    if (!mongoose.isValidObjectId(schoolId) || !mongoose.isValidObjectId(studentId)) {
+      return res.status(400).json({ error: 'Invalid student or school reference' });
+    }
 
     const studentFilter = { _id: studentId, schoolId };
     if (campusId) studentFilter.campusId = campusId;
@@ -2310,11 +2313,30 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       }
     };
 
-    materials.forEach((doc) => attachPublishedContent(doc, 'materials'));
-    assignments.forEach((doc) => attachPublishedContent(doc, 'assignments'));
-    papers.forEach((doc) => attachPublishedContent(doc, 'assessments'));
+    // A single malformed lesson-plan / material record must not 500 the whole
+    // map — skip it, log it, keep building the rest.
+    const safeForEach = (list, label, fn) => {
+      (Array.isArray(list) ? list : []).forEach((item) => {
+        try {
+          fn(item);
+        } catch (loopErr) {
+          logStudentPortalError(req, {
+            feature: 'smart_learning_map',
+            action: `smart_learning_map.${label}`,
+            err: loopErr,
+            targetType: 'student',
+            targetId: studentId,
+            meta: { recordId: String(item?._id || '') },
+          });
+        }
+      });
+    };
 
-    standaloneMaterials.forEach((material) => {
+    safeForEach(materials, 'material', (doc) => attachPublishedContent(doc, 'materials'));
+    safeForEach(assignments, 'assignment', (doc) => attachPublishedContent(doc, 'assignments'));
+    safeForEach(papers, 'paper', (doc) => attachPublishedContent(doc, 'assessments'));
+
+    safeForEach(standaloneMaterials, 'standalone_material', (material) => {
       const subjectEntry = getMaterialSubjectEntry(material);
       if (!subjectEntry) return;
       const chapterTitle = normalizeString(material.chapterTitle || material.chapterId);
@@ -2384,7 +2406,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       subjectEntry.contentMetrics.materials += 1;
     });
 
-    publishedPlans.forEach((plan) => {
+    safeForEach(publishedPlans, 'plan', (plan) => {
       const subjectEntry = getSubjectEntry(plan);
       if (!subjectEntry) return;
       const planner = sanitizePlannerContent(plan.plannerContent);
@@ -2502,6 +2524,14 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
 
     return res.json({ subjects });
   } catch (err) {
+    logStudentPortalError(req, {
+      feature: 'smart_learning_map',
+      action: 'smart_learning_map.fetch',
+      statusCode: 500,
+      err,
+      targetType: 'student',
+      targetId: req.user?.id,
+    });
     return res.status(500).json({ error: err.message });
   }
 });
