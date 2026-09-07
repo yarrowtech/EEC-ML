@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, CheckCircle2, Play,
-  FlaskConical, Globe, Info, Sparkles, Users, CalendarDays,
+  FlaskConical, Globe, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
 } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
@@ -436,18 +436,13 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                         </div>
 
                         <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start sm:gap-3 sm:self-auto">
-                          {/* <button
-                            onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
-                            className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                            aria-label="Toggle info"
-                          >
-                            <Info size={18} />
-                          </button> */}
                           <button
                             onClick={() => {
                               if (!firstTopic) return;
                               const topicSlug = slugifyForUrl(String(firstTopic.title || '').trim());
-                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
+                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`, {
+                                state: { smartLearningSubject: subject },
+                              });
                             }}
                             disabled={!firstTopic}
                             className={`group/btn relative flex w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 overflow-hidden shadow-sm sm:w-auto sm:px-6 sm:py-3 sm:text-base ${
@@ -466,13 +461,15 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                             </span>
                             <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 ease-in-out"></div>
                           </button>
-                          {/* <button
+                          <button
+                            type="button"
                             onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
                             className={`rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all duration-300 ${isOpen ? 'rotate-180' : ''}`}
-                            aria-label="Toggle chapter topics"
+                            aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`}
+                            aria-expanded={isOpen}
                           >
                             <ChevronDown size={18} />
-                          </button> */}
+                          </button>
                         </div>
                       </div>
 
@@ -563,6 +560,8 @@ const AILearningCoursesLanding = () => {
   const [error, setError] = useState('');
   const [contexts, setContexts] = useState([]);
   const [smartLearningMap, setSmartLearningMap] = useState([]);
+  const [curriculumLoading, setCurriculumLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Parse URL params manually
   const urlMatch = location.pathname.match(/\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/]+)(?:\/topic\/([^/]+))?(?:\/assessment\/([^/]+))?/);
@@ -571,9 +570,18 @@ const AILearningCoursesLanding = () => {
   const assessmentSlug = urlMatch?.[3] ? deslugifyFromUrl(urlMatch[3]) : null;
 
   useEffect(() => {
+    // Topic screens own their data requests. Avoid loading the entire landing
+    // page first when a student follows a deep link.
+    if (topicSlug) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
     const fetchAssignedSubjects = async () => {
       try {
         setLoading(true);
+        setCurriculumLoading(false);
         setError('');
 
         const token = localStorage.getItem('token');
@@ -587,28 +595,68 @@ const AILearningCoursesLanding = () => {
         const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
         const CACHE_TTL = 5 * 60 * 1000;
 
-        const [contextResult, mapResult] = await Promise.all([
-          fetchCachedJson(`${API_BASE}/api/student/auth/teacher-feedback/context`, {
-            ttlMs: CACHE_TTL,
-            fetchOptions: { headers },
-          }),
-          fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, {
-            ttlMs: CACHE_TTL,
-            fetchOptions: { headers },
-          }),
-        ]);
+        // Render the student's assigned subjects as soon as the lightweight
+        // allocation request completes. Curriculum details can arrive second.
+        const allocationResult = await fetchCachedJson(`${API_BASE}/api/student/allocated-subjects`, {
+          ttlMs: CACHE_TTL,
+          fetchOptions: { headers },
+        });
+        if (cancelled) return;
 
-        setContexts(Array.isArray(contextResult?.data?.teachers) ? contextResult.data.teachers : []);
-        setSmartLearningMap(Array.isArray(mapResult?.data?.subjects) ? mapResult.data.subjects : []);
-      } catch (err) {
-        setError(err?.message || 'Unable to load assigned subjects');
-      } finally {
+        const allocatedSubjects = Array.isArray(allocationResult?.data?.subjects)
+          ? allocationResult.data.subjects
+          : [];
+        const allocationContexts = allocatedSubjects.flatMap((subject) => {
+          const teachers = Array.isArray(subject?.teachers) && subject.teachers.length > 0
+            ? subject.teachers
+            : [null];
+          return teachers.map((teacher) => ({
+            subjectId: subject?._id || null,
+            subjectName: subject?.name || subject?.code || '',
+            teacherName: teacher?.name || '',
+            className: 'Your class',
+            sectionName: '',
+          }));
+        });
+
+        setContexts(allocationContexts);
+        setCurriculumLoading(true);
         setLoading(false);
+
+        try {
+          const separator = SMART_LEARNING_MAP_ENDPOINT.includes('?') ? '&' : '?';
+          const mapResult = await fetchCachedJson(`${SMART_LEARNING_MAP_ENDPOINT}${separator}summary=true`, {
+            ttlMs: CACHE_TTL,
+            forceRefresh: reloadKey > 0,
+            fetchOptions: { headers },
+          });
+          if (!cancelled) {
+            setSmartLearningMap(Array.isArray(mapResult?.data?.subjects) ? mapResult.data.subjects : []);
+          }
+        } catch {
+          if (!cancelled) {
+            setSmartLearningMap([]);
+            setError('Your subjects loaded, but lesson content is temporarily unavailable. Please try again.');
+          }
+        } finally {
+          if (!cancelled) setCurriculumLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setContexts([]);
+          setSmartLearningMap([]);
+          setError('Unable to load your assigned subjects. Please try again.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchAssignedSubjects();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [topicSlug, reloadKey]);
 
   const assignedSubjects = useMemo(() => {
     const map = new Map();
@@ -697,35 +745,27 @@ const AILearningCoursesLanding = () => {
     return fuzzyMatch || assignedSubjects.find((s) => String(s?.subjectId || '').trim() === String(subjectKey).trim()) || null;
   }, [subjectKey, assignedSubjects]);
 
-  // Redirect unknown subject URLs or topic URLs for subjects without topics
+  // Redirect an unknown subject overview after both data sources have settled.
   useEffect(() => {
-    if (loading) return;
+    if (loading || curriculumLoading) return;
 
-    // If accessing a topic but subject doesn't exist at all, redirect
-    if (subjectKey && !selectedSubject) {
+    if (subjectKey && !topicSlug && !selectedSubject) {
       navigate('/student/smart-learning-courses', { replace: true });
       return;
     }
-
-    // If accessing a topic but subject has no topics, redirect to subject page
-    if (topicSlug && selectedSubject && (!selectedSubject.topics || selectedSubject.topics.length === 0)) {
-      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subjectKey)}`, { replace: true });
-    }
-  }, [topicSlug, subjectKey, selectedSubject, loading, navigate]);
+  }, [topicSlug, subjectKey, selectedSubject, loading, curriculumLoading, navigate]);
 
   // If on a topic page, show the learning content (only if subject exists)
-  if (topicSlug && subjectKey && assessmentSlug === 'practice-paper' && selectedSubject) {
+  if (topicSlug && subjectKey && assessmentSlug === 'practice-paper') {
     return <AILearningPracticePaperPage />;
   }
-  if (topicSlug && subjectKey && assessmentSlug === 'tryout-section' && selectedSubject) {
+  if (topicSlug && subjectKey && assessmentSlug === 'tryout-section') {
     return <AILearningTryoutSection />;
   }
 
-  if (topicSlug && subjectKey && selectedSubject) {
+  if (topicSlug && subjectKey) {
     return <AILearningCoursesReference />;
   }
-
-  if (topicSlug && subjectKey && !selectedSubject && !loading) return null;
 
   return (
     <div className="w-full min-h-screen bg-[#f8f7f6] text-slate-900 p-4 sm:p-6 md:p-8">
@@ -744,9 +784,18 @@ const AILearningCoursesLanding = () => {
             </div>
 
             {error && (
-              <div className="mb-6 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                <span>{error}</span>
+              <div className="mb-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReloadKey((value) => value + 1)}
+                  className="shrink-0 self-start rounded-lg border border-red-300 bg-white px-3 py-1.5 font-bold text-red-700 transition-colors hover:bg-red-100 sm:self-auto"
+                >
+                  Try again
+                </button>
               </div>
             )}
 
@@ -817,7 +866,9 @@ const AILearningCoursesLanding = () => {
                         <button
                           onClick={() => {
                             if (subject.hasLessonPlans) {
-                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}`);
+                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}`, {
+                                state: { smartLearningSubject: subject },
+                              });
                             }
                           }}
                           className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-bold transition-all duration-200 ease-out ${
@@ -825,9 +876,9 @@ const AILearningCoursesLanding = () => {
                               ? 'bg-amber-500 text-white shadow-md shadow-amber-300/40 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-300/50 active:scale-[0.98] cursor-pointer'
                               : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                           }`}
-                          disabled={!subject.hasLessonPlans}
+                          disabled={curriculumLoading || !subject.hasLessonPlans}
                         >
-                          {subject.hasLessonPlans ? (
+                          {curriculumLoading ? 'Loading lessons…' : subject.hasLessonPlans ? (
                             <>
                               Start Learning
                               <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />

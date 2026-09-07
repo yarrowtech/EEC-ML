@@ -1496,7 +1496,12 @@ router.get('/student/status', authStudent, async (req, res) => {
 
     const studentFilter = { _id: studentId, schoolId };
     if (campusId) studentFilter.campusId = campusId;
-    const student = await StudentUser.findOne(studentFilter).lean();
+    // This route only needs placement fields. Projecting them explicitly keeps
+    // unrelated encrypted PII out of the query result, so curriculum reads do
+    // not depend on the student-data decryption path.
+    const student = await StudentUser.findOne(studentFilter)
+      .select('classId sectionId grade section')
+      .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
     const className = normalizeLower(student.grade);
@@ -2030,7 +2035,10 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
 
     const studentFilter = { _id: studentId, schoolId };
     if (campusId) studentFilter.campusId = campusId;
-    const student = await StudentUser.findOne(studentFilter).lean();
+    // Do not hydrate sensitive student fields for a curriculum-only response.
+    const student = await StudentUser.findOne(studentFilter)
+      .select('classId sectionId grade section')
+      .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
     const classId = student.classId || null;
@@ -2532,7 +2540,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       targetType: 'student',
       targetId: req.user?.id,
     });
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Unable to load learning content' });
   }
 });
 
@@ -2546,7 +2554,10 @@ router.get('/student/smart-learning-overview', authStudent, async (req, res) => 
 
     const studentFilter = { _id: studentId, schoolId };
     if (campusId) studentFilter.campusId = campusId;
-    const student = await StudentUser.findOne(studentFilter).lean();
+    // Do not hydrate sensitive student fields for a curriculum-only response.
+    const student = await StudentUser.findOne(studentFilter)
+      .select('classId sectionId grade section')
+      .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
     const classId = student.classId || null;
