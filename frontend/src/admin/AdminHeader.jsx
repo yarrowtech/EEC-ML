@@ -542,7 +542,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="sticky top-0 z-30 px-2 sm:px-4 lg:px-6 pt-2 bg-gradient-to-b from-grey/70 via-grey/40 to-transparent backdrop-blur-[2px]"
+        className="sticky top-0 z-30 bg-gradient-to-b from-grey/70 via-grey/40 to-transparent backdrop-blur-[2px]"
       >
         <div className="mx-auto max-w-full">
           <motion.div
