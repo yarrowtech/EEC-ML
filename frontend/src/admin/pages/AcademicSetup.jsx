@@ -5,7 +5,7 @@ import {
   BookOpen, Calendar, Layers, Plus, Edit3, Trash2, X,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Search, GraduationCap, Copy,
   FolderOpen, UserCheck, Sparkles, CheckCircle2, Check, ArrowRight, Info, Trophy, ListOrdered, Type,
-  RefreshCw, Loader2,
+  RefreshCw, Loader2, MoreVertical,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
@@ -251,6 +251,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [assignClassId, setAssignClassId] = useState("");
   const [assignSubjectIds, setAssignSubjectIds] = useState([]);
 
+  // Year card kebab menu (Copy / Edit / Delete)
+  const [openYearMenuId, setOpenYearMenuId] = useState(null);
+  const yearMenuRef = useRef(null);
+
   // Edit states
   const [editingYear, setEditingYear] = useState(null);
   const [editingClass, setEditingClass] = useState(null);
@@ -334,6 +338,34 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     });
     return map;
   }, [classes]);
+
+  // Academic setup completion, per year: has classes → has sections → has
+  // subjects → has at least one class teacher assigned. Simple 4-step
+  // checklist, each worth an equal quarter of the progress bar.
+  const yearProgressById = useMemo(() => {
+    const map = {};
+    years.forEach((year) => {
+      const yearId = String(year._id);
+      const yearClassIds = new Set(
+        classes.filter((c) => String(c?.academicYearId || "") === yearId).map((c) => String(c._id))
+      );
+      const hasClasses = yearClassIds.size > 0;
+      const hasSections = sections.some((s) => yearClassIds.has(String(s?.classId || "")));
+      const hasSubjects = subjects.some((s) => yearClassIds.has(String(s?.classId || "")));
+      const hasClassTeachers = teacherAllocations.some(
+        (a) => a.isClassTeacher && yearClassIds.has(String(a.classId?._id || a.classId || ""))
+      );
+      const checks = [hasClasses, hasSections, hasSubjects, hasClassTeachers];
+      map[yearId] = {
+        percent: Math.round((checks.filter(Boolean).length / checks.length) * 100),
+        hasClasses,
+        hasSections,
+        hasSubjects,
+        hasClassTeachers,
+      };
+    });
+    return map;
+  }, [years, classes, sections, subjects, teacherAllocations]);
   const visibleClasses = useMemo(
     () =>
       classes.filter((item) => {
@@ -779,6 +811,18 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   /* Jump back to page 1 whenever the underlying filter changes — otherwise a
      class filter/search can leave the current page past the new (smaller)
      result set, making the table look empty until the page is reset. */
+  /* Close the year card's kebab menu on any click outside it. */
+  useEffect(() => {
+    if (!openYearMenuId) return undefined;
+    const handleClickOutside = (event) => {
+      if (yearMenuRef.current && !yearMenuRef.current.contains(event.target)) {
+        setOpenYearMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openYearMenuId]);
+
   useEffect(() => { setClassPage(1); }, [searchClass, selectedYearId]);
   useEffect(() => { setSectionPage(1); }, [searchSection, activeClassId, selectedYearId]);
   useEffect(() => { setSubjectPage(1); }, [searchSubject, activeSubjectClassId, selectedYearId]);
@@ -2038,9 +2082,39 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 )}
               </AnimatePresence>
 
+              {/* Current academic year — full-width banner, above the year picker cards */}
+              <div className="relative overflow-hidden rounded-2xl bg-indigo-400 p-6 text-white shadow-lg shadow-blue-200/50">
+                <img src="/academic_setup_image.png" alt="" aria-hidden="true" className="pointer-events-none absolute top-1/2 right-6 hidden h-auto max-h-[85%] w-auto max-w-[220px] -translate-y-1/2 object-contain opacity-90 sm:block" />
+                <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-bold">
+                      <Calendar size={16} /> Current Academic Year
+                    </p>
+                    <p className="mt-2 text-3xl font-bold">{currentAcademicYear ? currentAcademicYear.name : "No academic year yet"}</p>
+                    {!currentAcademicYear && <p className="mt-1 text-xs text-white/80">Add one to get started.</p>}
+                  </div>
+                  {currentAcademicYear && (
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
+                        <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Starts</p>
+                        <p className="mt-0.5 font-semibold">{currentAcademicYear.startDate ? new Date(currentAcademicYear.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                      </div>
+                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
+                        <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Ends</p>
+                        <p className="mt-0.5 font-semibold">{currentAcademicYear.endDate ? new Date(currentAcademicYear.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                      </div>
+                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
+                        <p className="flex items-center gap-1.5 text-xs text-white/70"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
+                        <p className="mt-0.5 font-semibold capitalize">{currentAcademicYear.status || "active"}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Select an academic year to manage its classes/sections/subjects/class teachers */}
               <div>
-                <p className="mb-0.5 text-xs font-bold uppercase tracking-widest text-blue-500">Step 1</p>
+                {/* <p className="mb-0.5 text-xs font-bold uppercase tracking-widest text-blue-500">Step 1</p> */}
                 <h2 className="mb-4 text-lg font-bold text-gray-900">Select a year to manage</h2>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {sortedYears.map((year, idx) => {
@@ -2057,18 +2131,28 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                       archived: "bg-gray-400",
                     };
                     const classCount = classCountByYearId[String(year._id)] || 0;
+                    const progress = yearProgressById[String(year._id)] || { percent: 0 };
+                    const isMenuOpen = openYearMenuId === year._id;
                     return (
-                      <Motion.button
+                      <Motion.div
                         key={year._id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => { setSelectedYearId(year._id); setActiveTab("classes"); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSelectedYearId(year._id);
+                            setActiveTab("classes");
+                          }
+                        }}
                         initial={{ opacity: 0, y: 16, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
-                        whileHover={{ y: -6 }}
+                        // whileHover={{ y: -6 }}
                         whileTap={{ scale: 0.97 }}
                         className={`group relative flex flex-col items-start gap-1 text-black overflow-hidden rounded-3xl p-5 text-left shadow-sm transition-shadow duration-300 hover:shadow-xl cursor-pointer ${isLive
-                            ? "bg-gradient-to-br from-blue-400 via-blue-300 to-indigo-300 text-white shadow-blue-200"
+                            ? "bg-gradient-to-br from-violet-400 via-indigo-500 to-indigo-400 text-white shadow-blue-200"
                             : "border border-gray-200 bg-white hover:border-blue-200 hover:shadow-blue-100"
                           }`}
                       >
@@ -2084,13 +2168,61 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                           >
                             <Calendar className="h-5 w-5" />
                           </div>
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${isLive ? "bg-green-200/40 text-green-500" : statusStyles[statusLabel] || statusStyles.upcoming
-                              }`}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : statusDot[statusLabel] || statusDot.upcoming}`} />
-                            {statusLabel}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${isLive ? "bg-green-200 text-green-700" : statusStyles[statusLabel] || statusStyles.upcoming
+                                }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : statusDot[statusLabel] || statusDot.upcoming}`} />
+                              {statusLabel}
+                            </span>
+                            <div className="relative" ref={isMenuOpen ? yearMenuRef : null}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setOpenYearMenuId(isMenuOpen ? null : year._id); }}
+                                className={`flex h-7 w-7 items-center justify-center rounded-full transition ${isLive ? "text-white hover:bg-white/20" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
+                                aria-label={`Actions for ${year.name}`}
+                                aria-haspopup="menu"
+                                aria-expanded={isMenuOpen}
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                              {isMenuOpen && (
+                                <div
+                                  role="menu"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute right-0 top-full z-20 mt-1 w-40 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 text-gray-700 shadow-lg"
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => { setOpenYearMenuId(null); copyYearSetup(year); }}
+                                    disabled={deletingId === year._id}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" /> Copy
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => { setOpenYearMenuId(null); setEditingYear(year); }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-blue-50 hover:text-blue-600"
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5" /> Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => { setOpenYearMenuId(null); deleteYear(year._id); }}
+                                    disabled={deletingId === year._id}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                    {deletingId === year._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <p className={`relative mt-3 text-xl font-extrabold tracking-tight ${isLive ? "text-white" : "text-gray-900"}`}>{year.name}</p>
@@ -2107,6 +2239,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                           <Layers className="h-3.5 w-3.5" /> {classCount} {classCount === 1 ? "class" : "classes"}
                         </div>
 
+                        <div className="relative mt-3 w-full">
+                          <div className={`flex items-center justify-between text-[11px] font-semibold ${isLive ? "text-white/80" : "text-gray-500"}`}>
+                            <span>Setup progress</span>
+                            <span>{progress.percent === 100 ? "100% completed" : `${progress.percent}%`}</span>
+                          </div>
+                          <div className={`mt-1 h-1.5 w-full overflow-hidden rounded-full ${isLive ? "bg-white/20" : "bg-gray-100"}`}>
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${progress.percent === 100 ? "bg-green-400" : isLive ? "bg-white" : "bg-blue-500"}`}
+                              style={{ width: `${progress.percent}%` }}
+                            />
+                          </div>
+                        </div>
+
                         <div className={`relative mt-4 flex w-full items-center justify-between border-t pt-3 ${isLive ? "border-white/20" : "border-gray-100"}`}>
                           <span className={`text-xs font-bold ${isLive ? "text-white" : "text-blue-600"}`}>Manage this year</span>
                           <span
@@ -2116,7 +2261,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                             <ArrowRight className="h-3.5 w-3.5" />
                           </span>
                         </div>
-                      </Motion.button>
+                      </Motion.div>
                     );
                   })}
 
@@ -2138,48 +2283,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
-                {/* Current academic year card */}
-                <div className="relative overflow-hidden rounded-2xl bg-blue-500/50 p-6 text-white shadow-lg shadow-blue-200/50">
-                  <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-20 w-full h-full object-cover" />
-                  <div className="relative z-10">
-                    <p className="flex items-center gap-1.5 text-xs font-bold">
-                      <Calendar size={16} /> Current Academic Year
-                    </p>
-                    {currentAcademicYear ? (
-                      <>
-                        <p className="mt-4 text-3xl font-bold">{currentAcademicYear.name}</p>
-                        <div className="mt-4 space-y-3 text-sm">
-                          <div className="flex items-center justify-between rounded-lg bg-black/5 px-3 py-2 backdrop-blur-sm">
-                            <div>
-                              <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Starts</p>
-                              <p className="mt-0.5 font-semibold">{currentAcademicYear.startDate ? new Date(currentAcademicYear.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                            </div>
-                            <div className="h-8 w-px bg-white/20" />
-                            <div className="text-right">
-                              <p className="flex items-center justify-end gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Ends</p>
-                              <p className="mt-0.5 font-semibold">{currentAcademicYear.endDate ? new Date(currentAcademicYear.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                            </div>
-                          </div>
-                          <div className="rounded-lg bg-black/5 px-3 py-2 backdrop-blur-sm">
-                            <p className="flex items-center gap-1.5 text-xs text-white/70"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
-                            <p className="mt-0.5 font-semibold capitalize">{currentAcademicYear.status || "active"}</p>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mt-5 flex flex-col items-center text-center">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
-                          <Calendar className="h-6 w-6 text-white" />
-                        </div>
-                        <p className="mt-3 text-sm font-semibold">No academic year yet</p>
-                        <p className="mt-1 text-xs text-white/80">Add one to get started.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Table Card */}
+              {/* <div>
                 <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-blue-50/40 px-5 py-4">
                     <div>
@@ -2253,7 +2357,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   </div>
                   <Pagination currentPage={yearPage} totalItems={sortedYears.length} onPageChange={setYearPage} />
                 </div>
-              </div>
+              </div> */}
             </Motion.div>
           )}
 

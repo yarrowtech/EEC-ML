@@ -544,11 +544,11 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
         transition={{ duration: 0.4, ease: 'easeOut' }}
         className="sticky top-0 z-30 px-3 sm:px-0 bg-gradient-to-b from-grey/70 via-grey/40 to-transparent backdrop-blur-[2px]"
       >
-        <div className="mx-auto max-w-[1200px]">
+        <div className="mx-auto max-w-full">
           <motion.div
-            whileHover={{ y: -1 }}
+            // whileHover={{ y: -1 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70 hover:border-white/90"
+            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
           >
             {/* ── Mobile hamburger ── */}
             <button
@@ -595,7 +595,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                       ? `desktop-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
+                  className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
                 />
                 {searchQuery ? (
                   <button
@@ -722,7 +722,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
                       ? `mobile-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 px-2 py-2"
+                  className="admin-search-input w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 px-2 py-2"
                 />
                 <button
                   type="button"

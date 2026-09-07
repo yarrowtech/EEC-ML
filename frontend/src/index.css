@@ -246,6 +246,17 @@ summary:focus-visible,
 }
 
 /*
+ * The admin header search input already has its own visible focus state —
+ * the surrounding glass pill lightens and gains a shadow via isSearchFocused
+ * (see AdminHeader.jsx) — so the global orange focus-visible outline above
+ * just doubles up on it and clashes with the pill design. Suppressed only
+ * for this control; every other input on the site keeps the global ring.
+ */
+.admin-search-input:focus-visible {
+  outline: none !important;
+}
+
+/*
  * Auto dark mode based on system preference is intentionally disabled:
  * most components hardcode light-only backgrounds (bg-white, bg-gray-50, etc.)
  * and there is no UI to opt out, so switching --foreground to white here made
