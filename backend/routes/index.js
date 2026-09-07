@@ -12,7 +12,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   app.use('/api/admin/auth', authApiLimiter, adminActionLogger, require('./adminRoutes'));
-  app.use('/api/admin/feedback', adminActionLogger, require('./adminFeedbackRoutes'));
+  app.use('/api/admin/feedback', generalApiLimiter, adminActionLogger, require('./adminFeedbackRoutes'));
   app.use('/api/teacher/auth', requireOrganizationDomain, authApiLimiter, require('./teacherRoute'));
   app.use('/api/staff/auth', requireOrganizationDomain, authApiLimiter, require('./staffRoutes'));
   app.use('/api/student/auth', requireOrganizationDomain, authApiLimiter, require('./studentRoute'));
@@ -96,7 +96,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   // ── Reporting / Audit ────────────────────────────────────────────────────────
   app.use('/api/reports', writeHeavyApiLimiter, require('./reportRoutes'));
   app.use('/api/audit-logs', require('./auditLogRoutes'));
-  app.use('/api/admin-analytics', require('./adminAnalyticsRoutes'));
+  app.use('/api/admin-analytics', generalApiLimiter, adminActionLogger, require('./adminAnalyticsRoutes'));
   app.use('/api/baseline', require('./baselineRoutes'));
 
   // ── Platform admin ───────────────────────────────────────────────────────────

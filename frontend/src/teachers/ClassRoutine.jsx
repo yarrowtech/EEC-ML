@@ -73,8 +73,6 @@ const normalizeSchedule = (rawSchedule) => {
   return base;
 };
 
-const normalizeValue = (value) => String(value || '').trim().toLowerCase();
-
 const toArray = (value) => {
   if (!value) return [];
   if (Array.isArray(value)) return value;
@@ -82,12 +80,12 @@ const toArray = (value) => {
   return [value];
 };
 
-const getCredentialValues = (teacherProfile, keys) =>
-  keys
-    .flatMap((key) => toArray(teacherProfile?.[key]))
-    .filter(Boolean)
-    .map((value) => normalizeValue(value));
-
+// Used only for the informational "Class …" / "Section …" chips near the top
+// of the page — display-only, not used to filter the schedule (see
+// effectiveSchedule for why: the backend's `/routine` scope is exact and
+// filtering it again here by fuzzy substring match on legacy profile fields
+// was a source of real bugs, both hiding legitimate classes and pulling in
+// unrelated ones).
 const getCredentialDisplayValues = (teacherProfile, keys) =>
   Array.from(
     new Set(
@@ -97,26 +95,6 @@ const getCredentialDisplayValues = (teacherProfile, keys) =>
         .map((value) => String(value).trim())
     )
   );
-
-const getEntryValues = (entry, keys) =>
-  keys
-    .map((key) => entry?.[key])
-    .filter(Boolean)
-    .flatMap((value) => toArray(value))
-    .map((value) => normalizeValue(value));
-
-const matchesCredential = (entryValues, credentialValues) => {
-  if (!credentialValues.length) return true;
-  if (!entryValues.length) return true;
-  return entryValues.some((entryValue) =>
-    credentialValues.some(
-      (credentialValue) =>
-        entryValue === credentialValue ||
-        entryValue.includes(credentialValue) ||
-        credentialValue.includes(entryValue)
-    )
-  );
-};
 
 const toScopeLabel = (scope) => {
   if (scope === 'campus') return 'Campus matched';
@@ -226,20 +204,9 @@ const ClassRoutine = () => {
     loadRoutine();
   }, [loadRoutine]);
 
-  const teacherClassValues = useMemo(
-    () =>
-      getCredentialValues(teacherProfile, [
-        'className',
-        'class',
-        'grade',
-        'standard',
-        'assignedClass',
-        'assignedClasses',
-        'assignedClassLabels',
-        'classes',
-      ]),
-    [teacherProfile]
-  );
+  // These labels are informational only (the small "Class …" / "Section …"
+  // chips near the top of the page) — they no longer feed into filtering the
+  // schedule itself (see effectiveSchedule below).
   const teacherClassLabels = useMemo(
     () =>
       getCredentialDisplayValues(teacherProfile, [
@@ -255,18 +222,6 @@ const ClassRoutine = () => {
     [teacherProfile]
   );
 
-  const teacherSectionValues = useMemo(
-    () =>
-      getCredentialValues(teacherProfile, [
-        'sectionName',
-        'section',
-        'division',
-        'assignedSection',
-        'assignedSections',
-        'sections',
-      ]),
-    [teacherProfile]
-  );
   const teacherSectionLabels = useMemo(
     () =>
       getCredentialDisplayValues(teacherProfile, [
@@ -280,32 +235,20 @@ const ClassRoutine = () => {
     [teacherProfile]
   );
 
-  const filteredSchedule = useMemo(
-    () =>
-      DAYS.reduce((acc, day) => {
-        const entries = schedule[day] || [];
-        acc[day] = entries.filter((entry) => {
-          const entryClassValues = getEntryValues(entry, ['className', 'class', 'grade', 'standard', 'classLabel']);
-          const entrySectionValues = getEntryValues(entry, ['sectionName', 'section', 'division', 'classLabel']);
-          const classMatch = matchesCredential(entryClassValues, teacherClassValues);
-          const sectionMatch = matchesCredential(entrySectionValues, teacherSectionValues);
-          return classMatch && sectionMatch;
-        });
-        return acc;
-      }, {}),
-    [schedule, teacherClassValues, teacherSectionValues]
-  );
-
-  const filteredTotalClasses = useMemo(
-    () => DAYS.reduce((sum, day) => sum + ((filteredSchedule[day] || []).length), 0),
-    [filteredSchedule]
-  );
-
-  const effectiveSchedule = useMemo(() => {
-    // If strict class/section filter removes everything, fallback to teacher-scoped schedule.
-    if (filteredTotalClasses > 0) return filteredSchedule;
-    return schedule;
-  }, [filteredSchedule, schedule, filteredTotalClasses]);
+  // `schedule` from `/api/teacher/dashboard/routine` is already scoped
+  // exactly to timetable entries where `entries.teacherId === teacherId` —
+  // that's the canonical, exact source of "classes this teacher teaches".
+  // This used to be re-filtered here against the teacher's legacy profile
+  // fields (className/grade/section on TeacherUser) via `matchesCredential`,
+  // which matched with plain substring inclusion
+  // (`entryValue.includes(credentialValue) || credentialValue.includes(entryValue)`)
+  // — so a credential of "1" would also match classes "10", "11", "12", "21", etc.
+  // That re-filtering could both wrongly drop legitimate other classes (when a
+  // teacher's profile only listed their original homeroom class) and wrongly
+  // pull in unrelated classes via substring overlap, corrupting every stat
+  // derived from it (Busiest Day, Weekly Classes, Free Periods, …). The
+  // backend scope needs no second-guessing here, so it's used directly.
+  const effectiveSchedule = schedule;
 
   useEffect(() => {
     const firstAvailableDay = DAYS.find((day) => (effectiveSchedule[day] || []).length > 0);
@@ -452,11 +395,18 @@ const ClassRoutine = () => {
     return start !== null && end !== null && end > start ? sum + (end - start) : sum + 40;
   }, 0), [scheduleEntries, timeToMinutes]);
 
-  const computedBusiestDay = useMemo(() => DAYS.reduce((best, day) => {
+  // Always derive "busiest day" from the same effectiveSchedule the calendar
+  // grid and every other stat card (Weekly Classes, Today's Classes, Free
+  // Periods, Subjects) are computed from. This used to prefer the backend's
+  // `routineMeta.busiestDay`, which is counted from the RAW, unfiltered
+  // timetable query — before the teacher-credential filtering below narrows
+  // it down to classes that actually match this teacher's own class/section.
+  // Whenever those two counts diverged, the "Busiest Day" card showed a
+  // day/count that didn't match what the grid on screen actually displayed.
+  const busiestDay = useMemo(() => DAYS.reduce((best, day) => {
     const count = (effectiveSchedule[day] || []).length;
     return count > best.count ? { day, count } : best;
   }, { day: 'None', count: 0 }), [effectiveSchedule]);
-  const busiestDay = routineMeta.busiestDay || computedBusiestDay;
 
   const subjectDistribution = useMemo(() => uniqueSubjects.map((subject) => ({
     subject,

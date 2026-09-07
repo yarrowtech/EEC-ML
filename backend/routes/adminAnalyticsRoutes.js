@@ -3,6 +3,11 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const axios = require('axios');
 const adminAuth = require('../middleware/adminAuth');
+const rateLimit = require('../middleware/rateLimit');
+
+// LLM-backed endpoint: cap per-admin request volume so it can't be used to
+// drive up AI-service load / token cost.
+const aiInsightsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20 });
 const MasteryScore = require('../models/MasteryScore');
 const TeacherUser = require('../models/TeacherUser');
 const StudentUser = require('../models/StudentUser');
@@ -533,7 +538,7 @@ router.get('/weak-areas', adminAuth, async (req, res) => {
 // POST /api/admin-analytics/ai-insights
 // Proxies analytics payload to the Python AI service for LLM-generated insights.
 // report_type: "overview" | "dropout" | "teacher" | "integrity"
-router.post('/ai-insights', adminAuth, async (req, res) => {
+router.post('/ai-insights', aiInsightsLimiter, adminAuth, async (req, res) => {
   const { report_type, ...rest } = req.body;
   if (!report_type) {
     return res.status(400).json({ error: 'report_type is required' });

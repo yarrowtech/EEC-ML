@@ -174,7 +174,13 @@ const AdminApp = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       const token = localStorage.getItem('token');
-      if (!token) { setAdminProfileLoading(false); return; }
+      if (!token) {
+        setAdminProfileLoading(false);
+        // Token cleared while the portal was open (e.g. logout in another tab) —
+        // don't sit on an empty shell, bounce to login.
+        navigate('/', { replace: true });
+        return;
+      }
       if (!profileHydratedRef.current) {
         setAdminProfileLoading(true);
       }

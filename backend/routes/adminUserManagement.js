@@ -33,6 +33,29 @@ const {
   getTeacherPrefix,
 } = require('../utils/codeGenerator');
 
+// Fields a client must never set through create/update — identity codes are
+// generator-owned, auth/session fields are server-owned, tenant fields come
+// from the token. Stripped from every client-supplied payload before it hits
+// the model.
+const PROTECTED_USER_FIELDS = [
+  '_id', 'id', '__v',
+  'role', 'permissions',
+  'password', 'initialPassword', 'passwordHash',
+  'lastLoginAt',
+  'studentCode', 'employeeCode',
+  'organizationId',
+];
+
+const stripProtectedFields = (payload) => {
+  PROTECTED_USER_FIELDS.forEach((field) => { delete payload[field]; });
+  return payload;
+};
+
+// One synchronous bulk create/import request processes rows in a loop with a
+// save() each — cap it so a huge payload can't hold a request open past the
+// proxy timeout or pin memory. Larger imports must be split client-side.
+const MAX_BULK_USER_ROWS = 1000;
+
 const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
 const isExitedStudentStatus = (status) =>
   EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
@@ -273,6 +296,11 @@ router.post('/bulk-create-users', adminAuth, async (req, res) => {
   if (!Array.isArray(users) || users.length === 0) {
     return res.status(400).json({ error: 'users array is required' });
   }
+  if (users.length > MAX_BULK_USER_ROWS) {
+    return res.status(413).json({
+      error: `Too many rows in one request (max ${MAX_BULK_USER_ROWS}). Split the import into smaller batches.`,
+    });
+  }
 
   const resolvedSchoolId = req.schoolId || (req.isSuperAdmin ? schoolId : null);
   if (!resolvedSchoolId) {
@@ -331,7 +359,7 @@ router.post('/bulk-create-users', adminAuth, async (req, res) => {
         continue;
       }
       const payload = {
-        ...user,
+        ...stripProtectedFields({ ...user }),
         password: resolvedPassword,
         gender: normalizeGender(user.gender),
         schoolId: resolvedSchoolId,
@@ -404,6 +432,11 @@ router.post('/bulk-import-csv', adminAuth, async (req, res) => {
   if (!rows.length) {
     return res.status(400).json({ error: 'No rows found in csv' });
   }
+  if (rows.length > MAX_BULK_USER_ROWS) {
+    return res.status(413).json({
+      error: `CSV has too many rows (${rows.length}); max ${MAX_BULK_USER_ROWS} per import. Split the file into smaller batches.`,
+    });
+  }
 
   const results = {
     created: 0,
@@ -455,7 +488,7 @@ router.post('/bulk-import-csv', adminAuth, async (req, res) => {
         continue;
       }
       const payload = {
-        ...row,
+        ...stripProtectedFields({ ...row }),
         password: resolvedPassword,
         gender: normalizeGender(row.gender),
         schoolId: resolvedSchoolId,
@@ -547,7 +580,7 @@ router.get("/get-teachers", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
-    const teachers = await TeacherUser.find(filter);
+    const teachers = await TeacherUser.find(filter).select('-password -initialPassword');
     res.status(200).json(teachers);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -699,7 +732,7 @@ router.get("/get-staff", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
-    const staff = await StaffUser.find(filter);
+    const staff = await StaffUser.find(filter).select('-password -initialPassword');
     res.status(200).json(staff);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -710,7 +743,7 @@ router.get("/get-principals", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
-    const principals = await Principal.find(filter);
+    const principals = await Principal.find(filter).select('-password -initialPassword');
     res.status(200).json(principals);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -812,10 +845,10 @@ router.post('/password-reset/reset', adminAuth, async (req, res) => {
 });
 
 const sanitizeUpdatePayload = (req) => {
-  const payload = { ...req.body };
-  delete payload._id;
-  delete payload.id;
+  const payload = stripProtectedFields({ ...req.body });
   if (!req.isSuperAdmin) {
+    delete payload.schoolId;
+    delete payload.campusId;
     if (req.schoolId) {
       payload.schoolId = req.schoolId;
     }
@@ -1011,26 +1044,31 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'Teacher not found' });
     }
 
-    // Check if principal already exists for this teacher's email
+    // Generate credentials for principal
+    const password = generatePassword();
+    const principalUsername = String(teacher.email || `principal_${teacher.employeeCode}`)
+      .toLowerCase()
+      .trim();
+
+    // Check if a principal already exists for this teacher — scoped to the
+    // teacher's own school so a same-email teacher at another school never
+    // blocks (or leaks) here.
     const existingPrincipal = await Principal.findOne({
+      schoolId: teacher.schoolId,
       $or: [
-        { email: teacher.email },
-        { username: teacher.email }
-      ]
+        ...(teacher.email ? [{ email: teacher.email }] : []),
+        { username: principalUsername },
+      ],
     });
 
     if (existingPrincipal) {
       return res.status(400).json({ error: 'Principal account already exists for this teacher' });
     }
 
-    // Generate credentials for principal
-    const password = generatePassword();
-    const principalUsername = teacher.email || `principal_${teacher.employeeCode}`;
-
     // Create principal account
     const principal = new Principal({
-      username: principalUsername.toLowerCase().trim(),
-      email: teacher.email || principalUsername.toLowerCase().trim(),
+      username: principalUsername,
+      email: teacher.email || principalUsername,
       password,
       initialPassword: password,
       lastLoginAt: null,
@@ -2066,7 +2104,7 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
         await AuditLog.create({
             schoolId,
             action: 'student.data_erasure',
-            performedBy: req.admin?._id || req.adminId,
+            performedBy: req.admin?.id || req.admin?._id || null,
             targetId: studentId,
             details: {
                 progressDeleted: progress.deletedCount,
