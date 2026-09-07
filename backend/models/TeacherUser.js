@@ -33,6 +33,8 @@ const teacherUserSchema = new mongoose.Schema({
   pinCode: String,
   profilePic: { type: String, default: "" },
   lastLoginAt: { type: Date, default: null },
+  isArchived: { type: Boolean, default: false, index: true },
+  archivedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 teacherUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });

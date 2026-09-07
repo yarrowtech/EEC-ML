@@ -418,7 +418,7 @@
       "count": 22
     },
     "react/react-in-jsx-scope": {
-      "count": 57
+      "count": 58
     }
   },
   "src/admin/Analytics.jsx": {
@@ -491,7 +491,7 @@
   },
   "src/admin/Teachers.jsx": {
     "no-unused-vars": {
-      "count": 7
+      "count": 5
     },
     "no-useless-escape": {
       "count": 1

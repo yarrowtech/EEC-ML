@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { ChevronRight, ChevronLeft, ChevronDown, LogOut, X } from 'lucide-react';
 import { ADMIN_MENU_ITEMS } from './adminConstants';
 import { NavLink, useLocation } from 'react-router-dom';
+
+// Spring the active pill slides with — shared by the top-level and submenu
+// highlights (each keeps its own layoutId so they never animate into each
+// other's very different sizes/positions).
+const ACTIVE_PILL_TRANSITION = { type: 'spring', stiffness: 400, damping: 32 };
 
 const AdminSidebar = ({
   onMenuItemClick,
@@ -209,14 +215,21 @@ const AdminSidebar = ({
                             >
                               {({ isActive }) => (
                                 <div className={`
-                                  flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150
+                                  relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-150
                                   ${isActive
-                                    ? 'bg-yellow-50 text-yellow-700 font-semibold shadow-sm'
+                                    ? 'text-yellow-700 font-semibold'
                                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}
                                 `}>
-                                  <SubIcon size={14} className={`shrink-0 ${isActive ? 'text-yellow-500' : 'text-gray-400'}`} />
-                                  <span>{sub.label}</span>
-                                  {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0 animate-pulse" />}
+                                  {isActive && (
+                                    <motion.div
+                                      layoutId="admin-sidebar-active-subpill"
+                                      className="absolute inset-0 rounded-lg bg-yellow-50 shadow-sm"
+                                      transition={ACTIVE_PILL_TRANSITION}
+                                    />
+                                  )}
+                                  <SubIcon size={14} className={`relative z-10 shrink-0 ${isActive ? 'text-yellow-500' : 'text-gray-400'}`} />
+                                  <span className="relative z-10">{sub.label}</span>
+                                  {isActive && <span className="relative z-10 ml-auto w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0 animate-pulse" />}
                                 </div>
                               )}
                             </NavLink>
@@ -235,26 +248,30 @@ const AdminSidebar = ({
                         title={collapsed ? item.label : undefined}
                         aria-label={collapsed ? item.label : undefined}
                         className={`
-                          flex items-center gap-3 px-3 py-2.5 rounded-xl
-                          transition-all duration-150 group
+                          relative flex items-center gap-3 px-3 py-2.5 rounded-xl
+                          transition-colors duration-150 group
                           ${collapsed ? 'justify-center' : ''}
                           ${isActive
-                            ? 'bg-yellow-50 text-yellow-700'
+                            ? 'text-yellow-700'
                             : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}
                         `}
                       >
+                        {isActive && (
+                          <motion.div
+                            layoutId="admin-sidebar-active-pill"
+                            className="absolute inset-0 rounded-xl bg-yellow-50"
+                            transition={ACTIVE_PILL_TRANSITION}
+                          />
+                        )}
                         <Icon
                           size={22}
-                          className={`shrink-0 transition-colors p-1 ${isActive ? 'bg-yellow-500 rounded-full text-white' : 'bg-gray-200 rounded-full text-gray-400 group-hover:text-yellow-500'}`}
+                          className={`relative z-10 shrink-0 transition-colors p-1 ${isActive ? 'bg-yellow-500 rounded-full text-white' : 'bg-gray-100 rounded-full text-gray-400 group-hover:text-yellow-500'}`}
                         />
                         {!collapsed && (
-                          <span className={`text-sm flex-1 ${isActive ? 'font-bold' : 'font-semibold'}`}>
+                          <span className={`relative z-10 text-sm flex-1 ${isActive ? 'font-bold' : 'font-semibold'}`}>
                             {item.label}
                           </span>
                         )}
-                        {/* {!collapsed && isActive && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />
-                        )} */}
                       </div>
                     )}
                   </NavLink>

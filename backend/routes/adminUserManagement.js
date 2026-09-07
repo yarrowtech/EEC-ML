@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const { logger } = require('../utils/logger');
+const {
+  TEACHER_LIST_TTL_MS,
+  teachersListCache,
+  principalsListCache,
+  teacherDirectoryCacheKey,
+  invalidateTeacherDirectoryCaches,
+} = require('../utils/teacherDirectoryCache');
 const adminAuth = require('../middleware/adminAuth'); // Protect the route
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
@@ -572,6 +580,7 @@ router.get("/get-students", adminAuth, async (req, res) => {
     studentsListCache.set(cacheKey, { data: students, expires: Date.now() + DIRECTORY_LIST_TTL_MS });
     res.status(200).json(students);
   } catch (err) {
+    logger.error({ event: 'get_students_failed', err, schoolId: req.schoolId, campusId: req.campusId }, 'Failed to fetch students list');
     res.status(500).json({ error: err.message });
   }
 });
@@ -579,10 +588,18 @@ router.get("/get-students", adminAuth, async (req, res) => {
 router.get("/get-teachers", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    const cacheKey = teacherDirectoryCacheKey(req);
+    const cached = teachersListCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.status(200).json(cached.data);
+    }
     const filter = buildScopedFilter(req);
-    const teachers = await TeacherUser.find(filter).select('-password -initialPassword');
+    filter.isArchived = { $ne: true };
+    const teachers = await TeacherUser.find(filter).select('-password -initialPassword').lean();
+    teachersListCache.set(cacheKey, { data: teachers, expires: Date.now() + TEACHER_LIST_TTL_MS });
     res.status(200).json(teachers);
   } catch (err) {
+    logger.error({ event: 'get_teachers_failed', err, schoolId: req.schoolId, campusId: req.campusId }, 'Failed to fetch teachers list');
     res.status(500).json({ error: err.message });
   }
 });
@@ -742,8 +759,14 @@ router.get("/get-staff", adminAuth, async (req, res) => {
 router.get("/get-principals", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    const cacheKey = teacherDirectoryCacheKey(req);
+    const cached = principalsListCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.status(200).json(cached.data);
+    }
     const filter = buildScopedFilter(req);
-    const principals = await Principal.find(filter).select('-password -initialPassword');
+    const principals = await Principal.find(filter).select('-password -initialPassword').lean();
+    principalsListCache.set(cacheKey, { data: principals, expires: Date.now() + TEACHER_LIST_TTL_MS });
     res.status(200).json(principals);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -971,6 +994,7 @@ const autoGeneratePromotionInvoice = async ({ student, oldGrade, schoolId }) => 
 router.put('/teachers/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    invalidateTeacherDirectoryCaches();
     await updateByScope(TeacherUser, req, res);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1081,6 +1105,7 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
 
     await principal.save();
 
+    invalidateTeacherDirectoryCaches();
     res.json({
       principalId: principal._id,
       username: principal.username,
@@ -1096,9 +1121,103 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
 router.delete('/teachers/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    invalidateTeacherDirectoryCaches();
     await deleteByScope(TeacherUser, req, res);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Teacher archive (single + bulk). Unlike the student archive flow, this
+// runs synchronously — teacher counts are small enough that a background
+// job queue isn't needed, so these complete instantly instead of requiring
+// the caller to poll a job status endpoint. The "bulk"/"archived" routes are
+// registered before the "/:id/..." ones below so "bulk" is never matched as
+// an :id value. ──
+router.get('/teachers/archived', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const filter = buildScopedFilter(req);
+    filter.isArchived = true;
+    const teachers = await TeacherUser.find(filter)
+      .select('-password -initialPassword')
+      .sort({ archivedAt: -1 })
+      .lean();
+    res.status(200).json(teachers);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load archived teachers' });
+  }
+});
+
+router.patch('/teachers/bulk/archive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const validIds = ids.filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'No valid teacher ids provided' });
+    }
+    const filter = buildScopedFilter(req);
+    filter._id = { $in: validIds };
+    const result = await TeacherUser.updateMany(filter, { $set: { isArchived: true, archivedAt: new Date() } });
+    invalidateTeacherDirectoryCaches();
+    res.json({ archived: result.modifiedCount || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to archive teachers' });
+  }
+});
+
+router.patch('/teachers/bulk/unarchive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const validIds = ids.filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'No valid teacher ids provided' });
+    }
+    const filter = buildScopedFilter(req);
+    filter._id = { $in: validIds };
+    const result = await TeacherUser.updateMany(filter, { $set: { isArchived: false }, $unset: { archivedAt: '' } });
+    invalidateTeacherDirectoryCaches();
+    res.json({ unarchived: result.modifiedCount || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to unarchive teachers' });
+  }
+});
+
+router.patch('/teachers/:id/archive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const filter = buildScopedIdFilter(req, req.params.id);
+    if (!filter) return res.status(400).json({ error: 'Invalid id' });
+    const teacher = await TeacherUser.findOneAndUpdate(
+      filter,
+      { $set: { isArchived: true, archivedAt: new Date() } },
+      { new: true }
+    ).select('-password -initialPassword');
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    invalidateTeacherDirectoryCaches();
+    res.json(teacher);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to archive teacher' });
+  }
+});
+
+router.patch('/teachers/:id/unarchive', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const filter = buildScopedIdFilter(req, req.params.id);
+    if (!filter) return res.status(400).json({ error: 'Invalid id' });
+    const teacher = await TeacherUser.findOneAndUpdate(
+      filter,
+      { $set: { isArchived: false }, $unset: { archivedAt: '' } },
+      { new: true }
+    ).select('-password -initialPassword');
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+    invalidateTeacherDirectoryCaches();
+    res.json(teacher);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to unarchive teacher' });
   }
 });
 

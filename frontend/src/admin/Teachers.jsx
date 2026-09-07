@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import {
@@ -12,9 +12,6 @@ import {
   BookOpen,
   Eye,
   XCircle,
-  Users,
-  UserCheck,
-  Clock,
   Building2,
   KeyRound,
   Copy,
@@ -27,9 +24,14 @@ import {
   Award,
   Hash,
   Crown,
-  Sparkles,
+  RefreshCcw,
   Loader2,
-  RefreshCcw
+  X,
+  FileDown,
+  Upload,
+  Archive,
+  ArchiveRestore,
+  CheckCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -116,7 +118,7 @@ const formatScheduleMeta = (entry) => {
 };
 
 const inputClass =
-  'w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all bg-white';
+  'w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent transition-all bg-white';
 
 const resolveTeacherStatus = (teacher, todayCheckedInTeacherIds, todayApprovedLeaveTeacherIds) => {
   const teacherId = String(teacher?._id || teacher?.id || '');
@@ -156,6 +158,14 @@ const Teachers = ({setShowAdminHeader}) => {
   const [deleteConfirmPrincipal, setDeleteConfirmPrincipal] = useState(null);
   const [makePrincipalConfirmTeacher, setMakePrincipalConfirmTeacher] = useState(null);
   const [bulkUploading, setBulkUploading] = useState(false);
+  const [tableRefreshing, setTableRefreshing] = useState(false);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState([]);
+  const [isBulkArchiving, setIsBulkArchiving] = useState(false);
+  const [archivingTeacherId, setArchivingTeacherId] = useState(null);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archivedTeachers, setArchivedTeachers] = useState([]);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+  const [unarchivingTeacherId, setUnarchivingTeacherId] = useState(null);
   const bulkFileInputRef = useRef(null);
 
   const principalIdentitySet = useMemo(() => {
@@ -396,6 +406,17 @@ const Teachers = ({setShowAdminHeader}) => {
     writeTeachersCache(normalized);
   };
 
+  const handleRefreshTableData = async () => {
+    setTableRefreshing(true);
+    try {
+      await fetchTeachers({ useCache: false });
+    } catch (err) {
+      toast.error(err.message || 'Failed to refresh teachers data');
+    } finally {
+      setTableRefreshing(false);
+    }
+  };
+
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -498,9 +519,8 @@ const Teachers = ({setShowAdminHeader}) => {
     }
   };
 
-  // making the admin header invisible
   useEffect(() => {
-    setShowAdminHeader(false);
+    setShowAdminHeader(true);
     fetchTeachers({ useCache: true }).catch(err => {
       console.error("Error fetching teachers:", err);
     });
@@ -801,6 +821,125 @@ const Teachers = ({setShowAdminHeader}) => {
     }
   };
 
+  /* -------------------- Bulk selection -------------------- */
+  const toggleTeacherSelection = (teacherId) => {
+    if (!teacherId) return;
+    const id = String(teacherId);
+    setSelectedTeacherIds((prev) => {
+      const set = new Set(prev.map(String));
+      if (set.has(id)) set.delete(id); else set.add(id);
+      return Array.from(set);
+    });
+  };
+
+  const filteredTeacherIds = useMemo(
+    () => filteredTeachers.map((t) => String(t._id || t.id)).filter(Boolean),
+    [filteredTeachers]
+  );
+  const isAllFilteredSelected = filteredTeacherIds.length > 0
+    && filteredTeacherIds.every((id) => selectedTeacherIds.includes(id));
+
+  const toggleSelectAllFilteredTeachers = () => {
+    setSelectedTeacherIds(isAllFilteredSelected ? [] : filteredTeacherIds);
+  };
+
+  /* -------------------- Archive (single + bulk) -------------------- */
+  const handleArchiveTeacher = async (teacher) => {
+    const teacherId = teacher?._id || teacher?.id;
+    if (!teacherId || archivingTeacherId) return;
+    setArchivingTeacherId(teacherId);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}/archive`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to archive teacher');
+      // Instant: drop it from the visible list right away instead of waiting on a refetch.
+      setTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
+      setSelectedTeacherIds((prev) => prev.filter((id) => id !== String(teacherId)));
+      toast.success(`${teacher.name || 'Teacher'} archived.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to archive teacher');
+    } finally {
+      setArchivingTeacherId(null);
+    }
+  };
+
+  const handleBulkArchiveTeachers = async () => {
+    if (!selectedTeacherIds.length || isBulkArchiving) return;
+    setIsBulkArchiving(true);
+    const ids = [...selectedTeacherIds];
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to archive teachers');
+      const idSet = new Set(ids.map(String));
+      setTeachers((prev) => prev.filter((item) => !idSet.has(String(item._id || item.id))));
+      setSelectedTeacherIds([]);
+      toast.success(`${data?.archived ?? ids.length} teacher(s) archived.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to archive teachers');
+    } finally {
+      setIsBulkArchiving(false);
+    }
+  };
+
+  const fetchArchivedTeachers = async () => {
+    setLoadingArchived(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/archived`, {
+        headers: { authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data?.error || 'Unable to load archived teachers');
+      setArchivedTeachers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      toast.error(error.message || 'Unable to load archived teachers');
+    } finally {
+      setLoadingArchived(false);
+    }
+  };
+
+  const openArchiveModal = () => {
+    setShowArchiveModal(true);
+    fetchArchivedTeachers();
+  };
+
+  const handleUnarchiveTeacher = async (teacher) => {
+    const teacherId = teacher?._id || teacher?.id;
+    if (!teacherId || unarchivingTeacherId) return;
+    setUnarchivingTeacherId(teacherId);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users/teachers/${teacherId}/unarchive`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to unarchive teacher');
+      setArchivedTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
+      fetchTeachers({ useCache: false }).catch(console.error);
+      toast.success(`${teacher.name || 'Teacher'} restored.`);
+    } catch (error) {
+      toast.error(error.message || 'Unable to unarchive teacher');
+    } finally {
+      setUnarchivingTeacherId(null);
+    }
+  };
+
   const exportTeachersPdf = () => {
     const doc = new jsPDF('l', 'pt', 'a4');
     const marginX = 36;
@@ -1031,144 +1170,119 @@ const Teachers = ({setShowAdminHeader}) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        {/* Hero header */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-600 p-6 md:p-8 mb-6 shadow-lg shadow-indigo-200/60">
-          <div className="absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 pointer-events-none" />
-          <div className="absolute -bottom-20 -left-16 w-64 h-64 rounded-full bg-black/10 pointer-events-none" />
-          <div className="absolute top-1/2 right-16 w-20 h-20 rounded-full bg-yellow-300/10 border border-yellow-300/20 pointer-events-none" />
-          <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center shadow-inner shrink-0">
-                <GraduationCap size={24} className="text-white" />
-              </div>
-              <div>
-                <div className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-2.5 py-0.5 mb-1.5">
-                  <Sparkles className="w-3 h-3 text-yellow-200" />
-                  <span className="text-[11px] font-semibold text-white/90 tracking-wide">Staff Directory</span>
-                </div>
-                <h1 className="text-xl md:text-2xl font-black text-white leading-tight">Teachers</h1>
-                <p className="text-indigo-100/80 text-sm mt-1">Manage your teaching staff, credentials, and principal assignments.</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* <CredentialGeneratorButton
-                buttonText="Generate Teacher ID"
-                defaultRole="Teacher"
-                allowRoleSelection={false}
-                size="sm"
-                buttonClassName="bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 shadow-sm"
-              /> */}
+    // Same page shell as /admin/students and /admin/parents — plain header,
+    // filter bar, content card — recolored sky-blue instead of yellow/emerald.
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
+      <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 text-center">
+              Teachers
+            </h1>
+            <p className="text-gray-500 mt-1 text-sm text-center">
+              Manage your teaching staff, credentials, and principal assignments
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
+            <button
+              onClick={() => {
+                resetTeacherForm();
+                setShowAddForm(true);
+              }}
+              className="bg-sky-500 text-white px-3 py-2 rounded-full hover:bg-sky-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <Plus size={15} /> Add
+            </button>
+            
+            <button
+              onClick={downloadTeacherDemoTemplate}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <FileDown size={15} /> Demo
+            </button>
+            <button
+              onClick={() => bulkFileInputRef.current?.click()}
+              disabled={bulkUploading}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <Upload size={15} /> {bulkUploading ? 'Uploading...' : 'Bulk Upload'}
+            </button>
+            <input
+              ref={bulkFileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleBulkUploadTeachers(file);
+              }}
+            />
+            <button
+              onClick={exportTeachersPdf}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <FileDown size={15} /> Download Data
+            </button>
+            
+            {activeTab === 'teachers' && selectedTeacherIds.length > 0 && (
               <button
-                onClick={exportTeachersPdf}
-                className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 text-sm font-medium"
+                onClick={handleBulkArchiveTeachers}
+                disabled={isBulkArchiving}
+                className="bg-sky-600 text-white px-3 py-2 rounded-full hover:bg-sky-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                title={`Archive ${selectedTeacherIds.length} selected teacher(s)`}
               >
-                Export PDF
+                {isBulkArchiving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+                {isBulkArchiving ? 'Archiving...' : `Archive (${selectedTeacherIds.length})`}
               </button>
+            )}
+            {activeTab === 'teachers' && (
               <button
-                onClick={downloadTeacherDemoTemplate}
-                className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 text-sm font-medium"
+                onClick={toggleSelectAllFilteredTeachers}
+                disabled={filteredTeacherIds.length === 0}
+                className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                title={isAllFilteredSelected ? 'Clear selection' : `Select all ${filteredTeacherIds.length} teacher(s)`}
               >
-                Demo Excel
+                <CheckCircle size={15} />
+                {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
               </button>
-              <button
-                onClick={() => bulkFileInputRef.current?.click()}
-                disabled={bulkUploading}
-                className="inline-flex items-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-all shadow-sm border border-gray-200 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {bulkUploading ? 'Uploading...' : 'Bulk Upload'}
-              </button>
-              <input
-                ref={bulkFileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleBulkUploadTeachers(file);
-                }}
-              />
-              <button
-                onClick={() => {
-                  resetTeacherForm();
-                  setShowAddForm(true);
-                }}
-                className="inline-flex items-center gap-2 bg-white text-indigo-700 px-4 py-2.5 rounded-xl hover:-translate-y-0.5 hover:shadow-lg transition-all shadow-md text-sm font-bold"
-              >
-                <Plus size={18} />
-                Add Teacher
-              </button>
-            </div>
+            )}
+            <button
+              onClick={openArchiveModal}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+            >
+              <Archive size={15} /> Archived
+            </button>
+            <button
+              onClick={handleRefreshTableData}
+              disabled={tableRefreshing}
+              className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+              title="Refresh teachers table data"
+            >
+              {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />}
+              {tableRefreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{teachers.length}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <Users size={20} className="text-indigo-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Present</p>
-                  <p className="text-2xl font-bold text-emerald-600 mt-1">{teachers.filter(t => t.status === 'Present').length}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                  <UserCheck size={20} className="text-emerald-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">On Leave</p>
-                  <p className="text-2xl font-bold text-amber-500 mt-1">{teachers.filter(t => t.status === 'On Leave').length}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <Clock size={20} className="text-amber-500" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Departments</p>
-                  <p className="text-2xl font-bold text-violet-600 mt-1">{new Set(teachers.map(t => t.department)).size}</p>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-                  <Building2 size={20} className="text-violet-600" />
-                </div>
-              </div>
-            </div>
+        {submitStatus && (
+          <div
+            className={`mt-2 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 flex-shrink-0 ${
+              submitStatus.type === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            {submitStatus.type === 'success'
+              ? <Check size={15} className="flex-shrink-0" />
+              : <XCircle size={15} className="flex-shrink-0" />}
+            {submitStatus.message}
           </div>
+        )}
 
-          {submitStatus && (
-            <div
-              className={`mt-4 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 ${
-                submitStatus.type === 'success'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-red-200 bg-red-50 text-red-700'
-              }`}
-            >
-              {submitStatus.type === 'success'
-                ? <Check size={15} className="flex-shrink-0" />
-                : <XCircle size={15} className="flex-shrink-0" />}
-              {submitStatus.message}
-            </div>
-          )}
-
+        <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="relative mt-6 flex gap-1 p-1.5 bg-white/80 backdrop-blur border border-gray-200/70 rounded-full w-fit shadow-sm">
+          <div className="relative mt-1 mb-2 flex justify-center items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-full w-fit shadow-sm flex-shrink-0">
             {[
               { key: 'teachers', label: 'Teachers', icon: GraduationCap, count: teachers.length },
               { key: 'principals', label: 'Principals', icon: Crown, count: principals.length },
@@ -1186,7 +1300,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   {active && (
                     <Motion.span
                       layoutId="teachersTabIndicator"
-                      className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 shadow-md shadow-indigo-200"
+                      className="absolute inset-0 -z-10 rounded-full bg-sky-500 shadow-sm"
                       transition={{ type: 'spring', duration: 0.5, bounce: 0.2 }}
                     />
                   )}
@@ -1200,33 +1314,54 @@ const Teachers = ({setShowAdminHeader}) => {
             })}
           </div>
 
-          {/* Search and Filter — Teachers only */}
-          {activeTab === 'teachers' && <div className="mt-4 flex flex-col sm:flex-row gap-3 pb-5">
-            <div className="flex-1 relative">
-              <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search by name, subject or email..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+          {/* Filter Bar — Teachers only */}
+          {activeTab === 'teachers' && (
+            <div className="mb-1 p-3 md:p-4 flex-shrink-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-[200px] relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, subject or email..."
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-sky-500 text-sm"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <select
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 min-w-[130px]"
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                >
+                  <option value="All">All Status</option>
+                  <option value="Present">Present</option>
+                  <option value="Absent">Absent</option>
+                  <option value="On Leave">On Leave</option>
+                </select>
+                {filterStatus !== 'All' && (
+                  <button
+                    onClick={() => setFilterStatus('All')}
+                    className="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X size={14} /> Clear
+                  </button>
+                )}
+              </div>
+              {filterStatus !== 'All' && (
+                <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-500">Active filters:</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-800 rounded-full text-xs font-medium">
+                    Status: {filterStatus}
+                    <button onClick={() => setFilterStatus('All')} className="hover:text-sky-600"><X size={12} /></button>
+                  </span>
+                </div>
+              )}
             </div>
-            <select
-              className="sm:w-44 border border-gray-200 rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent bg-white shadow-sm text-sm text-gray-700"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="All">All Status</option>
-              <option value="Present">Present</option>
-              <option value="Absent">Absent</option>
-              <option value="On Leave">On Leave</option>
-            </select>
-          </div>}
+          )}
 
         {/* Teachers Table */}
-        {activeTab === 'teachers' && <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
@@ -1245,7 +1380,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   const teacherInitials = (teacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
                   const teacherIsPrincipal = principalIdentitySet.has(String(teacher?.email || '').trim().toLowerCase());
                   return (
-                    <tr key={teacher._id || teacher.id} className="hover:bg-indigo-50/30 transition-colors">
+                    <tr key={teacher._id || teacher.id} className="hover:bg-sky-50/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
@@ -1263,7 +1398,7 @@ const Teachers = ({setShowAdminHeader}) => {
                             <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
                               <span>{teacher.name}</span>
                               {teacherIsPrincipal && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 px-2 py-0.5 text-[11px] font-semibold">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
                                   <Crown size={11} />
                                   Principal
                                 </span>
@@ -1276,7 +1411,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       {/* <td className="px-6 py-4">
                         <div className="space-y-1.5">
                           <div className="flex items-center text-sm text-gray-600">
-                            <Mail size={13} className="mr-2 text-indigo-400 flex-shrink-0" />
+                            <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
                             <span className="truncate max-w-[180px]">{teacher.email}</span>
                           </div>
                           <div className="flex items-center text-sm text-gray-600">
@@ -1288,7 +1423,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       {/* <td className="px-6 py-4">
                         <div className="space-y-1.5">
                           <div className="flex items-center text-sm font-medium text-gray-800">
-                            <BookOpen size={13} className="mr-2 text-violet-400 flex-shrink-0" />
+                            <BookOpen size={13} className="mr-2 text-sky-400 flex-shrink-0" />
                             {teacher.subject}
                           </div>
                           <span className="inline-block text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
@@ -1309,7 +1444,7 @@ const Teachers = ({setShowAdminHeader}) => {
                               <button
                                 type="button"
                                 onClick={() => setScheduleModal({ teacherName: teacher.name, entries: teacher.scheduleTodayEntries })}
-                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                                className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline"
                               >
                                 More ({teacher.scheduleTodayEntries.length - 1})
                               </button>
@@ -1348,21 +1483,21 @@ const Teachers = ({setShowAdminHeader}) => {
                             type="button"
                             onClick={() => handleViewCredentials(teacher)}
                             disabled={credentialLoadingId === (teacher._id || teacher.id)}
-                            className="inline-flex items-center gap-1.5 rounded-md font-medium bg-amber-500 text-white hover:bg-amber-600 transition px-2.5 py-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1.5 rounded-full font-medium bg-amber-500 text-white hover:bg-amber-600 transition p-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
                             title="View Credentials"
                           >
                             <KeyRound size={13} />
-                            {credentialLoadingId === (teacher._id || teacher.id) ? 'Loading...' : 'Credentials'}
+                            {credentialLoadingId === (teacher._id || teacher.id) ? '' : ''}
                           </button>
                           <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all"
                             title="View Details"
                             onClick={() => setViewTeacher(teacher)}
                           >
                             <Eye size={15} />
                           </button>
                           <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all disabled:opacity-40"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
                             title={teacherIsPrincipal ? 'Already Principal' : 'Make Principal'}
                             onClick={() => setMakePrincipalConfirmTeacher(teacher)}
                             disabled={teacherIsPrincipal || principalLoadingId === (teacher._id || teacher.id)}
@@ -1395,7 +1530,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
           {/* Pagination */}
           {filteredTeachers.length > 0 && (
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+            <div className="flex-shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="text-sm text-gray-500">
                   Showing{' '}
@@ -1418,10 +1553,10 @@ const Teachers = ({setShowAdminHeader}) => {
                       <button
                         key={i + 1}
                         onClick={() => paginate(i + 1)}
-                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-all
+                        className={`w-8 h-8 rounded-full text-sm font-medium transition-all
                           ${currentPage === i + 1
-                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
-                            : 'border border-gray-200 text-gray-600 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200'
+                            ? 'bg-sky-600 text-white shadow-sm shadow-sky-200'
+                            : 'border border-gray-200 text-gray-600 bg-white hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200'
                           }`}
                       >
                         {i + 1}
@@ -1442,8 +1577,8 @@ const Teachers = ({setShowAdminHeader}) => {
 
           {filteredTeachers.length === 0 && (
             <div className="text-center py-16">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4">
-                <GraduationCap size={28} className="text-indigo-400" />
+              <div className="w-16 h-16 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-4">
+                <GraduationCap size={28} className="text-sky-400" />
               </div>
               <p className="text-gray-600 font-semibold">No teachers found</p>
               <p className="text-gray-400 text-sm mt-1">Try adjusting your search or filters</p>
@@ -1461,7 +1596,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 <input
                   type="text"
                   placeholder="Search by name or email..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white shadow-sm text-sm"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent bg-white shadow-sm text-sm"
                   value={principalSearchTerm}
                   onChange={(e) => setPrincipalSearchTerm(e.target.value)}
                 />
@@ -1474,11 +1609,11 @@ const Teachers = ({setShowAdminHeader}) => {
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="bg-gradient-to-r from-purple-50 to-pink-50/50 border-b border-gray-100">
+                    <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
                       <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
                       <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                       <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
@@ -1490,7 +1625,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       <tr>
                         <td colSpan={4} className="py-16 text-center">
                           <div className="flex items-center justify-center gap-2 text-gray-400">
-                            <span className="w-5 h-5 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+                            <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
                             Loading principals...
                           </div>
                         </td>
@@ -1501,8 +1636,8 @@ const Teachers = ({setShowAdminHeader}) => {
                       }).length === 0 ? (
                       <tr>
                         <td colSpan={4} className="py-16 text-center">
-                          <div className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-3">
-                            <Crown size={24} className="text-purple-300" />
+                          <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                            <Crown size={24} className="text-sky-300" />
                           </div>
                           <p className="text-gray-500 font-medium text-sm">No principals found</p>
                           <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
@@ -1521,7 +1656,7 @@ const Teachers = ({setShowAdminHeader}) => {
                           const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
                           const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
                           return (
-                            <tr key={principal._id || principal.id} className="hover:bg-purple-50/30 transition-colors">
+                            <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className={`w-9 h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
@@ -1532,7 +1667,7 @@ const Teachers = ({setShowAdminHeader}) => {
                                   <div>
                                     <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
                                       {principal.name}
-                                      <Crown size={12} className="text-purple-400" />
+                                      <Crown size={12} className="text-sky-400" />
                                     </div>
                                     <div className="text-xs text-gray-400">Principal</div>
                                   </div>
@@ -1541,7 +1676,7 @@ const Teachers = ({setShowAdminHeader}) => {
                               <td className="px-6 py-4">
                                 <div className="space-y-1.5">
                                   <div className="flex items-center text-sm text-gray-600">
-                                    <Mail size={13} className="mr-2 text-purple-400 flex-shrink-0" />
+                                    <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
                                     <span className="truncate max-w-[180px]">{principal.email || '—'}</span>
                                   </div>
                                   {principal.mobile && (
@@ -1557,7 +1692,7 @@ const Teachers = ({setShowAdminHeader}) => {
                                   <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
                                   <button
                                     onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
-                                    className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50'}`}
+                                    className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
                                     title="Copy Login ID"
                                   >
                                     {copiedField === `pid_${principal._id || principal.id}` ? <Check size={13} /> : <Copy size={13} />}
@@ -1569,11 +1704,11 @@ const Teachers = ({setShowAdminHeader}) => {
                                   <button
                                     onClick={() => handleViewPrincipalCredentials(principal)}
                                     disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
                                     title="Reset & View Credentials"
                                   >
                                     {principalCredLoadingId === (principal._id || principal.id) ? (
-                                      <span className="w-3 h-3 border border-purple-400 border-t-transparent rounded-full animate-spin" />
+                                      <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
                                     ) : (
                                       <KeyRound size={13} />
                                     )}
@@ -1604,6 +1739,7 @@ const Teachers = ({setShowAdminHeader}) => {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Add / Edit Teacher Modal */}
@@ -1613,7 +1749,7 @@ const Teachers = ({setShowAdminHeader}) => {
           `w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all bg-white ${
             fe(field)
               ? 'border-red-400 focus:ring-red-300 bg-red-50/30'
-              : 'border-gray-200 focus:ring-indigo-400 focus:border-transparent'
+              : 'border-gray-200 focus:ring-sky-400 focus:border-transparent'
           }`;
         const hasErrors = Object.values(formErrors).some(Boolean);
         return (
@@ -1623,7 +1759,7 @@ const Teachers = ({setShowAdminHeader}) => {
               {/* Modal header */}
               <div className="flex-shrink-0 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-200">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 flex items-center justify-center shadow-md shadow-sky-200">
                     {editingTeacherId ? <Edit2 size={17} className="text-white" /> : <Plus size={17} className="text-white" />}
                   </div>
                   <div>
@@ -1647,8 +1783,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   {/* Section: Basic Info */}
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <User size={13} className="text-indigo-500" />
-                      <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Basic Information</span>
+                      <User size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Basic Information</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -1747,8 +1883,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   {/* Section: Academic Details */}
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <GraduationCap size={13} className="text-purple-500" />
-                      <span className="text-xs font-bold text-purple-600 uppercase tracking-widest">Academic Details</span>
+                      <GraduationCap size={13} className="text-sky-500" />
+                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Academic Details</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -1918,7 +2054,7 @@ const Teachers = ({setShowAdminHeader}) => {
                     </button>
                     <button
                       type="submit"
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md shadow-indigo-200 text-sm font-semibold flex items-center gap-2"
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-600 text-white hover:from-sky-700 hover:to-sky-700 transition-all shadow-md shadow-sky-200 text-sm font-semibold flex items-center gap-2"
                     >
                       {editingTeacherId ? <><Check size={15} /> Update Teacher</> : <><Plus size={15} /> Add Teacher</>}
                     </button>
@@ -1936,7 +2072,7 @@ const Teachers = ({setShowAdminHeader}) => {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
 
             {/* Gradient Profile Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 pt-6 pb-10 relative flex-shrink-0">
+            <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 pt-6 pb-10 relative flex-shrink-0">
               <button
                 onClick={() => setViewTeacher(null)}
                 className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
@@ -1959,13 +2095,13 @@ const Teachers = ({setShowAdminHeader}) => {
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <span>{viewTeacher.name}</span>
                     {principalIdentitySet.has(String(viewTeacher?.email || '').trim().toLowerCase()) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-100/90 text-purple-700 px-2 py-0.5 text-[11px] font-semibold">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100/90 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
                         <Crown size={11} />
                         Principal
                       </span>
                     )}
                   </h2>
-                  <p className="text-indigo-200 text-sm mt-0.5 font-mono">#{viewTeacher.empId}</p>
+                  <p className="text-sky-200 text-sm mt-0.5 font-mono">#{viewTeacher.empId}</p>
                   <span className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold
                     ${viewTeacher.status === 'Present'
                       ? 'bg-emerald-100 text-emerald-700'
@@ -1994,8 +2130,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Contact</p>
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                        <Mail size={14} className="text-indigo-500" />
+                      <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
+                        <Mail size={14} className="text-sky-500" />
                       </div>
                       <div>
                         <p className="text-xs text-gray-400">Email</p>
@@ -2034,8 +2170,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Professional</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-                        <BookOpen size={14} className="text-violet-500" />
+                      <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
+                        <BookOpen size={14} className="text-sky-500" />
                       </div>
                       <div>
                         <p className="text-xs text-gray-400">Subject</p>
@@ -2103,7 +2239,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       setViewTeacher(null);
                       handleViewCredentials(viewTeacher);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors text-sm font-medium"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-sm font-medium"
                   >
                     <KeyRound size={15} />
                     Generate Credentials
@@ -2249,8 +2385,8 @@ const Teachers = ({setShowAdminHeader}) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-4 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mx-auto mb-4">
-                <Crown size={24} className="text-purple-500" />
+              <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-4">
+                <Crown size={24} className="text-sky-500" />
               </div>
               <h3 className="text-lg font-bold text-gray-900">Make Principal</h3>
               <p className="text-sm text-gray-500 mt-2">
@@ -2270,7 +2406,7 @@ const Teachers = ({setShowAdminHeader}) => {
                 type="button"
                 onClick={() => handleMakePrincipal(makePrincipalConfirmTeacher)}
                 disabled={!!principalLoadingId}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-sky-600 text-white hover:bg-sky-700 transition-colors text-sm font-medium disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
                 {principalLoadingId ? (
                   <>
@@ -2290,7 +2426,7 @@ const Teachers = ({setShowAdminHeader}) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             {/* Gradient Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-5">
+            <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 py-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
@@ -2298,7 +2434,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   </div>
                   <div>
                     <h2 className="text-base font-bold text-white">Login Credentials</h2>
-                    <p className="text-indigo-200 text-xs mt-0.5">Share these securely with the teacher</p>
+                    <p className="text-sky-200 text-xs mt-0.5">Share these securely with the teacher</p>
                   </div>
                 </div>
                 <button
@@ -2312,7 +2448,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
             <div className="p-6 space-y-4">
               {/* Teacher identity */}
-              <div className="flex flex-col justify center items-center gap-3 p-3 bg-indigo-50 rounded-lg">
+              <div className="flex flex-col justify center items-center gap-3 p-3 bg-sky-50 rounded-lg">
                 {credentialView.photo ? (
                   <img src={credentialView.photo} alt={credentialView.name} className="w-14 h-14 rounded-full object-cover flex-shrink-0 border-2 border-white" />
                 ) : (
@@ -2323,8 +2459,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   </div>
                 )}
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-indigo-900">{credentialView.name || 'Teacher'}</p>
-                  <p className="text-xs text-indigo-500 font-medium">Teacher</p>
+                  <p className="text-sm font-semibold text-sky-900">{credentialView.name || 'Teacher'}</p>
+                  <p className="text-xs text-sky-500 font-medium">Teacher</p>
                 </div>
               </div>
 
@@ -2341,7 +2477,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
                         copiedField === 'id'
                           ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-gray-200 hover:bg-indigo-100 hover:text-indigo-700 text-gray-600'
+                          : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
                       }`}
                     >
                       {copiedField === 'id' ? <Check size={12} /> : <Copy size={12} />}
@@ -2361,7 +2497,7 @@ const Teachers = ({setShowAdminHeader}) => {
                         className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
                           copiedField === 'pass'
                             ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-gray-200 hover:bg-indigo-100 hover:text-indigo-700 text-gray-600'
+                            : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
                         }`}
                       >
                         {copiedField === 'pass' ? <Check size={12} /> : <Copy size={12} />}
@@ -2401,7 +2537,7 @@ const Teachers = ({setShowAdminHeader}) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             {/* Gradient Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
+            <div className="bg-gradient-to-r from-sky-600 to-pink-600 px-6 py-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
@@ -2409,7 +2545,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   </div>
                   <div>
                     <h2 className="text-base font-bold text-white">Principal Login Credentials</h2>
-                    <p className="text-purple-200 text-xs mt-0.5">Share these securely with the principal</p>
+                    <p className="text-sky-200 text-xs mt-0.5">Share these securely with the principal</p>
                   </div>
                 </div>
                 <button
@@ -2423,7 +2559,7 @@ const Teachers = ({setShowAdminHeader}) => {
 
             <div className="p-6 space-y-4">
               {/* Principal identity */}
-              <div className="flex flex-col items-center gap-3 p-3 bg-purple-50 rounded-lg">
+              <div className="flex flex-col items-center gap-3 p-3 bg-sky-50 rounded-lg">
                 {principalCredentialView.photo ? (
                   <img src={principalCredentialView.photo} alt={principalCredentialView.name} className="w-14 h-14 border-2 border-white rounded-full object-cover flex-shrink-0" />
                 ) : (
@@ -2434,8 +2570,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   </div>
                 )}
                 <div className='text-center'>
-                  <p className="text-sm font-semibold text-purple-900">{principalCredentialView.name || 'Principal'}</p>
-                  <p className="text-xs text-purple-500 font-medium">Principal</p>
+                  <p className="text-sm font-semibold text-sky-900">{principalCredentialView.name || 'Principal'}</p>
+                  <p className="text-xs text-sky-500 font-medium">Principal</p>
                 </div>
               </div>
 
@@ -2452,7 +2588,7 @@ const Teachers = ({setShowAdminHeader}) => {
                       className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
                         copiedField === 'principal_id'
                           ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-gray-200 hover:bg-purple-100 hover:text-purple-700 text-gray-600'
+                          : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
                       }`}
                     >
                       {copiedField === 'principal_id' ? <Check size={12} /> : <Copy size={12} />}
@@ -2472,7 +2608,7 @@ const Teachers = ({setShowAdminHeader}) => {
                         className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
                           copiedField === 'principal_pass'
                             ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-gray-200 hover:bg-purple-100 hover:text-purple-700 text-gray-600'
+                            : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
                         }`}
                       >
                         {copiedField === 'principal_pass' ? <Check size={12} /> : <Copy size={12} />}

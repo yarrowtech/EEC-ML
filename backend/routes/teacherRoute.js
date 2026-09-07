@@ -13,6 +13,7 @@ const Admin = require('../models/Admin');
 const { sendTeacherCredentialsEmail } = require('../utils/mailer');
 const authTeacher = require('../middleware/authTeacher');
 const { logAuthEvent } = require('../utils/authEventLogger');
+const { invalidateTeacherDirectoryCaches } = require('../utils/teacherDirectoryCache');
 
 const normalizeGender = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -126,6 +127,7 @@ router.post('/register', adminAuth, async (req, res) => {
       }
     }
 
+    invalidateTeacherDirectoryCaches();
     res.status(201).json({
       message: 'Teacher registered successfully',
       username,
