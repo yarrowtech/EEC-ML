@@ -1309,6 +1309,8 @@ router.delete('/students/bulk', adminAuth, async (req, res) => {
 
     const jobId = require('crypto').randomUUID();
     bulkDeleteJobs.set(jobId, {
+      schoolId: String(req.schoolId || studentDocs[0]?.schoolId || ''),
+      campusId: req.campusId ? String(req.campusId) : null,
       status: 'processing',
       phase: 'students',
       total: studentDocs.length,
@@ -1331,7 +1333,11 @@ router.delete('/students/bulk', adminAuth, async (req, res) => {
 router.get('/students/bulk/status/:jobId', adminAuth, (req, res) => {
   // #swagger.tags = ['Admin Users']
   const job = bulkDeleteJobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  const schoolMatches = job && job.schoolId === String(req.schoolId || '');
+  const campusMatches = job && (!req.campusId || job.campusId === String(req.campusId));
+  if (!schoolMatches || !campusMatches) {
+    return res.status(404).json({ error: 'Job not found or expired' });
+  }
   return res.json({
     status: job.status,
     phase: job.phase,

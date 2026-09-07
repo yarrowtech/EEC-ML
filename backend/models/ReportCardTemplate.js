@@ -8,6 +8,9 @@ const reportCardTemplateSchema = new mongoose.Schema(
     subtitle: { type: String, trim: true, default: 'Academic Performance Report' },
     schoolNameOverride: { type: String, trim: true, default: '' },
     logoUrlOverride: { type: String, trim: true, default: '' },
+    // Full-width school letterhead banner, printed across the top of report
+    // cards (and certificates). Empty = fall back to the coloured header band.
+    letterheadUrl: { type: String, trim: true, default: '' },
     schoolAddressLine: { type: String, trim: true, default: '' },
     schoolContactLine: { type: String, trim: true, default: '' },
     accentColor: { type: String, trim: true, default: '#1f2937' },

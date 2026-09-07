@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award, BookOpen, CheckCircle, ChevronDown, ChevronUp,
-  Download, FileSpreadsheet, Loader2, RefreshCw,
+  Download, FileImage, FileSpreadsheet, Loader2, RefreshCw,
   Save, Settings, Upload, XCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -17,6 +17,7 @@ const initialTemplate = {
   subtitle: 'Academic Performance Report',
   schoolNameOverride: '',
   logoUrlOverride: '',
+  letterheadUrl: '',
   schoolAddressLine: '',
   schoolContactLine: '',
   accentColor: '#4f46e5',
@@ -36,7 +37,14 @@ const ReportCardPreview = ({ card, template, onDownload, downloading }) => {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* school letterhead — replaces the colour band when uploaded */}
+      {(template?.letterheadUrl) && (
+        <div className="border-b border-slate-100 bg-white px-5 py-3">
+          <img src={template.letterheadUrl} alt="School letterhead" className="w-full max-h-24 object-contain" />
+        </div>
+      )}
       {/* school header */}
+      {!template?.letterheadUrl && (
       <div className="flex items-center gap-4 px-5 py-4 text-white" style={{ backgroundColor: template?.accentColor || '#4f46e5' }}>
         {(template?.logoUrl || template?.logoUrlOverride) && (
           <img src={template.logoUrl || template.logoUrlOverride} alt="logo"
@@ -53,6 +61,15 @@ const ReportCardPreview = ({ card, template, onDownload, downloading }) => {
           <p className="text-xs opacity-70">{card.academicYear}</p>
         </div>
       </div>
+      )}
+
+      {/* report title strip — shown under the letterhead image */}
+      {template?.letterheadUrl && (
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-2.5">
+          <p className="font-bold text-sm text-slate-800">{template?.title || 'Report Card'}</p>
+          <p className="text-xs text-slate-500">{[card.term, card.academicYear].filter(Boolean).join(' · ')}</p>
+        </div>
+      )}
 
       {/* student info */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-slate-100 border-b border-slate-100 bg-slate-50">
@@ -156,6 +173,8 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
   const [generatedTemplate, setGeneratedTemplate] = useState(null);
   const [signatories, setSignatories] = useState({ classTeacherName: '', principalName: '', loading: false });
   const logoInputRef = useRef(null);
+  const letterheadInputRef = useRef(null);
+  const [uploadingLetterhead, setUploadingLetterhead] = useState(false);
 
   const [filters, setFilters] = useState({ examGroupId: '', classId: '', sectionId: '', academicYearId: '', includeUnpublished: false });
 
@@ -285,19 +304,48 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
     finally { setSavingTemplate(false); }
   };
 
+  // /api/uploads/cloudinary/single responds { uploaded, files: [{ secure_url }] }
+  const uploadImageToCloudinary = async (file, folder) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('folder', folder);
+    const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || data?.message || 'Upload failed');
+    return data?.files?.[0]?.secure_url || data?.secure_url || data?.url || '';
+  };
+
   /* ── logo upload ── */
   const handleLogoUpload = async (file) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) { toast.error('Upload an image file'); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error('Logo must be < 5 MB'); return; }
     try {
-      const fd = new FormData(); fd.append('file', file); fd.append('folder', 'report-card-logos');
-      const res = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: fd });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Upload failed');
-      const url = data?.secure_url || data?.url || '';
+      const url = await uploadImageToCloudinary(file, 'report-card-logos');
       if (url) { setTemplate(prev => ({ ...prev, logoUrlOverride: url })); toast.success('Logo uploaded'); }
     } catch (err) { toast.error(err.message); }
+  };
+
+  /* ── letterhead upload ── */
+  const handleLetterheadUpload = async (file) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg'].includes(file.type)) { toast.error('Letterhead must be a PNG or JPG image'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Letterhead must be < 5 MB'); return; }
+    setUploadingLetterhead(true);
+    try {
+      const url = await uploadImageToCloudinary(file, 'report-card-letterheads');
+      if (url) {
+        setTemplate(prev => ({ ...prev, letterheadUrl: url }));
+        toast.success('Letterhead uploaded — Save Template to apply');
+      } else {
+        toast.error('Upload succeeded but no image URL was returned');
+      }
+    } catch (err) { toast.error(err.message); }
+    finally { setUploadingLetterhead(false); }
   };
 
   /* ── generate ── */
@@ -326,6 +374,13 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
       setReportCards(cards.map(c => ({ ...c, term: examLabel })));
       const resolvedTemplate = {
         ...(data?.template || template),
+        // Honour branding the admin set in this session even if "Save Template"
+        // hasn't been pressed yet — the letterhead / logo / accent should show
+        // on the generated cards and the downloaded PDF immediately.
+        letterheadUrl: template.letterheadUrl || data?.template?.letterheadUrl || '',
+        logoUrlOverride: template.logoUrlOverride || data?.template?.logoUrlOverride || '',
+        accentColor: template.accentColor || data?.template?.accentColor || '#4f46e5',
+        title: template.title || data?.template?.title || 'Report Card',
         signatureLabel: signatories.classTeacherName || 'Class Teacher',
         principalLabel: signatories.principalName || 'Principal',
       };
@@ -420,6 +475,67 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
                   className="shrink-0 flex items-center gap-1 px-3 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50">
                   <Upload size={13} />
                 </button>
+              </div>
+              {/* ── School letterhead (full width) ── */}
+              <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">School Letterhead</p>
+                    <p className="text-[11px] text-slate-400">Printed full-width across the top of every report card &amp; certificate, replacing the coloured header band.</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input ref={letterheadInputRef} type="file" accept="image/png,image/jpeg" className="hidden"
+                      onChange={e => { handleLetterheadUpload(e.target.files?.[0]); e.target.value = ''; }} />
+                    <button type="button" onClick={() => letterheadInputRef.current?.click()} disabled={uploadingLetterhead}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+                      {uploadingLetterhead ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      {template.letterheadUrl ? 'Replace' : 'Upload'}
+                    </button>
+                    {template.letterheadUrl && (
+                      <button type="button" onClick={() => setTemplate(p => ({ ...p, letterheadUrl: '' }))}
+                        className="flex items-center gap-1 px-2.5 py-2 rounded-xl border border-red-200 bg-white text-xs font-medium text-red-600 hover:bg-red-50">
+                        <XCircle size={13} /> Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {template.letterheadUrl ? (
+                  <div className="mt-3 space-y-1.5">
+                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                      <img src={template.letterheadUrl} alt="School letterhead" className="w-full max-h-28 object-contain" />
+                    </div>
+                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">
+                      <CheckCircle size={12} /> Letterhead image attached
+                    </p>
+                  </div>
+                ) : (
+                  <input className={`${inp} mt-2`} placeholder="…or paste a letterhead image URL"
+                    value={template.letterheadUrl} onChange={e => setTemplate(p => ({ ...p, letterheadUrl: e.target.value }))} />
+                )}
+
+                {/* ── size guide ── */}
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg bg-white border border-slate-200 p-3 text-[11px]">
+                  <div className="col-span-2 flex items-center gap-1.5 font-semibold text-slate-600">
+                    <FileImage size={12} className="text-indigo-500" /> Letterhead size guide
+                  </div>
+                  <dt className="text-slate-400">Recommended</dt>
+                  <dd className="font-medium text-slate-700 text-right tabular-nums">2300 × 300 px</dd>
+                  <dt className="text-slate-400">Minimum</dt>
+                  <dd className="font-medium text-slate-700 text-right tabular-nums">1500 × 200 px</dd>
+                  <dt className="text-slate-400">Aspect ratio</dt>
+                  <dd className="font-medium text-slate-700 text-right">≈ 7.7 : 1 (wide banner)</dd>
+                  <dt className="text-slate-400">Print area on page</dt>
+                  <dd className="font-medium text-slate-700 text-right">196 × 26 mm (A4, 7 mm side margins)</dd>
+                  <dt className="text-slate-400">Format</dt>
+                  <dd className="font-medium text-slate-700 text-right">PNG (transparent) or JPG</dd>
+                  <dt className="text-slate-400">Max file size</dt>
+                  <dd className="font-medium text-slate-700 text-right">5 MB</dd>
+                  <div className="col-span-2 mt-1 text-slate-400 leading-relaxed">
+                    Design at 300 DPI. Include the school name, logo and address in the image — it becomes the
+                    header. Keep text/logo ~5% clear of the left and right edges. It is scaled to fit the print
+                    area, so match the ratio to avoid stretching.
+                  </div>
+                </dl>
               </div>
               <input className={inp} placeholder="Footer note" value={template.footerNote} onChange={e => setTemplate(p => ({ ...p, footerNote: e.target.value }))} />
               <div className="flex items-center gap-3">

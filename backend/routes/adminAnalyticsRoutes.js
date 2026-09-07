@@ -21,6 +21,25 @@ const toObjId = (id) => {
   try { return new mongoose.Types.ObjectId(id); } catch { return null; }
 };
 
+const scopedFilter = (req, extra = {}) => ({
+  schoolId: req.schoolId,
+  ...(req.campusId ? { campusId: req.campusId } : {}),
+  ...extra,
+});
+
+const parseLimit = (value, fallback = 20, maximum = 50) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) return null;
+  return Math.min(parsed, maximum);
+};
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const scopedStudentIds = async (req, extra = {}) => (
+  StudentUser.distinct('_id', scopedFilter(req, extra))
+);
+
 // GET /api/admin-analytics/mastery-matrix
 router.get('/mastery-matrix', adminAuth, async (req, res) => {
   try {
@@ -38,6 +57,7 @@ router.get('/mastery-matrix', adminAuth, async (req, res) => {
         },
       },
       { $unwind: { path: '$student', preserveNullAndEmpty: false } },
+      ...(req.campusId ? [{ $match: { 'student.campusId': req.campusId } }] : []),
       {
         $group: {
           _id: { subject: '$subject', grade: '$student.grade' },
@@ -77,11 +97,11 @@ router.get('/teacher-effectiveness', adminAuth, async (req, res) => {
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
     const [teachers, subjectMastery] = await Promise.all([
-      TeacherUser.find({ schoolId: req.schoolId })
+      TeacherUser.find(scopedFilter(req))
         .select('name subject email phone')
         .lean(),
-      MasteryScore.aggregate([
-        { $match: { schoolId: schoolObjId } },
+      scopedStudentIds(req).then((studentIds) => MasteryScore.aggregate([
+        { $match: { schoolId: schoolObjId, ...(req.campusId ? { studentId: { $in: studentIds } } : {}) } },
         {
           $group: {
             _id: '$subject',
@@ -98,7 +118,7 @@ router.get('/teacher-effectiveness', adminAuth, async (req, res) => {
             topicCount: { $size: '$topicCount' },
           },
         },
-      ]),
+      ])),
     ]);
 
     const masteryBySubject = {};
@@ -140,8 +160,9 @@ router.get('/ai-path-effectiveness', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
+    const studentIds = req.campusId ? await scopedStudentIds(req) : null;
     const rows = await MasteryScore.aggregate([
-      { $match: { schoolId: schoolObjId } },
+      { $match: { schoolId: schoolObjId, ...(studentIds ? { studentId: { $in: studentIds } } : {}) } },
       {
         $group: {
           _id: '$subject',
@@ -184,12 +205,12 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
-    const students = await StudentUser.find({ schoolId: req.schoolId, status: 'Active' })
+    const students = await StudentUser.find(scopedFilter(req, { status: 'Active' }))
       .select('name grade section attendance')
       .lean();
 
     const failedResults = await ExamResult.aggregate([
-      { $match: { schoolId: schoolObjId, status: 'fail' } },
+      { $match: { schoolId: schoolObjId, ...(req.campusId ? { campusId: req.campusId } : {}), status: 'fail' } },
       {
         $group: {
           _id: '$studentId',
@@ -257,6 +278,7 @@ router.get('/cohort-trend', adminAuth, async (req, res) => {
       {
         $match: {
           schoolId: schoolObjId,
+          ...(req.campusId ? { campusId: req.campusId } : {}),
           createdAt: { $gte: sixMonthsAgo },
           status: { $ne: 'absent' },
         },
@@ -345,9 +367,10 @@ router.get('/cohort-trend', adminAuth, async (req, res) => {
 // Top teaching materials by total views + downloads
 router.get('/content-usage', adminAuth, async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const limit = parseLimit(req.query.limit);
+    if (!limit) return res.status(400).json({ error: 'limit must be a positive integer' });
 
-    const materials = await TeachingMaterial.find({ schoolId: req.schoolId })
+    const materials = await TeachingMaterial.find(scopedFilter(req))
       .select('title subjectName grade views downloads viewedBy downloadedBy completedBy createdAt')
       .lean();
 
@@ -428,6 +451,7 @@ router.get('/exam-integrity', adminAuth, async (req, res) => {
 
     const attempts = await ExamAttempt.find({
       schoolId: schoolObjId,
+      ...(req.campusId ? { campusId: req.campusId } : {}),
       status: { $in: ['submitted', 'timed_out'] },
       submittedAt: { $exists: true },
     })
@@ -499,33 +523,48 @@ router.get('/exam-integrity', adminAuth, async (req, res) => {
 // School-level subject weak area report — aggregates mastery by subject/topic for admin view.
 router.get('/weak-areas', adminAuth, async (req, res) => {
   try {
-    const { subject, classId, limit = 20 } = req.query;
+    const schoolObjId = toObjId(req.schoolId);
+    if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
+    const { subject, classId } = req.query;
+    const limit = parseLimit(req.query.limit);
+    if (!limit) return res.status(400).json({ error: 'limit must be a positive integer' });
+    if (classId && !mongoose.isValidObjectId(classId)) {
+      return res.status(400).json({ error: 'Invalid classId' });
+    }
     const ErrorRecord = require('../models/ErrorRecord');
 
-    const matchFilter = { schoolId: toObjId(req.schoolId) || req.schoolId };
-    if (subject) matchFilter.subject = { $regex: subject, $options: 'i' };
-    if (classId) {
-      const studentIds = await StudentUser.distinct('_id', { schoolId: req.schoolId, classId });
+    const matchFilter = { schoolId: schoolObjId };
+    if (subject) {
+      const normalizedSubject = String(subject).trim();
+      if (normalizedSubject.length > 100) {
+        return res.status(400).json({ error: 'subject must be 100 characters or fewer' });
+      }
+      matchFilter.subject = { $regex: escapeRegex(normalizedSubject), $options: 'i' };
+    }
+    const studentIds = (req.campusId || classId)
+      ? await scopedStudentIds(req, classId ? { classId } : {})
+      : null;
+    if (studentIds) {
       matchFilter.studentId = { $in: studentIds };
     }
 
     const [masteryWeak, errorAgg] = await Promise.all([
       MasteryScore.aggregate([
-        { $match: { schoolId: req.schoolId, score: { $lt: 60 } } },
+        { $match: { schoolId: schoolObjId, ...(studentIds ? { studentId: { $in: studentIds } } : {}), score: { $lt: 60 } } },
         { $group: {
           _id: { subject: '$subject', topicTitle: '$topicTitle' },
           avgScore: { $avg: '$score' },
           studentCount: { $sum: 1 },
         }},
         { $sort: { avgScore: 1 } },
-        { $limit: Number(limit) },
+        { $limit: limit },
         { $project: { subject: '$_id.subject', topicTitle: '$_id.topicTitle', avgScore: { $round: ['$avgScore', 1] }, studentCount: 1, _id: 0 } },
       ]),
       ErrorRecord.aggregate([
         { $match: matchFilter },
         { $group: { _id: { subject: '$subject', topicTitle: '$topicTitle', errorType: '$errorType' }, count: { $sum: 1 } } },
         { $sort: { count: -1 } },
-        { $limit: Number(limit) },
+        { $limit: limit },
       ]),
     ]);
 

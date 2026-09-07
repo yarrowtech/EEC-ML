@@ -238,7 +238,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   // Bulk add forms
   const [classAddMode, setClassAddMode] = useState("range"); // "range" | "custom" | "stream"
-  const [classRangeForm, setClassRangeForm] = useState({ from: "1", to: "10", academicYearId: "", prefix: "" });
+  const [classRangeForm, setClassRangeForm] = useState({ from: "1", to: "10", academicYearId: "", prefix: "Class" });
   const [classCustomInput, setClassCustomInput] = useState("");
   const [classCustomYear, setClassCustomYear] = useState("");
   const [seniorSecondaryForm, setSeniorSecondaryForm] = useState({
@@ -276,6 +276,9 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [dataWarning, setDataWarning] = useState("");
+  const [bulkProgress, setBulkProgress] = useState(null);
 
   // Sorting
   const [yearSort, setYearSort] = useState({ field: "name", order: "asc" });
@@ -716,6 +719,43 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     toast.error("Unable to load academic data. Please retry.");
   };
 
+  const requireOk = async (res, fallbackMessage) => {
+    if (res.status === 401) {
+      sessionStorage.removeItem(getAcademicCacheKey("core"));
+      sessionStorage.removeItem(getAcademicCacheKey("class-teachers"));
+      navigate("/", { replace: true });
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || fallbackMessage);
+    }
+    return res;
+  };
+
+  const runBulkRequests = async (items, worker, label, concurrency = 4) => {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    let completed = 0;
+    setBulkProgress({ label, completed: 0, total: items.length });
+    const runner = async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex++;
+        try {
+          results[index] = { ok: true, value: await worker(items[index], index) };
+        } catch (error) {
+          results[index] = { ok: false, error: error.message || "Request failed", item: items[index] };
+        } finally {
+          completed += 1;
+          setBulkProgress({ label, completed, total: items.length });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runner));
+    setBulkProgress(null);
+    return results;
+  };
+
   const loadAcademicData = async () => {
     const cacheKey = getAcademicCacheKey("core");
     const cached = readAcademicCache(cacheKey);
@@ -731,35 +771,29 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         fetch(`${API_BASE}/api/academic/hierarchy`, { method: "GET", headers: authHeaders }),
         fetch(`${API_BASE}/api/academic/subjects`, { method: "GET", headers: authHeaders }),
       ]);
-      if (!hierarchyRes.ok) throw new Error("Failed to load academic setup");
+      await requireOk(hierarchyRes, "Failed to load academic setup");
+      await requireOk(subjectsRes, "Failed to load subjects");
       const data = await hierarchyRes.json();
       setYears(Array.isArray(data.years) ? data.years : []);
       setClasses(Array.isArray(data.classes) ? data.classes : []);
       setSections(Array.isArray(data.sections) ? data.sections : []);
 
-      if (subjectsRes.ok) {
-        const subData = await subjectsRes.json();
-        setSubjects(Array.isArray(subData) ? subData : []);
-        writeAcademicCache(cacheKey, {
-          years: Array.isArray(data.years) ? data.years : [],
-          classes: Array.isArray(data.classes) ? data.classes : [],
-          sections: Array.isArray(data.sections) ? data.sections : [],
-          subjects: Array.isArray(subData) ? subData : [],
-        });
-      } else {
-        writeAcademicCache(cacheKey, {
-          years: Array.isArray(data.years) ? data.years : [],
-          classes: Array.isArray(data.classes) ? data.classes : [],
-          sections: Array.isArray(data.sections) ? data.sections : [],
-          subjects: [],
-        });
-      }
+      const subData = await subjectsRes.json();
+      setSubjects(Array.isArray(subData) ? subData : []);
+      writeAcademicCache(cacheKey, {
+        years: Array.isArray(data.years) ? data.years : [],
+        classes: Array.isArray(data.classes) ? data.classes : [],
+        sections: Array.isArray(data.sections) ? data.sections : [],
+        subjects: Array.isArray(subData) ? subData : [],
+      });
+      setDataWarning("");
     } catch (err) {
       if (!cached) {
-        handleApiError(err);
         throw err;
       }
+      setDataWarning("Live academic data could not be reached. Showing recently cached data.");
       console.warn("Academic setup fetch failed, showing cached data:", err);
+      throw err;
     }
   };
 
@@ -776,6 +810,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         fetch(`${API_BASE}/api/admin/users/get-teachers`, { method: "GET", headers: authHeaders }),
         fetch(`${API_BASE}/api/teacher-allocations`, { method: "GET", headers: authHeaders }),
       ]);
+      await requireOk(teacherRes, "Unable to load teachers");
+      await requireOk(allocationRes, "Unable to load class-teacher assignments");
       let nextTeachers = [];
       let nextAllocations = [];
       if (teacherRes.ok) {
@@ -797,15 +833,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         console.error(err);
         toast.error("Unable to load class teacher data.");
       } else {
+        setDataWarning("Some class-teacher information may be stale. Refresh to try again.");
         console.warn("Class teacher fetch failed, showing cached data:", err);
       }
+      throw err;
     }
   };
 
   useEffect(() => {
     setShowAdminHeader?.(true);
-    loadAcademicData().catch(handleApiError);
-    loadClassTeachers().catch(() => {});
+    Promise.allSettled([loadAcademicData(), loadClassTeachers()])
+      .then((results) => {
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed) handleApiError(failed.reason);
+      })
+      .finally(() => setIsInitialLoading(false));
   }, [setShowAdminHeader]);
 
   /* Jump back to page 1 whenever the underlying filter changes — otherwise a
@@ -833,7 +875,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     setIsRefreshing(true);
     try {
       await Promise.all([loadAcademicData(), loadClassTeachers()]);
-      toast.success("Data Refreshed");
+      setDataWarning("");
+      toast.success("Academic data refreshed");
     } catch (err) {
       handleApiError(err);
     } finally {
@@ -861,7 +904,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showAddClassesModal]);
 
-  const handleCreate = async (endpoint, payload, onSuccess) => {
+  const handleCreate = async (endpoint, payload, onSuccess, successMessage = "Created successfully") => {
     setIsSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -869,13 +912,10 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         headers: authHeaders,
         body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Request failed");
-      }
+      await requireOk(res, "Request failed");
       await res.json().catch(() => ({}));
       await onSuccess();
-      toast.success("Created successfully!");
+      toast.success(successMessage);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -898,9 +938,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       await loadAcademicData();
       setYearForm({ name: "", startDate: "", endDate: "", status: "active", isActive: true });
       setShowYearForm(false);
-      toast.success(mode === "draft" ? "Saved as draft." : "Academic year added successfully!");
       if (mode === "continue") setActiveTab("classes");
-    });
+    }, mode === "draft" ? "Saved as draft" : "Academic year added successfully");
   };
   const submitYear = (e) => {
     e.preventDefault();
@@ -926,16 +965,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   };
 
   /* ─── Single toast summarising a bulk class-add result ─── */
-  const notifyBulkClassResult = (created, failed, failures) => {
+  const notifyBulkResult = (created, failed, failures, noun = "item") => {
     if (!failed) {
-      toast.success(`${created} class${created !== 1 ? "es" : ""} created.`);
+      toast.success(`${created} ${noun}${created !== 1 ? "s" : ""} completed.`);
       return;
     }
     if (!created) {
       toast.error(failures[0] || "No classes were added.");
       return;
     }
-    toast.success(`${created} class${created !== 1 ? "es" : ""} created, ${failed} skipped — ${failures[0]}`);
+    toast(`${created} completed, ${failed} failed — ${failures[0]}`, { icon: "⚠️", duration: 6000 });
   };
 
   /* ─── Bulk submit: classes by range ─── */
@@ -960,26 +999,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     }
     const names = Array.from({ length: t - f + 1 }, (_, i) => `${prefix ? prefix + " " : ""}${f + i}`);
     setIsSubmitting(true);
-    let created = 0, failed = 0;
-    const failures = [];
-    for (let i = 0; i < names.length; i++) {
-      try {
+    const results = await runBulkRequests(names, async (name, i) => {
         const res = await fetch(`${API_BASE}/api/academic/classes`, {
           method: "POST", headers: authHeaders,
-          body: JSON.stringify({ name: names[i], academicYearId, order: f + i }),
+          body: JSON.stringify({ name, academicYearId, order: f + i }),
         });
-        if (res.ok) {
-          created++;
-        } else {
-          failed++;
-          const data = await res.json().catch(() => ({}));
-          failures.push(`${names[i]}: ${data.error || "failed"}`);
-        }
-      } catch { failed++; failures.push(`${names[i]}: request failed`); }
-    }
-    await loadAcademicData();
+        await requireOk(res, `Unable to create ${name}`);
+    }, "Creating classes");
+    const created = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok).map((result) => `${result.item}: ${result.error}`);
+    const failed = failures.length;
+    await loadAcademicData().catch(handleApiError);
     setIsSubmitting(false);
-    notifyBulkClassResult(created, failed, failures);
+    notifyBulkResult(created, failed, failures, "class");
   };
 
   /* ─── Bulk submit: classes by custom list ─── */
@@ -989,27 +1021,20 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!names.length) { toast.error("Enter at least one class name."); return; }
     if (!classCustomYear) { toast.error("Select an academic year before adding classes."); return; }
     setIsSubmitting(true);
-    let created = 0, failed = 0;
-    const failures = [];
-    for (let i = 0; i < names.length; i++) {
-      try {
+    const results = await runBulkRequests(names, async (name, i) => {
         const res = await fetch(`${API_BASE}/api/academic/classes`, {
           method: "POST", headers: authHeaders,
-          body: JSON.stringify({ name: names[i], academicYearId: classCustomYear, order: i }),
+          body: JSON.stringify({ name, academicYearId: classCustomYear, order: i }),
         });
-        if (res.ok) {
-          created++;
-        } else {
-          failed++;
-          const data = await res.json().catch(() => ({}));
-          failures.push(`${names[i]}: ${data.error || "failed"}`);
-        }
-      } catch { failed++; failures.push(`${names[i]}: request failed`); }
-    }
-    await loadAcademicData();
+        await requireOk(res, `Unable to create ${name}`);
+    }, "Creating classes");
+    const created = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok).map((result) => `${result.item}: ${result.error}`);
+    const failed = failures.length;
+    await loadAcademicData().catch(handleApiError);
     setIsSubmitting(false);
     if (!failed) setClassCustomInput("");
-    notifyBulkClassResult(created, failed, failures);
+    notifyBulkResult(created, failed, failures, "class");
   };
 
   const submitSeniorSecondaryStreamSetup = async (e) => {
@@ -1086,22 +1111,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const allNames = [...new Set([...selected, ...extra])];
     if (!allNames.length) { toast.error("Add at least one section."); return; }
     setIsSubmitting(true);
-    let created = 0, failed = 0;
-    for (const cId of classIds) {
-      for (const name of allNames) {
-        try {
+    const work = classIds.flatMap((classId) => allNames.map((name) => ({ classId, name })));
+    const results = await runBulkRequests(work, async ({ classId, name }) => {
           const res = await fetch(`${API_BASE}/api/academic/sections`, {
             method: "POST", headers: authHeaders,
-            body: JSON.stringify({ name, classId: cId }),
+            body: JSON.stringify({ name, classId }),
           });
-          if (res.ok) created++; else failed++;
-        } catch { failed++; }
-      }
-    }
-    await loadAcademicData();
+          await requireOk(res, `Unable to create section ${name}`);
+    }, "Creating sections");
+    const created = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok);
+    const failed = failures.length;
+    await loadAcademicData().catch(handleApiError);
     setIsSubmitting(false);
     setSectionBulkForm({ selected: [], custom: "", classIds: [] });
-    toast.success(`${created} section${created !== 1 ? "s" : ""} created${failed ? `, ${failed} failed` : ""}.`);
+    notifyBulkResult(created, failed, failures.map(({ item, error }) => `${item.name}: ${error}`), "section");
   };
 
   /* ─── Bulk submit: subjects (school-wide catalog, unassigned) ─── */
@@ -1111,21 +1135,21 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     const allNames = [...new Set([...subjectTags, ...extra])];
     if (!allNames.length) { toast("Add at least one subject.", { icon: "⚠️" }); return; }
     setIsSubmitting(true);
-    let created = 0, failed = 0;
-    for (const name of allNames) {
-      try {
+    const results = await runBulkRequests(allNames, async (name) => {
         const res = await fetch(`${API_BASE}/api/academic/subjects`, {
           method: "POST", headers: authHeaders,
           body: JSON.stringify({ name }),
         });
-        if (res.ok) created++; else failed++;
-      } catch { failed++; }
-    }
-    await loadAcademicData();
+        await requireOk(res, `Unable to create ${name}`);
+    }, "Creating subjects");
+    const created = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok).map((result) => `${result.item}: ${result.error}`);
+    const failed = failures.length;
+    await loadAcademicData().catch(handleApiError);
     setIsSubmitting(false);
     setSubjectTags([]);
     setSubjectTagInput("");
-    toast.success(`${created} subject${created !== 1 ? "s" : ""} added to the catalog${failed ? `, ${failed} failed` : ""}.`);
+    notifyBulkResult(created, failed, failures, "subject");
   };
 
   /* ─── Assign existing unassigned subjects to a class ─── */
@@ -1134,23 +1158,25 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!assignClassId) { toast("Select a class to assign subjects to.", { icon: "⚠️" }); return; }
     if (!assignSubjectIds.length) { toast("Select at least one subject to assign.", { icon: "⚠️" }); return; }
     setIsSubmitting(true);
-    let assigned = 0, failed = 0;
-    for (const subjectId of assignSubjectIds) {
+    const results = await runBulkRequests(assignSubjectIds, async (subjectId) => {
       const subject = subjects.find((s) => String(s._id) === subjectId);
-      if (!subject) { failed++; continue; }
-      try {
+      if (!subject) throw new Error("Subject is no longer available");
         const res = await fetch(`${API_BASE}/api/academic/subjects/${subjectId}`, {
           method: "PUT", headers: authHeaders,
           body: JSON.stringify({ name: subject.name, code: subject.code, classId: assignClassId }),
         });
-        if (res.ok) assigned++; else failed++;
-      } catch { failed++; }
-    }
-    await loadAcademicData();
+        await requireOk(res, `Unable to assign ${subject.name}`);
+    }, "Assigning subjects");
+    const assigned = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok);
+    const failed = failures.length;
+    await loadAcademicData().catch(handleApiError);
     setIsSubmitting(false);
     setAssignSubjectIds([]);
-    const className = visibleClasses.find((c) => String(c._id) === assignClassId)?.name || "the class";
-    toast.success(`${assigned} subject${assigned !== 1 ? "s" : ""} assigned to ${className}${failed ? `, ${failed} failed` : ""}.`);
+    notifyBulkResult(assigned, failed, failures.map(({ item, error }) => {
+      const name = subjects.find((subject) => String(subject._id) === String(item))?.name || "Subject";
+      return `${name}: ${error}`;
+    }), "subject");
   };
 
   /* ─── Update handlers ─── */
@@ -1460,9 +1486,6 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     });
     if (!confirm.isConfirmed) return;
 
-    let successCount = 0;
-    let failCount = 0;
-
     Swal.fire({
       title: "Deleting...",
       html: `Deleted: <b>0</b> / ${selected.length}`,
@@ -1477,28 +1500,23 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       subjects: "/api/academic/subjects",
     }[entityType];
 
-    for (const id of selected) {
-      try {
+    const results = await runBulkRequests(selected, async (id) => {
         const res = await fetch(`${API_BASE}${endpoint}/${id}?cascade=true`, {
           method: "DELETE",
           headers: authHeaders,
         });
-        if (res.ok) successCount++;
-        else failCount++;
-        Swal.update({
-          html: `Deleted: <b>${successCount}</b> / ${selected.length}${failCount > 0 ? ` (${failCount} failed)` : ""}`,
-        });
-      } catch {
-        failCount++;
-      }
-    }
+        await requireOk(res, `Unable to delete ${entityName}`);
+    }, `Deleting ${entityName}s`);
+    const successCount = results.filter((result) => result.ok).length;
+    const failures = results.filter((result) => !result.ok);
+    const failCount = failures.length;
 
-    await loadAcademicData();
+    await loadAcademicData().catch(handleApiError);
     Object.values(selectionMap).forEach(([, setter]) => setter([]));
 
     Swal.fire({
       title: "Completed",
-      html: `Successfully deleted <b>${successCount}</b> ${entityName}(s)${failCount > 0 ? `<br>${failCount} deletion(s) failed` : ""}`,
+      html: `Successfully deleted <b>${successCount}</b> ${entityName}(s)${failCount > 0 ? `<br>${failCount} failed: ${failures.slice(0, 3).map((item) => item.error).join("; ")}` : ""}`,
       icon: successCount > 0 ? "success" : "error",
     });
   };
@@ -1522,7 +1540,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     </span>
   );
 
-  const StepNav = ({ prevKey, nextKey, skippable, finishLabel }) => (
+  const StepNav = ({ prevKey, nextKey, skippable, finishLabel }) => {
+    const moveForward = () => {
+      if (!nextKey && visibleClasses.length === 0) {
+        toast("Add at least one class before finishing setup.", { icon: "⚠️" });
+        setActiveTab("classes");
+        return;
+      }
+      setActiveTab(nextKey || "done");
+    };
+    return (
     <div className="flex items-center justify-between rounded-2xl px-5 py-4">
       {prevKey ? (
         <button
@@ -1537,7 +1564,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         {skippable && (
           <button
             type="button"
-            onClick={() => setActiveTab(nextKey || "done")}
+            onClick={moveForward}
             className="text-sm font-semibold text-gray-400 underline underline-offset-2 hover:text-gray-600"
           >
             Skip this step
@@ -1545,14 +1572,15 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         )}
         <button
           type="button"
-          onClick={() => setActiveTab(nextKey || "done")}
+          onClick={moveForward}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
         >
           {nextKey ? "Continue" : (finishLabel || "Finish Setup")} <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   const STEP_ILLUSTRATIONS = {
     classes: (
@@ -1592,6 +1620,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     ),
   };
 
+  // Kept for the optional illustrated onboarding variant.
+  // eslint-disable-next-line no-unused-vars
   const StepHeader = (props) => {
     const StepIcon = props.icon;
     return (
@@ -1753,7 +1783,8 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                 </button>
                 <button
                   onClick={() => handleBulkDelete(entityType, entityName)}
-                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 active:scale-[0.97]"
+                  disabled={Boolean(bulkProgress)}
+                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" /> Delete{count > 1 ? ` ${count}` : ""}
                 </button>
@@ -1801,7 +1832,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
     >
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="w-full space-y-6">
         {/* ─── Header ─── */}
         <Motion.div
           className="relative flex items-start justify-between gap-3 overflow-hidden"
@@ -1828,6 +1859,35 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </Motion.div>
+
+        {dataWarning && (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span>{dataWarning}</span>
+            <button type="button" onClick={handleRefresh} disabled={isRefreshing} className="font-semibold underline underline-offset-2 disabled:opacity-50">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {bulkProgress && (
+          <div role="status" aria-live="polite" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-blue-900">
+              <span>{bulkProgress.label}</span>
+              <span>{bulkProgress.completed} / {bulkProgress.total}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-blue-100">
+              <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${(bulkProgress.completed / Math.max(1, bulkProgress.total)) * 100}%` }} />
+            </div>
+          </div>
+        )}
+
+        {isInitialLoading && years.length === 0 && (
+          <div role="status" className="space-y-3 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="h-5 w-48 animate-pulse rounded bg-gray-200" />
+            <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
+            <span className="sr-only">Loading academic setup</span>
+          </div>
+        )}
 
         <AnimatePresence>
         {activeTab !== "years" && (

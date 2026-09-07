@@ -1400,7 +1400,15 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
 
     const { academicYearId, classId, section } = req.query || {};
 
-    const studentFilter = { schoolId };
+    // Only students still on the roll — archived / left / expelled students keep
+    // their historical invoices but must not inflate the dashboard counts, the
+    // same rule the rest of the admin portal applies.
+    const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
+    const studentFilter = {
+      schoolId,
+      isArchived: { $ne: true },
+      status: { $nin: EXITED_STUDENT_STATUSES },
+    };
     if (req.campusId) {
       studentFilter.campusId = req.campusId;
     }
@@ -1431,7 +1439,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
           totalInvoiced: 0,
           totalStudents: 0,
           overdueInvoices: 0,
+          overdueAmount: 0,
         },
+        monthlyTrend: [],
         enrollment: [],
         outstandingSegments: [],
         recentPayments: [],
@@ -1446,28 +1456,77 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     await applyLateFeesForFilter({ schoolId, filter: invoiceFilter });
     const invoices = await FeeInvoice.find(invoiceFilter).lean();
 
-    const totals = invoices.reduce(
-      (acc, inv) => {
-        acc.totalInvoiced += Number(inv.totalAmount || 0);
-        acc.totalCollected += Number(inv.paidAmount || 0);
-        acc.totalOutstanding += Number(inv.balanceAmount || 0);
-        return acc;
-      },
-      {
-        totalOutstanding: 0,
-        totalCollected: 0,
-        totalInvoiced: 0,
-        totalStudents: new Set(invoices.map((inv) => String(inv.studentId))).size,
-      }
-    );
+    // "Amount collected" is derived from the payment ledger (FeePayment), not the
+    // denormalised invoice.paidAmount / balanceAmount, so a stale or un-synced
+    // invoice can't understate collections or overstate dues. Every tile below
+    // is computed from the same per-invoice paid figure so they stay consistent
+    // (invoiced − discount = collected + outstanding).
+    const invoiceIds = invoices.map((inv) => inv._id);
+    const paidAgg = invoiceIds.length
+      ? await FeePayment.aggregate([
+          { $match: { invoiceId: { $in: invoiceIds } } },
+          { $group: { _id: '$invoiceId', paid: { $sum: '$amount' } } },
+        ])
+      : [];
+    const paidByInvoice = new Map(paidAgg.map((row) => [String(row._id), Number(row.paid || 0)]));
 
     const today = new Date();
-    const overdueInvoices = invoices.filter(
-      (inv) => inv.dueDate && new Date(inv.dueDate) < today && Number(inv.balanceAmount || 0) > 0
-    ).length;
+    const totals = { totalOutstanding: 0, totalCollected: 0, totalInvoiced: 0, totalStudents: 0, overdueAmount: 0 };
+    const studentsWithInvoice = new Set();
+    let overdueInvoices = 0;
+
+    // 6-month collected-vs-due trend (shared by the main admin dashboard so the
+    // two pages can't disagree).
+    const monthKeyOf = (v) => {
+      if (!v) return '';
+      const d = v instanceof Date ? v : new Date(v);
+      return Number.isNaN(d.getTime())
+        ? ''
+        : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+    const trendBuckets = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      trendBuckets.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        month: d.toLocaleString('en-US', { month: 'short' }),
+        collected: 0,
+        due: 0,
+      });
+    }
+    const trendMap = new Map(trendBuckets.map((b) => [b.key, b]));
 
     const classBuckets = new Map();
     invoices.forEach((inv) => {
+      const gross = Number(inv.totalAmount || 0);
+      const discount = Number(inv.discountAmount || 0);
+      const payable = Math.max(0, gross - discount);
+      const paid = Math.min(paidByInvoice.get(String(inv._id)) || 0, payable);
+      const balance = Math.max(0, payable - paid);
+
+      totals.totalInvoiced += gross;
+      totals.totalCollected += paid;
+      totals.totalOutstanding += balance;
+      studentsWithInvoice.add(String(inv.studentId));
+      if (inv.dueDate && new Date(inv.dueDate) < today && balance > 0) {
+        overdueInvoices += 1;
+        totals.overdueAmount += balance;
+      }
+
+      // Distribute the invoice's payable amount into the month(s) it falls due.
+      const dueInstallments = Array.isArray(inv.installmentsSnapshot)
+        ? inv.installmentsSnapshot.filter((it) => it && it.dueDate)
+        : [];
+      if (dueInstallments.length) {
+        dueInstallments.forEach((it) => {
+          const b = trendMap.get(monthKeyOf(it.dueDate));
+          if (b) b.due += Math.max(0, Number(it.amount || 0));
+        });
+      } else {
+        const b = trendMap.get(monthKeyOf(inv.dueDate || inv.createdAt));
+        if (b) b.due += payable;
+      }
+
       const student = studentMap.get(String(inv.studentId));
       const className = inv.className || student?.grade || 'Unassigned';
       if (!classBuckets.has(className)) {
@@ -1475,8 +1534,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       }
       const bucket = classBuckets.get(className);
       bucket.students.add(String(inv.studentId));
-      bucket.outstanding += Number(inv.balanceAmount || 0);
+      bucket.outstanding += balance;
     });
+    totals.totalStudents = studentsWithInvoice.size;
 
     const enrollment = Array.from(classBuckets.entries()).map(([label, data]) => ({
       label,
@@ -1499,9 +1559,26 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     }));
 
     const invoiceMap = new Map(invoices.map((inv) => [String(inv._id), inv]));
+
+    // Resolve academic-year names so "Session" shows a readable label instead of
+    // a raw id / stale free-text value on the student record.
+    const yearIds = [...new Set(
+      invoices
+        .map((inv) => String(inv.academicYearId || ''))
+        .filter((id) => id && mongoose.isValidObjectId(id))
+    )];
+    const years = yearIds.length
+      ? await AcademicYear.find({ _id: { $in: yearIds }, schoolId }).select('name').lean()
+      : [];
+    const yearNameById = new Map(years.map((y) => [String(y._id), y.name]));
+
+    // Pull a wide recent window so the client-side date-range filter (7d / 30d /
+    // all) and the collection-trend chart have the real payment volume to work
+    // with — not just the last 10 rows. The dedicated fees collection page owns
+    // the fully paginated ledger.
     const payments = await FeePayment.find(invoiceFilter)
-      .sort({ createdAt: -1 })
-      .limit(10)
+      .sort({ paidOn: -1, createdAt: -1 })
+      .limit(500)
       .lean();
     const recentPayments = payments.map((payment) => {
       const student = studentMap.get(String(payment.studentId));
@@ -1518,7 +1595,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         username: student?.username || '',
         className: student?.grade || '',
         section: student?.section || '',
-        session: student?.academicYear || '',
+        session:
+          yearNameById.get(String(invoice?.academicYearId || '')) ||
+          (mongoose.isValidObjectId(String(student?.academicYear || '')) ? '' : String(student?.academicYear || '')),
         admissionNo: student?.studentCode || student?.admissionNumber || '',
         amount: payment.amount,
         paidOn: paymentDate,
@@ -1533,6 +1612,24 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       };
     });
 
+    // Collected per month, straight from the payment ledger.
+    const trendStart = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    const collectedByMonth = invoiceIds.length
+      ? await FeePayment.aggregate([
+          { $match: { invoiceId: { $in: invoiceIds }, paidOn: { $gte: trendStart } } },
+          {
+            $group: {
+              _id: { y: { $year: '$paidOn' }, m: { $month: '$paidOn' } },
+              total: { $sum: '$amount' },
+            },
+          },
+        ])
+      : [];
+    collectedByMonth.forEach((row) => {
+      const b = trendMap.get(`${row._id.y}-${String(row._id.m).padStart(2, '0')}`);
+      if (b) b.collected += Number(row.total || 0);
+    });
+
     res.json({
       totals: {
         totalOutstanding: Math.round(totals.totalOutstanding),
@@ -1540,7 +1637,13 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         totalInvoiced: Math.round(totals.totalInvoiced),
         totalStudents: totals.totalStudents,
         overdueInvoices,
+        overdueAmount: Math.round(totals.overdueAmount),
       },
+      monthlyTrend: trendBuckets.map(({ month, collected, due }) => ({
+        month,
+        collected: Math.round(collected),
+        due: Math.round(due),
+      })),
       enrollment: enrollmentNormalized,
       outstandingSegments: outstandingNormalized,
       recentPayments,

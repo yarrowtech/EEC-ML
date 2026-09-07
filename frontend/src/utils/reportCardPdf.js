@@ -32,6 +32,12 @@ const parseHexColor = (value) => {
   ];
 };
 
+const imageFormatFromDataUrl = (dataUrl) => {
+  const m = /^data:image\/(png|jpe?g)/i.exec(String(dataUrl || ''));
+  if (!m) return 'PNG';
+  return m[1].toLowerCase().startsWith('jp') ? 'JPEG' : 'PNG';
+};
+
 const loadLogoDataUrl = async (logoUrl) => {
   const src = toText(logoUrl);
   if (!src) return '';
@@ -50,7 +56,7 @@ const loadLogoDataUrl = async (logoUrl) => {
   }
 };
 
-const drawPageStructure = (doc, template, r, g, b) => {
+const drawPageStructure = (doc, template, r, g, b, letterheadDataUrl) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
@@ -62,9 +68,12 @@ const drawPageStructure = (doc, template, r, g, b) => {
     doc.rect(6, 6, pageWidth - 12, pageHeight - 12);
   }
 
-  // Header background
-  doc.setFillColor(r, g, b);
-  doc.rect(7, 7, pageWidth - 14, 35, 'F');
+  // Header background — skipped when a school letterhead image is supplied,
+  // since the letterhead becomes the header instead.
+  if (!letterheadDataUrl) {
+    doc.setFillColor(r, g, b);
+    doc.rect(7, 7, pageWidth - 14, 35, 'F');
+  }
 };
 
 const drawWatermark = (doc, template) => {
@@ -108,54 +117,82 @@ const drawWatermark = (doc, template) => {
   }
 };
 
-const drawHeader = (doc, template, reportCard, logoDataUrl, r, g, b) => {
+const drawHeader = (doc, template, reportCard, logoDataUrl, r, g, b, letterheadDataUrl) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const headerCenterX = pageWidth / 2;
-  
-  // School Info
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text(toText(template.schoolName).toUpperCase(), headerCenterX, 17.5, { align: 'center' });
-  
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const addressLine = toText(template.schoolAddressLine) || 'Address not available';
-  const contactLine = toText(template.schoolContactLine);
-  const maxHeaderTextWidth = pageWidth - 56;
-  const addressLines = doc.splitTextToSize(addressLine, maxHeaderTextWidth).slice(0, 2);
-  let metaY = 23.5;
-  addressLines.forEach((line) => {
-    doc.text(line, headerCenterX, metaY, { align: 'center' });
-    metaY += 3.6;
-  });
-  if (contactLine) {
-    const contactLines = doc.splitTextToSize(contactLine, maxHeaderTextWidth).slice(0, 1);
-    contactLines.forEach((line) => {
+  const selectedExamName = toText(reportCard.term);
+
+  if (letterheadDataUrl) {
+    // ── School letterhead as the page header ──
+    try {
+      doc.addImage(
+        letterheadDataUrl,
+        imageFormatFromDataUrl(letterheadDataUrl),
+        7, 8, pageWidth - 14, 26,
+        undefined,
+        'FAST',
+      );
+    } catch { /* letterhead is optional — ignore a bad/undecodable image */ }
+    doc.setDrawColor(r, g, b);
+    doc.setLineWidth(0.4);
+    doc.line(10, 35.5, pageWidth - 10, 35.5);
+
+    // Report title in dark ink below the letterhead
+    doc.setTextColor(r, g, b);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.5);
+    doc.text(toText(template.title).toUpperCase(), headerCenterX, 41.5, { align: 'center' });
+    if (selectedExamName) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(90, 100, 115);
+      doc.text(`Examination: ${selectedExamName}`, headerCenterX, 45.5, { align: 'center' });
+    }
+  } else {
+    // School Info
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(toText(template.schoolName).toUpperCase(), headerCenterX, 17.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const addressLine = toText(template.schoolAddressLine) || 'Address not available';
+    const contactLine = toText(template.schoolContactLine);
+    const maxHeaderTextWidth = pageWidth - 56;
+    const addressLines = doc.splitTextToSize(addressLine, maxHeaderTextWidth).slice(0, 2);
+    let metaY = 23.5;
+    addressLines.forEach((line) => {
       doc.text(line, headerCenterX, metaY, { align: 'center' });
       metaY += 3.6;
     });
-  }
+    if (contactLine) {
+      const contactLines = doc.splitTextToSize(contactLine, maxHeaderTextWidth).slice(0, 1);
+      contactLines.forEach((line) => {
+        doc.text(line, headerCenterX, metaY, { align: 'center' });
+        metaY += 3.6;
+      });
+    }
 
-  // Report Title
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11.5);
-  doc.text(toText(template.title), headerCenterX, 33.5, { align: 'center' });
+    // Report Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.5);
+    doc.text(toText(template.title), headerCenterX, 33.5, { align: 'center' });
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const selectedExamName = toText(reportCard.term);
-  if (selectedExamName) {
-    doc.text(`Examination: ${selectedExamName}`, headerCenterX, 37.5, { align: 'center' });
-  }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    if (selectedExamName) {
+      doc.text(`Examination: ${selectedExamName}`, headerCenterX, 37.5, { align: 'center' });
+    }
 
-  // Logo
-  if (logoDataUrl) {
-    try {
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(12, 10, 20, 20, 2, 2, 'F');
-      doc.addImage(logoDataUrl, 'PNG', 13, 11, 18, 18);
-    } catch {}
+    // Logo
+    if (logoDataUrl) {
+      try {
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(12, 10, 20, 20, 2, 2, 'F');
+        doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 13, 11, 18, 18);
+      } catch {}
+    }
   }
 
   // Student Info Box
@@ -294,13 +331,13 @@ const drawTable = (doc, headers, data, startY, widths, title, accentColor) => {
   return currentY + 5;
 };
 
-const renderReportCardPage = (doc, template, reportCard, logoDataUrl) => {
+const renderReportCardPage = (doc, template, reportCard, logoDataUrl, letterheadDataUrl) => {
   const mergedTemplate = { ...DEFAULT_TEMPLATE, ...(template || {}) };
   const [r, g, b] = parseHexColor(mergedTemplate.accentColor);
-  
-  drawPageStructure(doc, mergedTemplate, r, g, b);
+
+  drawPageStructure(doc, mergedTemplate, r, g, b, letterheadDataUrl);
   drawWatermark(doc, mergedTemplate);
-  drawHeader(doc, mergedTemplate, reportCard, logoDataUrl, r, g, b);
+  drawHeader(doc, mergedTemplate, reportCard, logoDataUrl, r, g, b, letterheadDataUrl);
 
   // Consolidated Summary
   const subjectsHeaders = ['SUBJECT', 'OBTAINED', 'TOTAL MARKS', 'PERCENTAGE', 'GRADE'];
@@ -371,8 +408,11 @@ const renderReportCardPage = (doc, template, reportCard, logoDataUrl) => {
 export const downloadSingleReportCardPdf = async ({ template, reportCard, fileName }) => {
   if (!reportCard) return false;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-  const logoDataUrl = await loadLogoDataUrl(template?.logoUrl || template?.logoUrlOverride);
-  renderReportCardPage(doc, template, reportCard, logoDataUrl);
+  const [logoDataUrl, letterheadDataUrl] = await Promise.all([
+    loadLogoDataUrl(template?.logoUrl || template?.logoUrlOverride),
+    loadLogoDataUrl(template?.letterheadUrl),
+  ]);
+  renderReportCardPage(doc, template, reportCard, logoDataUrl, letterheadDataUrl);
   const baseName = fileName || `report_card_${toFileSafe(reportCard.studentName || 'student')}.pdf`;
   doc.save(baseName);
   return true;
@@ -382,10 +422,13 @@ export const downloadBulkReportCardsPdf = async ({ template, reportCards, fileNa
   const items = Array.isArray(reportCards) ? reportCards : [];
   if (!items.length) return false;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-  const logoDataUrl = await loadLogoDataUrl(template?.logoUrl || template?.logoUrlOverride);
+  const [logoDataUrl, letterheadDataUrl] = await Promise.all([
+    loadLogoDataUrl(template?.logoUrl || template?.logoUrlOverride),
+    loadLogoDataUrl(template?.letterheadUrl),
+  ]);
   items.forEach((card, index) => {
     if (index > 0) doc.addPage();
-    renderReportCardPage(doc, template, card, logoDataUrl);
+    renderReportCardPage(doc, template, card, logoDataUrl, letterheadDataUrl);
   });
   doc.save(fileName || 'report_cards_bulk.pdf');
   return true;

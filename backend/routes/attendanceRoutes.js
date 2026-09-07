@@ -1774,6 +1774,7 @@ router.post('/admin/bulk-upsert', adminAuth, async (req, res) => {
     if (!entries.length) return res.status(400).json({ error: 'entries are required' });
 
     const stats = { updated: 0, created: 0, skipped: 0 };
+    const changedStudentIds = new Set();
 
     for (const item of entries) {
       const currentStudentId = item?.studentId;
@@ -1830,8 +1831,11 @@ router.get('/admin/all', adminAuth, async (req, res) => {
   // #swagger.tags = ['Attendance']
   try {
     const schoolId = req.schoolId || req.admin?.schoolId || null;
+    const campusId = req.campusId || req.admin?.campusId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
-    const students = await StudentUser.find({ schoolId }, 'name email attendance');
+    const filter = { schoolId };
+    if (campusId) filter.campusId = campusId;
+    const students = await StudentUser.find(filter, 'name email attendance');
     res.json(students);
   } catch (err) {
     res.status(500).json({ error: err.message });

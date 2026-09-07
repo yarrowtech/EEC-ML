@@ -15,6 +15,7 @@ const ALLOWED_FOLDERS = new Set([
   "worksheets",
   "notices",
   "report-card-logos",
+  "report-card-letterheads",
   "class_materials",
   "smart_learning_materials",
   "teacher_expenses",

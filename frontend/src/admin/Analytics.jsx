@@ -168,12 +168,23 @@ const toAmountNumber = (value) => {
   return 0;
 };
 
+// Timezone-stable YYYY-MM key — an ISO string near a month boundary must not
+// slip into the previous month for a browser behind UTC.
+const feeMonthKey = (value) => {
+  const iso = String(value || '').match(/^(\d{4})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}`;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 const buildFeeChartData = (invoices) => {
   const now = new Date();
   const buckets = [];
   for (let i = 5; i >= 0; i -= 1) {
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${date.getFullYear()}-${date.getMonth()}`;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     buckets.push({
       key,
       month: date.toLocaleString('default', { month: 'short' }),
@@ -183,18 +194,28 @@ const buildFeeChartData = (invoices) => {
   }
   const map = new Map(buckets.map((bucket) => [bucket.key, bucket]));
   invoices.forEach((invoice) => {
-    const sourceDate = invoice.dueDate || invoice.createdAt;
-    if (!sourceDate) return;
-    const parsedDate = new Date(sourceDate);
-    if (Number.isNaN(parsedDate.getTime())) return;
-    const key = `${parsedDate.getFullYear()}-${parsedDate.getMonth()}`;
-    const bucket = map.get(key);
-    if (!bucket) return;
     const totalAmount = toAmountNumber(invoice.totalAmount);
     const balanceAmount = toAmountNumber(invoice.balanceAmount);
     const derivedPaid = Math.max(totalAmount - balanceAmount, 0);
-    bucket.paid += derivedPaid;
-    bucket.pending += balanceAmount;
+    // Prefer instalment due months (where the money is actually due); fall back
+    // to the top-level dueDate, then invoice creation date.
+    const installments = Array.isArray(invoice.installmentsSnapshot)
+      ? invoice.installmentsSnapshot.filter((it) => it && it.dueDate)
+      : [];
+    const contributions = installments.length
+      ? installments.map((it) => ({
+          key: feeMonthKey(it.dueDate),
+          share: toAmountNumber(it.amount ?? it.totalAmount) || totalAmount / installments.length,
+        }))
+      : [{ key: feeMonthKey(invoice.dueDate || invoice.createdAt), share: totalAmount }];
+    const paidRatio = totalAmount > 0 ? derivedPaid / totalAmount : 0;
+    const pendingRatio = totalAmount > 0 ? balanceAmount / totalAmount : 0;
+    contributions.forEach(({ key, share }) => {
+      const bucket = map.get(key);
+      if (!bucket) return;
+      bucket.paid += share * paidRatio;
+      bucket.pending += share * pendingRatio;
+    });
   });
   return buckets.map(({ month, paid, pending }) => ({
     month,

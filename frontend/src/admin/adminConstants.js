@@ -142,11 +142,6 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/floor-rooms'
   },
   {
-    icon: ClipboardList,
-    label: 'Lesson Plan',
-    path: '/admin/lesson-plans'
-  },
-  {
     icon: Calendar,
     label: 'Exam Management',
     path: '/admin/examination'
@@ -203,7 +198,7 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers', 'Teacher Feedback', 'Routine', 'Lesson Plan', 'Exam Management', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers', 'Teacher Feedback', 'Routine', 'Exam Management', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
   { section: 'FEES MANAGEMENT', items: ['Fees Dashboard', 'Fees Manage', 'Fees Collection'] },
@@ -213,33 +208,3 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'SUPPORT', items: ['Support'] },
   { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
 ];
-
-export const ADMIN_EMPLOYEE_DATA = [
-  {
-    id: 1,
-    name: 'Ryan Harrington',
-    role: 'iOS Developer',
-    avatar: '👨‍💻',
-    time: '9hr 20m',
-    progress: 75,
-    color: 'bg-blue-500',
-    status: 'active'
-  },
-  {
-    id: 2,
-    name: 'Louisa Norton',
-    role: 'UI/UX Designer',
-    avatar: '👩‍💼',
-    time: '4hr',
-    progress: 45,
-    color: 'bg-red-500',
-    status: 'active'
-  }
-];
-
-export const ADMIN_STATS = {
-  totalSales: '$48.9k',
-  salesIncrease: '57.6%',
-  totalStudents: 1250,
-  totalTeachers: 85
-};

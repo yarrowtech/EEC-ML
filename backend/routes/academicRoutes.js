@@ -42,7 +42,9 @@ const resolveSchoolId = (req, res) => {
 const resolveCampusId = (req) => req.campusId || null;
 const resolveCampusScope = (req) => {
   const scope = String(req.query?.scope || '').trim().toLowerCase();
-  if (scope === 'school') return null;
+  // Only a platform-level administrator may deliberately broaden a query
+  // beyond the campus encoded in the token.
+  if (scope === 'school' && req.isSuperAdmin) return null;
   return resolveCampusId(req);
 };
 
@@ -967,7 +969,10 @@ router.get('/sections', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const filter = buildCampusFilter(schoolId, resolveCampusScope(req));
-    if (req.query.classId && mongoose.isValidObjectId(req.query.classId)) {
+    if (req.query.classId) {
+      if (!mongoose.isValidObjectId(req.query.classId)) {
+        return res.status(400).json({ error: 'Invalid classId' });
+      }
       filter.classId = req.query.classId;
     }
     const items = await Section.find(filter).sort({ name: 1 }).lean();
@@ -1123,7 +1128,10 @@ router.get('/subjects', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const filter = buildCampusFilter(schoolId, resolveCampusId(req));
-    if (req.query.classId && mongoose.isValidObjectId(req.query.classId)) {
+    if (req.query.classId) {
+      if (!mongoose.isValidObjectId(req.query.classId)) {
+        return res.status(400).json({ error: 'Invalid classId' });
+      }
       filter.classId = req.query.classId;
     }
     const items = await Subject.find(filter).sort({ name: 1 }).lean();

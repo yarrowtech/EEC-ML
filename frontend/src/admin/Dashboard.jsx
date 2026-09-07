@@ -94,58 +94,6 @@ const formatCompactINR = (value = 0) => {
   return `₹${n}`;
 };
 
-const computeOutstanding = (invoice = {}) => {
-  const total = Number(invoice.totalAmount || 0);
-  const paid = Number(invoice.paidAmount || 0);
-  const hasBalance = invoice.balanceAmount === 0 || invoice.balanceAmount;
-  const balance = hasBalance ? Number(invoice.balanceAmount) : total - paid;
-  return Number.isFinite(balance) ? Math.max(0, balance) : 0;
-};
-
-const getMonthKey = (date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-
-const buildFinancialState = (invoices = [], payments = [], months = 6) => {
-  const buckets = [];
-  const now = new Date();
-  for (let i = months - 1; i >= 0; i -= 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets.push({ key: getMonthKey(d), month: d.toLocaleString('default', { month: 'short' }), collected: 0, due: 0 });
-  }
-  const bucketMap = buckets.reduce((map, b) => map.set(b.key, b), new Map());
-
-  payments.forEach((p) => {
-    const ts = p.paidOn || p.createdAt;
-    if (ts && bucketMap.has(getMonthKey(new Date(ts)))) {
-      bucketMap.get(getMonthKey(new Date(ts))).collected += Number(p.amount || 0);
-    }
-  });
-  invoices.forEach((inv) => {
-    const ts = inv.dueDate || inv.createdAt;
-    if (ts && bucketMap.has(getMonthKey(new Date(ts)))) {
-      bucketMap.get(getMonthKey(new Date(ts))).due += Number(inv.totalAmount || 0);
-    }
-  });
-
-  const totalCollected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-  const totals = invoices.reduce(
-    (acc, inv) => {
-      const outstanding = computeOutstanding(inv);
-      acc.totalOutstanding += outstanding;
-      if (inv.dueDate && new Date(inv.dueDate) < new Date() && outstanding > 0) {
-        acc.overdueAmount += outstanding;
-      }
-      return acc;
-    },
-    { totalOutstanding: 0, overdueAmount: 0 },
-  );
-
-  return {
-    trend: buckets,
-    totals: { totalCollected, totalOutstanding: totals.totalOutstanding, overdueAmount: totals.overdueAmount },
-  };
-};
-
 // ── Presentational ───────────────────────────────────────────────────────────
 
 const StatCard = ({ label, value, icon, sub, color, delay, loading }) => (
@@ -239,19 +187,20 @@ const Dashboard = ({ setShowAdminHeader }) => {
     (async () => {
       try {
         const headers = { authorization: `Bearer ${localStorage.getItem('token')}` };
-        const [invoiceRes, paymentRes] = await Promise.all([
-          apiFetch(`${import.meta.env.VITE_API_URL}/api/fees/invoices`, { headers }, navigate),
-          apiFetch(`${import.meta.env.VITE_API_URL}/api/fees/payments`, { headers }, navigate),
-        ]);
-        const invoices = await invoiceRes.json().catch(() => []);
-        const payments = await paymentRes.json().catch(() => []);
-        if (!invoiceRes.ok) throw new Error('Failed to load invoices');
-        if (!paymentRes.ok) throw new Error('Failed to load payments');
+        // Same endpoint the Fees Dashboard uses, so both pages report identical
+        // collected / outstanding / overdue figures.
+        const res = await apiFetch(`${import.meta.env.VITE_API_URL}/api/fees/admin/summary`, { headers }, navigate);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to load fee summary');
         if (cancelled) return;
-        const next = buildFinancialState(
-          Array.isArray(invoices) ? invoices : [],
-          Array.isArray(payments) ? payments : [],
-        );
+        const next = {
+          trend: Array.isArray(data?.monthlyTrend) ? data.monthlyTrend : [],
+          totals: {
+            totalCollected: Number(data?.totals?.totalCollected || 0),
+            totalOutstanding: Number(data?.totals?.totalOutstanding || 0),
+            overdueAmount: Number(data?.totals?.overdueAmount || 0),
+          },
+        };
         setFinancial(next);
         writeCache(cacheKey('financial'), next);
       } catch {
@@ -494,9 +443,6 @@ const Dashboard = ({ setShowAdminHeader }) => {
         </motion.div>
 
         {/* ── Footer ── */}
-        <motion.div variants={itemVariants} className="text-center text-xs text-slate-400 py-2">
-          © {new Date().getFullYear()} School Admin · All rights reserved
-        </motion.div>
       </div>
     </motion.div>
   );

@@ -23,6 +23,14 @@ const DATE_RANGE_OPTIONS = [
 
 const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
+// Local-calendar date key (YYYY-MM-DD). Using toISOString() here would bucket an
+// evening payment into the next UTC day for IST and similar +ve offsets.
+const localDateKey = (value) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const FeesDashboard = ({ setShowAdminHeader }) => {
   useEffect(() => {
     setShowAdminHeader(false);
@@ -198,7 +206,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
     for (let i = 6; i >= 0; i -= 1) {
       const date = new Date(today);
       date.setDate(today.getDate() - i);
-      const key = date.toISOString().split('T')[0];
+      const key = localDateKey(date);
       result.push({
         key,
         label: date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
@@ -211,7 +219,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
     }, new Map());
     paymentsByDateRange.forEach((payment) => {
       if (!payment.paidOn) return;
-      const paidOnKey = new Date(payment.paidOn).toISOString().split('T')[0];
+      const paidOnKey = localDateKey(payment.paidOn);
       if (seriesMap.has(paidOnKey)) {
         seriesMap.get(paidOnKey).value += Number(payment.amount || 0);
       }
@@ -403,7 +411,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
                   <Calendar className="w-3.5 h-3.5" />
-                  <span>{dateRangeLabel}</span>
+                  <span>Last 7 days</span>
                 </div>
               </div>
               <div className="flex gap-2 items-end h-44">
