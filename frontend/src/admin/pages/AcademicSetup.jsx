@@ -13,6 +13,10 @@ import toast from "react-hot-toast";
 const API_BASE = import.meta.env.VITE_API_URL;
 const ACADEMIC_SETUP_CACHE_PREFIX = "academic_setup_cache_v1";
 const ACADEMIC_SETUP_CACHE_TTL_MS = 5 * 60 * 1000;
+// Display-only relabel — the stored status value is still "archived" (same
+// value the backend already auto-sets when a year is superseded), just
+// shown to admins as "Past Year" instead of "archived".
+const YEAR_STATUS_DISPLAY_LABELS = { archived: "Past Year" };
 const SENIOR_SECONDARY_STREAM_OPTIONS = [
   { value: "science", label: "Science" },
   { value: "commerce", label: "Commerce" },
@@ -2083,15 +2087,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
                           <div>
                             <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               {[
                                 { value: "upcoming", label: "Upcoming" },
                                 { value: "active", label: "Active" },
+                                { value: "archived", label: "Past Year" },
                               ].map((opt) => (
                                 <button
                                   key={opt.value}
                                   type="button"
-                                  onClick={() => setYearForm((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" ? true : (opt.value === "upcoming" ? false : p.isActive) }))}
+                                  onClick={() => setYearForm((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" }))}
                                   className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${yearForm.status === opt.value
                                       ? "border-blue-500 bg-blue-50 text-blue-700"
                                       : "border-gray-200 text-gray-500 hover:bg-gray-50"
@@ -2272,7 +2277,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 }`}
                             >
                               <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : statusDot[statusLabel] || statusDot.upcoming}`} />
-                              {statusLabel}
+                              {YEAR_STATUS_DISPLAY_LABELS[statusLabel] || statusLabel}
                             </span>
                             <div className="relative" ref={isMenuOpen ? yearMenuRef : null}>
                               <button
@@ -2431,7 +2436,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                 };
                                 return (
                                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusStyles[statusLabel] || statusStyles.upcoming}`}>
-                                    {statusLabel}
+                                    {YEAR_STATUS_DISPLAY_LABELS[statusLabel] || statusLabel}
                                   </span>
                                 );
                               })()}
@@ -3512,15 +3517,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-600">Status</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
                   { value: "upcoming", label: "Upcoming" },
                   { value: "active", label: "Active" },
+                  { value: "archived", label: "Past Year" },
                 ].map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setEditingYear((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" ? true : (opt.value === "upcoming" ? false : p.isActive) }))}
+                    onClick={() => setEditingYear((p) => ({ ...p, status: opt.value, isActive: opt.value === "active" }))}
                     className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${(editingYear?.status || (editingYear?.isActive ? "active" : "upcoming")) === opt.value
                         ? "border-blue-500 bg-blue-50 text-blue-700"
                         : "border-gray-200 text-gray-500 hover:bg-gray-50"

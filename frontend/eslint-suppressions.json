@@ -535,7 +535,7 @@
   },
   "src/admin/pages/AcademicSetup.jsx": {
     "no-unused-vars": {
-      "count": 5
+      "count": 4
     },
     "react/no-unescaped-entities": {
       "count": 4

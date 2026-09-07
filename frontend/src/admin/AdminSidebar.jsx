@@ -244,17 +244,17 @@ const AdminSidebar = ({
                         `}
                       >
                         <Icon
-                          size={18}
-                          className={`shrink-0 transition-colors ${isActive ? 'text-yellow-600' : 'text-gray-400 group-hover:text-yellow-500'}`}
+                          size={22}
+                          className={`shrink-0 transition-colors p-1 ${isActive ? 'bg-yellow-500 rounded-full text-white' : 'bg-gray-200 rounded-full text-gray-400 group-hover:text-yellow-500'}`}
                         />
                         {!collapsed && (
                           <span className={`text-sm flex-1 ${isActive ? 'font-bold' : 'font-semibold'}`}>
                             {item.label}
                           </span>
                         )}
-                        {!collapsed && isActive && (
+                        {/* {!collapsed && isActive && (
                           <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />
-                        )}
+                        )} */}
                       </div>
                     )}
                   </NavLink>
