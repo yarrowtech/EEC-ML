@@ -568,8 +568,8 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     doc.save(`fees-report-${currentDate.replace(/\//g, '-')}.pdf`);
   };
 
-  const selectCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
-  const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-300 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
+  const selectCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
+  const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-300 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50';
 
   const STATUS_STYLE = {
     paid:    { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',    dot: 'bg-emerald-500' },
@@ -586,7 +586,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 space-y-5">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 space-y-5" style={{ fontFamily: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif" }}>
 
       {/* ── Page header ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -595,14 +595,14 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             <Wallet className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-gray-900 leading-tight">Fees Collection</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Track invoices, collect payments, and manage fee structures</p>
+            <h1 className="text-xl font-black text-slate-900 leading-tight">Fees Collection</h1>
+            <p className="text-xs text-slate-400 mt-0.5">Track invoices, collect payments, and manage fee structures</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={exportReport}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-all shadow-sm"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all shadow-sm"
           >
             <Download className="w-3.5 h-3.5" />
             Export PDF
@@ -621,10 +621,10 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {CARD_CONFIG.map((card) => (
-          <div key={card.label} className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm flex items-center justify-between gap-3">
+          <div key={card.label} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs text-gray-500 font-medium">{card.label}</p>
-              <p className="text-lg font-black text-gray-900 mt-1">{card.value}</p>
+              <p className="text-xs text-slate-500 font-medium">{card.label}</p>
+              <p className="text-lg font-black text-slate-900 mt-1">{card.value}</p>
             </div>
             <div className={`w-10 h-10 rounded-2xl ${card.bg} flex items-center justify-center shrink-0`}>
               <card.icon className={`w-5 h-5 ${card.ic}`} />
@@ -654,30 +654,30 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       )}
 
       {/* ── Bulk assign section ── */}
-      <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm space-y-5">
+      <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
             <FileText className="w-4 h-4 text-emerald-600" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-gray-900">Assign Fee Structure to Class</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Auto-generate invoices for all students in a class using the active fee structure</p>
+            <h2 className="text-sm font-bold text-slate-900">Assign Fee Structure to Class</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Auto-generate invoices for all students in a class using the active fee structure</p>
           </div>
         </div>
 
         {/* Step pills */}
         <div className="grid grid-cols-3 gap-2">
           {['Select Session / Class / Section', 'Verify Structure', 'Click Assign'].map((step, i) => (
-            <div key={step} className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+            <div key={step} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 text-[10px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-              <span className="text-xs text-gray-600 font-medium">{step}</span>
+              <span className="text-xs text-slate-600 font-medium">{step}</span>
             </div>
           ))}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Session</label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Session</label>
             <select
               value={bulkForm.academicYearId}
               onChange={(e) =>
@@ -697,7 +697,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Class</label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Class</label>
             <select
               value={bulkForm.classId}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, classId: e.target.value, section: '' }))}
@@ -711,7 +711,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Section <span className="normal-case font-normal text-gray-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Section <span className="normal-case font-normal text-slate-400">(optional)</span></label>
             <select
               value={bulkForm.section}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, section: e.target.value }))}
@@ -725,7 +725,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Due Date <span className="normal-case font-normal text-gray-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Due Date <span className="normal-case font-normal text-slate-400">(optional)</span></label>
             <input
               type="date"
               value={bulkForm.dueDate}
@@ -734,7 +734,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             />
           </div>
           <div className="space-y-1.5">
-            <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Invoice Title <span className="normal-case font-normal text-gray-400">(optional)</span></label>
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Invoice Title <span className="normal-case font-normal text-slate-400">(optional)</span></label>
             <input
               value={bulkForm.title}
               onChange={(e) => setBulkForm((prev) => ({ ...prev, title: e.target.value }))}
@@ -749,14 +749,14 @@ const FeesCollection = ({ setShowAdminHeader }) => {
           <div className={`flex-1 min-w-[180px] rounded-xl border px-4 py-2.5 text-xs font-medium ${
             matchedBulkStructure
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-gray-200 bg-gray-50 text-gray-400'
+              : 'border-slate-200 bg-slate-50 text-slate-400'
           }`}>
             <span className="font-semibold">Structure: </span>
             {matchedBulkStructure
               ? `${matchedBulkStructure.name || 'Structure'} · ₹${Number(matchedBulkStructure.totalAmount || 0).toLocaleString('en-IN')}`
               : (bulkForm.classId ? 'No active structure found for this class' : 'Select a class to see matched structure')}
           </div>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
             <span className="font-semibold">Academic Year: </span>
             {selectedBulkAcademicYear?.name || 'Not selected'}
           </div>
@@ -766,7 +766,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-gray-50">
+        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-50">
           <button
             onClick={handleBulkGenerate}
             disabled={bulkLoading || Boolean(bulkAssignDisabledReason)}
@@ -787,13 +787,13 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── Filters + Invoice list ── */}
-      <div className="rounded-3xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-3xl border border-slate-100 bg-white shadow-sm overflow-hidden">
         {/* Filter bar */}
-        <div className="px-6 py-4 border-b border-gray-50 space-y-4">
+        <div className="px-6 py-4 border-b border-slate-50 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <ListFilter className="w-4 h-4 text-gray-400" />
-              <span className="text-sm font-bold text-gray-800">Filters</span>
+              <ListFilter className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-bold text-slate-800">Filters</span>
               {!loading && (
                 <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">
                   {records.length} invoices
@@ -805,7 +805,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 type="checkbox"
                 checked={filters.overdue}
                 onChange={(e) => setFilters((prev) => ({ ...prev, overdue: e.target.checked }))}
-                className="h-3.5 w-3.5 rounded border-gray-300 text-red-500 focus:ring-red-400"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-red-500 focus:ring-red-400"
               />
               Overdue only
             </label>
@@ -836,7 +836,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               <option value="paid">Paid</option>
             </select>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 value={filters.search}
                 onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
@@ -851,19 +851,19 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>
-              <tr className="bg-gray-50/80 border-b border-gray-100">
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Student</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Adm. No</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Class</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Sec</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Total Fee</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Paid</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Outstanding</th>
-                <th className="px-5 py-3 text-center text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-5 py-3 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
+              <tr className="bg-slate-50/80 border-b border-slate-100">
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Student</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Adm. No</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Class</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Sec</th>
+                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Fee</th>
+                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Paid</th>
+                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Outstanding</th>
+                <th className="px-5 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-50">
               {loading && (
                 <tr>
                   <td colSpan={9} className="px-5 py-16 text-center">
@@ -871,7 +871,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                       <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center">
                         <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
                       </div>
-                      <p className="text-sm text-gray-400">Loading fee invoices…</p>
+                      <p className="text-sm text-slate-400">Loading fee invoices…</p>
                     </div>
                   </td>
                 </tr>
@@ -880,11 +880,11 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 <tr>
                   <td colSpan={9} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-14 h-14 rounded-3xl bg-gray-50 border border-gray-100 flex items-center justify-center">
-                        <FileText className="w-7 h-7 text-gray-200" />
+                      <div className="w-14 h-14 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                        <FileText className="w-7 h-7 text-slate-200" />
                       </div>
-                      <p className="text-sm font-semibold text-gray-500">No invoices found</p>
-                      <p className="text-xs text-gray-400">Try adjusting the filters above.</p>
+                      <p className="text-sm font-semibold text-slate-500">No invoices found</p>
+                      <p className="text-xs text-slate-400">Try adjusting the filters above.</p>
                     </div>
                   </td>
                 </tr>
@@ -893,22 +893,22 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 const ss = statusStyle(record.status);
                 const initials = (record.studentName || 'S').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
                 return (
-                  <tr key={record.invoiceId} className="hover:bg-gray-50/60 transition-colors">
+                  <tr key={record.invoiceId} className="hover:bg-slate-50/60 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center shrink-0">
                           {initials}
                         </div>
-                        <span className="text-sm font-semibold text-gray-800">{record.studentName || '—'}</span>
+                        <span className="text-sm font-semibold text-slate-800">{record.studentName || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500">{record.admissionNumber || '—'}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{record.className || '—'}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{record.section || '—'}</td>
-                    <td className="px-5 py-3.5 text-right text-sm font-semibold text-gray-800">{formatCurrency(record.totalAmount)}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-500">{record.admissionNumber || '—'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{record.className || '—'}</td>
+                    <td className="px-5 py-3.5 text-sm text-slate-600">{record.section || '—'}</td>
+                    <td className="px-5 py-3.5 text-right text-sm font-semibold text-slate-800">{formatCurrency(record.totalAmount)}</td>
                     <td className="px-5 py-3.5 text-right text-sm text-emerald-600 font-medium">{formatCurrency(record.paidAmount)}</td>
                     <td className="px-5 py-3.5 text-right text-sm font-bold text-red-500">
-                      {Number(record.balanceAmount || 0) > 0 ? formatCurrency(record.balanceAmount) : <span className="text-gray-300">—</span>}
+                      {Number(record.balanceAmount || 0) > 0 ? formatCurrency(record.balanceAmount) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5 text-center">
                       <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${ss.bg}`}>
@@ -920,7 +920,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                       <div className="inline-flex items-center gap-2">
                         <button
                           onClick={() => handleViewDetails(record)}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all"
                         >
                           <Eye className="h-3 w-3" />
                           Details
@@ -949,14 +949,14 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={handleCloseOnlinePayment} />
           <div className="relative w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
                   <CreditCard className="w-4.5 h-4.5 text-indigo-600" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-900">Collect Online Payment</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <h3 className="text-base font-bold text-slate-900">Collect Online Payment</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
                     {onlinePaymentModal.record?.studentName || 'Student'} · {onlinePaymentModal.record?.className || ''}{onlinePaymentModal.record?.section ? ` (${onlinePaymentModal.record.section})` : ''}
                   </p>
                 </div>
@@ -965,7 +965,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 type="button"
                 onClick={handleCloseOnlinePayment}
                 disabled={onlinePaymentLoading}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-50"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -976,7 +976,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 <span className="text-sm font-black text-amber-800">{formatCurrency(onlinePaymentModal.record?.balanceAmount || 0)}</span>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Payment Amount</label>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Payment Amount</label>
                 <input
                   type="number"
                   min="0"
@@ -988,7 +988,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Notes <span className="normal-case font-normal text-gray-400">(optional)</span></label>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Notes <span className="normal-case font-normal text-slate-400">(optional)</span></label>
                 <input
                   type="text"
                   value={onlinePaymentModal.notes}
@@ -998,12 +998,12 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                 />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={handleCloseOnlinePayment}
                 disabled={onlinePaymentLoading}
-                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all disabled:opacity-60"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-60"
               >
                 Cancel
               </button>

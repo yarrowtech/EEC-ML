@@ -21,6 +21,13 @@ const DATE_RANGE_OPTIONS = [
   { value: 'all', label: 'All Time' },
 ];
 
+const FONT_STACK = "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+// Glass surface presets — frosted, semi-transparent, soft-bordered.
+const GLASS_CARD = 'rounded-2xl border border-white/70 bg-white/60 backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_30px_rgba(15,23,42,0.06)]';
+const GLASS_INNER = 'rounded-xl border border-white/70 bg-white/50 backdrop-blur-md';
+const GLASS_INPUT = 'text-xs border border-white/70 rounded-xl px-3 py-2 bg-white/50 backdrop-blur-md focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 focus:outline-none transition-all';
+
 const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 // Local-calendar date key (YYYY-MM-DD). Using toISOString() here would bucket an
@@ -187,10 +194,10 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
   const getStatusColor = (status) =>
     status === 'Paid'
-      ? 'bg-emerald-100 text-emerald-700'
+      ? 'bg-emerald-100/80 text-emerald-700'
       : status === 'Partial'
-        ? 'bg-amber-100 text-amber-700'
-        : 'bg-slate-100 text-slate-600';
+        ? 'bg-amber-100/80 text-amber-700'
+        : 'bg-slate-100/80 text-slate-600';
 
   const openPaymentDetails = (payment) => {
     setSelectedPayment(payment);
@@ -299,46 +306,49 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center" style={{ fontFamily: FONT_STACK }}>
         <div className="text-center text-slate-600">
-          <div className="animate-spin h-10 w-10 border-2 border-indigo-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-sm text-slate-500 mt-2">Loading the latest fee analytics...</p>
+          <div className="animate-spin h-10 w-10 border-2 border-violet-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-sm text-[#64748b] mt-2">Loading the latest fee analytics...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#f1f5f9] relative" style={{ fontFamily: FONT_STACK }}>
+      {/* Ambient background accents */}
+      <div className="pointer-events-none fixed top-[-10%] right-[-5%] w-96 h-96 bg-violet-300/20 rounded-full blur-3xl" />
+      <div className="pointer-events-none fixed bottom-[-10%] left-[-5%] w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl" />
 
-      {/* ── Gradient Header ── */}
-      <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl pointer-events-none" />
-        <div className="relative max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm shrink-0">
-              <IndianRupee className="h-5 w-5 text-white" />
+      {/* ── Header ── */}
+      <div className="relative px-4 sm:px-6 pt-6 pb-2 max-w-7xl mx-auto">
+        <div className={`${GLASS_CARD} px-6 py-5 animate-in fade-in slide-in-from-bottom-2 duration-500`}>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-violet-500/10 border border-violet-300/40 flex items-center justify-center shrink-0">
+                <IndianRupee className="h-5 w-5 text-violet-600" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[#8e9aaf] uppercase tracking-widest">Fees Control Center</p>
+                <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">Fees Dashboard</h1>
+                <p className="text-sm text-[#64748b] mt-0.5">Monitor collection health, overdue invoices, and cash flow trends.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Fees Control Center</p>
-              <h1 className="text-xl font-bold text-white tracking-tight">Fees Dashboard</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Monitor collection health, overdue invoices, and cash flow trends.</p>
-            </div>
+            <button
+              onClick={generateReport}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-300/40 text-violet-700 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-0.5"
+            >
+              <Download size={15} />
+              Export Snapshot
+            </button>
           </div>
-          <button
-            onClick={generateReport}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-sm font-semibold transition-colors backdrop-blur-sm"
-          >
-            <Download size={15} />
-            Export Snapshot
-          </button>
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-6 max-w-7xl mx-auto">
+      <div className="relative px-4 sm:px-6 py-6 max-w-7xl mx-auto">
         {error && (
-          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
+          <div className="mb-5 rounded-xl border border-red-200/70 bg-red-50/70 backdrop-blur-md text-red-700 px-4 py-3 text-sm">
             {error}
           </div>
         )}
@@ -351,18 +361,16 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
               value: formatCurrency(totals.totalOutstanding),
               sub: 'Pending across all records',
               icon: Clock,
-              iconBg: 'bg-amber-100',
+              iconBg: 'bg-[#fffbeb]',
               iconColor: 'text-amber-600',
-              border: 'border-l-amber-400',
             },
             {
               label: 'Overdue Invoices',
               value: `${totals.overdueInvoices} Invoices`,
               sub: 'Require immediate follow-up',
               icon: AlertCircle,
-              iconBg: 'bg-red-100',
+              iconBg: 'bg-red-50',
               iconColor: 'text-red-600',
-              border: 'border-l-red-400',
               subColor: 'text-red-500',
             },
             {
@@ -370,29 +378,31 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
               value: `${totals.totalStudents.toLocaleString()} Students`,
               sub: 'Linked to fee records',
               icon: School,
-              iconBg: 'bg-blue-100',
-              iconColor: 'text-blue-600',
-              border: 'border-l-blue-400',
+              iconBg: 'bg-violet-500/10',
+              iconColor: 'text-violet-600',
             },
             {
               label: 'Total Collected',
               value: formatCurrency(totals.totalCollected),
               sub: 'Amount received so far',
               icon: CheckCircle,
-              iconBg: 'bg-emerald-100',
+              iconBg: 'bg-emerald-50',
               iconColor: 'text-emerald-600',
-              border: 'border-l-emerald-400',
             },
-          ].map((card) => (
-            <div key={card.label} className={`bg-white rounded-2xl border border-slate-200 border-l-4 ${card.border} shadow-sm p-5`}>
+          ].map((card, idx) => (
+            <div
+              key={card.label}
+              className={`${GLASS_CARD} p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(15,23,42,0.09)] animate-in fade-in slide-in-from-bottom-2`}
+              style={{ animationDelay: `${idx * 60}ms`, animationDuration: '500ms', animationFillMode: 'both' }}
+            >
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{card.label}</p>
+                <p className="text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide">{card.label}</p>
                 <div className={`w-9 h-9 flex items-center justify-center rounded-xl ${card.iconBg}`}>
                   <card.icon className={`w-4.5 h-4.5 ${card.iconColor}`} size={18} />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-slate-900">{card.value}</p>
-              <p className={`text-xs mt-1 ${card.subColor || 'text-slate-400'}`}>{card.sub}</p>
+              <p className="text-2xl font-bold text-[#0f172a]">{card.value}</p>
+              <p className={`text-xs mt-1 ${card.subColor || 'text-[#8e9aaf]'}`}>{card.sub}</p>
             </div>
           ))}
         </div>
@@ -401,15 +411,15 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
           <div className="xl:col-span-2 space-y-5">
 
             {/* ── Collection Trend ── */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+            <div className={`${GLASS_CARD} p-5 animate-in fade-in slide-in-from-bottom-2 duration-500`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                    <TrendingUp size={16} className="text-indigo-500" /> Collection Trend
+                  <h2 className="text-base font-semibold text-[#0f172a] flex items-center gap-2">
+                    <TrendingUp size={16} className="text-violet-500" /> Collection Trend
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Daily collections over the last 7 days</p>
+                  <p className="text-xs text-[#8e9aaf] mt-0.5">Daily collections over the last 7 days</p>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+                <div className={`${GLASS_INNER} flex items-center gap-2 text-xs text-[#64748b] px-3 py-1.5`}>
                   <Calendar className="w-3.5 h-3.5" />
                   <span>Last 7 days</span>
                 </div>
@@ -419,13 +429,13 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                   <div key={entry.key} className="flex flex-col items-center w-full group">
                     <div className="w-full flex-1 flex items-end">
                       <div
-                        className="w-full rounded-t-lg bg-linear-to-t from-indigo-600 to-indigo-400 shadow-sm transition-all group-hover:from-indigo-700 group-hover:to-indigo-500"
+                        className="w-full rounded-t-lg bg-linear-to-t from-violet-600 to-violet-400 shadow-sm transition-all group-hover:from-violet-700 group-hover:to-violet-500"
                         style={{ height: `${Math.max((entry.value / peakCollection) * 100, entry.value > 0 ? 4 : 0)}%`, minHeight: entry.value > 0 ? '4px' : '0' }}
                       />
                     </div>
                     <div className="mt-2 text-center">
                       <p className="text-[11px] font-semibold text-slate-700">{formatCurrency(entry.value)}</p>
-                      <p className="text-[10px] text-slate-400">{entry.label}</p>
+                      <p className="text-[10px] text-[#8e9aaf]">{entry.label}</p>
                     </div>
                   </div>
                 ))}
@@ -433,20 +443,20 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
             </div>
 
             {/* ── Recent Payments ── */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100">
+            <div className={`${GLASS_CARD} overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500`}>
+              <div className="px-5 py-4 border-b border-white/60">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                      <CreditCard size={16} className="text-indigo-500" /> Recent Payments
+                    <h2 className="text-base font-semibold text-[#0f172a] flex items-center gap-2">
+                      <CreditCard size={16} className="text-violet-500" /> Recent Payments
                     </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Payments logged from fee invoices</p>
+                    <p className="text-xs text-[#8e9aaf] mt-0.5">Payments logged from fee invoices</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <select
                       value={dateRange}
                       onChange={(e) => setDateRange(e.target.value)}
-                      className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
+                      className={GLASS_INPUT}
                     >
                       {DATE_RANGE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
@@ -454,7 +464,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                     </select>
                     <button
                       onClick={generateReport}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-xl hover:bg-violet-700 transition-all duration-200 ease-out hover:-translate-y-0.5"
                     >
                       <Download size={13} /> Report
                     </button>
@@ -463,13 +473,13 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       placeholder="Search student, username, transaction ID..."
-                      className="w-full text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
+                      className={`${GLASS_INPUT} w-full pl-8`}
                     />
                   </div>
                   <select
@@ -479,7 +489,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                       setSelectedClass('');
                       setSelectedSection('');
                     }}
-                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none"
+                    className={GLASS_INPUT}
                   >
                     <option value="">All Sessions</option>
                     {sessionOptions.map((option) => (
@@ -493,7 +503,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                       setSelectedSection('');
                     }}
                     disabled={!selectedSession && sessionOptions.length > 0}
-                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                    className={`${GLASS_INPUT} disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <option value="">All Classes</option>
                     {classOptions.map((option) => (
@@ -504,7 +514,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                     value={selectedSection}
                     onChange={(e) => setSelectedSection(e.target.value)}
                     disabled={!selectedClass && classOptions.length > 0}
-                    className="text-xs border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                    className={`${GLASS_INPUT} disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <option value="">All Sections</option>
                     {sectionOptions.map((option) => (
@@ -517,32 +527,32 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
               {filteredPayments.length ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50">
+                    <thead className="bg-white/40">
                       <tr>
                         {['Student', 'Class', 'Amount', 'Paid On', 'Method', 'Status'].map((h) => (
-                          <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
+                          <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-white/60">
                       {filteredPayments.map((payment, idx) => (
                         <tr
                           key={`${payment.studentName}-${payment.transactionId || idx}`}
                           onClick={() => openPaymentDetails(payment)}
-                          className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                          className="hover:bg-white/50 transition-colors cursor-pointer"
                         >
                           <td className="px-4 py-3">
                             <p className="font-semibold text-slate-800 text-sm">{payment.studentName || '—'}</p>
-                            <p className="text-[11px] text-slate-400">{payment.username || '—'}</p>
+                            <p className="text-[11px] text-[#8e9aaf]">{payment.username || '—'}</p>
                           </td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">
+                          <td className="px-4 py-3 text-[#64748b] text-xs">
                             {payment.className || '—'}{payment.section ? ` · ${payment.section}` : ''}
                           </td>
-                          <td className="px-4 py-3 font-bold text-slate-900 text-sm">{formatCurrency(payment.amount)}</td>
-                          <td className="px-4 py-3 text-slate-500 text-xs">
+                          <td className="px-4 py-3 font-bold text-[#0f172a] text-sm">{formatCurrency(payment.amount)}</td>
+                          <td className="px-4 py-3 text-[#64748b] text-xs">
                             {payment.paidOn ? new Date(payment.paidOn).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                           </td>
-                          <td className="px-4 py-3 text-slate-500 text-xs capitalize">{payment.method || '—'}</td>
+                          <td className="px-4 py-3 text-[#64748b] text-xs capitalize">{payment.method || '—'}</td>
                           <td className="px-4 py-3">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getStatusColor(payment.status)}`}>
                               {payment.status || 'Paid'}
@@ -554,9 +564,9 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                   </table>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 gap-2">
-                  <CreditCard size={32} className="text-slate-200" />
-                  <p className="text-sm text-slate-400">No recent payments match your search.</p>
+                <div className="flex flex-col items-center justify-center py-12 gap-2 border-t border-dashed border-slate-300 mx-5 mb-5 rounded-xl">
+                  <CreditCard size={28} className="text-slate-300 mt-4" />
+                  <p className="text-sm text-[#8e9aaf] mb-4">No recent payments match your search.</p>
                 </div>
               )}
             </div>
@@ -566,14 +576,14 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
           <div className="space-y-5">
 
             {/* Enrollment by Class */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div className={`${GLASS_CARD} overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500`}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/60">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-900">Enrollment by Class</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Students with fee invoices</p>
+                  <h2 className="text-base font-semibold text-[#0f172a]">Enrollment by Class</h2>
+                  <p className="text-xs text-[#8e9aaf] mt-0.5">Students with fee invoices</p>
                 </div>
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <Users className="w-4 h-4 text-indigo-500" />
+                <div className="w-8 h-8 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                  <Users className="w-4 h-4 text-violet-500" />
                 </div>
               </div>
               <div className="px-5 py-4">
@@ -583,11 +593,11 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                       <div key={program.label} className="flex items-center justify-between">
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-slate-700 truncate">{program.label}</p>
-                          <p className="text-[11px] text-slate-400">{program.students} students</p>
+                          <p className="text-[11px] text-[#8e9aaf]">{program.students} students</p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${program.percentage}%` }} />
+                          <div className="w-24 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                            <div className="h-full bg-violet-400 rounded-full" style={{ width: `${program.percentage}%` }} />
                           </div>
                           <span className="text-xs font-bold text-slate-600 w-8 text-right">{program.percentage}%</span>
                         </div>
@@ -595,19 +605,21 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 py-4 text-center">No enrollment data available.</p>
+                  <div className="border border-dashed border-slate-300 rounded-xl py-6 text-center">
+                    <p className="text-xs text-[#8e9aaf]">No enrollment data available.</p>
+                  </div>
                 )}
               </div>
             </div>
 
             {/* Outstanding Overview */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div className={`${GLASS_CARD} overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500`}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/60">
                 <div>
-                  <h2 className="text-base font-semibold text-slate-900">Outstanding Overview</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Top classes with pending dues</p>
+                  <h2 className="text-base font-semibold text-[#0f172a]">Outstanding Overview</h2>
+                  <p className="text-xs text-[#8e9aaf] mt-0.5">Top classes with pending dues</p>
                 </div>
-                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-[#fffbeb] flex items-center justify-center">
                   <AlertCircle className="w-4 h-4 text-amber-500" />
                 </div>
               </div>
@@ -620,20 +632,22 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                           <p className="text-xs font-semibold text-slate-700">{segment.label}</p>
                           <span className="text-xs font-bold text-amber-600">{segment.percentage}%</span>
                         </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                        <div className="w-full bg-white/60 rounded-full h-1.5">
                           <div
                             className="bg-linear-to-r from-amber-400 to-orange-400 h-1.5 rounded-full transition-all"
                             style={{ width: `${segment.percentage}%` }}
                           />
                         </div>
                         {segment.amount !== undefined && (
-                          <p className="text-[11px] text-slate-400 mt-0.5">{formatCurrency(segment.amount)}</p>
+                          <p className="text-[11px] text-[#8e9aaf] mt-0.5">{formatCurrency(segment.amount)}</p>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 py-4 text-center">No outstanding data to display.</p>
+                  <div className="border border-dashed border-slate-300 rounded-xl py-6 text-center">
+                    <p className="text-xs text-[#8e9aaf]">No outstanding data to display.</p>
+                  </div>
                 )}
               </div>
             </div>
@@ -643,18 +657,19 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
       {selectedPayment ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-3 py-3 sm:px-4 sm:py-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-3 py-3 sm:px-4 sm:py-4"
           onClick={closePaymentDetails}
         >
           <div
-            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl"
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/80 backdrop-blur-2xl backdrop-saturate-150 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+            style={{ fontFamily: FONT_STACK }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-white/60 px-6 py-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-500">Payment Details</p>
-                <h3 className="mt-1 text-xl font-bold text-slate-900">{selectedPayment.studentName || 'Student'}</h3>
-                <p className="text-sm text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">Payment Details</p>
+                <h3 className="mt-1 text-xl font-bold text-[#0f172a]">{selectedPayment.studentName || 'Student'}</h3>
+                <p className="text-sm text-[#64748b]">
                   {selectedPayment.className || '—'}
                   {selectedPayment.section ? ` · ${selectedPayment.section}` : ''}
                   {selectedPayment.session ? ` · ${selectedPayment.session}` : ''}
@@ -663,7 +678,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
               <button
                 type="button"
                 onClick={closePaymentDetails}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-white/50 text-slate-500 hover:bg-white/80 hover:text-slate-700 transition-all duration-200 ease-out"
                 aria-label="Close payment details"
               >
                 <X size={18} />
@@ -687,45 +702,45 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                   ['Gateway Payment ID', selectedPayment.gatewayPaymentId || '—'],
                   ['Gateway Order ID', selectedPayment.gatewayOrderId || '—'],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3 sm:rounded-2xl sm:px-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-900 break-words leading-5">{value}</p>
+                  <div key={label} className={`${GLASS_INNER} px-3 py-3 sm:px-4`}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">{label}</p>
+                    <p className="mt-1 text-sm font-semibold text-[#0f172a] break-words leading-5">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="space-y-4 rounded-2xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4 sm:rounded-3xl sm:p-5">
+              <div className={`${GLASS_INNER} space-y-4 p-4 sm:p-5`}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Payment Status</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">{selectedPayment.status || 'Paid'}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8e9aaf]">Payment Status</p>
+                    <p className="mt-1 text-lg font-bold text-[#0f172a]">{selectedPayment.status || 'Paid'}</p>
                   </div>
                   <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(selectedPayment.status)}`}>
                     {selectedPayment.status || 'Paid'}
                   </span>
                 </div>
 
-                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Notes</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 whitespace-pre-line">
+                <div className="rounded-xl bg-white/60 p-4 border border-white/70">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">Notes</p>
+                  <p className="mt-2 text-sm leading-6 text-[#64748b] whitespace-pre-line">
                     {selectedPayment.notes || 'No additional notes available for this payment.'}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-white p-4 shadow-sm border border-slate-100">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Summary</p>
-                  <div className="mt-3 space-y-2 text-sm text-slate-600">
+                <div className="rounded-xl bg-white/60 p-4 border border-white/70">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">Summary</p>
+                  <div className="mt-3 space-y-2 text-sm text-[#64748b]">
                     <div className="flex items-center justify-between gap-3">
                       <span>Paid amount</span>
-                      <span className="font-semibold text-slate-900">{formatCurrency(selectedPayment.amount)}</span>
+                      <span className="font-semibold text-[#0f172a]">{formatCurrency(selectedPayment.amount)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>Receipt date</span>
-                      <span className="font-semibold text-slate-900">{selectedPayment.paidOnLabel || '—'}</span>
+                      <span className="font-semibold text-[#0f172a]">{selectedPayment.paidOnLabel || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span>Transaction reference</span>
-                      <span className="font-semibold text-slate-900">{selectedPayment.transactionId || '—'}</span>
+                      <span className="font-semibold text-[#0f172a]">{selectedPayment.transactionId || '—'}</span>
                     </div>
                   </div>
                 </div>

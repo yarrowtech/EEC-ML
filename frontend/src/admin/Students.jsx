@@ -207,6 +207,7 @@ const Students = ({ setShowAdminHeader }) => {
   });
   // Loader only on a genuine cold start (no cached list to hydrate from).
   const [studentsLoading, setStudentsLoading] = useState(() => !readStudentsCache());
+  const [studentsLoadError, setStudentsLoadError] = useState(null);
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -727,7 +728,10 @@ const Students = ({ setShowAdminHeader }) => {
       }
     }
     // Loader only when there's nothing to show yet.
-    if (showLoader && !servedFromCache) setStudentsLoading(true);
+    if (showLoader && !servedFromCache) {
+      setStudentsLoading(true);
+      if (_attempt === 0) setStudentsLoadError(null);
+    }
 
     try {
     const [studentsResult, parentsResult, invoicesResult] = await Promise.allSettled([
@@ -737,7 +741,7 @@ const Students = ({ setShowAdminHeader }) => {
           "Content-Type": "application/json",
           authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-      }).then(async (res) => ({ ok: res.ok, data: res.ok ? await res.json() : [] })),
+      }).then(async (res) => ({ ok: res.ok, status: res.status, data: res.ok ? await res.json() : [] })),
       fetchParents(),
       fetch(`${API_BASE}/api/fees/invoices`, {
         method: "GET",
@@ -759,8 +763,8 @@ const Students = ({ setShowAdminHeader }) => {
     const studentsOk =
       studentsResult.status === "fulfilled" && studentsResult.value?.ok === true;
     if (!studentsOk) {
-      // finally keeps the loader up (studentsApplied stays false). Auto-retry
-      // once so a transient blip on first load self-heals without a manual refresh.
+      // Auto-retry a few times so a transient blip on first load self-heals
+      // without a manual refresh.
       if (
         showLoader &&
         !servedFromCache &&
@@ -772,6 +776,22 @@ const Students = ({ setShowAdminHeader }) => {
             refreshStudents({ showLoader: true, _attempt: _attempt + 1 }).catch(console.error);
           }
         }, 3000);
+      } else if (
+        showLoader &&
+        !servedFromCache &&
+        refreshRequestTokenRef.current === requestToken
+      ) {
+        // Retries exhausted — stop showing an infinite spinner and surface
+        // a real error instead of hanging forever.
+        const status = studentsResult.status === "fulfilled" ? studentsResult.value?.status : null;
+        setStudentsLoading(false);
+        setStudentsLoadError(
+          status === 401
+            ? "Your session has expired. Please log in again."
+            : status === 403
+              ? "You don't have access to view students on this organization."
+              : "Failed to load students. Please try again."
+        );
       }
       return;
     }
@@ -836,6 +856,7 @@ const Students = ({ setShowAdminHeader }) => {
         };
       });
       studentsApplied = true;
+      setStudentsLoadError(null);
       setStudentData(withFees);
       try {
         if (withFees.length > 0) {
@@ -899,6 +920,7 @@ const Students = ({ setShowAdminHeader }) => {
     });
 
     studentsApplied = true;
+    setStudentsLoadError(null);
     setStudentData(enriched);
     try {
       if (enriched.length > 0) {
@@ -4122,7 +4144,22 @@ const Students = ({ setShowAdminHeader }) => {
                     <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
                   </colgroup>
                   <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
-                    {studentsLoading && studentData.length === 0 ? (
+                    {studentsLoadError && studentData.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-4 pt-16 pb-6">
+                          <div className="flex flex-col items-center justify-center gap-3">
+                            <p className="text-sm font-semibold text-red-600">{studentsLoadError}</p>
+                            <button
+                              type="button"
+                              onClick={() => refreshStudents({ showLoader: true }).catch(console.error)}
+                              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : studentsLoading && studentData.length === 0 ? (
                       <>
                         <tr>
                           <td colSpan={6} className="px-4 pt-16 pb-6">
