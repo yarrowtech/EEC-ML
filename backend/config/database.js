@@ -24,7 +24,7 @@ const fixChatThreadIndexes = async () => {
         name: 'unique_group_thread_key',
         partialFilterExpression: {
           threadType: 'group',
-          groupKey: { $exists: true, $type: 'string', $ne: '' },
+          groupKey: { $exists: true, $type: 'string', $gt: '' },
         },
       }
     );
