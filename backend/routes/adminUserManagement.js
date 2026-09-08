@@ -417,6 +417,7 @@ router.post('/bulk-create-users', adminAuth, async (req, res) => {
     }
   }
 
+  if (role === 'teacher') invalidateTeacherDirectoryCaches();
   res.status(200).json(results);
 });
 
@@ -1123,6 +1124,78 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
   }
 });
 
+// ── Teacher bulk delete + archive (single + bulk). Unlike the student
+// delete/archive flow, these run synchronously — teacher counts are small
+// enough that a background job queue isn't needed, so these complete
+// instantly instead of requiring the caller to poll a job status endpoint.
+// The "bulk"/"archived" routes are registered before the "/:id" and
+// "/:id/..." ones below so "bulk" is never matched as an :id value. ──
+//
+// Bulk delete also runs as a background job (like the bulk upload above) so
+// the request returns instantly and the frontend can poll real per-batch
+// server progress instead of waiting on a single blocking deleteMany call.
+const teacherBulkDeleteJobs = new Map();
+const TEACHER_BULK_DELETE_JOB_TTL_MS = 15 * 60 * 1000;
+const TEACHER_BULK_DELETE_BATCH = 100;
+
+const runTeacherBulkDeleteJob = async (jobId, { validIds, filter }) => {
+  const job = teacherBulkDeleteJobs.get(jobId);
+  if (!job) return;
+  try {
+    for (let i = 0; i < validIds.length; i += TEACHER_BULK_DELETE_BATCH) {
+      const chunk = validIds.slice(i, i + TEACHER_BULK_DELETE_BATCH);
+      const result = await TeacherUser.deleteMany({ ...filter, _id: { $in: chunk } });
+      job.deleted += result?.deletedCount || 0;
+      job.processed = Math.min(validIds.length, i + chunk.length);
+    }
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Bulk delete failed';
+  } finally {
+    invalidateTeacherDirectoryCaches();
+    job.finishedAt = Date.now();
+    setTimeout(() => teacherBulkDeleteJobs.delete(jobId), TEACHER_BULK_DELETE_JOB_TTL_MS).unref?.();
+  }
+};
+
+router.delete('/teachers/bulk', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const validIds = ids.filter((id) => mongoose.isValidObjectId(id));
+    if (!validIds.length) {
+      return res.status(400).json({ error: 'No valid teacher ids provided' });
+    }
+    const filter = buildScopedFilter(req);
+
+    const jobId = require('crypto').randomUUID();
+    teacherBulkDeleteJobs.set(jobId, {
+      status: 'processing',
+      total: validIds.length,
+      processed: 0,
+      deleted: 0,
+      createdAt: Date.now(),
+    });
+
+    runTeacherBulkDeleteJob(jobId, { validIds, filter }).catch((err) => {
+      const job = teacherBulkDeleteJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; job.finishedAt = Date.now(); }
+    });
+
+    return res.status(202).json({ jobId, total: validIds.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to delete teachers' });
+  }
+});
+
+router.get('/teachers/bulk/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  const job = teacherBulkDeleteJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
+});
+
 router.delete('/teachers/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
@@ -1132,13 +1205,6 @@ router.delete('/teachers/:id', adminAuth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-// ── Teacher archive (single + bulk). Unlike the student archive flow, this
-// runs synchronously — teacher counts are small enough that a background
-// job queue isn't needed, so these complete instantly instead of requiring
-// the caller to poll a job status endpoint. The "bulk"/"archived" routes are
-// registered before the "/:id/..." ones below so "bulk" is never matched as
-// an :id value. ──
 router.get('/teachers/archived', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
@@ -1154,6 +1220,38 @@ router.get('/teachers/archived', adminAuth, async (req, res) => {
   }
 });
 
+// Bulk archive/unarchive also run as background jobs (like bulk upload and
+// bulk delete above) so the request returns instantly and the frontend can
+// poll real per-batch server progress instead of waiting on a single
+// blocking updateMany call.
+const teacherBulkArchiveJobs = new Map();
+const TEACHER_BULK_ARCHIVE_JOB_TTL_MS = 15 * 60 * 1000;
+const TEACHER_BULK_ARCHIVE_BATCH = 100;
+
+const runTeacherBulkArchiveJob = async (jobId, { validIds, filter, archive }) => {
+  const job = teacherBulkArchiveJobs.get(jobId);
+  if (!job) return;
+  try {
+    const update = archive
+      ? { $set: { isArchived: true, archivedAt: new Date() } }
+      : { $set: { isArchived: false }, $unset: { archivedAt: '' } };
+    for (let i = 0; i < validIds.length; i += TEACHER_BULK_ARCHIVE_BATCH) {
+      const chunk = validIds.slice(i, i + TEACHER_BULK_ARCHIVE_BATCH);
+      const result = await TeacherUser.updateMany({ ...filter, _id: { $in: chunk } }, update);
+      job.modified += result?.modifiedCount || 0;
+      job.processed = Math.min(validIds.length, i + chunk.length);
+    }
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Bulk update failed';
+  } finally {
+    invalidateTeacherDirectoryCaches();
+    job.finishedAt = Date.now();
+    setTimeout(() => teacherBulkArchiveJobs.delete(jobId), TEACHER_BULK_ARCHIVE_JOB_TTL_MS).unref?.();
+  }
+};
+
 router.patch('/teachers/bulk/archive', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
@@ -1163,13 +1261,32 @@ router.patch('/teachers/bulk/archive', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid teacher ids provided' });
     }
     const filter = buildScopedFilter(req);
-    filter._id = { $in: validIds };
-    const result = await TeacherUser.updateMany(filter, { $set: { isArchived: true, archivedAt: new Date() } });
-    invalidateTeacherDirectoryCaches();
-    res.json({ archived: result.modifiedCount || 0 });
+
+    const jobId = require('crypto').randomUUID();
+    teacherBulkArchiveJobs.set(jobId, {
+      status: 'processing',
+      total: validIds.length,
+      processed: 0,
+      modified: 0,
+      createdAt: Date.now(),
+    });
+
+    runTeacherBulkArchiveJob(jobId, { validIds, filter, archive: true }).catch((err) => {
+      const job = teacherBulkArchiveJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; job.finishedAt = Date.now(); }
+    });
+
+    return res.status(202).json({ jobId, total: validIds.length });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to archive teachers' });
   }
+});
+
+router.get('/teachers/bulk/archive/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  const job = teacherBulkArchiveJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ ...job, archived: job.modified });
 });
 
 router.patch('/teachers/bulk/unarchive', adminAuth, async (req, res) => {
@@ -1181,13 +1298,32 @@ router.patch('/teachers/bulk/unarchive', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid teacher ids provided' });
     }
     const filter = buildScopedFilter(req);
-    filter._id = { $in: validIds };
-    const result = await TeacherUser.updateMany(filter, { $set: { isArchived: false }, $unset: { archivedAt: '' } });
-    invalidateTeacherDirectoryCaches();
-    res.json({ unarchived: result.modifiedCount || 0 });
+
+    const jobId = require('crypto').randomUUID();
+    teacherBulkArchiveJobs.set(jobId, {
+      status: 'processing',
+      total: validIds.length,
+      processed: 0,
+      modified: 0,
+      createdAt: Date.now(),
+    });
+
+    runTeacherBulkArchiveJob(jobId, { validIds, filter, archive: false }).catch((err) => {
+      const job = teacherBulkArchiveJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; job.finishedAt = Date.now(); }
+    });
+
+    return res.status(202).json({ jobId, total: validIds.length });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to unarchive teachers' });
   }
+});
+
+router.get('/teachers/bulk/unarchive/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  const job = teacherBulkArchiveJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ ...job, unarchived: job.modified });
 });
 
 router.patch('/teachers/:id/archive', adminAuth, async (req, res) => {
@@ -1413,6 +1549,121 @@ const runBulkDeleteJob = async (jobId, { studentDocs, campusId }) => {
     setTimeout(() => bulkDeleteJobs.delete(jobId), BULK_DELETE_JOB_TTL_MS).unref?.();
   }
 };
+
+// ── Teacher bulk upload runs as a background job (like the student bulk
+// import/delete jobs above) so the request returns instantly with a jobId
+// instead of holding the connection open for the whole row-by-row save loop,
+// and the frontend can show real per-row server progress instead of a fake
+// timer. ──
+const teacherBulkUploadJobs = new Map();
+const TEACHER_BULK_UPLOAD_JOB_TTL_MS = 15 * 60 * 1000;
+
+const runTeacherBulkUploadJob = async (jobId, { users, resolvedSchoolId, campusContext, adminUsername }) => {
+  const job = teacherBulkUploadJobs.get(jobId);
+  if (!job) return;
+  try {
+    const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
+    const teacherPrefix = await getTeacherPrefix({ adminUsername, schoolId: resolvedSchoolId });
+    const seqState = await getNextTeacherSequenceByPrefix(resolvedSchoolId, teacherPrefix);
+    const teacherSequenceState = { schoolCode: teacherPrefix, nextSequence: seqState.nextSequence };
+
+    for (let i = 0; i < users.length; i += 1) {
+      const user = users[i] || {};
+      const providedPassword = typeof user.password === 'string' ? user.password.trim() : '';
+      const resolvedPassword = providedPassword || generatePassword();
+
+      try {
+        if (!isStrongPassword(resolvedPassword)) {
+          job.failed += 1;
+          job.errors.push({ index: i, error: passwordPolicyMessage });
+          continue;
+        }
+        const payload = {
+          ...stripProtectedFields({ ...user }),
+          password: resolvedPassword,
+          gender: normalizeGender(user.gender),
+          schoolId: resolvedSchoolId,
+          campusId: campusContext.campusId,
+          campusName: campusContext.campusName,
+          campusType: campusContext.campusType,
+        };
+        delete payload._id;
+        delete payload.id;
+        payload.employeeCode = buildTeacherCode(teacherSequenceState.schoolCode, teacherSequenceState.nextSequence);
+        teacherSequenceState.nextSequence += 1;
+        payload.username = payload.employeeCode;
+        payload.initialPassword = resolvedPassword;
+
+        const newTeacher = new TeacherUser(payload);
+        await newTeacher.save();
+        job.created += 1;
+      } catch (err) {
+        job.failed += 1;
+        job.errors.push({ index: i, error: err.message });
+      }
+      job.processed = i + 1;
+    }
+
+    job.status = 'completed';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err.message || 'Bulk upload failed';
+  } finally {
+    invalidateTeacherDirectoryCaches();
+    job.finishedAt = Date.now();
+    setTimeout(() => teacherBulkUploadJobs.delete(jobId), TEACHER_BULK_UPLOAD_JOB_TTL_MS).unref?.();
+  }
+};
+
+router.post('/teachers/bulk-upload', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const users = Array.isArray(req.body?.users) ? req.body.users : [];
+    if (!users.length) {
+      return res.status(400).json({ error: 'users array is required' });
+    }
+    if (users.length > MAX_BULK_USER_ROWS) {
+      return res.status(413).json({
+        error: `Too many rows in one request (max ${MAX_BULK_USER_ROWS}). Split the import into smaller batches.`,
+      });
+    }
+    const resolvedSchoolId = req.schoolId || (req.isSuperAdmin ? req.body?.schoolId : null);
+    if (!resolvedSchoolId) {
+      return res.status(400).json({ error: 'schoolId is required' });
+    }
+    const campusContext = resolveCampusValue(req, req.body?.campusId);
+    const adminUsername =
+      req.body?.teacherAdminUsername || req.body?.adminUsername || (await resolveAdminUsername(req));
+
+    const jobId = require('crypto').randomUUID();
+    teacherBulkUploadJobs.set(jobId, {
+      schoolId: String(resolvedSchoolId),
+      status: 'processing',
+      total: users.length,
+      processed: 0,
+      created: 0,
+      failed: 0,
+      errors: [],
+      createdAt: Date.now(),
+    });
+
+    runTeacherBulkUploadJob(jobId, { users, resolvedSchoolId, campusContext, adminUsername }).catch((err) => {
+      const job = teacherBulkUploadJobs.get(jobId);
+      if (job) { job.status = 'failed'; job.error = err.message; job.finishedAt = Date.now(); }
+    });
+
+    return res.status(202).json({ jobId, total: users.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to start teacher bulk upload' });
+  }
+});
+
+router.get('/teachers/bulk-upload/status/:jobId', adminAuth, (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  const job = teacherBulkUploadJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
+});
 
 router.delete('/students/bulk', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']

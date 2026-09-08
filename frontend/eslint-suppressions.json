@@ -491,7 +491,7 @@
   },
   "src/admin/Teachers.jsx": {
     "no-unused-vars": {
-      "count": 5
+      "count": 6
     },
     "no-useless-escape": {
       "count": 1

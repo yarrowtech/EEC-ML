@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -44,12 +45,65 @@ const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replac
 const TEACHERS_CACHE_PREFIX = 'admin_teachers_cache_v1';
 const TEACHERS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Non-dismissible full-screen overlay shown while a bulk job (upload or
+// delete) runs on the server, mirrored from Students.jsx's
+// BlockingProgressModal so the admin can't accidentally navigate away or
+// refresh mid-job and sees real server progress instead of a fake timer.
+function TeacherBulkJobProgressModal({
+  open,
+  title,
+  accent = 'sky',
+  total,
+  processed,
+  unitLabel = 'teachers',
+  failedNote,
+}) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prevOverflow; };
+  }, [open]);
+
+  if (!open) return null;
+  const percent = total ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const ring = accent === 'red' ? 'bg-red-50' : 'bg-sky-50';
+  const spin = accent === 'red' ? 'text-red-500' : 'text-sky-500';
+  const bar = accent === 'red' ? 'bg-red-500' : 'bg-sky-500';
+
+  return createPortal(
+    <div className="fixed inset-0 z-2147483647 flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+        <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${ring}`}>
+          <Loader2 className={`h-6 w-6 animate-spin ${spin}`} />
+        </div>
+        <h3 className="text-base font-bold text-gray-900">{title}</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          Please wait — do not refresh or close this window.
+        </p>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div
+            className={`h-full rounded-full transition-[width] duration-300 ${bar}`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <p className="mt-2 text-sm font-semibold text-gray-800">
+          {processed > 0 ? `${processed} / ${total} ${unitLabel}` : 'Preparing records…'}
+        </p>
+        {failedNote ? (
+          <p className="mt-1 text-xs text-red-500">{failedNote}</p>
+        ) : null}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // Same step-wizard layout as StudentEnrollWizard.jsx's Enrollment Steps rail.
 const TEACHER_STEPS = [
   { key: 'basic', label: 'Basic Information', hint: 'Name, DOB, gender, photo' },
   { key: 'contact', label: 'Contact Details', hint: 'Phone, email, address' },
   { key: 'professional', label: 'Professional Information', hint: 'Qualification, experience, designation' },
-  { key: 'academic', label: 'Academic Assignment', hint: 'Classes, sections, subjects' },
   { key: 'access', label: 'Login & Access', hint: 'Role and account status' },
   { key: 'documents', label: 'Documents', hint: 'ID proof, certificates' },
   { key: 'additional', label: 'Additional', hint: 'Emergency contact, notes' },
@@ -338,12 +392,21 @@ const Teachers = ({setShowAdminHeader}) => {
   const [deleteConfirmPrincipal, setDeleteConfirmPrincipal] = useState(null);
   const [makePrincipalConfirmTeacher, setMakePrincipalConfirmTeacher] = useState(null);
   const [bulkUploading, setBulkUploading] = useState(false);
+  // { total, processed, created, failed } while a bulk upload job is running on the server
+  const [teacherBulkUploadJob, setTeacherBulkUploadJob] = useState(null);
+  // { total, processed, deleted } while a bulk delete job is running on the server
+  const [teacherBulkDeleteJob, setTeacherBulkDeleteJob] = useState(null);
+  // { total, processed, archived, mode: 'archive'|'restore' } while a bulk archive/restore job is running
+  const [teacherBulkArchiveJob, setTeacherBulkArchiveJob] = useState(null);
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [selectedTeacherIds, setSelectedTeacherIds] = useState([]);
   const [isBulkArchiving, setIsBulkArchiving] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [archivingTeacherId, setArchivingTeacherId] = useState(null);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archivedTeachers, setArchivedTeachers] = useState([]);
+  const [archivedTeacherCount, setArchivedTeacherCount] = useState(0);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [unarchivingTeacherId, setUnarchivingTeacherId] = useState(null);
   const [selectedArchivedIds, setSelectedArchivedIds] = useState([]);
@@ -745,6 +808,9 @@ const Teachers = ({setShowAdminHeader}) => {
     fetchTeachers({ useCache: true }).catch(err => {
       console.error("Error fetching teachers:", err);
     });
+    fetchArchivedTeachers().catch((err) => {
+      console.error('Error fetching archived teacher count:', err);
+    });
     loadTeacherDrafts();
   }, [setShowAdminHeader]);
 
@@ -763,6 +829,17 @@ const Teachers = ({setShowAdminHeader}) => {
       fetchPrincipals();
     }
   }, [activeTab]);
+
+  // Warn before leaving while a bulk upload/delete/archive job is running on the server.
+  useEffect(() => {
+    if (!teacherBulkUploadJob && !teacherBulkDeleteJob && !teacherBulkArchiveJob) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [teacherBulkUploadJob, teacherBulkDeleteJob, teacherBulkArchiveJob]);
 
   const validateTeacherForm = (data) => {
     const errors = {};
@@ -801,14 +878,6 @@ const Teachers = ({setShowAdminHeader}) => {
       const errors = validateTeacherForm({ ...newTeacher, [name]: value });
       setFormErrors(prev => ({ ...prev, [name]: errors[name] || '' }));
     }
-  };
-
-  // Comma-separated text → array, for the Classes/Sections/Subjects Assigned
-  // fields (keeps the form a plain text input instead of needing a whole
-  // separate multi-select component for something this simple).
-  const handleAddTeacherListChange = (field) => (e) => {
-    const list = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-    setNewTeacher((prev) => ({ ...prev, [field]: list }));
   };
 
   // Upload a photo/document to Cloudinary; reports progress and returns the
@@ -1253,6 +1322,7 @@ const Teachers = ({setShowAdminHeader}) => {
       // Instant: drop it from the visible list right away instead of waiting on a refetch.
       setTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
       setSelectedTeacherIds((prev) => prev.filter((id) => id !== String(teacherId)));
+      setArchivedTeacherCount((prev) => prev + 1);
       toast.success(`${teacher.name || 'Teacher'} archived.`);
     } catch (error) {
       toast.error(error.message || 'Unable to archive teacher');
@@ -1266,7 +1336,10 @@ const Teachers = ({setShowAdminHeader}) => {
     setIsBulkArchiving(true);
     const ids = [...selectedTeacherIds];
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive`, {
+      // Starts a background job and returns instantly with a jobId — the
+      // batched updateMany loop runs after the response, so the admin sees
+      // real server-side progress instead of a single blocking request.
+      const startRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1274,16 +1347,114 @@ const Teachers = ({setShowAdminHeader}) => {
         },
         body: JSON.stringify({ ids })
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Unable to archive teachers');
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData?.error || 'Unable to archive teachers');
+      }
+
+      const jobId = startData.jobId;
+      const jobTotal = startData.total || ids.length;
+      setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'archive' });
+
+      let data;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive/status/${jobId}`, {
+          headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+        });
+        if (!statusRes.ok) continue;
+        data = await statusRes.json().catch(() => null);
+        if (!data) continue;
+        setTeacherBulkArchiveJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          archived: data.archived || 0,
+          mode: 'archive',
+        });
+        if (data.status === 'completed' || data.status === 'failed') break;
+      }
+
+      setTeacherBulkArchiveJob(null);
+
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Bulk archive failed');
+      }
+
       const idSet = new Set(ids.map(String));
       setTeachers((prev) => prev.filter((item) => !idSet.has(String(item._id || item.id))));
       setSelectedTeacherIds([]);
+      setArchivedTeacherCount((prev) => prev + (data?.archived ?? ids.length));
       toast.success(`${data?.archived ?? ids.length} teacher(s) archived.`);
     } catch (error) {
       toast.error(error.message || 'Unable to archive teachers');
     } finally {
       setIsBulkArchiving(false);
+      setTeacherBulkArchiveJob(null);
+    }
+  };
+
+  /* -------------------- Bulk delete -------------------- */
+  const handleBulkDeleteTeachers = async () => {
+    if (!selectedTeacherIds.length || isBulkDeleting) return;
+    setIsBulkDeleting(true);
+    setShowBulkDeleteConfirm(false);
+    const ids = [...selectedTeacherIds];
+    try {
+      // Starts a background job and returns instantly with a jobId — the
+      // batched deleteMany loop runs after the response, so the admin sees
+      // real server-side progress instead of a single blocking request.
+      const startRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ ids })
+      });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData?.error || 'Unable to delete teachers');
+      }
+
+      const jobId = startData.jobId;
+      const jobTotal = startData.total || ids.length;
+      setTeacherBulkDeleteJob({ total: jobTotal, processed: 0, deleted: 0 });
+
+      let data;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/status/${jobId}`, {
+          headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+        });
+        if (!statusRes.ok) continue;
+        data = await statusRes.json().catch(() => null);
+        if (!data) continue;
+        setTeacherBulkDeleteJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          deleted: data.deleted || 0,
+        });
+        if (data.status === 'completed' || data.status === 'failed') break;
+      }
+
+      setTeacherBulkDeleteJob(null);
+
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Bulk delete failed');
+      }
+
+      const idSet = new Set(ids.map(String));
+      setTeachers((prev) => prev.filter((item) => !idSet.has(String(item._id || item.id))));
+      setSelectedTeacherIds([]);
+      toast.success(`${data?.deleted ?? ids.length} teacher(s) deleted.`);
+      // The server invalidates its list cache once the job finishes, so this
+      // refetch reflects the deletion immediately.
+      fetchTeachers({ useCache: false }).catch(console.error);
+    } catch (error) {
+      toast.error(error.message || 'Unable to delete teachers');
+    } finally {
+      setIsBulkDeleting(false);
+      setTeacherBulkDeleteJob(null);
     }
   };
 
@@ -1295,7 +1466,9 @@ const Teachers = ({setShowAdminHeader}) => {
       });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Unable to load archived teachers');
-      setArchivedTeachers(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setArchivedTeachers(list);
+      setArchivedTeacherCount(list.length);
     } catch (error) {
       toast.error(error.message || 'Unable to load archived teachers');
     } finally {
@@ -1325,6 +1498,7 @@ const Teachers = ({setShowAdminHeader}) => {
       if (!res.ok) throw new Error(data?.error || 'Unable to unarchive teacher');
       setArchivedTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
       setSelectedArchivedIds((prev) => prev.filter((id) => id !== String(teacherId)));
+      setArchivedTeacherCount((prev) => Math.max(0, prev - 1));
       fetchTeachers({ useCache: false }).catch(console.error);
       toast.success(`${teacher.name || 'Teacher'} restored.`);
     } catch (error) {
@@ -1360,7 +1534,10 @@ const Teachers = ({setShowAdminHeader}) => {
     setIsBulkUnarchiving(true);
     const ids = [...selectedArchivedIds];
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/unarchive`, {
+      // Starts a background job and returns instantly with a jobId — the
+      // batched updateMany loop runs after the response, so the admin sees
+      // real server-side progress instead of a single blocking request.
+      const startRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/unarchive`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1368,17 +1545,50 @@ const Teachers = ({setShowAdminHeader}) => {
         },
         body: JSON.stringify({ ids })
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Unable to restore teachers');
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData?.error || 'Unable to restore teachers');
+      }
+
+      const jobId = startData.jobId;
+      const jobTotal = startData.total || ids.length;
+      setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'restore' });
+
+      let data;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/unarchive/status/${jobId}`, {
+          headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+        });
+        if (!statusRes.ok) continue;
+        data = await statusRes.json().catch(() => null);
+        if (!data) continue;
+        setTeacherBulkArchiveJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          archived: data.unarchived || 0,
+          mode: 'restore',
+        });
+        if (data.status === 'completed' || data.status === 'failed') break;
+      }
+
+      setTeacherBulkArchiveJob(null);
+
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Bulk restore failed');
+      }
+
       const idSet = new Set(ids.map(String));
       setArchivedTeachers((prev) => prev.filter((item) => !idSet.has(String(item._id || item.id))));
       setSelectedArchivedIds([]);
+      setArchivedTeacherCount((prev) => Math.max(0, prev - (data?.unarchived ?? ids.length)));
       fetchTeachers({ useCache: false }).catch(console.error);
       toast.success(`${data?.unarchived ?? ids.length} teacher(s) restored.`);
     } catch (error) {
       toast.error(error.message || 'Unable to restore teachers');
     } finally {
       setIsBulkUnarchiving(false);
+      setTeacherBulkArchiveJob(null);
     }
   };
 
@@ -1484,43 +1694,120 @@ const Teachers = ({setShowAdminHeader}) => {
       if (normalized === 'other' || normalized === 'o') return 'other';
       return normalized;
     };
+    const normalizeAccountStatus = (value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      return normalized === 'inactive' ? 'Inactive' : 'Active';
+    };
 
     return {
+      // Basic Information
       name: read(['name', 'Name', 'teacherName', 'Teacher Name']),
-      email: read(['email', 'Email']),
-      mobile: read(['mobile', 'Mobile', 'phone', 'Phone']),
+      dob: read(['dob', 'DOB', 'Date of Birth', 'date_of_birth']),
       gender: normalizeGender(read(['gender', 'Gender'])),
+      profilePic: read(['profilePic', 'Profile Photo', 'Profile Photo URL', 'photo']),
+      // Contact Details
+      mobile: read(['mobile', 'Mobile', 'phone', 'Phone', 'Mobile Number']),
+      email: read(['email', 'Email', 'Email Address']),
+      alternatePhone: read(['alternatePhone', 'Alternate Phone', 'alternate_phone']),
+      address: read(['address', 'Address']),
+      city: read(['city', 'City']),
+      district: read(['district', 'District']),
+      state: read(['state', 'State']),
+      pinCode: read(['pinCode', 'Pincode', 'Pin Code', 'pin_code', 'PIN Code']),
+      // Professional Information
       qualification: read(['qualification', 'Qualification']),
+      specialization: read(['specialization', 'Specialization']),
       subject: read(['subject', 'Subject']),
       department: read(['department', 'Department']),
       experience: read(['experience', 'Experience']),
       joiningDate: read(['joiningDate', 'Joining Date', 'joining_date']),
-      address: read(['address', 'Address']),
-      pinCode: read(['pinCode', 'Pincode', 'Pin Code', 'pin_code']),
-      // password: read(['password', 'Password']) || generateBulkTeacherPassword(idx + 1),
+      designation: read(['designation', 'Designation']),
+      employeeType: read(['employeeType', 'Employee Type', 'employee_type']),
+      // Login & Access
+      accountStatus: normalizeAccountStatus(read(['accountStatus', 'Account Status'])),
+      // Documents (URLs — already-hosted links, e.g. Cloudinary URLs)
+      documents: {
+        aadhaarUrl: read(['aadhaarUrl', 'Aadhaar / ID Proof', 'Aadhaar URL']),
+        qualificationCertUrl: read(['qualificationCertUrl', 'Qualification Certificate', 'Qualification Certificate URL']),
+        experienceCertUrl: read(['experienceCertUrl', 'Experience Certificate', 'Experience Certificate URL']),
+        appointmentLetterUrl: read(['appointmentLetterUrl', 'Appointment Letter', 'Appointment Letter URL']),
+      },
+      // Additional
+      emergencyContactName: read(['emergencyContactName', 'Emergency Contact Name']),
+      emergencyContact: read(['emergencyContact', 'Emergency Contact Number', 'Emergency Contact']),
+      bloodGroup: read(['bloodGroup', 'Blood Group']),
+      notes: read(['notes', 'Notes', 'Remarks', 'Notes / Remarks']),
     };
   };
 
   const downloadTeacherDemoTemplate = () => {
-    const rows = [
-      {
-        name: 'Koushik Bala',
-        email: 'koushik.bala@example.com',
-        mobile: '1234567890',
-        gender: 'male',
-        qualification: 'M.Sc',
-        subject: 'Mathematics',
-        department: 'Science',
-        experience: '5',
-        joiningDate: '2026-04-01',
-        address: 'Kolkata',
-        pinCode: '700001',
+    // Same approach as Students' downloadStudentDemoTemplate — several demo
+    // rows covering every field the Add Teacher form collects. Placeholder
+    // names only (John Doe-style), same as the student template — never
+    // names that could be mistaken for a real person.
+    const FIRST = ['John', 'Jane', 'Sam', 'Alex', 'Chris', 'Pat', 'Taylor', 'Jordan'];
+    const LAST = ['Doe', 'Roe', 'Smith', 'Public', 'Bloggs', 'Sample', 'Example', 'Test'];
+    const CITIES = [['Sampleton', 'Sample State', 'Sample District', '100001'], ['Testville', 'Sample State', 'Sample District', '100002'], ['Democity', 'Sample State', 'Sample District', '100003'], ['Placeholder', 'Sample State', 'Sample District', '100004']];
+    const SUBJECTS = [['Mathematics', 'Science'], ['English', 'Languages'], ['Physics', 'Science'], ['History', 'Humanities'], ['Bengali', 'Languages'], ['Biology', 'Science'], ['Computer Science', 'Science'], ['Geography', 'Humanities']];
+    const DESIGNATIONS = ['TGT', 'PGT', 'Senior Teacher', 'Assistant Teacher'];
+    const EMPLOYEE_TYPES = ['Full-time', 'Part-time', 'Contract', 'Visiting'];
+    const BLOOD_GROUPS = ['O+', 'A+', 'B+', 'AB+', 'O-'];
+    const today = new Date();
+    const joiningDate = `${today.getFullYear()}-04-01`;
+
+    const rows = Array.from({ length: 8 }, (_, i) => {
+      const first = FIRST[i % FIRST.length];
+      const last = LAST[i % LAST.length];
+      const fullName = `${first} ${last}`;
+      const [city, state, district, pin] = CITIES[i % CITIES.length];
+      const [subject, department] = SUBJECTS[i % SUBJECTS.length];
+      const gender = i % 2 === 0 ? 'male' : 'female';
+      return {
+        name: fullName,
+        dob: `198${(i % 9)}-0${(i % 9) + 1}-1${i % 8}`,
+        gender,
+        mobile: `98${String(76000000 + i).slice(-8)}`,
+        email: `${first.toLowerCase()}.${last.toLowerCase()}${i + 1}@example.com`,
+        alternatePhone: `91${String(23400000 + i).slice(-8)}`,
+        address: `${12 + i}, Lake View Road`,
+        city,
+        district,
+        state,
+        pinCode: pin,
+        qualification: ['M.Sc, B.Ed', 'M.A, B.Ed', 'Ph.D', 'B.Tech, B.Ed'][i % 4],
+        specialization: subject,
+        subject,
+        department,
+        experience: `${2 + (i % 12)}`,
+        joiningDate,
+        designation: DESIGNATIONS[i % DESIGNATIONS.length],
+        employeeType: EMPLOYEE_TYPES[i % EMPLOYEE_TYPES.length],
+        accountStatus: 'Active',
+        emergencyContactName: `Guardian of ${first}`,
+        emergencyContact: `90${String(11200000 + i).slice(-8)}`,
+        bloodGroup: BLOOD_GROUPS[i % BLOOD_GROUPS.length],
+        notes: '',
+        // Auto-generated on upload if left blank — sample shown for reference.
         // password: 'Teach@123a',
-      },
-    ];
+      };
+    });
+
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Teachers');
+
+    const refRows = [
+      { Field: 'Gender', 'Valid values': 'male, female, other' },
+      { Field: 'Employee Type', 'Valid values': EMPLOYEE_TYPES.join(', ') },
+      { Field: 'Account Status', 'Valid values': 'Active, Inactive' },
+      { Field: 'Blood Group', 'Valid values': BLOOD_GROUPS.join(', ') },
+      { Field: '', 'Valid values': '' },
+      { Field: 'Rows in template', 'Valid values': `${rows.length} demo teachers` },
+      { Field: 'Note', 'Valid values': 'Employee ID, username & password are auto-generated on upload — do not include them.' },
+    ];
+    const refSheet = XLSX.utils.json_to_sheet(refRows);
+    XLSX.utils.book_append_sheet(workbook, refSheet, 'Reference');
+
     XLSX.writeFile(workbook, 'teacher_bulk_upload_template.xlsx');
   };
 
@@ -1542,20 +1829,49 @@ const Teachers = ({setShowAdminHeader}) => {
         throw new Error('No teacher rows found in the uploaded file.');
       }
 
-      const res = await fetch(`${API_BASE}/api/admin/users/bulk-create-users`, {
+      // Starts a background job on the server and returns instantly with a
+      // jobId — the row-by-row save loop runs after the response, so the
+      // admin sees real progress instead of the request hanging until every
+      // row is saved.
+      const startRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk-upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           authorization: `Bearer ${localStorage.getItem('token')}`,
         },
-        body: JSON.stringify({
-          role: 'teacher',
-          users: normalizedRows,
-        }),
+        body: JSON.stringify({ users: normalizedRows }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || 'Bulk upload failed');
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.jobId) {
+        throw new Error(startData?.error || 'Bulk upload failed');
+      }
+
+      const jobId = startData.jobId;
+      const jobTotal = startData.total || normalizedRows.length;
+      setTeacherBulkUploadJob({ total: jobTotal, processed: 0, created: 0, failed: 0 });
+
+      let data;
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk-upload/status/${jobId}`, {
+          headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+        });
+        if (!statusRes.ok) continue;
+        data = await statusRes.json().catch(() => null);
+        if (!data) continue;
+        setTeacherBulkUploadJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          created: data.created || 0,
+          failed: data.failed || 0,
+        });
+        if (data.status === 'completed' || data.status === 'failed') break;
+      }
+
+      setTeacherBulkUploadJob(null);
+
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Bulk upload failed');
       }
 
       const created = Number(data?.created || 0);
@@ -1567,11 +1883,15 @@ const Teachers = ({setShowAdminHeader}) => {
         const firstError = Array.isArray(data?.errors) && data.errors[0]?.error ? ` First error: ${data.errors[0].error}` : '';
         toast.error(`${failed} row(s) failed.${firstError}`);
       }
+      // The server invalidates its list cache once the job finishes, so this
+      // refetch picks up the newly created teachers immediately — no manual
+      // page refresh needed.
       await fetchTeachers({ useCache: false });
     } catch (error) {
       toast.error(error.message || 'Unable to upload teachers');
     } finally {
       setBulkUploading(false);
+      setTeacherBulkUploadJob(null);
       if (bulkFileInputRef.current) {
         bulkFileInputRef.current.value = '';
       }
@@ -1690,7 +2010,18 @@ const Teachers = ({setShowAdminHeader}) => {
                 title={`Archive ${selectedTeacherIds.length} selected teacher(s)`}
               >
                 {isBulkArchiving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
-                {isBulkArchiving ? 'Archiving...' : `Archive (${selectedTeacherIds.length})`}
+                {isBulkArchiving ? 'Archiving...' : `Archive All`}
+              </button>
+            )}
+            {activeTab === 'teachers' && selectedTeacherIds.length > 0 && (
+              <button
+                onClick={() => setShowBulkDeleteConfirm(true)}
+                disabled={isBulkDeleting}
+                className="bg-red-600 text-white px-3 py-2 rounded-full hover:bg-red-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                title={`Delete ${selectedTeacherIds.length} selected teacher(s)`}
+              >
+                {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                {isBulkDeleting ? 'Deleting...' : `Delete All`}
               </button>
             )}
             {activeTab === 'teachers' && (
@@ -1709,6 +2040,11 @@ const Teachers = ({setShowAdminHeader}) => {
               className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
               <Archive size={15} /> Archived
+              {archivedTeacherCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-sky-600 text-white text-[11px] font-semibold leading-none">
+                  {archivedTeacherCount}
+                </span>
+              )}
             </button>
             <button
               onClick={handleRefreshTableData}
@@ -2649,72 +2985,8 @@ const Teachers = ({setShowAdminHeader}) => {
                   )}
 
                   {/* Section: Academic Assignment */}
-                  {teacherFormStep === 3 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <GraduationCap size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Academic Assignment</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                      {/* Subject (single, drives the table's Subject column) */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Primary Subject</label>
-                        <div className="relative">
-                          <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="subject"
-                            value={newTeacher.subject}
-                            onChange={handleAddTeacherChange}
-                            placeholder="e.g., Mathematics"
-                            className={`${fieldClass('subject')} pl-9`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Class Teacher Of */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class Teacher Of</label>
-                        <input type="text" name="classTeacherOf" value={newTeacher.classTeacherOf} onChange={handleAddTeacherChange}
-                          placeholder="e.g., Class 5 - A" className={fieldClass('classTeacherOf')} />
-                      </div>
-
-                      {/* Classes Assigned */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Classes Assigned <span className="text-red-500">*</span>
-                        </label>
-                        <input type="text" value={newTeacher.classesAssigned.join(', ')} onChange={handleAddTeacherListChange('classesAssigned')}
-                          placeholder="e.g., Class 5, Class 6" className={fieldClass('classesAssigned')} />
-                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
-                      </div>
-
-                      {/* Sections Assigned */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Sections Assigned <span className="text-red-500">*</span>
-                        </label>
-                        <input type="text" value={newTeacher.sectionsAssigned.join(', ')} onChange={handleAddTeacherListChange('sectionsAssigned')}
-                          placeholder="e.g., A, B" className={fieldClass('sectionsAssigned')} />
-                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
-                      </div>
-
-                      {/* Subjects Assigned */}
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Subjects Assigned <span className="text-red-500">*</span>
-                        </label>
-                        <input type="text" value={newTeacher.subjectsAssigned.join(', ')} onChange={handleAddTeacherListChange('subjectsAssigned')}
-                          placeholder="e.g., Mathematics, Science" className={fieldClass('subjectsAssigned')} />
-                        <p className="mt-1 text-[11px] text-gray-400">Comma-separated</p>
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
                   {/* Section: Login & Access */}
-                  {teacherFormStep === 4 && (
+                  {teacherFormStep === 3 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <KeyRound size={13} className="text-sky-500" />
@@ -2743,7 +3015,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   )}
 
                   {/* Section: Documents */}
-                  {teacherFormStep === 5 && (
+                  {teacherFormStep === 4 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <FileText size={13} className="text-sky-500" />
@@ -2791,7 +3063,7 @@ const Teachers = ({setShowAdminHeader}) => {
                   )}
 
                   {/* Section: Additional */}
-                  {teacherFormStep === 6 && (
+                  {teacherFormStep === 5 && (
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <Info size={13} className="text-rose-500" />
@@ -2839,10 +3111,6 @@ const Teachers = ({setShowAdminHeader}) => {
                         <div><dt className="text-xs text-gray-400">Email</dt><dd className="font-medium text-gray-800">{newTeacher.email || '—'}</dd></div>
                         <div><dt className="text-xs text-gray-400">Designation</dt><dd className="font-medium text-gray-800">{newTeacher.designation || '—'}</dd></div>
                         <div><dt className="text-xs text-gray-400">Employee Type</dt><dd className="font-medium text-gray-800">{newTeacher.employeeType || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Classes Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.classesAssigned.join(', ') || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Sections Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.sectionsAssigned.join(', ') || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Subjects Assigned</dt><dd className="font-medium text-gray-800">{newTeacher.subjectsAssigned.join(', ') || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Class Teacher Of</dt><dd className="font-medium text-gray-800">{newTeacher.classTeacherOf || '—'}</dd></div>
                         <div><dt className="text-xs text-gray-400">Account Status</dt><dd className="font-medium text-gray-800">{newTeacher.accountStatus}</dd></div>
                       </div>
                       {!editingTeacherId && (
@@ -2916,13 +3184,21 @@ const Teachers = ({setShowAdminHeader}) => {
         );
       })()}
 
-      {/* Teacher Details Modal */}
-      {viewTeacher && (
+      {/* Teacher Details Modal — wide/horizontal instead of tall, so it fits
+          within the viewport instead of running under the page header/footer. */}
+      {viewTeacher && (() => {
+        const detail = (label, value) => (
+          <div>
+            <p className="text-xs text-gray-400">{label}</p>
+            <p className="text-sm font-medium text-gray-800">{value || '—'}</p>
+          </div>
+        );
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden max-h-[88vh] flex flex-col">
 
-            {/* Gradient Profile Header */}
-            <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 pt-6 pb-10 relative flex-shrink-0">
+            {/* Compact header */}
+            <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 py-4 relative flex-shrink-0">
               <button
                 onClick={() => setViewTeacher(null)}
                 className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
@@ -2930,19 +3206,15 @@ const Teachers = ({setShowAdminHeader}) => {
                 <XCircle size={18} />
               </button>
               <div className="flex items-center gap-4">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold shadow-lg flex-shrink-0 ${getAvatarColor(viewTeacher.name).bg} ${getAvatarColor(viewTeacher.name).text} overflow-hidden`}>
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold shadow-lg flex-shrink-0 ${getAvatarColor(viewTeacher.name).bg} ${getAvatarColor(viewTeacher.name).text} overflow-hidden`}>
                   {viewTeacher.profilePic ? (
-                    <img
-                      src={viewTeacher.profilePic}
-                      alt={viewTeacher.name || 'Teacher'}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={viewTeacher.profilePic} alt={viewTeacher.name || 'Teacher'} className="w-full h-full object-cover" />
                   ) : (
                     (viewTeacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
                   )}
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <span>{viewTeacher.name}</span>
                     {principalIdentitySet.has(String(viewTeacher?.email || '').trim().toLowerCase()) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-100/90 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
@@ -2951,161 +3223,108 @@ const Teachers = ({setShowAdminHeader}) => {
                       </span>
                     )}
                   </h2>
-                  <p className="text-sky-200 text-sm mt-0.5 font-mono">#{viewTeacher.empId}</p>
-                  <span className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold
-                    ${viewTeacher.status === 'Present'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : viewTeacher.status === 'Absent'
-                        ? 'bg-rose-100 text-rose-700'
-                        : 'bg-amber-100 text-amber-700'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      viewTeacher.status === 'Present'
-                        ? 'bg-emerald-500'
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-sky-200 text-xs font-mono">#{viewTeacher.empId}</p>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold
+                      ${viewTeacher.status === 'Present'
+                        ? 'bg-emerald-100 text-emerald-700'
                         : viewTeacher.status === 'Absent'
-                          ? 'bg-rose-500'
-                          : 'bg-amber-500'
-                    }`} />
-                    {viewTeacher.status}
-                  </span>
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-amber-100 text-amber-700'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        viewTeacher.status === 'Present' ? 'bg-emerald-500' : viewTeacher.status === 'Absent' ? 'bg-rose-500' : 'bg-amber-500'
+                      }`} />
+                      {viewTeacher.status}
+                    </span>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${viewTeacher.accountStatus === 'Inactive' ? 'bg-gray-200 text-gray-600' : 'bg-white/20 text-white'}`}>
+                      {viewTeacher.accountStatus || 'Active'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Body — pulls up over the gradient */}
-            <div className="overflow-y-auto mt-5">
-              <div className="bg-white rounded-t-2xl px-6 pt-5 pb-6 space-y-5">
+            {/* Body — 3 columns side by side instead of one tall stack */}
+            <div className="overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5 px-6 py-5">
 
-                {/* Contact Info */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Contact</p>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
-                        <Mail size={14} className="text-sky-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Email</p>
-                        <p className="text-sm font-medium text-gray-800">{viewTeacher.email || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                        <Phone size={14} className="text-emerald-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Mobile</p>
-                        <p className="text-sm font-medium text-gray-800">{viewTeacher.mobile || '—'}</p>
-                      </div>
-                    </div>
-                    {(viewTeacher.address || viewTeacher.pinCode) && (
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
-                          <MapPin size={14} className="text-rose-500" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400">Address</p>
-                          <p className="text-sm font-medium text-gray-800">
-                            {[viewTeacher.address, viewTeacher.pinCode].filter(Boolean).join(', ') || '—'}
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                {/* Column 1: Basic + Contact */}
+                <div className="space-y-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Basic & Contact</p>
+                  <div className="space-y-3">
+                    {detail('Email', viewTeacher.email)}
+                    {detail('Mobile', viewTeacher.mobile)}
+                    {detail('Alternate Phone', viewTeacher.alternatePhone)}
+                    {detail('Date of Birth', viewTeacher.dob ? new Date(viewTeacher.dob).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
+                    {detail('Gender', viewTeacher.gender ? viewTeacher.gender.charAt(0).toUpperCase() + viewTeacher.gender.slice(1) : '')}
+                    {detail('Address', [viewTeacher.address, viewTeacher.city, viewTeacher.district, viewTeacher.state, viewTeacher.pinCode].filter(Boolean).join(', '))}
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100" />
-
-                {/* Professional Info */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Professional</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
-                        <BookOpen size={14} className="text-sky-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Subject</p>
-                        <p className="text-sm font-medium text-gray-800">{viewTeacher.subject || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                        <Building2 size={14} className="text-blue-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Department</p>
-                        <p className="text-sm font-medium text-gray-800">{viewTeacher.department || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                        <Award size={14} className="text-amber-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Qualification</p>
-                        <p className="text-sm font-medium text-gray-800">{viewTeacher.qualification || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-                        <Briefcase size={14} className="text-teal-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Experience</p>
-                        <p className="text-sm font-medium text-gray-800">
-                          {viewTeacher.experience ? `${viewTeacher.experience} yrs` : '—'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center flex-shrink-0">
-                        <Calendar size={14} className="text-pink-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Joining Date</p>
-                        <p className="text-sm font-medium text-gray-800">
-                          {viewTeacher.joiningDate ? new Date(viewTeacher.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center flex-shrink-0">
-                        <User size={14} className="text-slate-500" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Gender</p>
-                        <p className="text-sm font-medium text-gray-800 capitalize">{viewTeacher.gender || '—'}</p>
-                      </div>
-                    </div>
+                {/* Column 2: Professional */}
+                <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Professional</p>
+                  <div className="space-y-3">
+                    {detail('Subject', viewTeacher.subject)}
+                    {detail('Department', viewTeacher.department)}
+                    {detail('Designation', viewTeacher.designation)}
+                    {detail('Employee Type', viewTeacher.employeeType)}
+                    {detail('Qualification', viewTeacher.qualification)}
+                    {detail('Specialization', viewTeacher.specialization)}
+                    {detail('Experience', viewTeacher.experience ? `${viewTeacher.experience} yrs` : '')}
+                    {detail('Joining Date', viewTeacher.joiningDate ? new Date(viewTeacher.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100" />
+                {/* Column 3: Additional + Documents */}
+                <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Additional</p>
+                  <div className="space-y-3">
+                    {detail('Emergency Contact', [viewTeacher.emergencyContactName, viewTeacher.emergencyContact].filter(Boolean).join(' · '))}
+                    {detail('Blood Group', viewTeacher.bloodGroup)}
+                    {detail('Notes', viewTeacher.notes)}
+                  </div>
 
-                {/* Footer Actions */}
-                <div className="flex items-center justify-end gap-3 pt-1">
-                  {/* <button
-                    onClick={() => {
-                      setViewTeacher(null);
-                      handleViewCredentials(viewTeacher);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-sm font-medium"
-                  >
-                    <KeyRound size={15} />
-                    Generate Credentials
-                  </button> */}
-                  <button
-                    onClick={() => setViewTeacher(null)}
-                    className="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
-                  >
-                    Close
-                  </button>
+                  {(viewTeacher.documents?.aadhaarUrl || viewTeacher.documents?.qualificationCertUrl || viewTeacher.documents?.experienceCertUrl || viewTeacher.documents?.appointmentLetterUrl) && (
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1.5">Documents</p>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          ['Aadhaar / ID', viewTeacher.documents?.aadhaarUrl],
+                          ['Qualification Cert.', viewTeacher.documents?.qualificationCertUrl],
+                          ['Experience Cert.', viewTeacher.documents?.experienceCertUrl],
+                          ['Appointment Letter', viewTeacher.documents?.appointmentLetterUrl],
+                        ].filter(([, url]) => url).map(([label, url]) => (
+                          <a
+                            key={label}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium"
+                          >
+                            <FileText size={12} /> {label}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              <button
+                onClick={() => setViewTeacher(null)}
+                className="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Schedule Details Modal */}
       {scheduleModal && (
@@ -3177,6 +3396,48 @@ const Teachers = ({setShowAdminHeader}) => {
                 className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
                 {deletingTeacherId ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="px-6 pt-6 pb-4 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-red-500" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Delete {selectedTeacherIds.length} Teacher{selectedTeacherIds.length === 1 ? '' : 's'}</h3>
+              <p className="text-sm text-gray-500 mt-2">
+                Are you sure you want to delete <span className="font-semibold text-gray-700">{selectedTeacherIds.length} selected teacher{selectedTeacherIds.length === 1 ? '' : 's'}</span>? This action cannot be undone.
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={isBulkDeleting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDeleteTeachers}
+                disabled={isBulkDeleting}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-60 inline-flex items-center justify-center gap-2"
+              >
+                {isBulkDeleting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     Deleting...
@@ -3652,6 +3913,38 @@ const Teachers = ({setShowAdminHeader}) => {
           </div>
         </div>
       )}
+
+      <TeacherBulkJobProgressModal
+        open={!!teacherBulkUploadJob}
+        title="Uploading teachers…"
+        accent="sky"
+        total={teacherBulkUploadJob?.total || 0}
+        processed={teacherBulkUploadJob?.processed || 0}
+        unitLabel="teachers"
+        failedNote={
+          teacherBulkUploadJob?.failed > 0
+            ? `${teacherBulkUploadJob.failed} row${teacherBulkUploadJob.failed === 1 ? '' : 's'} could not be imported`
+            : ''
+        }
+      />
+
+      <TeacherBulkJobProgressModal
+        open={!!teacherBulkDeleteJob}
+        title="Deleting teachers…"
+        accent="red"
+        total={teacherBulkDeleteJob?.total || 0}
+        processed={teacherBulkDeleteJob?.processed || 0}
+        unitLabel="teachers"
+      />
+
+      <TeacherBulkJobProgressModal
+        open={!!teacherBulkArchiveJob}
+        title={teacherBulkArchiveJob?.mode === 'restore' ? 'Restoring teachers…' : 'Archiving teachers…'}
+        accent="sky"
+        total={teacherBulkArchiveJob?.total || 0}
+        processed={teacherBulkArchiveJob?.processed || 0}
+        unitLabel="teachers"
+      />
     </div>
   );
 };

@@ -16,12 +16,20 @@ const assertProductionConfiguration = () => {
   if (process.env.NODE_ENV !== 'production') return;
   const jwtSecret = String(process.env.JWT_SECRET || '');
   const paymentKey = String(process.env.PAYMENT_ENCRYPTION_KEY || '');
+  const studentDataKey = String(process.env.STUDENT_DATA_ENCRYPTION_KEY || '');
   const isPlaceholder = (v) => !v || v.includes('replace-with') || v.includes('change-me');
   if (isPlaceholder(jwtSecret) || jwtSecret.length < 32) {
     throw new Error('JWT_SECRET must be a strong production secret of at least 32 characters');
   }
   if (isPlaceholder(paymentKey)) {
     throw new Error('PAYMENT_ENCRYPTION_KEY must be configured in production');
+  }
+  // Without this, the server boots fine but every route touching an
+  // encrypted StudentUser field (mobile/email/address/Aadhaar/guardian
+  // contact) — including the students list — throws at request time
+  // instead of failing loudly here. See models/StudentUser.js.
+  if (isPlaceholder(studentDataKey)) {
+    throw new Error('STUDENT_DATA_ENCRYPTION_KEY must be configured in production (hex:<64> or base64:<44>)');
   }
 };
 assertProductionConfiguration();
