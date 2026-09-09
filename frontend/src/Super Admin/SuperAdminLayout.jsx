@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Menu,
   Activity,
+  Gauge,
   X,
   ChevronRight,
   ChevronLeft
@@ -16,6 +17,7 @@ import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const navLinks = [
   { to: '/super-admin/overview', label: 'Overview', icon: LayoutDashboard },
+  { to: '/super-admin/usage', label: 'Usage', icon: Gauge },
   { to: '/super-admin/requests', label: 'Requests', icon: Building2 },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/super-admin/issues', label: 'Issues', icon: AlertTriangle },

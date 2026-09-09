@@ -11,6 +11,7 @@ import {
   timetableApi, academicApi, transformTimetablesToRoutines,
   convertTo12Hour, convertTo24Hour,
 } from './utils/timetableApi';
+import { Fab } from './components/mobile';
 
 /* ─── constants ─── */
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -56,6 +57,13 @@ const to24 = s => {
 const to12 = t => { try { return t ? convertTo12Hour(t) : ''; } catch { return t || ''; } };
 
 const fmtRange = (s, e) => (s && e ? `${to12(s)} – ${to12(e)}` : '');
+
+/* Whole minutes between two "HH:MM" 24h strings (0 if unparseable). */
+const minsBetween = (s, e) => {
+  const m = t => { const [h, mm] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (mm || 0) : null; };
+  const a = m(s), b = m(e);
+  return a != null && b != null && b > a ? b - a : 0;
+};
 
 /* Extract startTime + endTime from a schedule entry robustly */
 const entryTimes = entry => {
@@ -456,8 +464,227 @@ const DayGridView = ({ day, classSectionRows, periodColumns, getCell, dayConflic
   );
 };
 
+/* ─── MobileClassSchedule ─── single day, vertical period-card list (phones) */
+const MobileClassSchedule = ({
+  classSectionRows, selectedClassId, selectedSectionId, onSelectClassSection,
+  currentDay, setCurrentDay, periodColumns, getCell, selectedRow, routines,
+  onCellClick,
+}) => {
+  const rowHasData = (row) => DAYS.some(d => {
+    const r = routines.find(rt =>
+      String(rt.classId) === String(row.classId) &&
+      String(rt.sectionId || '') === String(row.sectionId || '') &&
+      normDay(rt.day) === d,
+    );
+    return r?.schedule?.some(s => !s.isBreak && s.subject && s.subject !== 'Break');
+  });
+
+  // Periods for THIS class on the selected day (its own schedule). Falls back to
+  // the generated slot grid only when the day is empty, so a fresh day is still
+  // fillable but an existing schedule shows exactly its real periods.
+  const dayPeriods = useMemo(() => {
+    if (!selectedRow) return [];
+    const r = routines.find(rt =>
+      String(rt.classId) === String(selectedRow.classId) &&
+      String(rt.sectionId || '') === String(selectedRow.sectionId || '') &&
+      normDay(rt.day) === normDay(currentDay),
+    );
+    const own = (r?.schedule || [])
+      .map(s => {
+        const { startTime, endTime } = entryTimes(s);
+        return startTime ? { startTime, endTime, isBreak: !!s.isBreak } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return own.length ? own : periodColumns;
+  }, [routines, selectedRow, currentDay, periodColumns]);
+
+  const teachingCount = dayPeriods.filter(p => !p.isBreak).length;
+  const dayMeta = DAY_META[currentDay] || DAY_META.Monday;
+  let periodNo = 0;
+
+  return (
+    <div className="space-y-4">
+      {/* SELECT DAY */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Select Day</span>
+          <span className="text-[11px] font-medium text-amber-600">Current: {currentDay}</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+          {DAYS.map(day => {
+            const active = currentDay === day;
+            return (
+              <button key={day} onClick={() => setCurrentDay(day)}
+                className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold whitespace-nowrap border transition active:scale-95 ${
+                  active
+                    ? 'bg-amber-500 text-white border-amber-500 ring-2 ring-amber-500/25'
+                    : 'bg-white text-slate-600 border-slate-200'
+                }`}>
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CLASS & SECTION */}
+      <div>
+        <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-500">Class &amp; Section</span>
+        {classSectionRows.length === 0 ? (
+          <p className="text-xs text-slate-400 italic">No classes found</p>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-3 px-3">
+            {classSectionRows.map(row => {
+              const active = String(row.classId) === String(selectedClassId) &&
+                (!selectedSectionId || String(row.sectionId || '') === String(selectedSectionId));
+              return (
+                <button key={`${row.classId}_${row.sectionId}`}
+                  onClick={() => onSelectClassSection(String(row.classId), String(row.sectionId || ''))}
+                  className={`shrink-0 flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition active:scale-95 ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                  }`}>
+                  <span>{row.className}{row.sectionName ? ` – ${row.sectionName}` : ''}</span>
+                  {rowHasData(row) && (
+                    <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-white' : 'bg-emerald-500'}`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {!selectedRow ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center">
+          <BookOpen size={26} className="mx-auto mb-2 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-600">Pick a class above</p>
+          <p className="text-xs text-slate-400 mt-0.5">to see its weekly schedule</p>
+        </div>
+      ) : (
+        <>
+          {/* Schedule header */}
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="h-5 w-1.5 shrink-0 rounded-full" style={{ background: dayMeta.color }} />
+              <h3 className="text-sm font-bold text-slate-900 truncate">{currentDay} Schedule</h3>
+              <span className="shrink-0 rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                {teachingCount} period{teachingCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <span className="shrink-0 text-xs font-semibold text-slate-500">
+              Class:{' '}
+              <strong className="text-slate-800">
+                {selectedRow.className}{selectedRow.sectionName ? ` – ${selectedRow.sectionName}` : ''}
+              </strong>
+            </span>
+          </div>
+
+          {/* Period cards */}
+          <div className="space-y-2.5">
+            {dayPeriods.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
+                <Calendar size={26} className="mx-auto mb-2 text-slate-300" />
+                <p className="text-sm font-semibold text-slate-700">No periods for {currentDay}</p>
+                <p className="text-xs text-slate-400 mt-0.5">Add one below to start building it.</p>
+              </div>
+            )}
+
+            {dayPeriods.map(p => {
+              const cell = getCell(selectedRow.classId, selectedRow.sectionId, currentDay, p.startTime);
+              const isBreak = p.isBreak || cell?.isBreak || cell?.subject === 'Break';
+
+              if (isBreak) {
+                const dur = minsBetween(p.startTime, p.endTime);
+                return (
+                  <div key={p.startTime}
+                    className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-200">
+                        <Clock size={14} className="text-amber-800" />
+                      </span>
+                      <div className="min-w-0">
+                        <span className="block text-xs font-extrabold uppercase tracking-wide text-amber-900">
+                          {cell?.subject && cell.subject !== 'Break' ? cell.subject : 'Recess / Break'}
+                        </span>
+                        <p className="text-[11px] text-amber-700">
+                          {fmtRange(p.startTime, p.endTime)}{dur ? ` (${dur} mins)` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Break</span>
+                  </div>
+                );
+              }
+
+              periodNo += 1;
+              const label = `P${periodNo}`;
+
+              if (cell?.subject) {
+                const ct = CELL_TYPE_MAP[cell.type] || CELL_TYPE_MAP.academic;
+                return (
+                  <div key={p.startTime} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-blue-100/70 px-2 py-0.5 text-[11px] font-extrabold text-blue-700">{label}</span>
+                        <span className="text-xs font-semibold text-slate-500">{fmtRange(p.startTime, p.endTime)}</span>
+                      </div>
+                      <button
+                        onClick={() => onCellClick(selectedRow.classId, selectedRow.sectionId, currentDay, p)}
+                        className="-m-1 p-1 text-slate-400 hover:text-slate-600"
+                        aria-label={`Edit ${label}`}>
+                        <Pencil size={14} />
+                      </button>
+                    </div>
+                    <div className="mt-2.5 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h4 className="text-base font-bold" style={{ color: ct.text }}>{cell.subject}</h4>
+                        {cell.teacher && cell.teacher !== '-' && (
+                          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
+                            <User size={13} className="shrink-0 text-slate-400" />
+                            <span className="truncate">{cell.teacher}</span>
+                          </p>
+                        )}
+                      </div>
+                      {cell.room && (
+                        <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                          {cell.room}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <button key={p.startTime}
+                  onClick={() => onCellClick(selectedRow.classId, selectedRow.sectionId, currentDay, p)}
+                  className="w-full rounded-xl border border-dashed border-slate-200 p-3.5 text-left transition hover:border-amber-300 hover:bg-amber-50/50">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-400">{label}</span>
+                    <span className="text-xs font-semibold text-slate-400">{fmtRange(p.startTime, p.endTime)}</span>
+                  </div>
+                  <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-amber-500">
+                    <Plus size={12} /> Assign subject &amp; teacher
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 /* ─── ClassView ─── */
-const ClassView = ({ selectedRow, routines, getCell, onCellClick, onAddPeriod }) => {
+const ClassView = ({
+  selectedRow, routines, getCell, onCellClick, onAddPeriod,
+  currentDay, setCurrentDay, periodColumns, classSectionRows,
+  selectedClassId, selectedSectionId, onSelectClassSection,
+}) => {
   const periodsForRow = useMemo(() => {
     if (!selectedRow) return [];
     const seen = new Map();
@@ -476,13 +703,34 @@ const ClassView = ({ selectedRow, routines, getCell, onCellClick, onAddPeriod })
     return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
   }, [routines, selectedRow]);
 
+  const mobileView = (
+    <div className="sm:hidden">
+      <MobileClassSchedule
+        classSectionRows={classSectionRows}
+        selectedClassId={selectedClassId}
+        selectedSectionId={selectedSectionId}
+        onSelectClassSection={onSelectClassSection}
+        currentDay={currentDay}
+        setCurrentDay={setCurrentDay}
+        periodColumns={periodColumns}
+        getCell={getCell}
+        selectedRow={selectedRow}
+        routines={routines}
+        onCellClick={onCellClick}
+      />
+    </div>
+  );
+
   if (!selectedRow) {
     return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
-        <BookOpen size={36} className="mx-auto mb-3 text-slate-300" />
-        <p className="text-sm font-semibold text-slate-700 mb-1">No class selected</p>
-        <p className="text-xs text-slate-400">Click a class from the sidebar or use the filter above.</p>
-      </div>
+      <>
+        {mobileView}
+        <div className="hidden sm:block bg-white border border-slate-200 rounded-2xl p-16 text-center shadow-sm">
+          <BookOpen size={36} className="mx-auto mb-3 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-700 mb-1">No class selected</p>
+          <p className="text-xs text-slate-400">Click a class from the sidebar or use the filter above.</p>
+        </div>
+      </>
     );
   }
 
@@ -544,7 +792,9 @@ const ClassView = ({ selectedRow, routines, getCell, onCellClick, onAddPeriod })
   });
 
   return (
-    <div>
+    <>
+      {mobileView}
+      <div className="hidden sm:block">
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h2 className="text-lg font-bold text-slate-800">
           Class {selectedRow.className}{selectedRow.sectionName ? <span className="text-indigo-600"> – {selectedRow.sectionName}</span> : ''} — Full Week
@@ -559,7 +809,7 @@ const ClassView = ({ selectedRow, routines, getCell, onCellClick, onAddPeriod })
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(140px, 1fr))', gap: 10 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5">
         {dayBlocks.map(({ day, cards, dayMeta }, di) => (
           <Motion.div key={day} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: di * 0.05 }}>
             <div className="rounded-xl py-2 px-3 mb-2 text-center text-sm font-bold text-white" style={{ background: dayMeta.color }}>
@@ -578,7 +828,8 @@ const ClassView = ({ selectedRow, routines, getCell, onCellClick, onAddPeriod })
           </Motion.div>
         ))}
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 
@@ -655,7 +906,7 @@ const TeacherView = ({ selectedTeacher, allTeacherNames, classSectionRows, routi
           ))}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(140px, 1fr))', gap: 10 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5">
         {dayData.map(({ day, entries }, di) => {
           const dayMeta = DAY_META[day];
           return (
@@ -1372,39 +1623,39 @@ const Routines = ({ setShowAdminHeader }) => {
       </AnimatePresence>
 
       {/* ── Topbar ── */}
-      <div className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+      <div className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm safe-top">
         {/* Row 1: brand + actions */}
-        <div className="max-w-[1560px] mx-auto px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-md">
+        <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-md shrink-0">
               <Calendar size={16} className="text-white" />
             </div>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 leading-tight">Class Routines</h1>
-              <p className="text-[10px] text-slate-400">Manage weekly timetables</p>
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight truncate">Class Routines</h1>
+              <p className="text-[10px] text-slate-400 hidden sm:block">Manage weekly timetables</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setShowAIImport(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors">
-              <Sparkles size={13} /> AI Import
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button onClick={() => setShowAIImport(true)} aria-label="AI Import"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors">
+              <Sparkles size={13} /> <span className="hidden sm:inline">AI Import</span>
             </button>
-            <button onClick={exportPDF} disabled={routines.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
-              <Download size={13} /> Download PDF
+            <button onClick={exportPDF} disabled={routines.length === 0} aria-label="Download PDF"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors">
+              <Download size={13} /> <span className="hidden sm:inline">Download PDF</span>
             </button>
-            <button onClick={handleDeleteAll} disabled={isDeletingAll || routines.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors">
+            <button onClick={handleDeleteAll} disabled={isDeletingAll || routines.length === 0} aria-label="Delete all routines"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40 transition-colors">
               {isDeletingAll ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              {isDeletingAll ? 'Deleting…' : 'Delete All'}
+              <span className="hidden sm:inline">{isDeletingAll ? 'Deleting…' : 'Delete All'}</span>
             </button>
           </div>
         </div>
 
         {/* Row 2: view tabs + filters + school timing */}
-        <div className="max-w-[1560px] mx-auto px-6 py-2 flex items-center gap-4 flex-wrap border-t border-slate-100">
+        <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 sm:flex-wrap border-t border-slate-100">
           {/* View tabs */}
-          <div className="flex gap-1 p-1 rounded-xl bg-slate-100 shrink-0">
+          <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-full sm:w-auto shrink-0">
             {[
               { key: 'dayGrid',     icon: <LayoutGrid size={13} />, label: 'Day Grid' },
               { key: 'classView',   icon: <BookOpen   size={13} />, label: 'By Class' },
@@ -1412,7 +1663,7 @@ const Routines = ({ setShowAdminHeader }) => {
             ].map(tab => (
               <Motion.button key={tab.key} onClick={() => setCurrentView(tab.key)}
                 whileTap={{ scale: 0.97 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                 style={{
                   background: currentView === tab.key ? '#fff' : 'transparent',
                   color: currentView === tab.key ? '#4f46e5' : '#64748b',
@@ -1423,10 +1674,10 @@ const Routines = ({ setShowAdminHeader }) => {
             ))}
           </div>
 
-          <div className="w-px h-6 bg-slate-200 shrink-0" />
+          <div className="w-px h-6 bg-slate-200 shrink-0 hidden sm:block" />
 
           {/* School Timing — inline in this row */}
-          <div className="flex items-center gap-3 flex-wrap flex-1">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap flex-1 min-w-0">
             <Clock size={13} className="text-indigo-500 shrink-0" />
             <AnimatePresence mode="wait">
               {editingTiming ? (
@@ -1476,8 +1727,9 @@ const Routines = ({ setShowAdminHeader }) => {
             </AnimatePresence>
           </div>
 
-          {/* Filters — pushed to the right */}
-          <div className="ml-auto shrink-0">
+          {/* Filters — pushed to the right. In "By Class" the mobile view has its
+              own class/section pill row, so hide the dropdowns there below sm. */}
+          <div className={`w-full sm:w-auto sm:ml-auto shrink-0 ${currentView === 'classView' ? 'hidden sm:block' : ''}`}>
             {currentView !== 'teacherView' ? (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Class</span>
@@ -1522,7 +1774,7 @@ const Routines = ({ setShowAdminHeader }) => {
           {currentView === 'dayGrid' && (
             <Motion.div
               initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-              className="max-w-[1560px] mx-auto px-6 flex gap-1.5 overflow-x-auto border-t border-slate-100 py-2">
+              className="max-w-[1560px] mx-auto px-3 sm:px-6 flex gap-1.5 overflow-x-auto no-scrollbar border-t border-slate-100 py-2">
               {DAYS.map(day => {
                 const meta = DAY_META[day];
                 const isActive = currentDay === day;
@@ -1545,10 +1797,10 @@ const Routines = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── Layout ── */}
-      <div className="max-w-[1560px] mx-auto px-6 py-5 flex gap-5 items-start">
+      <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-4 sm:py-5 flex gap-5 items-start">
 
-        {/* Rail sidebar */}
-        <aside className="w-52 shrink-0 sticky top-[148px]">
+        {/* Rail sidebar — desktop only; mobile uses the Class/Section dropdowns above */}
+        <aside className="hidden lg:block w-52 shrink-0 sticky top-[148px]">
           <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm">
             <p className="text-xs font-bold text-slate-700 mb-0.5">Classes &amp; Sections</p>
             <p className="text-[10px] text-slate-400 mb-3">Click to filter the view</p>
@@ -1623,6 +1875,18 @@ const Routines = ({ setShowAdminHeader }) => {
                   getCell={getCell}
                   onCellClick={(classId, sectionId, day, period) => openCellEditor(classId, sectionId, day, period)}
                   onAddPeriod={(classId, sectionId, day) => openAddPeriod(classId, sectionId, day)}
+                  currentDay={currentDay}
+                  setCurrentDay={setCurrentDay}
+                  periodColumns={periodColumns}
+                  classSectionRows={classSectionRows}
+                  selectedClassId={selectedClassId}
+                  selectedSectionId={selectedSectionId}
+                  onSelectClassSection={(cid, sid) => {
+                    const same = String(cid) === String(selectedClassId)
+                      && String(sid) === String(selectedSectionId || '');
+                    if (same) { setSelectedClassId(''); setSelectedSectionId(''); }
+                    else { setSelectedClassId(cid); setSelectedSectionId(sid); }
+                  }}
                 />
               </Motion.div>
             )}
@@ -1643,6 +1907,23 @@ const Routines = ({ setShowAdminHeader }) => {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* ── Mobile "Add Period" FAB ── */}
+      <Fab
+        className="lg:hidden"
+        label="Add Period"
+        onClick={() => {
+          if (currentView === 'teacherView') {
+            showToast('Switch to Day Grid or By Class to add a period', 'error');
+            return;
+          }
+          if (selectedRow) {
+            openAddPeriod(selectedRow.classId, selectedRow.sectionId, currentDay);
+            return;
+          }
+          showToast('Pick a class (and section) first', 'error');
+        }}
+      />
 
       {/* ── AI Import Modal ── */}
       <AnimatePresence>

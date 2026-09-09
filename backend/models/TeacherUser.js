@@ -33,6 +33,7 @@ const teacherUserSchema = new mongoose.Schema({
   pinCode: String,
   profilePic: { type: String, default: "" },
   lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
   isArchived: { type: Boolean, default: false, index: true },
   archivedAt: { type: Date, default: null },
 
@@ -75,6 +76,7 @@ const teacherUserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 teacherUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+teacherUserSchema.index({ schoolId: 1, lastActiveAt: -1 });
 teacherUserSchema.index(
   { organizationId: 1, employeeCode: 1 },
   { unique: true, partialFilterExpression: { employeeCode: { $type: 'string' } } }

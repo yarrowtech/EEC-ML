@@ -63,6 +63,7 @@ const tokenReplayTelemetry = require('./middleware/tokenReplayTelemetry');
 const tenantResolver = require('./middleware/tenantResolver');
 const adminActionLogger = require('./middleware/adminActionLogger');
 const portalActionLogger = require('./middleware/portalActionLogger');
+const activityTracker = require('./middleware/activityTracker');
 const rateLimit = require('./middleware/rateLimit');
 const { logSecurityEvent } = require('./utils/securityEventLogger');
 const { getClientIp } = require('./utils/request');
@@ -176,6 +177,9 @@ app.use(tokenReplayTelemetry);
 // PORTAL_ROUTE_PREFIXES in the middleware). Reads req.user/req.teacher/etc.
 // on res 'finish', so it's safe to register before per-route auth runs.
 app.use(portalActionLogger);
+// Stamps `lastActiveAt` on the user doc (throttled, on res 'finish') so the
+// Super Admin usage dashboard can tell which schools/users are actually active.
+app.use(activityTracker);
 app.use('/api', limiters.general);
 
 // Razorpay webhook must receive the raw body before express.json() parses it.

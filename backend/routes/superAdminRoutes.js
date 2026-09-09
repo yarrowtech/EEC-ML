@@ -5,6 +5,7 @@ const School = require('../models/School');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
+const StaffUser = require('../models/StaffUser');
 const Principal = require('../models/Principal');
 const AuditLog = require('../models/AuditLog');
 const Notification = require('../models/Notification');
@@ -621,6 +622,317 @@ router.delete('/admins/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
       meta: { username: existing.username },
     });
     res.json({ message: 'Admin deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Platform usage — "is this school / role / user actually using the system?"
+ * Reads `lastActiveAt` (stamped by middleware/activityTracker.js) plus the
+ * legacy `lastLoginAt`. Super-admin only; no tenant scope (platform-wide).
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const USAGE_ROLES = [
+  { key: 'student', Model: StudentUser, idField: 'studentCode', statusField: 'status', baseFilter: {} },
+  { key: 'teacher', Model: TeacherUser, idField: 'employeeCode', statusField: null, baseFilter: {} },
+  { key: 'parent', Model: ParentUser, idField: 'username', statusField: null, baseFilter: {} },
+  { key: 'staff', Model: StaffUser, idField: 'employeeCode', statusField: 'status', baseFilter: {} },
+  { key: 'principal', Model: Principal, idField: 'username', statusField: null, baseFilter: {} },
+  { key: 'admin', Model: Admin, idField: 'username', statusField: 'status', baseFilter: { role: { $ne: 'super_admin' } } },
+];
+
+const USAGE_PER_ROLE_CAP = 500;
+
+const usageWindows = () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  return {
+    now,
+    d1: new Date(now - day),
+    d7: new Date(now - 7 * day),
+    d30: new Date(now - 30 * day),
+  };
+};
+
+const usageCounters = ({ d1, d7, d30 }) => ({
+  total: { $sum: 1 },
+  active24h: { $sum: { $cond: [{ $gte: ['$lastActiveAt', d1] }, 1, 0] } },
+  active7d: { $sum: { $cond: [{ $gte: ['$lastActiveAt', d7] }, 1, 0] } },
+  active30d: { $sum: { $cond: [{ $gte: ['$lastActiveAt', d30] }, 1, 0] } },
+  everActive: { $sum: { $cond: [{ $ifNull: ['$lastActiveAt', false] }, 1, 0] } },
+  lastActivityAt: { $max: '$lastActiveAt' },
+});
+
+const deriveSchoolHealth = (acc) => {
+  if (!acc.lastActivityAt) return 'never';
+  if (acc.active7d > 0) return 'active';
+  if (acc.active30d > 0) return 'low';
+  return 'dormant';
+};
+
+// Platform-wide totals + per-role split.
+router.get('/usage/overview', adminAuth, ensureSuperAdmin, async (_req, res) => {
+  // #swagger.tags = ['Super Admin']
+  try {
+    const windows = usageWindows();
+    const counters = usageCounters(windows);
+
+    const perRole = await Promise.all(
+      USAGE_ROLES.map(async ({ key, Model, baseFilter }) => {
+        const pipeline = [];
+        if (Object.keys(baseFilter).length) pipeline.push({ $match: baseFilter });
+        pipeline.push({ $group: { _id: null, ...counters } });
+        const [row] = await Model.aggregate(pipeline);
+        return {
+          role: key,
+          total: row?.total || 0,
+          active24h: row?.active24h || 0,
+          active7d: row?.active7d || 0,
+          active30d: row?.active30d || 0,
+          everActive: row?.everActive || 0,
+        };
+      }),
+    );
+
+    const totals = perRole.reduce(
+      (acc, r) => ({
+        users: acc.users + r.total,
+        active24h: acc.active24h + r.active24h,
+        active7d: acc.active7d + r.active7d,
+        active30d: acc.active30d + r.active30d,
+        everActive: acc.everActive + r.everActive,
+      }),
+      { users: 0, active24h: 0, active7d: 0, active30d: 0, everActive: 0 },
+    );
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      totals: {
+        users: totals.users,
+        active24h: totals.active24h,
+        active7d: totals.active7d,
+        active30d: totals.active30d,
+        dormant: Math.max(0, totals.everActive - totals.active30d),
+        neverActive: Math.max(0, totals.users - totals.everActive),
+      },
+      byRole: perRole.map(({ role, total, active7d, active30d }) => ({ role, total, active7d, active30d })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Per-school rollup with a health status.
+router.get('/usage/schools', adminAuth, ensureSuperAdmin, async (_req, res) => {
+  // #swagger.tags = ['Super Admin']
+  try {
+    const windows = usageWindows();
+    const counters = usageCounters(windows);
+    const bySchool = new Map();
+
+    await Promise.all(
+      USAGE_ROLES.map(async ({ Model, baseFilter }) => {
+        const rows = await Model.aggregate([
+          { $match: { ...baseFilter, schoolId: { $ne: null } } },
+          { $group: { _id: '$schoolId', ...counters } },
+        ]);
+        rows.forEach((r) => {
+          const key = String(r._id);
+          const acc =
+            bySchool.get(key) ||
+            { totalUsers: 0, active24h: 0, active7d: 0, active30d: 0, lastActivityAt: null };
+          acc.totalUsers += r.total;
+          acc.active24h += r.active24h;
+          acc.active7d += r.active7d;
+          acc.active30d += r.active30d;
+          if (r.lastActivityAt && (!acc.lastActivityAt || r.lastActivityAt > acc.lastActivityAt)) {
+            acc.lastActivityAt = r.lastActivityAt;
+          }
+          bySchool.set(key, acc);
+        });
+      }),
+    );
+
+    const schools = await School.find({}, 'name logo status registrationStatus').sort({ name: 1 }).lean();
+    const payload = schools.map((s) => {
+      const acc =
+        bySchool.get(String(s._id)) ||
+        { totalUsers: 0, active24h: 0, active7d: 0, active30d: 0, lastActivityAt: null };
+      return {
+        schoolId: s._id,
+        name: s.name || '',
+        logo: s.logo || null,
+        status: s.status || 'active',
+        registrationStatus: s.registrationStatus || null,
+        totalUsers: acc.totalUsers,
+        active24h: acc.active24h,
+        active7d: acc.active7d,
+        active30d: acc.active30d,
+        lastActivityAt: acc.lastActivityAt,
+        health: deriveSchoolHealth(acc),
+      };
+    });
+
+    res.json({ generatedAt: new Date().toISOString(), schools: payload });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// One school: per-role breakdown, admin accounts, and a filtered user directory.
+router.get('/usage/schools/:schoolId', adminAuth, ensureSuperAdmin, async (req, res) => {
+  // #swagger.tags = ['Super Admin']
+  try {
+    const schoolId = await resolveSchoolIdOrError(req.params.schoolId, res);
+    if (!schoolId) return;
+
+    const windows = usageWindows();
+    const { d30 } = windows;
+    const counters = usageCounters(windows);
+    const objId = new mongoose.Types.ObjectId(schoolId);
+
+    const roleParam = String(req.query.role || 'all').toLowerCase();
+    const activity = String(req.query.activity || 'all').toLowerCase();
+    const q = String(req.query.q || '').trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 12));
+
+    const activityFilter =
+      activity === 'active'
+        ? { lastActiveAt: { $gte: d30 } }
+        : activity === 'dormant'
+          ? { $or: [{ lastActiveAt: { $lt: d30 } }, { lastActiveAt: null, lastLoginAt: { $ne: null } }] }
+          : activity === 'never'
+            ? { lastActiveAt: null, lastLoginAt: null }
+            : {};
+
+    // ── Per-role breakdown + summary (always every role, school-scoped) ──
+    const byRole = [];
+    const summary = { totalUsers: 0, active24h: 0, active7d: 0, active30d: 0, lastActivityAt: null };
+    await Promise.all(
+      USAGE_ROLES.map(async ({ key, Model, baseFilter }) => {
+        const [row] = await Model.aggregate([
+          { $match: { ...baseFilter, schoolId: objId } },
+          { $group: { _id: null, ...counters } },
+        ]);
+        if (!row || !row.total) return;
+        byRole.push({
+          role: key,
+          total: row.total,
+          active24h: row.active24h,
+          active7d: row.active7d,
+          active30d: row.active30d,
+          lastActivityAt: row.lastActivityAt || null,
+        });
+        summary.totalUsers += row.total;
+        summary.active24h += row.active24h;
+        summary.active7d += row.active7d;
+        summary.active30d += row.active30d;
+        if (row.lastActivityAt && (!summary.lastActivityAt || row.lastActivityAt > summary.lastActivityAt)) {
+          summary.lastActivityAt = row.lastActivityAt;
+        }
+      }),
+    );
+    byRole.sort((a, b) => b.total - a.total);
+
+    // ── Admin + principal accounts ──
+    const [adminDocs, principalDocs] = await Promise.all([
+      Admin.find(
+        { schoolId: objId, role: { $ne: 'super_admin' } },
+        'username name email campusName status lastActiveAt lastLoginAt',
+      ).lean(),
+      Principal.find(
+        { schoolId: objId },
+        'username name email campusName lastActiveAt lastLoginAt',
+      ).lean(),
+    ]);
+    const admins = [
+      ...adminDocs.map((a) => ({
+        id: a._id,
+        role: 'admin',
+        username: a.username,
+        name: a.name || '',
+        email: a.email || '',
+        campusName: a.campusName || '',
+        status: a.status || 'active',
+        lastActiveAt: a.lastActiveAt || null,
+        lastLoginAt: a.lastLoginAt || null,
+      })),
+      ...principalDocs.map((p) => ({
+        id: p._id,
+        role: 'principal',
+        username: p.username,
+        name: p.name || '',
+        email: p.email || '',
+        campusName: p.campusName || '',
+        status: 'active',
+        lastActiveAt: p.lastActiveAt || null,
+        lastLoginAt: p.lastLoginAt || null,
+      })),
+    ].sort((a, b) => new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0));
+
+    // ── User directory (filtered, merged across roles, then paginated) ──
+    const targetRoles = USAGE_ROLES.filter((r) => roleParam === 'all' || r.key === roleParam);
+    const collected = [];
+    let total = 0;
+    await Promise.all(
+      targetRoles.map(async ({ key, Model, idField, statusField }) => {
+        const filter = { schoolId: objId, ...activityFilter };
+        if (q) {
+          filter.$and = [
+            {
+              $or: [
+                { name: { $regex: escapeRegex(q), $options: 'i' } },
+                { [idField]: { $regex: escapeRegex(q), $options: 'i' } },
+              ],
+            },
+          ];
+        }
+        const projection = ['name', idField, statusField, 'isArchived', 'lastActiveAt', 'lastLoginAt']
+          .filter(Boolean)
+          .join(' ');
+        const [count, docs] = await Promise.all([
+          Model.countDocuments(filter),
+          Model.find(filter, projection).sort({ lastActiveAt: -1, _id: 1 }).limit(USAGE_PER_ROLE_CAP).lean(),
+        ]);
+        total += count;
+        docs.forEach((d) => {
+          collected.push({
+            id: d._id,
+            name: d.name || '',
+            identifier: d[idField] || '',
+            role: key,
+            status: (statusField && d[statusField]) || (d.isArchived ? 'inactive' : 'active'),
+            lastActiveAt: d.lastActiveAt || null,
+            lastLoginAt: d.lastLoginAt || null,
+          });
+        });
+      }),
+    );
+    collected.sort((a, b) => new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0));
+    const items = collected.slice((page - 1) * pageSize, page * pageSize);
+
+    const school = await School.findById(schoolId, 'name logo status').lean();
+
+    res.json({
+      school: {
+        schoolId,
+        name: school?.name || '',
+        logo: school?.logo || null,
+        status: school?.status || 'active',
+      },
+      summary,
+      byRole,
+      admins,
+      users: {
+        items,
+        total,
+        page,
+        pageSize,
+        capped: collected.length >= USAGE_PER_ROLE_CAP * targetRoles.length && total > collected.length,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

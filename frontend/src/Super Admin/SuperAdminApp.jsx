@@ -7,6 +7,7 @@ import Feedback from './pages/Feedback';
 import Issues from './pages/Issues';
 import Credentials from './pages/Credentials';
 import Operations from './pages/Operations';
+import Usage from './pages/Usage';
 import IDPass from './pages/IDPass';
 import ActiveSchools from './pages/ActiveSchools';
 import RequestDetails from './pages/RequestDetails';
@@ -811,6 +812,7 @@ const SuperAdminAppInner = () => {
             onSaveSupportSettings={handleSupportSettingsSave}
           />
         } />
+        <Route path="usage" element={<Usage />} />
         <Route path="id-pass" element={<IDPass profile={profile} />} />
         <Route
           path="active-schools"

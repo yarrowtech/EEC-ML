@@ -240,6 +240,7 @@ const studentUserSchema = new mongoose.Schema({
   parentConsentGivenBy: { type: String, default: '' }, // name of consenting parent/guardian
   dataRetentionExpiresAt: { type: Date, default: null }, // set on student graduation/exit
   lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
   isArchived: { type: Boolean, default: false },
   archivedAt: { type: Date, default: null },
   archivedPlacement: {
@@ -271,6 +272,7 @@ const studentUserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 studentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+studentUserSchema.index({ schoolId: 1, lastActiveAt: -1 });
 studentUserSchema.index(
   { organizationId: 1, studentCode: 1 },
   { unique: true, partialFilterExpression: { studentCode: { $type: 'string' } } }

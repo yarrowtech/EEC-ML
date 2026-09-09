@@ -32,9 +32,12 @@ const staffUserSchema = new mongoose.Schema({
   profilePic: { type: String, default: "" },
   salary: Number,
   status: { type: String, enum: ['Active', 'On Leave', 'Inactive'], default: 'Active' },
+  lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
 }, { timestamps: true });
 
 staffUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+staffUserSchema.index({ schoolId: 1, lastActiveAt: -1 });
 staffUserSchema.index(
   { organizationId: 1, employeeCode: 1 },
   { unique: true, partialFilterExpression: { employeeCode: { $type: 'string' } } }

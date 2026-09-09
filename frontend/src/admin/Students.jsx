@@ -268,6 +268,7 @@ const Students = ({ setShowAdminHeader }) => {
   const [sessionFilter, setSessionFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
+  const [showEnrollmentSummary, setShowEnrollmentSummary] = useState(true);
   const [parentDirectory, setParentDirectory] = useState(() => readStudentsCache()?.parents || []);
   const [parentSearchTerm, setParentSearchTerm] = useState("");
   const [editSelectedAcademicYearId, setEditSelectedAcademicYearId] = useState("");
@@ -444,6 +445,37 @@ const Students = ({ setShowAdminHeader }) => {
     },
     [sessionFilter, classFilter, studentData, academicClasses, academicSections]
   );
+  // Enrollment counts for the selected session: grand total, per class, and
+  // per section within each class. Ignores the class/section filters on purpose
+  // so this stays a full distribution overview.
+  const enrollmentSummary = useMemo(() => {
+    const source = sessionFilter
+      ? studentData.filter(
+          (s) => String(s.academicYear || "").trim() === String(sessionFilter).trim()
+        )
+      : studentData;
+    const byClass = new Map();
+    source.forEach((s) => {
+      const cls = String(s.class || s.grade || "").trim() || "Unassigned";
+      const sec = String(s.section || "").trim() || "No section";
+      if (!byClass.has(cls)) byClass.set(cls, { total: 0, sections: new Map() });
+      const entry = byClass.get(cls);
+      entry.total += 1;
+      entry.sections.set(sec, (entry.sections.get(sec) || 0) + 1);
+    });
+    const collator = (a, b) =>
+      String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+    const classes = Array.from(byClass.entries())
+      .map(([name, v]) => ({
+        name,
+        total: v.total,
+        sections: Array.from(v.sections.entries())
+          .map(([sName, count]) => ({ name: sName, count }))
+          .sort((a, b) => collator(a.name, b.name)),
+      }))
+      .sort((a, b) => collator(a.name, b.name));
+    return { total: source.length, classes };
+  }, [studentData, sessionFilter]);
   const filteredAcademicSections = useMemo(() => {
     if (!selectedClassId) return [];
     return academicSections.filter(
@@ -3981,6 +4013,101 @@ const Students = ({ setShowAdminHeader }) => {
           </div>
         </div>
         <div className="flex-1 flex flex-col min-h-0">
+          {/* Enrollment summary — total / per class / per section */}
+          <div className="mb-1 flex-shrink-0 rounded-xl border border-gray-200 bg-white">
+            <button
+              type="button"
+              onClick={() => setShowEnrollmentSummary((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-2 md:px-4"
+            >
+              <Users size={16} className="text-amber-500" />
+              <span className="text-sm font-semibold text-gray-800">
+                Total students
+                {sessionFilter ? (
+                  <span className="font-normal text-gray-400"> · {sessionFilter}</span>
+                ) : null}
+              </span>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                {enrollmentSummary.total}
+              </span>
+              <span className="ml-auto text-xs text-gray-400">
+                {enrollmentSummary.classes.length} class
+                {enrollmentSummary.classes.length !== 1 ? "es" : ""}
+              </span>
+              <ChevronDown
+                size={16}
+                className={`text-gray-400 transition-transform ${
+                  showEnrollmentSummary ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {showEnrollmentSummary && (
+              <div className="max-h-[34vh] overflow-y-auto border-t border-gray-100 px-3 py-2 md:px-4">
+                {enrollmentSummary.classes.length === 0 ? (
+                  <p className="py-3 text-center text-xs text-gray-400">
+                    No students enrolled{sessionFilter ? " for this session" : ""} yet.
+                  </p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {enrollmentSummary.classes.map((cls) => {
+                      const realClass = cls.name !== "Unassigned";
+                      return (
+                        <div
+                          key={cls.name}
+                          className="rounded-lg border border-gray-100 bg-gray-50/70 p-2.5"
+                        >
+                          <button
+                            type="button"
+                            disabled={!realClass}
+                            onClick={() => {
+                              setClassFilter(cls.name);
+                              setSectionFilter("");
+                            }}
+                            className="flex w-full items-center justify-between gap-2 disabled:cursor-default"
+                            title={realClass ? `Filter to ${cls.name}` : undefined}
+                          >
+                            <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                              <GraduationCap size={14} className="text-gray-400" />
+                              {cls.name}
+                            </span>
+                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                              {cls.total}
+                            </span>
+                          </button>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {cls.sections.map((sec) => {
+                              const realSection = sec.name !== "No section";
+                              return (
+                                <button
+                                  key={sec.name}
+                                  type="button"
+                                  disabled={!realClass || !realSection}
+                                  onClick={() => {
+                                    setClassFilter(cls.name);
+                                    setSectionFilter(sec.name);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition hover:border-green-300 hover:bg-green-50 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:bg-white"
+                                  title={
+                                    realSection ? `Filter to ${cls.name} · ${sec.name}` : undefined
+                                  }
+                                >
+                                  <span className="font-medium text-gray-700">{sec.name}</span>
+                                  <span className="text-gray-400">·</span>
+                                  <span className="font-semibold text-green-700">{sec.count}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Filter Bar */}
           <div className="mb-1 p-3 md:p-4 flex-shrink-0  ">
             <div className="flex flex-wrap items-center gap-3">

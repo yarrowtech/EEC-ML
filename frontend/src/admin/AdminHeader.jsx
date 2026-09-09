@@ -548,7 +548,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest }) => {
           <motion.div
             // whileHover={{ y: -1 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
+            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
           >
             {/* ── Mobile hamburger ── */}
             <button

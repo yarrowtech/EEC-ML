@@ -173,12 +173,14 @@ const parentUserSchema = new mongoose.Schema({
   },
   recentActivities: [{ type: String }],
   lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
   childrenIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser' }],
   children: [String],
   grade: [String],
 }, { timestamps: true });
 
 parentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+parentUserSchema.index({ schoolId: 1, lastActiveAt: -1 });
 
 parentUserSchema.pre('save', async function (next) {
   if (this.isModified('password') && !looksHashed(this.password)) {

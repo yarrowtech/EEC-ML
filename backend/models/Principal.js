@@ -22,6 +22,7 @@ const principalSchema = new mongoose.Schema({
   campusName: { type: String, default: null },
   campusType: { type: String, default: null },
   lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
 }, { timestamps: true });
 
 principalSchema.pre('save', async function (next) {
@@ -32,6 +33,7 @@ principalSchema.pre('save', async function (next) {
 
 principalSchema.index({ organizationId: 1, username: 1 }, { unique: true });
 principalSchema.index({ organizationId: 1, email: 1 }, { unique: true });
+principalSchema.index({ schoolId: 1, lastActiveAt: -1 });
 
 
 principalSchema.pre('findOneAndUpdate', async function (next) {

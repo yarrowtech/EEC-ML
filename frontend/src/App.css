@@ -7,6 +7,34 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── Mobile app-shell helpers ──────────────────────────────────────────────
+   Hide scrollbars on horizontal pill/tab strips, and expose the iOS/Android
+   safe-area insets as utilities (see viewport-fit=cover in index.html). */
+@utility no-scrollbar {
+  &::-webkit-scrollbar { display: none; }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+/* Clearance so scrollable page content is not hidden behind the mobile
+   bottom nav (56px bar + safe area). Pair with `lg:pb-0` on desktop. */
+@utility pb-bottom-nav {
+  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
+}
+/* Sits just above the bottom nav — for floating action buttons. */
+@utility bottom-nav-offset {
+  bottom: calc(4.25rem + env(safe-area-inset-bottom));
+}
+
 .super-admin-scroll {
   scrollbar-width: thin;
   scrollbar-color: #cdd5df transparent;

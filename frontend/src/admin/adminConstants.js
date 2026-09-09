@@ -113,7 +113,7 @@ export const ADMIN_MENU_ITEMS = [
   // },
   {
     icon: Users,
-    label: 'Teachers',
+    label: 'Teachers Management',
     path: '/admin/teachers'
   },
   {
@@ -123,7 +123,7 @@ export const ADMIN_MENU_ITEMS = [
   },
   {
     icon: Calendar,
-    label: 'Routine',
+    label: 'Routine Management',
     path: '/admin/routines',
   },
   {
@@ -198,7 +198,7 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers', 'Teacher Feedback', 'Routine', 'Exam Management', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
   { section: 'FEES MANAGEMENT', items: ['Fees Dashboard', 'Fees Manage', 'Fees Collection'] },

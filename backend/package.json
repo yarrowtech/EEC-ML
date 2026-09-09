@@ -17,6 +17,8 @@
     "assignments:migrate-sessions": "node scripts/backfillAssignmentAcademicYears.js",
     "assignments:migrate-sessions:apply": "node scripts/backfillAssignmentAcademicYears.js --apply",
     "push:keys": "node scripts/generateVapidKeys.js",
+    "usage:backfill": "node scripts/backfillLastActive.js",
+    "usage:backfill:apply": "node scripts/backfillLastActive.js --apply",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
@@ -46,7 +48,7 @@
     "mongoose": "^8.15.1",
     "multer": "^2.0.2",
     "node-cron": "^4.6.0",
-    "nodemailer": "^6.9.13",
+    "nodemailer": "^10.0.1",
     "pino": "^10.3.1",
     "react-helmet": "^6.1.0",
     "redis": "^6.1.0",
@@ -54,6 +56,6 @@
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "web-push": "^3.6.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

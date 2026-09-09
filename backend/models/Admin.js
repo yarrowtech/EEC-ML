@@ -22,9 +22,11 @@ const adminSchema = new mongoose.Schema({
   campusName: { type: String, default: null },
   campusType: { type: String, default: null },
   lastLoginAt: { type: Date, default: null },
+  lastActiveAt: { type: Date, default: null },
 });
 
 adminSchema.index({ organizationId: 1, username: 1 }, { unique: true });
+adminSchema.index({ schoolId: 1, lastActiveAt: -1 });
 
 adminSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

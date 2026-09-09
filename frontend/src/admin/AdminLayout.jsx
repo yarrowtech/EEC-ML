@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
 import AdminHeader from './AdminHeader';
 import AdminSidebar from './AdminSidebar';
+import AdminBottomNav from './AdminBottomNav';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const AdminLayout = ({
@@ -92,10 +93,13 @@ const AdminLayout = ({
             bottom, since it wraps every page's content. Pages that need
             horizontal-scroll containment already wrap their own wide
             content (tables, etc.) in their own overflow-x-auto box. */}
-        <main className="flex-1 bg-gray-50">
+        <main className="flex-1 bg-gray-50 pb-bottom-nav lg:pb-0">
           {children}
         </main>
       </div>
+
+      {/* Mobile-only bottom tab bar — "More" opens the full sidebar drawer */}
+      <AdminBottomNav onOpenMore={() => setMobileOpen(true)} />
     </div>
   );
 };
