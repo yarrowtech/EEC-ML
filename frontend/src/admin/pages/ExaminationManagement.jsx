@@ -706,17 +706,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-slate-100">
 
       {/* ── Hero ── */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-6 text-white shadow-xl">
+      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-4 py-5 sm:px-6 sm:py-6 text-white shadow-xl">
         <div className="absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10 blur-3xl" />
         <div className="relative max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Examination Management</h1>
-            <p className="mt-0.5 text-sm text-slate-400">Create exams, then add subject-wise papers inside each</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Examination Management</h1>
+            <p className="mt-0.5 text-xs sm:text-sm text-slate-400">Create exams, then add subject-wise papers inside each</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4 py-1 sm:mx-0 sm:px-0 sm:py-0 sm:overflow-visible sm:gap-3">
             {[{label:'Exams', val:groups.length},{label:'Subjects', val:totalSubjects},{label:'Scheduled', val:totalScheduled},{label:'Published', val:totalPublished},{label:'Completed', val:totalCompleted}].map(({label,val}) => (
-              <div key={label} className="flex flex-col items-center rounded-xl bg-white/10 px-4 py-2.5 backdrop-blur-sm">
-                <span className="text-xl font-bold">{val}</span>
+              <div key={label} className="flex flex-col items-center rounded-xl bg-white/10 px-4 py-2.5 backdrop-blur-sm shrink-0 min-w-[74px]">
+                <span className="text-lg sm:text-xl font-bold">{val}</span>
                 <span className="text-[10px] text-slate-400">{label}</span>
               </div>
             ))}
@@ -727,14 +727,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4">
 
         {/* ── Toolbar ── */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <div className="relative order-1 flex-1 sm:flex-none">
               <Calendar size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <select
                 value={yearFilterId}
                 onChange={(e) => setYearFilterId(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none"
+                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none"
               >
                 <option value="">All Sessions</option>
                 {years.map((year) => (
@@ -744,26 +744,26 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 ))}
               </select>
             </div>
-            <div className="relative min-w-[200px] flex-1">
+            <button onClick={openCreateGroup}
+              className="order-2 sm:order-last shrink-0 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200">
+              <Plus size={15} /> Create Exam
+            </button>
+            <div className="relative order-3 basis-full sm:basis-0 sm:flex-1 sm:min-w-[200px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exam or class…"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
             </div>
-            <div className="relative">
+            <div className="relative order-4 flex-1 sm:flex-none">
               <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <select value={termFilter} onChange={e => setTermFilter(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none">
+                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none">
                 <option value="all">All Terms</option>
                 {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-            <button onClick={() => { loadGroups(); loadUngrouped(); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
+            <button onClick={() => { loadGroups(); loadUngrouped(); }} aria-label="Refresh"
+              className="order-5 shrink-0 flex items-center justify-center gap-1.5 h-11 w-11 sm:h-auto sm:w-auto sm:px-3 sm:py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
               <RefreshCw size={13} />
-            </button>
-            <button onClick={openCreateGroup}
-              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200">
-              <Plus size={15} /> Create Exam
             </button>
           </div>
         </div>
@@ -811,51 +811,70 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap shrink-0">
-                        <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${statCls}`}>{group.status}</span>
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                          <FileText size={11} /> {subCount} Subject{subCount !== 1 ? 's' : ''}
-                        </span>
+                      <div className="mt-3 sm:mt-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:gap-2 sm:shrink-0">
+                        {/* status + subject count */}
+                        <div className="flex items-center gap-2 sm:contents">
+                          <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${statCls}`}>{group.status}</span>
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                            <FileText size={11} /> {subCount} Subject{subCount !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+
+                        {/* primary step action */}
                         <button onClick={() => openAddSubject(group)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
+                          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
                           <Plus size={12} /> Step 2: Add Subject
                         </button>
-                        <button
-                          onClick={() => generateExamSchedulePdf(group)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-                        >
-                          <FileText size={12} /> Download Routine
-                        </button>
-                        <button
-                          onClick={() => handlePublishRoutine(group)}
-                          disabled={!subCount || publishingGroupId === group._id}
-                          title={!subCount ? 'Add at least one subject exam first' : undefined}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                            group.status === 'Published'
-                              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
-                          }`}
-                        >
-                          {publishingGroupId === group._id
-                            ? <Loader2 size={12} className="animate-spin" />
-                            : <CheckCircle2 size={12} />}
-                          {publishingGroupId === group._id
-                            ? 'Publishing…'
-                            : group.status === 'Published' ? 'Republish Routine' : 'Publish Routine'}
-                        </button>
-                        <button onClick={() => openEditGroup(group)}
-                          className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
-                          <Edit2 size={13} />
-                        </button>
-                        <button onClick={() => handleDeleteGroup(group)}
-                          className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                          <Trash2 size={13} />
-                        </button>
-                        <button onClick={() => toggleGroup(group._id)}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-500 hover:bg-slate-50 transition-colors">
-                          <ChevronRight size={13} className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
-                          {isOpen ? 'Hide' : 'View'}
-                        </button>
+
+                        {/* routine + publish */}
+                        <div className="grid grid-cols-2 gap-2 sm:contents">
+                          <button
+                            onClick={() => generateExamSchedulePdf(group)}
+                            className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+                          >
+                            <FileText size={12} />
+                            <span className="sm:hidden">Routine</span>
+                            <span className="hidden sm:inline">Download Routine</span>
+                          </button>
+                          <button
+                            onClick={() => handlePublishRoutine(group)}
+                            disabled={!subCount || publishingGroupId === group._id}
+                            title={!subCount ? 'Add at least one subject exam first' : undefined}
+                            className={`flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                              group.status === 'Published'
+                                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                            }`}
+                          >
+                            {publishingGroupId === group._id
+                              ? <Loader2 size={12} className="animate-spin" />
+                              : <CheckCircle2 size={12} />}
+                            {publishingGroupId === group._id
+                              ? 'Publishing…'
+                              : group.status === 'Published'
+                                ? <><span className="sm:hidden">Republish</span><span className="hidden sm:inline">Republish Routine</span></>
+                                : <><span className="sm:hidden">Publish</span><span className="hidden sm:inline">Publish Routine</span></>}
+                          </button>
+                        </div>
+
+                        {/* edit / delete / view */}
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-2 sm:contents sm:border-0 sm:pt-0">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => openEditGroup(group)}
+                              className="h-9 w-9 sm:h-8 sm:w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                              <Edit2 size={13} />
+                            </button>
+                            <button onClick={() => handleDeleteGroup(group)}
+                              className="h-9 w-9 sm:h-8 sm:w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                          <button onClick={() => toggleGroup(group._id)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-500 hover:bg-slate-50 transition-colors">
+                            <ChevronRight size={13} className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                            {isOpen ? 'Hide' : 'View'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -873,7 +892,57 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                           </button>
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
+                        <>
+                        {/* ── mobile: stacked subject cards ── */}
+                        <div className="sm:hidden divide-y divide-slate-100 bg-slate-50/40">
+                          {group.subjects.map(exam => {
+                            const venueStr = exam.roomId?.floorId?.buildingId?.name
+                              ? `${exam.roomId.floorId.buildingId.name} / ${exam.roomId.floorId.name} / ${exam.roomId.roomNumber}`
+                              : (exam.venue || null);
+                            const sCls = STATUS_COLORS[exam.status] || 'bg-slate-100 text-slate-600';
+                            const isPast = exam.date && new Date(exam.date) < new Date();
+                            return (
+                              <div key={exam._id} className="px-4 py-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 truncate">{exam.subjectId?.name || exam.subject || '—'}</p>
+                                    {exam.subjectId?.code && <p className="text-[11px] text-slate-400">{exam.subjectId.code}</p>}
+                                  </div>
+                                  <span className={`shrink-0 inline-flex rounded-lg px-2 py-0.5 text-[11px] font-semibold ${sCls}`}>{exam.status || '—'}</span>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                  {exam.date ? (
+                                    <span className={`flex items-center gap-1 ${isPast ? 'text-slate-400' : 'text-slate-600'}`}>
+                                      <Calendar size={11} />
+                                      {new Date(exam.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
+                                      {exam.time ? ` · ${exam.time}` : ''}
+                                    </span>
+                                  ) : <span className="text-slate-300">Date not set</span>}
+                                  <span className="flex items-center gap-1"><Award size={12} className="text-amber-400" />{exam.marks ?? '—'} marks</span>
+                                  {exam.instructor && <span className="flex items-center gap-1"><User size={11} />{exam.instructor}</span>}
+                                </div>
+                                {venueStr && (
+                                  <p className="mt-1 flex items-start gap-1 text-xs text-slate-500">
+                                    <MapPin size={11} className="mt-0.5 shrink-0 text-slate-400" />{venueStr}
+                                  </p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                  <button onClick={() => openEditSubject(group, exam)}
+                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 active:bg-slate-50">
+                                    <Edit2 size={12} /> Edit
+                                  </button>
+                                  <button onClick={() => handleDeleteSubject(exam)}
+                                    className="flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-600 active:bg-rose-100">
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* ── desktop: subject table ── */}
+                        <div className="hidden sm:block overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="bg-slate-50">
@@ -945,6 +1014,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                             </tbody>
                           </table>
                         </div>
+                        </>
                       )}
                     </div>
                   )}
@@ -1000,7 +1070,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           <Field label="Exam Title">
             <input value={groupForm.title} onChange={e => setGroupForm(p=>({...p,title:e.target.value}))} className={inp} placeholder="e.g. First Term 2024-25" required />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Exam Type / Term">
               <select value={groupForm.term} onChange={e => setGroupForm(p=>({...p,term:e.target.value}))} className={inp}>
                 {TERM_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
@@ -1018,7 +1088,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               )}
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Academic Year">
               <select
                 value={groupYearId}
@@ -1035,7 +1105,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             </Field>
             <div />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Class">
               <select
                 value={groupForm.classId}
@@ -1060,7 +1130,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               </select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Start Date"><input type="date" value={groupForm.startDate} onChange={e => setGroupForm(p=>({...p,startDate:e.target.value}))} className={inp}/></Field>
             <Field label="End Date"><input type="date" value={groupForm.endDate} onChange={e => setGroupForm(p=>({...p,endDate:e.target.value}))} className={inp}/></Field>
           </div>
@@ -1148,7 +1218,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Primary Invigilator">
               <div className="relative">
                 <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
