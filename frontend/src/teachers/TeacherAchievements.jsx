@@ -2,10 +2,30 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Award, Calendar, ChevronRight, Edit3, Info, Loader2, Search, Trophy, Trash2, Upload, X } from 'lucide-react';
+import { Award, Calendar, ChevronRight, Edit3, FileText, Info, Loader2, Paperclip, Search, Trophy, Trash2, Upload, X } from 'lucide-react';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '') + '/api';
 const norm = (v = '') => String(v || '').trim().toLowerCase();
+
+/* ─── Certificate upload constraints (mirrors the backend) ───────────── */
+const CERTIFICATE_MAX_BYTES = 2 * 1024 * 1024;
+const CERTIFICATE_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf';
+const CERTIFICATE_TYPES = new Set(CERTIFICATE_ACCEPT.split(','));
+/** Validates a picked File; returns it if OK, otherwise toasts and returns null. */
+const validateCertificate = (file) => {
+  if (!file) return null;
+  const type = String(file.type || '').toLowerCase();
+  if (type && !CERTIFICATE_TYPES.has(type)) {
+    toast.error('Certificate must be a photo (JPG/PNG/WebP) or a PDF.');
+    return null;
+  }
+  if (file.size > CERTIFICATE_MAX_BYTES) {
+    toast.error('Certificate must be 2MB or smaller.');
+    return null;
+  }
+  return file;
+};
+const isImageFile = (file) => String(file?.type || '').startsWith('image/');
 const todayLabel = () =>
   new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
@@ -45,7 +65,7 @@ const StudentChip = ({ student, selected, onClick, disabled }) => {
       onClick={onClick}
       disabled={disabled}
       className={[
-        'flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150',
+        'flex w-full items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-150',
         selected
           ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
           : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50',
@@ -103,6 +123,16 @@ const AchievementCard = ({ item, onEdit, onDelete, deleting }) => (
           {item.description && (
             <span className="line-clamp-1 max-w-xs">{item.description}</span>
           )}
+          {item.certificateUrl && (
+            <a
+              href={item.certificateUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+            >
+              <Paperclip size={10} /> View certificate
+            </a>
+          )}
         </div>
       </div>
     </div>
@@ -133,6 +163,7 @@ const EditModal = ({ item, onClose, onSave, saving }) => {
     date:        item?.date ? new Date(item.date).toISOString().slice(0, 10) : '',
     description: item?.description || '',
   });
+  const [certificateFile, setCertificateFile] = useState(null);
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
   return (
@@ -154,7 +185,7 @@ const EditModal = ({ item, onClose, onSave, saving }) => {
             <X size={16} />
           </button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="space-y-3 p-5">
+        <form onSubmit={(e) => { e.preventDefault(); onSave(form, certificateFile); }} className="space-y-3 p-5">
           <Field label="Title">
             <input type="text" value={form.title} onChange={set('title')} className={inp} required placeholder="Achievement title" />
           </Field>
@@ -163,6 +194,44 @@ const EditModal = ({ item, onClose, onSave, saving }) => {
           </Field>
           <Field label="Details">
             <textarea value={form.description} onChange={set('description')} rows={3} className={`${inp} rounded-xl resize-none`} placeholder="Achievement details…" />
+          </Field>
+          <Field label={item?.certificateUrl ? 'Replace certificate (optional)' : 'Certificate / Photo (optional)'}>
+            {certificateFile ? (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5">
+                {isImageFile(certificateFile) ? (
+                  <img src={URL.createObjectURL(certificateFile)} alt="" className="h-11 w-11 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                ) : (
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-500"><FileText size={17} /></span>
+                )}
+                <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{certificateFile.name}</p>
+                <button type="button" onClick={() => setCertificateFile(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Remove">
+                  <X size={15} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/40">
+                  <Paperclip size={14} className="text-slate-400" />
+                  <span>{item?.certificateUrl ? 'Choose new file' : 'Attach certificate'}</span>
+                  <span className="ml-auto text-[11px] font-normal text-slate-400">max 2MB</span>
+                  <input
+                    type="file"
+                    accept={CERTIFICATE_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => {
+                      const picked = validateCertificate(e.target.files?.[0]);
+                      if (picked) setCertificateFile(picked);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {item?.certificateUrl && (
+                  <a href={item.certificateUrl} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">
+                    View current
+                  </a>
+                )}
+              </div>
+            )}
           </Field>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
@@ -198,6 +267,7 @@ const TeacherAchievements = () => {
   const [title, setTitle]                                     = useState('');
   const [achievementDate, setAchievementDate]                 = useState('');
   const [description, setDescription]                         = useState('');
+  const [certificateFile, setCertificateFile]                 = useState(null);
   const [submitting, setSubmitting]                           = useState(false);
 
   const token   = localStorage.getItem('token');
@@ -241,7 +311,7 @@ const TeacherAchievements = () => {
     const run = async () => {
       setLoadingAllocations(true);
       try {
-        const { data } = await axios.get(`${API_BASE_URL}/api/teacher/dashboard/allocations`, { headers });
+        const { data } = await axios.get(`${API_BASE_URL}/teacher/dashboard/allocations`, { headers });
         setClassTeacherAllocations(
           (Array.isArray(data) ? data : [])
             .filter((i) => i?.isClassTeacher === true)
@@ -258,6 +328,25 @@ const TeacherAchievements = () => {
     };
     run();
   }, [headers]);
+
+  // Auto-pick scope when the teacher's class-teacher assignment is unambiguous,
+  // so they aren't forced to hand-select a class they can only have one of.
+  useEffect(() => {
+    if (loadingAllocations || !selectedSession || selectedClass) return;
+    const classes = [...new Set(classTeacherAllocations.map((a) => a.className).filter(Boolean))];
+    if (classes.length === 1) setSelectedClass(classes[0]);
+  }, [loadingAllocations, selectedSession, selectedClass, classTeacherAllocations]);
+
+  useEffect(() => {
+    if (loadingAllocations || !selectedClass || selectedSection) return;
+    const sections = [...new Set(
+      classTeacherAllocations
+        .filter((a) => norm(a.className) === norm(selectedClass))
+        .map((a) => a.sectionName)
+        .filter(Boolean),
+    )];
+    if (sections.length === 1) setSelectedSection(sections[0]);
+  }, [loadingAllocations, selectedClass, selectedSection, classTeacherAllocations]);
 
   useEffect(() => {
     if (!selectedSession || !selectedClass || !selectedSection) { setStudents([]); return; }
@@ -327,13 +416,19 @@ const TeacherAchievements = () => {
     if (!title.trim() || !achievementDate) { toast.error('Title and date are required.'); return; }
     setSubmitting(true);
     try {
+      const body = new FormData();
+      body.append('studentId', selectedStudentId);
+      body.append('title', title.trim());
+      body.append('date', achievementDate);
+      body.append('description', description.trim());
+      if (certificateFile) body.append('certificate', certificateFile);
       const { data } = await axios.post(
         `${API_BASE_URL}/achievements/teacher/upload`,
-        { studentId: selectedStudentId, title: title.trim(), date: achievementDate, description: description.trim() },
+        body,
         { headers },
       );
       toast.success(data?.message || 'Achievement uploaded.');
-      setTitle(''); setAchievementDate(''); setDescription(''); setSelectedStudentId('');
+      setTitle(''); setAchievementDate(''); setDescription(''); setSelectedStudentId(''); setCertificateFile(null);
       const q = new URLSearchParams({ session: selectedSession, className: selectedClass, section: selectedSection });
       const lr = await axios.get(`${API_BASE_URL}/achievements/teacher/list?${q}`, { headers });
       setAchievements(Array.isArray(lr?.data?.achievements) ? lr.data.achievements : []);
@@ -353,21 +448,33 @@ const TeacherAchievements = () => {
     finally { setDeletingAchievementId(''); }
   };
 
-  const handleUpdate = async (form) => {
+  const handleUpdate = async (form, certificateFile) => {
     if (!editingRow?.studentId || !editingRow?.achievementId) return;
     if (!form.title.trim() || !form.date) { toast.error('Title and date are required.'); return; }
     setUpdatingAchievementId(String(editingRow.achievementId));
     try {
+      const body = new FormData();
+      body.append('title', form.title.trim());
+      body.append('date', form.date);
+      body.append('description', form.description.trim());
+      if (certificateFile) body.append('certificate', certificateFile);
       const { data } = await axios.put(
         `${API_BASE_URL}/achievements/teacher/${editingRow.studentId}/${editingRow.achievementId}`,
-        { title: form.title.trim(), date: form.date, description: form.description.trim() },
+        body,
         { headers },
       );
       toast.success(data?.message || 'Updated.');
+      const nextCertUrl = data?.achievement?.certificateUrl;
       setAchievements((p) =>
         p.map((r) =>
           String(r.achievementId) === String(editingRow.achievementId)
-            ? { ...r, title: form.title.trim(), date: form.date, description: form.description.trim() }
+            ? {
+                ...r,
+                title: form.title.trim(),
+                date: form.date,
+                description: form.description.trim(),
+                ...(nextCertUrl !== undefined ? { certificateUrl: nextCertUrl } : {}),
+              }
             : r,
         ),
       );
@@ -515,8 +622,11 @@ const TeacherAchievements = () => {
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
               </div>
-              <div className="max-h-48 overflow-y-auto pr-0.5">
-                <div className="flex flex-wrap gap-2">
+              <p className="mb-2 text-[11px] font-medium text-slate-400">
+                {filteredStudents.length} student{filteredStudents.length === 1 ? '' : 's'}
+              </p>
+              <div className="max-h-72 overflow-y-auto pr-0.5">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {filteredStudents.map((student) => {
                     const id = String(student._id || '');
                     return (
@@ -585,6 +695,53 @@ const TeacherAchievements = () => {
                 placeholder="Write achievement details…"
               />
             </Field>
+
+            <Field label="Certificate / Photo (optional)">
+              {certificateFile ? (
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5">
+                  {isImageFile(certificateFile) ? (
+                    <img
+                      src={URL.createObjectURL(certificateFile)}
+                      alt="Certificate preview"
+                      className="h-12 w-12 shrink-0 rounded-lg border border-slate-200 object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
+                      <FileText size={18} />
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-semibold text-slate-700">{certificateFile.name}</p>
+                    <p className="text-[11px] text-slate-400">{(certificateFile.size / 1024).toFixed(0)} KB</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCertificateFile(null)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="Remove certificate"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/40">
+                  <Paperclip size={14} className="text-slate-400" />
+                  <span>Attach certificate</span>
+                  <span className="ml-auto text-[11px] font-normal text-slate-400">JPG / PNG / PDF · max 2MB</span>
+                  <input
+                    type="file"
+                    accept={CERTIFICATE_ACCEPT}
+                    className="hidden"
+                    onChange={(e) => {
+                      const picked = validateCertificate(e.target.files?.[0]);
+                      if (picked) setCertificateFile(picked);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
+            </Field>
+
             <button
               type="submit"
               disabled={submitting || !selectedStudentId}

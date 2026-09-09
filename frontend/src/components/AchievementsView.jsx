@@ -1,5 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Award, Calendar, Loader2, Trophy, Star, Zap, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Award,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CircleSlash,
+  ExternalLink,
+  FileText,
+  GraduationCap,
+  Loader2,
+  Medal,
+  Sparkles,
+  Trophy,
+  Zap,
+} from 'lucide-react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { fetchCachedJson } from '../utils/studentApiCache';
 
@@ -9,6 +24,24 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').repla
 const STUDENT_ACHIEVEMENTS_ENDPOINT = `${API_BASE}/api/student/auth/achievements`;
 const STUDENT_ACHIEVEMENTS_CACHE_TTL_MS = 2 * 60 * 1000;
 
+/* ── Frosted-glass tokens (exact rgba values from the design brief) ── */
+const glass = {
+  background: 'rgba(255, 255, 255, 0.6)',
+  backdropFilter: 'blur(20px) saturate(1.8)',
+  WebkitBackdropFilter: 'blur(20px) saturate(1.8)',
+  border: '1px solid rgba(255, 255, 255, 0.7)',
+  boxShadow: '0 8px 30px rgba(15, 23, 42, 0.06)',
+};
+
+/* ── Entrance animation — fade + slide up, staggered ── */
+const listV = { hidden: {}, show: { transition: { staggerChildren: 0.05, delayChildren: 0.04 } } };
+const itemV = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+};
+
+const isImageUrl = (url = '') => /\.(jpe?g|png|webp|gif|heic|heif)(\?|$)/i.test(String(url));
+
 const formatDate = (value) => {
   if (!value) return 'N/A';
   const dt = new Date(value);
@@ -17,12 +50,11 @@ const formatDate = (value) => {
 };
 
 const CATEGORY_META = {
-  Academic: { badge: 'bg-blue-100 text-blue-700', chip: 'bg-blue-500', border: 'border-l-blue-400', icon: Star },
-  Sports: { badge: 'bg-emerald-100 text-emerald-700', chip: 'bg-emerald-500', border: 'border-l-emerald-400', icon: Zap },
-  'Extra-Curricular': { badge: 'bg-purple-100 text-purple-700', chip: 'bg-purple-500', border: 'border-l-purple-400', icon: Sparkles },
-  Other: { badge: 'bg-slate-100 text-slate-700', chip: 'bg-slate-400', border: 'border-l-slate-300', icon: Award },
+  Academic: { label: 'Academic', Icon: GraduationCap, tint: '#8b5cf6' },
+  Sports: { label: 'Sports', Icon: Zap, tint: '#10b981' },
+  'Extra-Curricular': { label: 'Extra-Curricular', Icon: Sparkles, tint: '#f59e0b' },
+  Other: { label: 'Other', Icon: Award, tint: '#64748b' },
 };
-
 const getCategoryMeta = (category) => CATEGORY_META[category] || CATEGORY_META.Other;
 
 const CATEGORY_FILTERS = ['all', 'Academic', 'Sports', 'Extra-Curricular', 'Other'];
@@ -40,23 +72,122 @@ const deriveSessionLabel = (value) => {
 
 const resolveAchievementId = (item, idx) => String(item?._id || item?.id || idx);
 
-const StatTile = ({ icon, label, value, grad, shadow }) => {
-  const IconComp = icon;
+/* ------------------------------------------------------------------ */
+/*  Primitives                                                         */
+/* ------------------------------------------------------------------ */
+
+const SoftIcon = ({ Icon, tint, size = 'md' }) => {
+  const dim = size === 'lg' ? 'h-11 w-11' : 'h-9 w-9';
+  const ic = size === 'lg' ? 20 : 18;
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-linear-to-br ${grad} p-3.5 shadow-lg ${shadow} transition-transform hover:-translate-y-0.5 md:p-4`}>
-      <div className="pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/10" />
-      <div className="relative z-10">
-        <div className="flex items-start justify-between">
-          <p className="text-[11px] font-semibold text-white/80">{label}</p>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/20 backdrop-blur-sm">
-            <IconComp className="h-4 w-4 text-white" />
-          </div>
-        </div>
-        <p className="mt-1.5 text-lg font-black text-white leading-tight truncate md:text-xl">{value}</p>
-      </div>
-    </div>
+    <span
+      className={`flex ${dim} shrink-0 items-center justify-center rounded-xl`}
+      style={{ background: `${tint}1f`, color: tint }}
+    >
+      <Icon width={ic} height={ic} strokeWidth={2} />
+    </span>
   );
 };
+
+const StatTile = ({ Icon, label, value, tint }) => (
+  <Motion.div
+    variants={itemV}
+    whileHover={{ y: -2 }}
+    transition={{ duration: 0.15, ease: 'easeOut' }}
+    className="rounded-[24px] p-4"
+    style={glass}
+  >
+    <SoftIcon Icon={Icon} tint={tint} />
+    <p className="mt-3 truncate text-xl font-bold tracking-tight text-slate-900">{value}</p>
+    <p className="text-[12px] font-medium text-slate-500">{label}</p>
+  </Motion.div>
+);
+
+const EmptyState = ({ Icon = CircleSlash, title, hint }) => (
+  <div className="flex flex-col items-center justify-center gap-2 rounded-[24px] border border-dashed border-slate-300/80 bg-white/40 px-6 py-14 text-center">
+    <Icon className="h-7 w-7 text-slate-300" strokeWidth={1.75} />
+    <p className="text-sm font-semibold text-slate-500">{title}</p>
+    {hint && <p className="max-w-xs text-xs text-slate-400">{hint}</p>}
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
+/*  Achievement card                                                   */
+/* ------------------------------------------------------------------ */
+
+const AchievementRow = ({ item, achievementId, highlighted }) => {
+  const meta = getCategoryMeta(item?.category);
+  const hasImage = item?.certificateUrl && isImageUrl(item.certificateUrl);
+  return (
+    <Motion.div
+      id={`achievement-card-${achievementId}`}
+      variants={itemV}
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+      className="rounded-[24px] p-4 sm:p-5"
+      style={{
+        ...glass,
+        ...(highlighted ? { border: '1px solid rgba(139,92,246,0.5)', boxShadow: '0 0 0 3px rgba(139,92,246,0.18)' } : {}),
+      }}
+    >
+      <div className="flex items-start gap-3.5">
+        <SoftIcon Icon={meta.Icon} tint={meta.tint} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-900 sm:text-[15px]" style={{ overflowWrap: 'anywhere' }}>
+              {item?.title || 'Achievement'}
+            </p>
+            <span
+              className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+              style={{ background: `${meta.tint}1f`, color: meta.tint }}
+            >
+              {meta.label}
+            </span>
+          </div>
+
+          {item?.description && (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500" style={{ overflowWrap: 'anywhere' }}>
+              {item.description}
+            </p>
+          )}
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar size={12} strokeWidth={2} />
+              {formatDate(item?.date)}
+            </span>
+            {item?.certificateUrl && (
+              <a
+                href={item.certificateUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200/70 bg-violet-50/80 px-2.5 py-1 text-[11px] font-semibold text-violet-700 transition hover:-translate-y-px hover:bg-violet-100"
+              >
+                {hasImage ? <ExternalLink size={11} /> : <FileText size={11} />}
+                View certificate
+              </a>
+            )}
+          </div>
+
+          {hasImage && (
+            <a href={item.certificateUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block w-fit">
+              <img
+                src={item.certificateUrl}
+                alt={`${item?.title || 'Achievement'} certificate`}
+                loading="lazy"
+                className="max-h-44 w-auto rounded-xl border border-white/70 object-contain shadow-sm transition hover:-translate-y-0.5"
+              />
+            </a>
+          )}
+        </div>
+      </div>
+    </Motion.div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/*  View                                                               */
+/* ------------------------------------------------------------------ */
 
 const AchievementsView = () => {
   const location = useLocation();
@@ -87,7 +218,7 @@ const AchievementsView = () => {
           }),
           fetch(`${API_BASE}/api/student/auth/system-badges`, {
             headers: { Authorization: `Bearer ${token}` },
-          }).then((r) => r.ok ? r.json() : { data: [] }),
+          }).then((r) => (r.ok ? r.json() : { data: [] })),
         ]);
 
         if (achievementsRes.status === 'fulfilled') {
@@ -156,13 +287,13 @@ const AchievementsView = () => {
 
   const targetAchievementId = useMemo(
     () => new URLSearchParams(location.search).get('achievementId') || '',
-    [location.search]
+    [location.search],
   );
 
   useEffect(() => {
     if (!targetAchievementId || loading || filteredAchievements.length === 0) return;
     const foundIndex = filteredAchievements.findIndex(
-      (item, idx) => resolveAchievementId(item, idx) === targetAchievementId
+      (item, idx) => resolveAchievementId(item, idx) === targetAchievementId,
     );
     if (foundIndex === -1) return;
     setPage(Math.floor(foundIndex / PAGE_SIZE) + 1);
@@ -178,160 +309,185 @@ const AchievementsView = () => {
     return () => window.clearTimeout(timeoutId);
   }, [page, targetAchievementId, highlightedAchievementId]);
 
+  const studentLine = student?.name
+    ? `${student.name}${student?.grade ? ` · ${student.grade}${student?.section ? `-${student.section}` : ''}` : ''}`
+    : 'Every milestone you have earned, in one place';
+
+  const STATS = [
+    { Icon: Trophy, label: 'Total achievements', value: totalCount, tint: '#8b5cf6' },
+    { Icon: Calendar, label: 'Latest', value: latestDate, tint: '#0ea5e9' },
+    { Icon: Award, label: 'Top category', value: getCategoryMeta(topCategory).label || topCategory, tint: '#f59e0b' },
+    { Icon: Sparkles, label: 'Badges earned', value: systemBadges.length, tint: '#10b981' },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
-      <div className="max-w-5xl mx-auto space-y-5">
-        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 p-5 text-white shadow-lg shadow-amber-200/60 sm:p-6">
-          <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
-          <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
-          <div className="relative flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-              <Trophy className="h-5.5 w-5.5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold sm:text-2xl">My Achievements</h1>
-              <p className="mt-1 text-sm text-white/85">
-                {student?.name
-                  ? `${student.name}${student?.grade ? ` • ${student.grade}${student?.section ? `-${student.section}` : ''}` : ''}`
-                  : 'Every milestone you have earned, in one place'}
-              </p>
+    <div
+      className="min-h-full p-4 sm:p-6"
+      style={{ background: 'linear-gradient(180deg, #f5f7fb 0%, #eef2f9 100%)' }}
+    >
+      {/* decorative blurred colour blobs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div
+          className="absolute -left-24 -top-24 h-72 w-72 rounded-full opacity-40 blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.32), transparent 70%)' }}
+        />
+        <div
+          className="absolute -bottom-32 right-0 h-80 w-80 rounded-full opacity-40 blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.24), transparent 70%)' }}
+        />
+      </div>
+
+      <Motion.div
+        variants={listV}
+        initial="hidden"
+        animate="show"
+        className="relative mx-auto max-w-5xl space-y-5"
+      >
+        {/* ── Header ── */}
+        <Motion.div variants={itemV} className="rounded-[24px] p-5 sm:p-6" style={glass}>
+          <div className="flex items-center gap-3.5">
+            <SoftIcon Icon={Trophy} tint="#8b5cf6" size="lg" />
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">My Achievements</h1>
+              <p className="mt-0.5 truncate text-sm text-slate-500">{studentLine}</p>
             </div>
           </div>
-        </div>
+        </Motion.div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatTile icon={Trophy} label="Total Achievements" value={totalCount} grad="from-amber-400 to-orange-500" shadow="shadow-amber-200/60" />
-          <StatTile icon={Calendar} label="Latest" value={latestDate} grad="from-indigo-500 to-blue-600" shadow="shadow-indigo-200/60" />
-          <StatTile icon={Award} label="Top Category" value={topCategory} grad="from-purple-500 to-fuchsia-600" shadow="shadow-purple-200/60" />
-          <StatTile icon={Sparkles} label="Badges Earned" value={systemBadges.length} grad="from-emerald-500 to-teal-600" shadow="shadow-emerald-200/60" />
-        </div>
+        {/* ── Stats ── */}
+        <Motion.div variants={listV} className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
+          {STATS.map((s) => (
+            <StatTile key={s.label} Icon={s.Icon} label={s.label} value={loading ? '—' : s.value} tint={s.tint} />
+          ))}
+        </Motion.div>
 
-        {/* System auto-badges */}
+        {/* ── Earned badges ── */}
         {systemBadges.length > 0 && (
-          <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50 p-4 shadow-sm">
-            <p className="text-sm font-black text-emerald-800 mb-3">🏅 Earned Badges</p>
-            <div className="flex flex-wrap gap-3">
+          <Motion.div variants={itemV} className="rounded-[24px] p-5" style={glass}>
+            <div className="mb-3 flex items-center gap-2">
+              <Medal size={16} className="text-emerald-600" strokeWidth={2} />
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Earned badges</h2>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
               {systemBadges.map((badge) => (
-                <div key={badge.id} className="flex items-center gap-2.5 rounded-2xl bg-white border border-emerald-100 px-3 py-2.5 shadow-sm">
-                  <span className="text-2xl leading-none">{badge.icon}</span>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">{badge.label}</p>
-                    <p className="text-[10px] text-slate-400">{badge.description}</p>
+                <div
+                  key={badge.id}
+                  className="flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/55 px-3 py-2"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                    <Medal size={15} strokeWidth={2} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-800">{badge.label}</p>
+                    {badge.description && <p className="text-[11px] text-slate-400">{badge.description}</p>}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          </Motion.div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        {/* ── Filters ── */}
+        <Motion.div variants={itemV} className="rounded-[24px] p-4 sm:p-5" style={glass}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-            <div>
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Category</p>
-              <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
-                {CATEGORY_FILTERS.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategoryFilter(cat)}
-                    className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all ${
-                      categoryFilter === cat
-                        ? 'border-amber-500 bg-amber-500 text-white shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    {cat === 'all' ? 'All' : cat}
-                  </button>
-                ))}
+            <div className="min-w-0">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Category</p>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                {CATEGORY_FILTERS.map((cat) => {
+                  const active = categoryFilter === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategoryFilter(cat)}
+                      className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition active:scale-95 ${
+                        active
+                          ? 'bg-violet-600 text-white shadow-sm'
+                          : 'border border-slate-200 bg-white/60 text-slate-500 hover:bg-white'
+                      }`}
+                    >
+                      {cat === 'all' ? 'All' : getCategoryMeta(cat).label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div>
-              <label htmlFor="achievement-session-filter" className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <label
+                htmlFor="achievement-session-filter"
+                className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+              >
                 Session
               </label>
               <select
                 id="achievement-session-filter"
                 value={sessionFilter}
                 onChange={(e) => setSessionFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 sm:w-auto"
+                className="w-full rounded-xl border border-white/70 bg-white/60 px-3 py-2 text-sm font-medium text-slate-600 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100 sm:w-auto"
               >
-                <option value="all">All Sessions</option>
+                <option value="all">All sessions</option>
                 {sessionOptions.map((session) => (
-                  <option key={session} value={session}>{session}</option>
+                  <option key={session} value={session}>
+                    {session}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
-        </div>
+        </Motion.div>
 
-        <div className=" p-4 sm:p-5">
+        {/* ── List ── */}
+        <div className="space-y-3.5">
           {loading ? (
-            <div className="py-10 flex items-center justify-center gap-2 text-slate-500">
-              <Loader2 size={18} className="animate-spin" />
-              <span className="text-sm">Loading achievements...</span>
+            <div className="rounded-[24px] p-10 text-center" style={glass}>
+              <Loader2 size={20} className="mx-auto mb-2 animate-spin text-violet-500" />
+              <p className="text-sm text-slate-400">Loading achievements…</p>
             </div>
           ) : error ? (
-            <div className="py-8 text-sm text-red-600">{error}</div>
+            <div className="rounded-[24px] border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </div>
           ) : achievements.length === 0 ? (
-            <div className="py-10 text-center text-slate-500">
-              <Award size={28} className="mx-auto mb-2 text-slate-300" />
-              <p className="text-sm font-medium">No achievements yet.</p>
-            </div>
+            <EmptyState
+              Icon={Award}
+              title="No achievements yet"
+              hint="When a teacher records an achievement for you, it will appear here."
+            />
           ) : filteredAchievements.length === 0 ? (
-            <div className="py-10 text-center text-slate-500">
-              <Award size={28} className="mx-auto mb-2 text-slate-300" />
-              <p className="text-sm font-medium">No achievements match this filter.</p>
-            </div>
+            <EmptyState Icon={CircleSlash} title="Nothing matches this filter" hint="Try a different category or session." />
           ) : (
             <>
-              <p className="mb-3 px-1 text-xs text-slate-400">
-                Showing {pageAchievements.length} of {filteredAchievements.length} achievement{filteredAchievements.length !== 1 ? 's' : ''}
+              <p className="px-1 text-xs text-slate-400">
+                Showing {pageAchievements.length} of {filteredAchievements.length} achievement
+                {filteredAchievements.length !== 1 ? 's' : ''}
                 {filteredAchievements.length !== totalCount ? ` (filtered from ${totalCount})` : ''}
               </p>
-              <div className="space-y-3">
-                {pageAchievements.map((item, localIdx) => {
-                  const globalIdx = (page - 1) * PAGE_SIZE + localIdx;
-                  const achievementId = resolveAchievementId(item, globalIdx);
-                  const isHighlighted = highlightedAchievementId === achievementId;
-                  const meta = getCategoryMeta(item?.category);
-                  const CategoryIcon = meta.icon;
-                  return (
-                    <div
-                      id={`achievement-card-${achievementId}`}
-                      key={achievementId}
-                      className={`flex items-center gap-3 rounded-2xl border border-slate-100 border-l-4 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
-                        meta.border
-                      } ${isHighlighted ? 'ring-2 ring-indigo-300 bg-indigo-50/40' : ''}`}
-                    >
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white ${meta.chip}`}>
-                        <CategoryIcon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-sm font-bold text-slate-900 wrap-break-word">{item?.title || 'Achievement'}</p>
-                          <span className={`shrink-0 text-[11px] font-semibold px-2 py-1 rounded-full ${meta.badge}`}>
-                            {item?.category || 'Other'}
-                          </span>
-                        </div>
-                        {item?.description && <p className="mt-1 text-sm text-slate-600 wrap-break-word">{item.description}</p>}
-                        <div className="mt-2 flex items-center gap-1 text-xs text-slate-500">
-                          <Calendar size={12} />
-                          {formatDate(item?.date)}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+
+              <AnimatePresence mode="popLayout">
+                <Motion.div key={`${categoryFilter}-${sessionFilter}-${page}`} variants={listV} initial="hidden" animate="show" className="space-y-3.5">
+                  {pageAchievements.map((item, localIdx) => {
+                    const globalIdx = (page - 1) * PAGE_SIZE + localIdx;
+                    const achievementId = resolveAchievementId(item, globalIdx);
+                    return (
+                      <AchievementRow
+                        key={achievementId}
+                        item={item}
+                        achievementId={achievementId}
+                        highlighted={highlightedAchievementId === achievementId}
+                      />
+                    );
+                  })}
+                </Motion.div>
+              </AnimatePresence>
 
               {filteredAchievements.length > PAGE_SIZE && (
-                <div className="mt-4 flex items-center justify-center gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 pt-1">
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-slate-500 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
@@ -340,10 +496,10 @@ const AchievementsView = () => {
                       key={i}
                       type="button"
                       onClick={() => setPage(i + 1)}
-                      className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-bold transition-colors ${
+                      className={`h-8 min-w-8 rounded-xl px-2.5 text-xs font-semibold transition ${
                         page === i + 1
-                          ? 'bg-linear-to-r from-amber-500 to-orange-500 text-white shadow-sm'
-                          : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                          ? 'bg-violet-600 text-white shadow-sm'
+                          : 'border border-white/70 bg-white/60 text-slate-500 hover:bg-white'
                       }`}
                     >
                       {i + 1}
@@ -353,7 +509,7 @@ const AchievementsView = () => {
                     type="button"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page === totalPages}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/70 bg-white/60 text-slate-500 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
@@ -362,7 +518,7 @@ const AchievementsView = () => {
             </>
           )}
         </div>
-      </div>
+      </Motion.div>
     </div>
   );
 };

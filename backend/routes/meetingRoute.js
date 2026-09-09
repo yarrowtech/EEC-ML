@@ -111,11 +111,20 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const sessions = [...sessionOptionsSet].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     const selectedSession = requestedSession || activeSession || sessions[0] || '';
 
-    const inSelectedSession = allStudents.filter((student) => {
+    const matchesSession = (student) => {
       const studentSession = String(student?.academicYear || '').trim();
       if (!selectedSession) return true;
+      // Records with no / malformed academicYear still belong to the roster.
+      if (!studentSession) return true;
       return studentSession.toLowerCase() === selectedSession.toLowerCase();
-    });
+    };
+    let inSelectedSession = allStudents.filter(matchesSession);
+    // If the session filter hides the whole roster (common when a school's
+    // student data has stale academicYear values), fall back to the full
+    // in-scope roster rather than leaving the teacher with nothing to pick.
+    if (!inSelectedSession.length && allStudents.length) {
+      inSelectedSession = allStudents;
+    }
 
     const classes = [...new Set(inSelectedSession.map((student) => String(student?.grade || '').trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));

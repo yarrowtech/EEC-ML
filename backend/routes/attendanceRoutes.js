@@ -14,6 +14,7 @@ const authTeacher = require('../middleware/authTeacher');
 const authParent = require('../middleware/authParent');
 const adminAuth = require('../middleware/adminAuth');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { buildTeacherAllocationScope, normalizeClassName } = require('../utils/teacherAllocationScope');
 
 const VALID_STATUSES = new Set(['present', 'absent']);
 const SUBSTITUTE_SUBJECT_PREFIX = 'general::';
@@ -703,35 +704,18 @@ const getClassSectionSubjects = async ({ schoolId, campusId, className, sectionN
   return [...subjectSet].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 };
 
+// The class/sections a teacher may take attendance for. Sourced from
+// TeacherAllocation (class-teacher + subject allocations), falling back to the
+// timetable only when the teacher has no allocation at all — see
+// utils/teacherAllocationScope. `normalizeClassName` collapses the "Class 5"
+// (Class doc) vs "5" (StudentUser.grade) naming mismatch so scope keys line up.
 const buildClassSectionScope = async ({ schoolId, campusId, teacherId }) => {
-  const baseFilter = {
-    schoolId,
-    'entries.teacherId': teacherId,
-  };
-  const primaryFilter = campusId
-    ? { ...baseFilter, campusId }
-    : baseFilter;
-
-  let timetables = await Timetable.find(primaryFilter)
-    .populate('classId', 'name')
-    .populate('sectionId', 'name')
-    .lean();
-
-  if (campusId && (!Array.isArray(timetables) || timetables.length === 0)) {
-    timetables = await Timetable.find(baseFilter)
-      .populate('classId', 'name')
-      .populate('sectionId', 'name')
-      .lean();
-  }
-
+  const scopeList = await buildTeacherAllocationScope({ schoolId, campusId, teacherId });
   const classSectionKeys = new Set();
-  (timetables || []).forEach((tt) => {
-    const className = normalizeText(tt?.classId?.name);
-    const sectionName = normalizeText(tt?.sectionId?.name);
-    if (!className) return;
-    classSectionKeys.add(`${className.toLowerCase()}::${sectionName ? sectionName.toLowerCase() : '*'}`);
+  (scopeList || []).forEach(({ normalizedClass, normalizedSection }) => {
+    if (!normalizedClass) return;
+    classSectionKeys.add(`${normalizedClass}::${normalizedSection || '*'}`);
   });
-
   return {
     hasAssignment: classSectionKeys.size > 0,
     classSectionKeys,
@@ -740,8 +724,8 @@ const buildClassSectionScope = async ({ schoolId, campusId, teacherId }) => {
 
 const isStudentAllowedForScope = (student, scope) => {
   if (!scope?.hasAssignment) return false;
-  const className = resolveStudentClass(student).toLowerCase();
-  const sectionName = resolveStudentSection(student).toLowerCase();
+  const className = normalizeClassName(resolveStudentClass(student));
+  const sectionName = normalizeText(resolveStudentSection(student)).toLowerCase();
   if (!className) return false;
   return scope.classSectionKeys.has(`${className}::*`) || scope.classSectionKeys.has(`${className}::${sectionName}`);
 };
@@ -1089,6 +1073,10 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const selectedDate = parseDateValue(date) || new Date();
     const requestedClass = normalizeText(className) || normalizeText(classParam);
     const requestedSection = normalizeText(section);
+    // Prefix-tolerant keys for matching against StudentUser.grade, which stores
+    // "5" while the teacher portal sends the Class doc name ("Class 5").
+    const requestedClassKey = normalizeClassName(requestedClass);
+    const requestedSectionKey = requestedSection.toLowerCase();
     const isSubstituteMode = parseBoolean(substitute);
 
     const baseFilter = { schoolId };
@@ -1103,7 +1091,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     if (!isSubstituteMode) {
       const scope = await buildClassSectionScope({ schoolId, campusId, teacherId });
       if (!teacherHasRoutineScope(scope)) {
-        return res.status(403).json({ error: 'Attendance access denied. You are not allocated in routine for any class/section.' });
+        return res.status(403).json({ error: 'Attendance access denied. You are not assigned to any class or section.' });
       }
       scopedStudents = scopeStudents.filter((student) => isStudentAllowedForScope(student, scope));
     }
@@ -1120,8 +1108,8 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     // Sections are scoped to the currently selected class (when one is
     // chosen) so the substitute picker cascades class -> section correctly,
     // instead of listing every section in the school regardless of class.
-    const studentsForSectionOptions = requestedClass
-      ? normalized.filter((student) => normalizeText(student.className) === requestedClass)
+    const studentsForSectionOptions = requestedClassKey
+      ? normalized.filter((student) => normalizeClassName(student.className) === requestedClassKey)
       : normalized;
 
     const sessionSet = new Set(normalized.map((student) => normalizeText(student.session)).filter(Boolean));
@@ -1145,8 +1133,8 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const result = normalized
       .filter((student) => {
         if (session && normalizeText(student.session) !== normalizeText(session)) return false;
-        if (requestedClass && normalizeText(student.className) !== requestedClass) return false;
-        if (requestedSection && normalizeText(student.section) !== requestedSection) return false;
+        if (requestedClassKey && normalizeClassName(student.className) !== requestedClassKey) return false;
+        if (requestedSectionKey && normalizeText(student.section).toLowerCase() !== requestedSectionKey) return false;
         if (studentId && String(student._id) !== String(studentId)) return false;
         if (search && !normalizeText(student.name).toLowerCase().includes(normalizeText(search).toLowerCase())) return false;
         return true;
@@ -1245,7 +1233,7 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
     if (!isSubstituteMode) {
       scope = await buildClassSectionScope({ schoolId, campusId, teacherId });
       if (!teacherHasRoutineScope(scope)) {
-        return res.status(403).json({ error: 'Attendance access denied. You are not allocated in routine for any class/section.' });
+        return res.status(403).json({ error: 'Attendance access denied. You are not assigned to any class or section.' });
       }
     }
 
@@ -1480,7 +1468,7 @@ router.put('/teacher/student/:studentId/entry/:entryId', authTeacher, async (req
 
     const scope = await buildClassSectionScope({ schoolId, campusId, teacherId });
     if (!teacherHasRoutineScope(scope)) {
-      return res.status(403).json({ error: 'Attendance access denied. You are not allocated in routine for any class/section.' });
+      return res.status(403).json({ error: 'Attendance access denied. You are not assigned to any class or section.' });
     }
 
     const filter = { _id: studentId, schoolId };
@@ -1552,7 +1540,7 @@ router.delete('/teacher/student/:studentId/entry/:entryId', authTeacher, async (
 
     const scope = await buildClassSectionScope({ schoolId, campusId, teacherId });
     if (!teacherHasRoutineScope(scope)) {
-      return res.status(403).json({ error: 'Attendance access denied. You are not allocated in routine for any class/section.' });
+      return res.status(403).json({ error: 'Attendance access denied. You are not assigned to any class or section.' });
     }
 
     const filter = { _id: studentId, schoolId };
