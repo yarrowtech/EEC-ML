@@ -83,7 +83,7 @@ const NotificationPopover = ({
     role="dialog"
     aria-label="Notifications"
     data-testid="notification-popover"
-    className="absolute right-0 top-full z-50 mt-2 w-[min(420px,calc(100vw-1rem))] overflow-hidden rounded-3xl border border-slate-200 bg-white pb-2 pt-5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.14),0_4px_12px_rgba(0,0,0,0.06)]"
+    className="fixed inset-x-2 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] w-auto overflow-hidden rounded-3xl border border-slate-200 bg-white pb-2 pt-5 shadow-[0_16px_48px_-12px_rgba(0,0,0,0.14),0_4px_12px_rgba(0,0,0,0.06)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(420px,calc(100vw-1rem))]"
   >
     <header className="flex items-center justify-between border-b border-black/[0.03] px-5 pb-4">
       <div className="flex items-center gap-2">

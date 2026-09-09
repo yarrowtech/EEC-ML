@@ -319,7 +319,17 @@ const MyWorkPortal = () => {
   const [leaveDeleting, setLeaveDeleting] = useState(false);
   const [leaveForm, setLeaveForm] = useState(defaultLeaveForm);
   const [leavePolicy, setLeavePolicy] = useState({ casualLeaveDays: 12 });
-  const [leaveQuota, setLeaveQuota] = useState({ casualUsedDays: 0, casualAvailableDays: 12 });
+  const [leaveQuota, setLeaveQuota] = useState({
+    casualUsedDays: 0,
+    casualAvailableDays: 12,
+    totalAllowanceDays: 12,
+    approvedLeaveDays: 0,
+    pendingLeaveDays: 0,
+    absentDays: 0,
+    usedDays: 0,
+    availableDays: 12,
+    projectedAvailableDays: 12,
+  });
   const [showLeaveForm, setShowLeaveForm] = useState(false);
 
   const [expenses, setExpenses] = useState([]);
@@ -444,10 +454,22 @@ const MyWorkPortal = () => {
       if (!res.ok) throw new Error(data?.error || 'Unable to load leave requests');
 
       setLeaveData(Array.isArray(data.leaves) ? data.leaves : []);
-      setLeavePolicy({ casualLeaveDays: Number(data?.leavePolicy?.casualLeaveDays) || 12 });
+      const policyDays = Number(data?.leavePolicy?.casualLeaveDays) || 12;
+      setLeavePolicy({ casualLeaveDays: policyDays });
+      const stats = data?.leaveStats || {};
+      const num = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+      const totalAllowanceDays = num(stats.totalAllowanceDays, policyDays);
+      const availableDays = num(stats.availableDays, num(stats.casualAvailableDays, totalAllowanceDays));
       setLeaveQuota({
-        casualUsedDays: Number(data?.leaveStats?.casualUsedDays) || 0,
-        casualAvailableDays: Number(data?.leaveStats?.casualAvailableDays) || 12
+        casualUsedDays: num(stats.casualUsedDays, 0),
+        casualAvailableDays: availableDays,
+        totalAllowanceDays,
+        approvedLeaveDays: num(stats.approvedLeaveDays, 0),
+        pendingLeaveDays: num(stats.pendingLeaveDays, 0),
+        absentDays: num(stats.absentDays, 0),
+        usedDays: num(stats.usedDays, Math.max(totalAllowanceDays - availableDays, 0)),
+        availableDays,
+        projectedAvailableDays: num(stats.projectedAvailableDays, availableDays),
       });
     } catch (error) {
       setLeaveError(error.message || 'Unable to load leave requests');
@@ -893,7 +915,7 @@ const MyWorkPortal = () => {
               <Progress value={insightScore} className="mt-5 h-2 bg-white/10" />
               <div className="mt-6 space-y-3 text-sm">
                 <div className="flex items-center justify-between"><span className="text-slate-400">Attendance rate</span><span>{attendanceStats.attendanceRate || 0}%</span></div>
-                <div className="flex items-center justify-between"><span className="text-slate-400">Leave days remaining</span><span>{leaveQuota.casualAvailableDays}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">Leave days remaining</span><span>{leaveQuota.projectedAvailableDays} / {leaveQuota.totalAllowanceDays}</span></div>
                 <div className="flex items-center justify-between"><span className="text-slate-400">Profile completion</span><span>{profileCompletion}%</span></div>
               </div>
             </div>
@@ -903,7 +925,7 @@ const MyWorkPortal = () => {
 
       <MotionDiv variants={staggerMotion} initial="initial" animate="animate" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={CheckCircle} label="Days Present" value={attendanceStats.presentDays} hint={`${attendanceStats.lateDays || 0} late arrivals this month`} tone="emerald" progress={attendanceStats.attendanceRate || 0} onClick={() => setActiveTab('attendance')} />
-        <MetricCard icon={CalendarCheck} label="Casual Leave Left" value={leaveQuota.casualAvailableDays} hint={`${leaveStats.pendingRequests} pending approval${leaveStats.pendingRequests === 1 ? '' : 's'}`} tone="blue" progress={(leaveQuota.casualAvailableDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} onClick={() => setActiveTab('leave')} />
+        <MetricCard icon={CalendarCheck} label="Leave Balance" value={leaveQuota.projectedAvailableDays} hint={`${leaveQuota.usedDays} of ${leaveQuota.totalAllowanceDays} used${leaveQuota.pendingLeaveDays > 0 ? ` · ${leaveQuota.pendingLeaveDays} pending` : ''}`} tone="blue" progress={(leaveQuota.projectedAvailableDays / Math.max(leaveQuota.totalAllowanceDays || 1, 1)) * 100} onClick={() => setActiveTab('leave')} />
         <MetricCard icon={Receipt} label="Pending Claims" value={expenseStats.pendingCount} hint={`Rs ${expenseStats.pending.toLocaleString('en-IN')} awaiting review`} tone="amber" onClick={() => setActiveTab('expenses')} />
         <MetricCard icon={BellRing} label="Unread Alerts" value={unreadNotifications} hint="Workflow inbox" tone="violet" onClick={() => setActiveTab('notifications')} />
       </MotionDiv>
@@ -1039,10 +1061,45 @@ const MyWorkPortal = () => {
     <MotionDiv {...tabContentProps} className="space-y-5">
       <SectionTitle icon={CalendarRange} title="Leave Management" description="Request leave, follow approval progress, and monitor remaining leave quota." action={<Button onClick={openLeaveForm}><Plus className="h-4 w-4" />Apply Leave</Button>} />
       {leaveError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{leaveError}</div>}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <MetricCard icon={CalendarCheck} label="Available Casual Leave" value={leaveQuota.casualAvailableDays} tone="blue" progress={(leaveQuota.casualAvailableDays / Math.max(leavePolicy.casualLeaveDays || 1, 1)) * 100} />
-        <MetricCard icon={Archive} label="Used Leave" value={leaveStats.usedDays} tone="slate" />
-        <MetricCard icon={Clock} label="Pending Requests" value={leaveStats.pendingRequests} tone="amber" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={CalendarRange} label="Total Allowance" value={leaveQuota.totalAllowanceDays} tone="slate" hint="days this session" />
+        <MetricCard icon={Archive} label="Leave Taken" value={leaveQuota.approvedLeaveDays} tone="violet" hint={leaveQuota.pendingLeaveDays > 0 ? `${leaveQuota.pendingLeaveDays} more pending` : 'approved leave'} />
+        <MetricCard icon={XCircle} label="Absent Days" value={leaveQuota.absentDays} tone="rose" hint="counted against leave" />
+        <MetricCard
+          icon={CalendarCheck}
+          label="Leave Balance"
+          value={leaveQuota.projectedAvailableDays}
+          tone={leaveQuota.projectedAvailableDays <= 0 ? 'rose' : 'blue'}
+          hint={
+            leaveQuota.pendingLeaveDays > 0
+              ? `${leaveQuota.availableDays} approved · ${leaveQuota.projectedAvailableDays} after pending`
+              : `${leaveQuota.usedDays} of ${leaveQuota.totalAllowanceDays} used`
+          }
+          progress={(leaveQuota.projectedAvailableDays / Math.max(leaveQuota.totalAllowanceDays || 1, 1)) * 100}
+        />
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-600">
+          <span className="font-semibold text-slate-800">{leaveQuota.totalAllowanceDays}</span>
+          <span className="text-slate-400">allowance</span>
+          <span className="text-slate-300">−</span>
+          <span className="font-semibold text-violet-600">{leaveQuota.approvedLeaveDays}</span>
+          <span className="text-slate-400">leave</span>
+          <span className="text-slate-300">−</span>
+          <span className="font-semibold text-rose-600">{leaveQuota.absentDays}</span>
+          <span className="text-slate-400">absent</span>
+          {leaveQuota.pendingLeaveDays > 0 && (
+            <>
+              <span className="text-slate-300">−</span>
+              <span className="font-semibold text-amber-600">{leaveQuota.pendingLeaveDays}</span>
+              <span className="text-slate-400">pending</span>
+            </>
+          )}
+          <span className="text-slate-300">=</span>
+          <span className={cn('rounded-md px-2 py-0.5 font-bold', leaveQuota.projectedAvailableDays <= 0 ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700')}>
+            {leaveQuota.projectedAvailableDays} left
+          </span>
+        </div>
       </div>
       <Card className="border-slate-200 bg-white py-0 shadow-sm">
         <CardHeader className="flex-row items-center justify-between gap-3 p-4">
@@ -1197,7 +1254,7 @@ const MyWorkPortal = () => {
   const renderInsights = () => (
     <MotionDiv {...tabContentProps} className="space-y-5">
       <SectionTitle icon={TrendingUp} title="Work Insights" description="Operational signals that summarize consistency, leave usage, reimbursements, and monthly readiness." />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard icon={Gauge} label="Work Health Score" value={insightScore} tone="blue" progress={insightScore} /><MetricCard icon={Activity} label="Attendance Consistency" value={`${attendanceStats.attendanceRate || 0}%`} tone="emerald" progress={attendanceStats.attendanceRate || 0} /><MetricCard icon={CalendarRange} label="Approved Leave Days" value={`${leaveStats.usedDays} day${leaveStats.usedDays === 1 ? '' : 's'}`} tone="amber" /><MetricCard icon={Wallet} label="Claim Volume" value={`Rs ${(expenseStats.approved + expenseStats.pending).toLocaleString('en-IN')}`} tone="violet" /></div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><MetricCard icon={Gauge} label="Work Health Score" value={insightScore} tone="blue" progress={insightScore} /><MetricCard icon={Activity} label="Attendance Consistency" value={`${attendanceStats.attendanceRate || 0}%`} tone="emerald" progress={attendanceStats.attendanceRate || 0} /><MetricCard icon={CalendarRange} label="Approved Leave Days" value={`${leaveQuota.approvedLeaveDays} day${leaveQuota.approvedLeaveDays === 1 ? '' : 's'}`} tone="amber" /><MetricCard icon={Wallet} label="Claim Volume" value={`Rs ${(expenseStats.approved + expenseStats.pending).toLocaleString('en-IN')}`} tone="violet" /></div>
       <Card className="border-slate-200 bg-white py-0 shadow-sm"><CardHeader className="p-4"><CardTitle>Monthly Work Statistics</CardTitle><CardDescription>{toMonthLabel(selectedMonth)} summary</CardDescription></CardHeader><CardContent className="space-y-4 p-4 pt-0"><div className="grid gap-3 md:grid-cols-3"><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Work streak</p><p className="mt-1 text-xl font-semibold text-slate-950">{attendanceStats.presentDays || 0} days</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Punctuality signal</p><p className="mt-1 text-xl font-semibold text-slate-950">{attendanceStats.lateDays ? 'Needs attention' : 'On track'}</p></div><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Pending approvals</p><p className="mt-1 text-xl font-semibold text-slate-950">{leaveStats.pendingRequests + expenseStats.pendingCount}</p></div></div><Separator /><p className="text-sm text-slate-500">Insight is calculated from attendance rate, remaining leave buffer, and profile readiness. It is a workspace signal, not a performance grade.</p></CardContent></Card>
     </MotionDiv>
   );

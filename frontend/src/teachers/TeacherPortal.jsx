@@ -1552,7 +1552,7 @@ const TeacherPortalShell = () => {
       </aside>
 
       <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-20 hidden w-full bg-slate-100 px-0 py-0 lg:block">
+        <header className="sticky top-0 z-30 hidden w-full bg-slate-100 px-0 py-0 lg:block">
           <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
             <div className="min-w-0 px-16 text-center leading-none">
               <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">

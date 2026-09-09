@@ -20,6 +20,8 @@ const School = require('../models/School');
 const TeacherUser = require('../models/TeacherUser');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const TeacherLeave = require('../models/TeacherLeave');
+const Holiday = require('../models/Holiday');
+const AcademicYear = require('../models/AcademicYear');
 const TeacherExpense = require('../models/TeacherExpense');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const TeacherFeedback = require('../models/TeacherFeedback');
@@ -214,6 +216,149 @@ const countInclusiveDays = (startDate, endDate) => {
   if (!start || !end || end < start) return 0;
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1;
+};
+
+// Days a single leave record consumes from the allowance. "Half Day" counts as
+// 0.5; every other type is a full inclusive day count.
+const leaveDayCost = (leave) => {
+  const base = countInclusiveDays(leave?.startDate, leave?.endDate);
+  return String(leave?.type || '').trim().toLowerCase() === 'half day' ? base * 0.5 : base;
+};
+
+// Set of "YYYY-MM-DD" keys covered by any of the given leave records.
+const leaveDayKeySet = (leaves = []) => {
+  const set = new Set();
+  leaves.forEach((leave) => {
+    const start = dateOnlyValue(leave?.startDate);
+    const end = dateOnlyValue(leave?.endDate);
+    if (!start || !end || end < start) return;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+  });
+  return set;
+};
+
+// The shared leave allowance and everything drawing from it. Any approved leave
+// (regardless of type) plus any explicitly-recorded Absent day that isn't
+// already inside an approved/pending leave range consumes from the balance.
+const computeLeaveBalance = ({ totalAllowanceDays, leaves = [], absentDateKeys = [] }) => {
+  const isStatus = (leave, status) => String(leave?.status || '').trim().toLowerCase() === status;
+  const approved = leaves.filter((leave) => isStatus(leave, 'approved'));
+  const pending = leaves.filter((leave) => isStatus(leave, 'pending'));
+
+  const approvedLeaveDays = approved.reduce((sum, leave) => sum + leaveDayCost(leave), 0);
+  const pendingLeaveDays = pending.reduce((sum, leave) => sum + leaveDayCost(leave), 0);
+
+  const covered = leaveDayKeySet([...approved, ...pending]);
+  const absentDays = [...new Set(absentDateKeys.map((k) => String(k || '').slice(0, 10)).filter(Boolean))]
+    .filter((key) => !covered.has(key)).length;
+
+  const usedDays = approvedLeaveDays + absentDays;
+  const availableDays = Math.max(totalAllowanceDays - usedDays, 0);
+  const projectedAvailableDays = Math.max(availableDays - pendingLeaveDays, 0);
+
+  return {
+    totalAllowanceDays,
+    approvedLeaveDays,
+    pendingLeaveDays,
+    absentDays,
+    usedDays,
+    availableDays,
+    projectedAvailableDays,
+  };
+};
+
+// Weekday "YYYY-MM-DD" keys in the inclusive range [fromKey, toKey].
+const weekdayKeysInRange = (fromKey, toKey) => {
+  const keys = [];
+  const start = dateOnlyValue(fromKey);
+  const end = dateOnlyValue(toKey);
+  if (!start || !end || end < start) return keys;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) keys.push(toDateKey(d));
+  }
+  return keys;
+};
+
+// Active-session window for a school: [start, min(end, today)]. Falls back to an
+// Apr–Mar academic year when no AcademicYear row carries dates.
+const getSchoolAcademicWindow = async (schoolId) => {
+  const now = new Date();
+  const activeYear = schoolId
+    ? await AcademicYear.findOne({ schoolId, isActive: true }).select('startDate endDate').lean()
+    : null;
+  let start = activeYear?.startDate ? new Date(activeYear.startDate) : null;
+  if (!start || Number.isNaN(start.getTime())) {
+    const y = now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+    start = new Date(y, 3, 1); // 1 April
+  }
+  let end = activeYear?.endDate ? new Date(activeYear.endDate) : null;
+  if (!end || Number.isNaN(end.getTime()) || end > now) end = now;
+  return { start, end };
+};
+
+// Set of weekday keys the teacher was absent in [fromDate, toDate]: no check-in
+// (or an explicit `status: 'Absent'` record), not a school holiday, and not
+// already covered by an approved / pending leave.
+const resolveAbsentDayKeys = async ({ schoolId, campusId, teacherId, fromDate, toDate, leaves = [] }) => {
+  const fromKey = toDateKey(fromDate);
+  const toKey = toDateKey(toDate);
+  if (fromKey > toKey) return new Set();
+
+  const [records, holidays] = await Promise.all([
+    TeacherAttendance.find({
+      schoolId,
+      teacherId,
+      ...(campusId ? { campusId } : {}),
+      dateKey: { $gte: fromKey, $lte: toKey },
+    }).select('dateKey status checkInAt').lean(),
+    Holiday.find({
+      schoolId,
+      ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+    }).select('startDate endDate date').lean(),
+  ]);
+
+  const presentKeys = new Set();
+  records.forEach((r) => {
+    const key = String(r.dateKey || '').slice(0, 10);
+    if (!key) return;
+    const status = String(r.status || '').toLowerCase();
+    if (r.checkInAt || status === 'present' || status === 'late' || status === 'half day') {
+      presentKeys.add(key);
+    }
+  });
+
+  const holidayKeys = new Set();
+  holidays.forEach((h) => {
+    const s = dateOnlyValue(h.startDate || h.date);
+    const e = dateOnlyValue(h.endDate || h.startDate || h.date);
+    if (!s || !e || e < s) return;
+    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) holidayKeys.add(toDateKey(d));
+  });
+
+  const leaveKeys = leaveDayKeySet(
+    leaves.filter((l) => ['approved', 'pending'].includes(String(l?.status || '').toLowerCase())),
+  );
+
+  const absent = new Set();
+  weekdayKeysInRange(fromKey, toKey).forEach((key) => {
+    if (holidayKeys.has(key) || leaveKeys.has(key) || presentKeys.has(key)) return;
+    absent.add(key);
+  });
+  return absent;
+};
+
+// Session-window absent day keys for a teacher (bounded by their join date).
+const resolveSessionAbsentDayKeys = async ({ schoolId, campusId, teacherId, leaves = [] }) => {
+  const [{ start, end }, teacher] = await Promise.all([
+    getSchoolAcademicWindow(schoolId),
+    TeacherUser.findById(teacherId).select('createdAt').lean(),
+  ]);
+  const joinedAt = teacher?.createdAt ? new Date(teacher.createdAt) : null;
+  const fromDate = joinedAt && !Number.isNaN(joinedAt.getTime()) && joinedAt > start ? joinedAt : start;
+  return resolveAbsentDayKeys({ schoolId, campusId, teacherId, fromDate, toDate: end, leaves });
 };
 
 const formatDateLabel = (value) => {
@@ -1225,15 +1370,29 @@ router.get('/leave-requests', authTeacher, async (req, res) => {
     if (campusId) query.campusId = campusId;
     if (req.query?.status) query.status = String(req.query.status);
 
-    const [leaves, leavePolicy] = await Promise.all([
+    const [leaves, leavePolicy, absentRecords] = await Promise.all([
       TeacherLeave.find(query).sort({ createdAt: -1 }).lean(),
       getSchoolLeaveSettings(schoolId),
+      TeacherAttendance.find({
+        schoolId,
+        teacherId,
+        ...(campusId ? { campusId } : {}),
+        status: 'Absent',
+      }).select('dateKey').lean(),
     ]);
+
+    const totalAllowanceDays = leavePolicy.casualLeaveDays || 0;
+    const balance = computeLeaveBalance({
+      totalAllowanceDays,
+      leaves,
+      absentDateKeys: absentRecords.map((r) => r.dateKey),
+    });
+
+    // Legacy casual-only figures, kept so existing consumers don't break.
     const casualUsedDays = leaves
       .filter((leave) => String(leave?.status || '').toLowerCase() === 'approved')
       .filter((leave) => String(leave?.type || '').trim().toLowerCase() === 'casual leave')
       .reduce((sum, leave) => sum + countInclusiveDays(leave.startDate, leave.endDate), 0);
-    const casualAvailableDays = Math.max((leavePolicy.casualLeaveDays || 0) - casualUsedDays, 0);
 
     res.json({
       leaves: leaves.map((leave) => ({
@@ -1248,8 +1407,9 @@ router.get('/leave-requests', authTeacher, async (req, res) => {
       })),
       leavePolicy,
       leaveStats: {
+        ...balance,
         casualUsedDays,
-        casualAvailableDays,
+        casualAvailableDays: balance.availableDays,
       },
     });
   } catch (err) {
@@ -1275,24 +1435,34 @@ router.post('/leave-requests', authTeacher, async (req, res) => {
     }
 
     const normalizedType = String(type).trim();
-    if (normalizedType.toLowerCase() === 'casual leave') {
-      const [leavePolicy, approvedCasualLeaves] = await Promise.all([
+    // Every leave type draws from the same allowance, and recorded absences
+    // already ate into it — so validate the request against the live balance.
+    {
+      const [leavePolicy, existingLeaves, absentRecords] = await Promise.all([
         getSchoolLeaveSettings(schoolId),
         TeacherLeave.find({
           schoolId,
           teacherId,
           ...(campusId ? { campusId } : {}),
-          status: 'Approved',
-          type: { $regex: '^casual leave$', $options: 'i' },
-        })
-          .select('startDate endDate')
-          .lean(),
+          status: { $in: ['Approved', 'Pending'] },
+        }).select('type status startDate endDate').lean(),
+        TeacherAttendance.find({
+          schoolId,
+          teacherId,
+          ...(campusId ? { campusId } : {}),
+          status: 'Absent',
+        }).select('dateKey').lean(),
       ]);
-      const usedDays = approvedCasualLeaves.reduce((sum, leave) => sum + countInclusiveDays(leave.startDate, leave.endDate), 0);
-      const requestedDays = countInclusiveDays(startDate, endDate);
-      const availableDays = Math.max((leavePolicy.casualLeaveDays || 0) - usedDays, 0);
-      if (requestedDays > availableDays) {
-        return res.status(400).json({ error: `Casual leave balance exceeded. Available: ${availableDays} day(s)` });
+      const balance = computeLeaveBalance({
+        totalAllowanceDays: leavePolicy.casualLeaveDays || 0,
+        leaves: existingLeaves,
+        absentDateKeys: absentRecords.map((r) => r.dateKey),
+      });
+      const requestedDays = leaveDayCost({ type: normalizedType, startDate, endDate });
+      if (requestedDays > balance.projectedAvailableDays) {
+        return res.status(400).json({
+          error: `Leave balance exceeded. ${balance.projectedAvailableDays} day(s) remaining after approved leave, pending requests, and recorded absences.`,
+        });
       }
     }
 
@@ -1373,24 +1543,33 @@ router.patch('/leave-requests/:id', authTeacher, async (req, res) => {
     const nextType = type !== undefined ? String(type).trim() : String(existing.type || '').trim();
     const nextStartDate = startDate !== undefined ? String(startDate) : String(existing.startDate || '');
     const nextEndDate = endDate !== undefined ? String(endDate) : String(existing.endDate || '');
-    if (nextType.toLowerCase() === 'casual leave') {
-      const [leavePolicy, approvedCasualLeaves] = await Promise.all([
+    {
+      const [leavePolicy, otherLeaves, absentRecords] = await Promise.all([
         getSchoolLeaveSettings(schoolId),
         TeacherLeave.find({
+          _id: { $ne: id },
           schoolId,
           teacherId,
           ...(campusId ? { campusId } : {}),
-          status: 'Approved',
-          type: { $regex: '^casual leave$', $options: 'i' },
-        })
-          .select('startDate endDate')
-          .lean(),
+          status: { $in: ['Approved', 'Pending'] },
+        }).select('type status startDate endDate').lean(),
+        TeacherAttendance.find({
+          schoolId,
+          teacherId,
+          ...(campusId ? { campusId } : {}),
+          status: 'Absent',
+        }).select('dateKey').lean(),
       ]);
-      const usedDays = approvedCasualLeaves.reduce((sum, leave) => sum + countInclusiveDays(leave.startDate, leave.endDate), 0);
-      const requestedDays = countInclusiveDays(nextStartDate, nextEndDate);
-      const availableDays = Math.max((leavePolicy.casualLeaveDays || 0) - usedDays, 0);
-      if (requestedDays > availableDays) {
-        return res.status(400).json({ error: `Casual leave balance exceeded. Available: ${availableDays} day(s)` });
+      const balance = computeLeaveBalance({
+        totalAllowanceDays: leavePolicy.casualLeaveDays || 0,
+        leaves: otherLeaves,
+        absentDateKeys: absentRecords.map((r) => r.dateKey),
+      });
+      const requestedDays = leaveDayCost({ type: nextType, startDate: nextStartDate, endDate: nextEndDate });
+      if (requestedDays > balance.projectedAvailableDays) {
+        return res.status(400).json({
+          error: `Leave balance exceeded. ${balance.projectedAvailableDays} day(s) remaining after approved leave, other pending requests, and recorded absences.`,
+        });
       }
     }
 
