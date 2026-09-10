@@ -7,6 +7,7 @@ const { scopedStudents } = require('../utils/analyticsScope');
 const {
   computeAllScores,
 } = require('../services/mlEngine');
+const { backtestAtRiskDetection } = require('../services/mlValidationService');
 
 async function getStudentsForClass({ schoolId, className, section }) {
   const filter = { schoolId };
@@ -111,6 +112,27 @@ router.get('/class/trends', authTeacher, async (req, res) => {
       rollingAvg: s.trend?.rollingAvg,
     }));
     return res.json({ success: true, data: trends });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/ml/class/at-risk-validation?className=&section=&horizonDays=
+router.get('/class/at-risk-validation', authTeacher, async (req, res) => {
+  try {
+    const { className, section, horizonDays } = req.query;
+    const students = await scopedStudents(req);
+    const filtered = students.filter((s) => {
+      if (className && !new RegExp(`^${className}$`, 'i').test(s.grade || '')) return false;
+      if (section && !new RegExp(`^${section}$`, 'i').test(s.section || '')) return false;
+      return true;
+    });
+    const report = await backtestAtRiskDetection({
+      schoolId: req.schoolId,
+      studentIds: filtered.map((s) => s._id),
+      horizonDays: horizonDays ? Number(horizonDays) : undefined,
+    });
+    return res.json({ success: true, data: report });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

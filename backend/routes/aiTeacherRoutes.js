@@ -137,6 +137,16 @@ const cleanOptionText = (value) => String(value || '')
   .replace(/^\s*\(?[A-D]\)?[.):\-]\s*/i, '')
   .trim();
 
+const BLOOM_LEVELS = ['remember', 'understand', 'apply', 'analyse', 'evaluate', 'create'];
+const BLOOM_NOTES = {
+  remember: "Target Bloom's level: Remember — every question must test recall of facts, terms, or basic concepts, not application or analysis.",
+  understand: "Target Bloom's level: Understand — every question must test explaining ideas or concepts in the student's own words.",
+  apply: "Target Bloom's level: Apply — every question must require using the concept in a new, concrete situation.",
+  analyse: "Target Bloom's level: Analyse — every question must require breaking information into parts and exploring relationships between them.",
+  evaluate: "Target Bloom's level: Evaluate — every question must require judging or justifying a position with criteria.",
+  create: "Target Bloom's level: Create — every question must require compiling ideas in a new way or proposing an original solution.",
+};
+
 const normalizeMcqQuestion = (item) => {
   if (!item || typeof item !== 'object') return null;
   const questionText = String(item.questionText || item.question || item.stem || item.text || '').trim();
@@ -171,6 +181,7 @@ const normalizeMcqQuestion = (item) => {
     correctAnswer: options[correctIndex].text,
     explanation: String(item.explanation || item.reason || item.rationale || '').trim(),
     difficulty: String(item.difficulty || '').trim(),
+    bloomLevel: String(item.bloomLevel || item.bloom_level || '').trim().toLowerCase(),
   };
 };
 
@@ -771,25 +782,28 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
   try {
     const {
       subject, topic, gradeLevel, difficulty, count, questionType, chapterTitle, topicTitle,
-      classId, sectionId, subjectId, academicYearId,
+      classId, sectionId, subjectId, academicYearId, bloomLevel,
     } = req.body || {};
     if (!subject || !topic) return res.status(400).json({ error: 'subject and topic are required' });
     if (!(await requireClassIdScope(req, res, { classId, sectionId, subjectId }))) return;
     const chapter = chapterTitle || topicTitle || null;
     const requestedType = questionType || 'mcq';
     const safeCount = Math.min(20, Math.max(1, Number(count) || 5));
+    const normalizedBloom = BLOOM_LEVELS.includes(String(bloomLevel || '').toLowerCase())
+      ? String(bloomLevel).toLowerCase() : null;
     const questionTypeText = requestedType === 'mcq'
       ? 'multiple-choice questions'
       : `questions in the ${requestedType} format`;
     const question = [
       difficulty ? `Difficulty level: ${difficulty}` : null,
+      normalizedBloom ? BLOOM_NOTES[normalizedBloom] : null,
       `Generate exactly ${safeCount} ${questionTypeText}.`,
       'Base all questions only on the uploaded course material for this topic.',
       requestedType === 'mcq'
         ? [
           'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
           'Each array item must use this exact shape:',
-          '{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium"}',
+          `{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium","bloomLevel":"${normalizedBloom || 'remember|understand|apply|analyse|evaluate|create'}"}`,
           'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
           'Do not add A, B, C, or D prefixes inside option text.',
         ].join(' ')
@@ -812,6 +826,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       chapterTitle: chapter,
       subTopic: null,
       difficulty: difficulty || null,
+      bloomLevel: normalizedBloom,
       studentContext: null,
       conversationHistory: null,
     };

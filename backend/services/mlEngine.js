@@ -71,8 +71,9 @@ async function computeWeightedMastery({ studentId, schoolId, subject }) {
 
 async function computeAtRisk(scope) {
   const { loadEvidence, summarizeEvidence } = require('./learningEvidenceService');
+  const asOfTime = scope.asOf ? new Date(scope.asOf).getTime() : Date.now();
   const evidence = await loadEvidence(scope);
-  const summary = summarizeEvidence(evidence);
+  const summary = summarizeEvidence(evidence, asOfTime);
 
   let attendanceRate = null;
   try {
@@ -80,7 +81,7 @@ async function computeAtRisk(scope) {
       .select('attendance').lean();
     const recentAttendance = (student?.attendance || []).filter((entry) => {
       const t = new Date(entry.date).getTime();
-      return Number.isFinite(t) && t >= Date.now() - 30 * 86400000;
+      return Number.isFinite(t) && t >= asOfTime - 30 * 86400000 && t <= asOfTime;
     });
     if (recentAttendance.length) {
       attendanceRate = Math.round(
@@ -108,7 +109,8 @@ async function computeAtRisk(scope) {
 
 async function computeRollingTrend(scope) {
   const { loadEvidence, summarizeEvidence } = require('./learningEvidenceService');
-  return summarizeEvidence(await loadEvidence(scope));
+  const asOfTime = scope.asOf ? new Date(scope.asOf).getTime() : Date.now();
+  return summarizeEvidence(await loadEvidence(scope), asOfTime);
 }
 
 async function computeEngagement({ studentId, schoolId }) {

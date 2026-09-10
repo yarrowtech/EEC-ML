@@ -174,4 +174,67 @@ describe('AI teacher assignment draft endpoint', () => {
       { timeout: 120000 }
     );
   });
+
+  test('passes a valid Bloom level through to the AI payload and returns it per question', async () => {
+    mockAxios.post.mockResolvedValue({
+      data: {
+        groundedInMaterial: true,
+        noMaterialFound: false,
+        content: JSON.stringify([{
+          questionText: 'Why does multiplying by two over two leave a fraction unchanged?',
+          options: [
+            { text: 'It equals one', isCorrect: true },
+            { text: 'It equals zero', isCorrect: false },
+            { text: 'It doubles the value', isCorrect: false },
+            { text: 'It halves the value', isCorrect: false },
+          ],
+          explanation: 'Multiplying by one over one changes nothing.',
+          difficulty: 'medium',
+          bloomLevel: 'analyse',
+        }]),
+      },
+    });
+
+    const response = await request(app)
+      .post('/api/ai-teacher/quiz-generate')
+      .send({
+        classId: 'class-1',
+        sectionId: 'section-1',
+        subjectId: 'subject-1',
+        subject: 'Mathematics',
+        topic: 'Fractions',
+        bloomLevel: 'analyse',
+        count: 1,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.questions[0]).toEqual(expect.objectContaining({ bloomLevel: 'analyse' }));
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/generate/tutor'),
+      expect.objectContaining({
+        bloomLevel: 'analyse',
+        question: expect.stringContaining("Target Bloom's level: Analyse"),
+      }),
+      { timeout: 120000 }
+    );
+  });
+
+  test('ignores an unrecognised Bloom level instead of forwarding it to the AI service', async () => {
+    mockAxios.post.mockResolvedValue({
+      data: { groundedInMaterial: true, noMaterialFound: false, content: '[]' },
+    });
+
+    await request(app)
+      .post('/api/ai-teacher/quiz-generate')
+      .send({
+        classId: 'class-1', sectionId: 'section-1', subjectId: 'subject-1',
+        subject: 'Mathematics', topic: 'Fractions', bloomLevel: 'not-a-real-level',
+      });
+
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/generate/tutor'),
+      expect.objectContaining({ bloomLevel: null }),
+      { timeout: 120000 }
+    );
+  });
 });

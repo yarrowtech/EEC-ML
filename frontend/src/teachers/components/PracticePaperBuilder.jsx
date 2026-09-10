@@ -2,6 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Copy, Loader, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+const BLOOM_LEVELS = [
+  { value: '', label: 'Mixed (let AI vary)' },
+  { value: 'remember', label: 'Remember' },
+  { value: 'understand', label: 'Understand' },
+  { value: 'apply', label: 'Apply' },
+  { value: 'analyse', label: 'Analyse' },
+  { value: 'evaluate', label: 'Evaluate' },
+  { value: 'create', label: 'Create' },
+];
+
 const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
   const token = localStorage.getItem('token');
@@ -26,7 +36,8 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
       correctAnswer: '',
       explanation: '',
       marks: 1,
-      difficulty: 'medium'
+      difficulty: 'medium',
+      bloomLevel: ''
     }
   ]);
 
@@ -35,6 +46,7 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiSubject, setAiSubject] = useState('');
   const [aiTopic, setAiTopic] = useState('');
+  const [aiBloomLevel, setAiBloomLevel] = useState('');
 
   // Fetch practice sections
   useEffect(() => {
@@ -73,7 +85,8 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
       correctAnswer: '',
       explanation: '',
       marks: 1,
-      difficulty: 'medium'
+      difficulty: 'medium',
+      bloomLevel: ''
     }]);
   };
 
@@ -135,7 +148,7 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
       const res = await fetch(`${API_BASE}/api/ai-teacher/quiz-generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject, topic, difficulty, count: 5 }),
+        body: JSON.stringify({ subject, topic, difficulty, bloomLevel: aiBloomLevel || undefined, count: 5 }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Generation failed');
@@ -151,6 +164,7 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
         explanation: q.explanation || '',
         marks: 1,
         difficulty: q.difficulty || difficulty,
+        bloomLevel: q.bloomLevel || aiBloomLevel || '',
       }));
       setQuestions((prev) => [...prev, ...mapped]);
       toast.success(`${mapped.length} AI questions added!`);
@@ -261,6 +275,16 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
             placeholder="Topic (e.g. Fractions)"
             className="flex-1 min-w-[140px] px-3 py-2 text-sm border border-purple-200 rounded-lg bg-white"
           />
+          <select
+            value={aiBloomLevel}
+            onChange={(e) => setAiBloomLevel(e.target.value)}
+            title="Bloom's Taxonomy level"
+            className="min-w-[160px] px-3 py-2 text-sm border border-purple-200 rounded-lg bg-white"
+          >
+            {BLOOM_LEVELS.map((level) => (
+              <option key={level.value} value={level.value}>{level.label}</option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={generateAIQuestions}
@@ -271,7 +295,7 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
             {aiGenerating ? 'Generating…' : 'Generate 5 Questions'}
           </button>
         </div>
-        <p className="text-xs text-purple-600 mt-2">AI will generate 5 MCQ questions. You can edit or delete them before saving.</p>
+        <p className="text-xs text-purple-600 mt-2">AI will generate 5 MCQ questions at the selected difficulty and Bloom's level. You can edit or delete them before saving.</p>
       </div>
 
       {/* Basic Info */}
@@ -410,7 +434,10 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
               >
                 <div className="text-left flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">Q{idx + 1}: {question.questionText || '(Untitled)'}</p>
-                  <p className="text-xs text-gray-500">Type: {question.questionType} | Marks: {question.marks}</p>
+                  <p className="text-xs text-gray-500">
+                    Type: {question.questionType} | Marks: {question.marks}
+                    {question.bloomLevel ? ` | Bloom: ${question.bloomLevel}` : ''}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
@@ -440,8 +467,8 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
                     />
                   </div>
 
-                  {/* Question Type & Marks */}
-                  <div className="grid grid-cols-3 gap-3">
+                  {/* Question Type, Marks, Difficulty & Bloom Level */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-sm font-medium mb-1">Type</label>
                       <select
@@ -475,6 +502,18 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
                         <option value="easy">Easy</option>
                         <option value="medium">Medium</option>
                         <option value="hard">Hard</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Bloom Level</label>
+                      <select
+                        value={question.bloomLevel || ''}
+                        onChange={(e) => updateQuestion(question.id, 'bloomLevel', e.target.value)}
+                        className="w-full px-3 py-2 border rounded text-sm"
+                      >
+                        {BLOOM_LEVELS.map((level) => (
+                          <option key={level.value} value={level.value}>{level.label}</option>
+                        ))}
                       </select>
                     </div>
                   </div>

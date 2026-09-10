@@ -48,9 +48,10 @@ function forecastScores(events, now = Date.now()) {
     slopePerDay: slope, residualError, explanation: 'Projection from daily assessment averages over the last 30 days.' };
 }
 
-async function loadEvidence({ studentId, schoolId }) {
+async function loadEvidence({ studentId, schoolId, asOf, windowDays = 31 }) {
+  const asOfTime = asOf ? new Date(asOf).getTime() : Date.now();
   return require('../models/MasteryEvent').find({ schoolId, studentId,
-    createdAt: { $gte: new Date(Date.now() - 31 * DAY) } }).sort({ createdAt: 1 }).lean();
+    createdAt: { $gte: new Date(asOfTime - windowDays * DAY), $lte: new Date(asOfTime) } }).sort({ createdAt: 1 }).lean();
 }
 
 module.exports = { summarizeEvidence, forecastScores, loadEvidence, credible, timeOf };

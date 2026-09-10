@@ -20,6 +20,11 @@ const practiceQuestionSchema = new mongoose.Schema({
     enum: ['easy', 'medium', 'hard'],
     default: 'medium'
   },
+  bloomLevel: {
+    type: String,
+    enum: ['', 'remember', 'understand', 'apply', 'analyse', 'evaluate', 'create'],
+    default: ''
+  },
   order: { type: Number, default: 0 }
 }, { _id: true });
 
