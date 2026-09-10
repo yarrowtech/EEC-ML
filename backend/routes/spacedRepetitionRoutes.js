@@ -6,6 +6,23 @@ const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
 // SM-2 inspired intervals per stage: 1, 3, 7, 14, 30 days
 const STAGE_INTERVALS = [1, 3, 7, 14, 30];
 
+function estimateRetention(item, now = Date.now()) {
+  const intervalDays = Math.max(1, Number(item.intervalDays) || 1);
+  const lastReviewed = item.lastReviewedAt ? new Date(item.lastReviewedAt).getTime() : null;
+  const daysSinceReview = lastReviewed == null ? null : Math.max(0, (now - lastReviewed) / 86400000);
+  const retention = daysSinceReview == null
+    ? null
+    : Math.round(Math.max(0, Math.min(100, 100 * Math.pow(0.9, daysSinceReview / intervalDays))));
+  return {
+    intervalDays,
+    lastReviewedAt: item.lastReviewedAt || null,
+    nextReviewDate: item.nextReviewDate,
+    daysSinceReview: daysSinceReview == null ? null : Math.round(daysSinceReview * 10) / 10,
+    estimatedRetention: retention,
+    status: retention == null ? 'unreviewed' : retention < 60 ? 'at_risk' : retention < 80 ? 'fading' : 'retained',
+  };
+}
+
 const nextStage = (currentStage, score) => {
   if (score >= 0.7) return Math.min(currentStage + 1, STAGE_INTERVALS.length - 1);
   if (score >= 0.4) return Math.max(currentStage - 1, 0);
@@ -97,5 +114,36 @@ router.get('/all', authStudent, async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/spaced-repetition/retention
+// Returns a lightweight forgetting-curve view for the student's scheduled topics.
+// This is an estimate for prioritisation, not a calibrated probability.
+router.get('/retention', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const items = await SpacedRepetitionSchedule.find({ studentId, schoolId })
+      .sort({ nextReviewDate: 1 }).lean();
+    const now = Date.now();
+    const data = items.map((item) => {
+      const retention = estimateRetention(item, now);
+      return {
+        _id: item._id,
+        subject: item.subject,
+        topicTitle: item.topicTitle,
+        chapterTitle: item.chapterTitle || '',
+        stage: item.stage,
+        ...retention,
+      };
+    });
+    return res.json({ success: true, data, method: 'exponential-forgetting-v1' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.estimateRetention = estimateRetention;
 
 module.exports = router;

@@ -19,17 +19,43 @@ function engagementLabel(score) {
   return 'low';
 }
 
+function calculateEma(values, alpha = ALPHA) {
+  const scores = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  if (!scores.length) return null;
+  return scores.slice(1).reduce((ema, score) => (alpha * score) + ((1 - alpha) * ema), scores[0]);
+}
+
 async function computeWeightedMastery({ studentId, schoolId, subject }) {
   const filter = { studentId, schoolId };
   if (subject) filter.subject = subject;
   const records = await MasteryScore.find(filter).lean();
 
+  // MasteryScore is a projection. Reconstruct the weighted value from the
+  // append-only event stream when it is available, while retaining the stored
+  // projection as a compatibility fallback for legacy records.
+  let events = [];
+  try {
+    const MasteryEvent = require('../models/MasteryEvent');
+    const eventFilter = { studentId, schoolId };
+    if (subject) eventFilter.subject = subject;
+    events = await MasteryEvent.find(eventFilter).sort({ createdAt: 1 }).lean();
+  } catch (_) {
+    events = [];
+  }
+  const eventsByTopic = new Map();
+  for (const event of events) {
+    if (event.metadata?.needsReview || event.source === 'self-report') continue;
+    const key = `${event.subject}::${event.topicId}`;
+    if (!eventsByTopic.has(key)) eventsByTopic.set(key, []);
+    eventsByTopic.get(key).push(event.assessmentScore);
+  }
+
   return records.map((r) => {
-    const n = Math.max(r.attemptCount || 1, 1);
-    // EMA: treat each attempt as contributing alpha*(1-alpha)^k weight
-    // With a single stored score and attemptCount, approximate: weightedScore pulls score toward target by decay
-    const decay = Math.pow(1 - ALPHA, n - 1);
-    const weightedScore = Math.round(r.score);
+    const key = `${r.subject}::${r.topicId}`;
+    const ema = calculateEma(eventsByTopic.get(key) || []);
+    const weightedScore = Math.round(ema == null ? r.score : ema);
     return {
       topicId: r.topicId,
       topicTitle: r.topicTitle,
@@ -38,14 +64,46 @@ async function computeWeightedMastery({ studentId, schoolId, subject }) {
       rawScore: r.score,
       weightedScore: Math.min(100, Math.max(0, weightedScore)),
       attemptCount: r.attemptCount,
-      tier: tierFromScore(r.score),
+      tier: tierFromScore(weightedScore),
     };
   });
 }
 
 async function computeAtRisk(scope) {
   const { loadEvidence, summarizeEvidence } = require('./learningEvidenceService');
-  return summarizeEvidence(await loadEvidence(scope));
+  const evidence = await loadEvidence(scope);
+  const summary = summarizeEvidence(evidence);
+
+  let attendanceRate = null;
+  try {
+    const student = await StudentUser.findOne({ _id: scope.studentId, schoolId: scope.schoolId })
+      .select('attendance').lean();
+    const recentAttendance = (student?.attendance || []).filter((entry) => {
+      const t = new Date(entry.date).getTime();
+      return Number.isFinite(t) && t >= Date.now() - 30 * 86400000;
+    });
+    if (recentAttendance.length) {
+      attendanceRate = Math.round(
+        recentAttendance.filter((entry) => entry.status === 'present').length / recentAttendance.length * 100
+      );
+    }
+  } catch (_) { /* attendance is an optional signal */ }
+
+  const riskFactors = [];
+  if (summary.trend === 'declining') riskFactors.push('declining_assessment_trend');
+  if (summary.recentAvg != null && summary.recentAvg < 50) riskFactors.push('low_recent_assessment');
+  if (attendanceRate != null && attendanceRate < 75) riskFactors.push('low_attendance');
+  const attendanceRisk = attendanceRate == null ? 0 : attendanceRate < 60 ? 30 : attendanceRate < 75 ? 15 : 0;
+  const riskScore = summary.riskScore == null ? null : Math.min(100, summary.riskScore + attendanceRisk);
+  const riskBand = riskScore == null ? 'insufficient_data' : riskScore >= 85 ? 'critical' : riskScore >= 70 ? 'high' : riskScore >= 50 ? 'moderate' : 'low';
+
+  return {
+    ...summary,
+    riskScore,
+    attendanceRate,
+    riskFactors,
+    dropoutRisk: { score: riskScore, band: riskBand, factors: riskFactors, method: 'assessment-trend-attendance-v1' },
+  };
 }
 
 async function computeRollingTrend(scope) {
@@ -60,15 +118,22 @@ async function computeEngagement({ studentId, schoolId }) {
   let totalViews = 0;
   let totalTime = 0;
   let quizCount = 0;
+  let lastActivityAt = null;
 
   for (const m of materials) {
     const vEntry = (m.viewedBy || []).find((v) => String(v.studentId) === sidStr);
     if (vEntry) {
       totalViews += vEntry.viewCount || 0;
       totalTime += vEntry.timeSpent || 0;
+      const viewedAt = new Date(vEntry.lastViewedAt || vEntry.firstViewedAt).getTime();
+      if (Number.isFinite(viewedAt) && (!lastActivityAt || viewedAt > lastActivityAt)) lastActivityAt = viewedAt;
     }
     const qEntries = (m.quizAttempts || []).filter((q) => String(q.studentId) === sidStr);
     quizCount += qEntries.length;
+    qEntries.forEach((entry) => {
+      const submittedAt = new Date(entry.submittedAt || entry.startedAt).getTime();
+      if (Number.isFinite(submittedAt) && (!lastActivityAt || submittedAt > lastActivityAt)) lastActivityAt = submittedAt;
+    });
   }
 
   // Get all students in school for median normalisation
@@ -99,7 +164,26 @@ async function computeEngagement({ studentId, schoolId }) {
   const timeScore = Math.min(100, (totalTime / medT) * 50);
   const submissionScore = Math.min(100, (quizCount / medQ) * 50);
 
-  const engagementScore = Math.round(viewScore * 0.25 + timeScore * 0.35 + submissionScore * 0.4);
+  const situationalScore = lastActivityAt
+    ? Math.max(0, Math.round(100 * Math.exp(-Math.max(0, (Date.now() - lastActivityAt) / 86400000) / 14)))
+    : 0;
+  let emotionalScore = null;
+  try {
+    const Wellbeing = require('../models/Wellbeing');
+    const wellbeing = await Wellbeing.findOne({ student: studentId, schoolId })
+      .select('mood socialEngagement academicStress').lean();
+    if (wellbeing) {
+      const moodScore = { excellent: 100, good: 80, neutral: 60, concerning: 30, critical: 10 };
+      emotionalScore = Math.round((Number(wellbeing.socialEngagement || 5) * 10 * 0.45)
+        + ((10 - Number(wellbeing.academicStress || 5)) * 10 * 0.35)
+        + ((moodScore[wellbeing.mood] ?? 60) * 0.2));
+    }
+  } catch (_) { /* optional wellbeing signal */ }
+
+  const behaviouralScore = Math.round(viewScore * 0.25 + timeScore * 0.35 + submissionScore * 0.4);
+  const engagementScore = Math.round(
+    behaviouralScore * 0.5 + situationalScore * 0.3 + (emotionalScore == null ? behaviouralScore * 0.2 : emotionalScore * 0.2)
+  );
 
   return {
     engagementScore,
@@ -107,6 +191,11 @@ async function computeEngagement({ studentId, schoolId }) {
       viewScore: Math.round(viewScore),
       timeScore: Math.round(timeScore),
       submissionScore: Math.round(submissionScore),
+    },
+    dimensions: {
+      behavioural: behaviouralScore,
+      situational: situationalScore,
+      emotional: emotionalScore,
     },
     label: engagementLabel(engagementScore),
   };
@@ -220,6 +309,7 @@ async function computeAllScores({ studentId, schoolId }) {
 }
 
 module.exports = {
+  calculateEma,
   computeWeightedMastery,
   computeAtRisk,
   computeRollingTrend,

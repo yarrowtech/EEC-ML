@@ -1,6 +1,4 @@
 const TeachingMaterial = require('../models/TeachingMaterial');
-const PracticeAttempt  = require('../models/PracticeAttempt');
-const MasteryScore     = require('../models/MasteryScore');
 const NotificationService = require('../utils/notificationService');
 const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
 
@@ -9,38 +7,79 @@ const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
  * Score = (timeSpentMin*0.4) + (quizAttempts*10*0.3) + (viewCount*5*0.3), normalised to 100.
  */
 async function computeEngagement(studentId, schoolId) {
-  const [materials, attempts] = await Promise.all([
-    TeachingMaterial.find({ schoolId, isPublished: true })
-      .select('subjectName topicTitle engagement')
-      .lean(),
-    PracticeAttempt.find({ studentId, schoolId })
-      .select('subjectId isCorrect createdAt')
+  const [materials] = await Promise.all([
+    TeachingMaterial.find({
+      schoolId,
+      $or: [
+        { publishedForStudentPortal: true },
+        { status: 'published' },
+        // Keep compatibility with legacy documents that used isPublished.
+        { isPublished: true },
+      ],
+    })
+      .select('subjectName topicTitle viewedBy quizAttempts')
       .lean(),
   ]);
 
-  const subjectAttemptMap = {};
-  for (const a of attempts) {
-    const key = String(a.subjectId || 'general');
-    subjectAttemptMap[key] = (subjectAttemptMap[key] || 0) + 1;
+  const engagementByTopic = [];
+  let wellbeing = null;
+  try {
+    const Wellbeing = require('../models/Wellbeing');
+    wellbeing = await Wellbeing.findOne({ student: studentId, schoolId })
+      .select('mood socialEngagement academicStress lastAssessment')
+      .lean();
+  } catch (_) {
+    // Wellbeing is optional; behavioural and situational scores still work.
   }
 
-  const engagementByTopic = [];
-  for (const mat of materials) {
-    const eng = mat.engagement || {};
-    const views   = eng.viewCount || 0;
-    const timeSec = eng.timeSpent || 0;
-    const timeMin = timeSec / 60;
+  const moodScore = {
+    excellent: 100,
+    good: 80,
+    neutral: 60,
+    concerning: 30,
+    critical: 10,
+  };
+  const emotionalScore = wellbeing
+    ? Math.round((Number(wellbeing.socialEngagement || 5) * 10 * 0.45)
+      + ((10 - Number(wellbeing.academicStress || 5)) * 10 * 0.35)
+      + ((moodScore[wellbeing.mood] ?? 60) * 0.2))
+    : null;
 
-    const rawScore = (timeMin * 0.4) + (views * 5 * 0.3);
-    const normalised = Math.min(100, Math.round(rawScore));
+  for (const mat of materials) {
+    const sid = String(studentId);
+    const viewEntry = (mat.viewedBy || []).find((entry) => String(entry.studentId) === sid);
+    const studentAttempts = (mat.quizAttempts || []).filter((entry) => String(entry.studentId) === sid);
+    const views   = viewEntry?.viewCount || 0;
+    const timeSec = viewEntry?.timeSpent || 0;
+    const timeMin = timeSec / 60;
+    const lastActivity = [
+      viewEntry?.lastViewedAt,
+      ...studentAttempts.map((entry) => entry.submittedAt || entry.startedAt),
+    ].filter(Boolean).map((value) => new Date(value).getTime()).filter(Number.isFinite).sort((a, b) => b - a)[0];
+
+    const behavioural = Math.min(100, Math.round((timeMin * 0.4) + (studentAttempts.length * 10 * 0.3) + (views * 5 * 0.3)));
+    const daysSinceActivity = lastActivity ? Math.max(0, (Date.now() - lastActivity) / 86400000) : Infinity;
+    const situational = Number.isFinite(daysSinceActivity)
+      ? Math.max(0, Math.round(100 * Math.exp(-daysSinceActivity / 14)))
+      : 0;
+    const normalised = Math.min(100, Math.max(0, Math.round(
+      behavioural * 0.5 + situational * 0.3 + (emotionalScore == null ? behavioural * 0.2 : emotionalScore * 0.2)
+    )));
 
     engagementByTopic.push({
       subject:    mat.subjectName,
       topicTitle: mat.topicTitle,
       score:      normalised,
+      dimensions: {
+        behavioural,
+        situational,
+        emotional: emotionalScore,
+      },
       views,
       timeSec,
-      isLow:      normalised < 20 && (views > 0 || timeSec > 0),
+      quizAttempts: studentAttempts.length,
+      lastActivityAt: lastActivity ? new Date(lastActivity) : null,
+      isLow:      normalised < 20 && (views > 0 || timeSec > 0 || studentAttempts.length > 0),
     });
   }
 

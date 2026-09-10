@@ -52,20 +52,24 @@ const updateCurriculumMapFromMaterial = async (material, { learningOutcomes = []
   const { topicTitle, subjectName, className, sectionName, schoolId, teacherId } = material;
   if (!topicTitle || !subjectName || !className) return;
 
+  const section = sectionName || '';
+  const scope = { schoolId, subject: subjectName, className, section };
+
   // Ensure the CurriculumMap row exists for this school/subject/class
   await CurriculumMap.findOneAndUpdate(
-    { schoolId, subject: subjectName, className },
-    { $setOnInsert: { section: sectionName || '', createdBy: teacherId, topics: [] } },
+    scope,
+    { $setOnInsert: { createdBy: teacherId, topics: [] } },
     { upsert: true }
   );
 
-  const map = await CurriculumMap.findOne({ schoolId, subject: subjectName, className }).lean();
-  const existing = map?.topics?.find((t) => t.title === topicTitle);
+  const map = await CurriculumMap.findOne(scope).lean();
+  const normalizedTitle = String(topicTitle).trim().toLowerCase();
+  const existing = map?.topics?.find((t) => String(t.title || '').trim().toLowerCase() === normalizedTitle);
 
   if (!existing) {
     const nextOrder = (map?.topics?.length || 0) + 1;
     await CurriculumMap.updateOne(
-      { schoolId, subject: subjectName, className },
+      scope,
       {
         $push: {
           topics: {
@@ -83,11 +87,11 @@ const updateCurriculumMapFromMaterial = async (material, { learningOutcomes = []
   } else if (learningOutcomes.length || concepts.length) {
     // Topic exists — enrich it with the latest learning outcomes and concepts
     await CurriculumMap.updateOne(
-      { schoolId, subject: subjectName, className, 'topics._id': existing._id },
+      { ...scope, 'topics._id': existing._id },
       {
         $set: {
-          'topics.$.learningOutcomes': learningOutcomes.slice(0, 10),
-          'topics.$.concepts': concepts.slice(0, 20),
+          'topics.$.learningOutcomes': [...new Set([...(existing.learningOutcomes || []), ...learningOutcomes])].slice(0, 10),
+          'topics.$.concepts': [...new Set([...(existing.concepts || []), ...concepts])].slice(0, 20),
         },
       }
     );
@@ -175,7 +179,14 @@ const triggerMaterialIngest = async (material, attachments = []) => {
   )].slice(0, 20);
 
   // After all attachments are indexed, sync topic + learning outcomes + concepts into curriculum map
-  await updateCurriculumMapFromMaterial(material, { learningOutcomes, concepts: conceptKeywords }).catch((err) =>
+  // Use the detected topic when the teacher left topicTitle blank. The original
+  // material object still contains the blank value at this point.
+  await updateCurriculumMapFromMaterial(
+    detectedTopic
+      ? Object.assign({}, material.toObject ? material.toObject() : material, { topicTitle: detectedTopic })
+      : material,
+    { learningOutcomes, concepts: conceptKeywords }
+  ).catch((err) =>
     logger.warn('[curriculum-map] update skipped:', err.message)
   );
 };
@@ -987,5 +998,9 @@ router.post('/:id/versions/:versionNumber/restore', authTeacher, async (req, res
     next(error);
   }
 });
+
+// Exposed for focused service-level regression tests; the default export remains
+// the Express router consumed by routes/index.js.
+router.updateCurriculumMapFromMaterial = updateCurriculumMapFromMaterial;
 
 module.exports = router;

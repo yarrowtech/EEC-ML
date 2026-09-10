@@ -407,6 +407,9 @@ router.post('/generate', authStudent, async (req, res) => {
         noMaterialFound: aiResponse.data?.noMaterialFound || false,
         citations: Array.isArray(aiResponse.data?.citations) ? aiResponse.data.citations : [],
         visuals: Array.isArray(aiResponse.data?.visuals) ? aiResponse.data.visuals : [],
+        // The AI service returns a compact provenance block (model, prompt,
+        // retrieval scope and grounding decision) for teacher/student explainability.
+        lineage: aiResponse.data?.lineage || null,
         sourceMaterialCount: materials.length,
         sourceLessonPlanCount: lessonPlans.length,
         candidateChunkCount: 0,

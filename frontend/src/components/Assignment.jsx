@@ -261,6 +261,110 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
     return diffDays;
   };
 
+  // ─── Submission handlers ──────────────────────────────────────
+  const handleSubmit = async () => {
+    const requiresPdfUpload = selectedAssignment?.submissionFormat === 'pdf';
+    if (!requiresPdfUpload && !submissionText.trim()) {
+      toast.error('Submission required: Please write something before submitting.');
+      return;
+    }
+    if (requiresPdfUpload && !submissionFileUrl) {
+      toast.error('PDF required: Please upload your PDF before submitting.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_BASE_URL}/api/assignment/submit`,
+        {
+          assignmentId: selectedAssignment.id,
+          submissionText,
+          attachmentUrl: requiresPdfUpload ? submissionFileUrl : undefined
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSubmitSuccess(true);
+      setSubmissionFileUrl('');
+      setSubmissionFileName('');
+      clearStudentApiCacheByUrl(ASSIGNMENTS_ENDPOINT);
+      await fetchAssignments({ forceRefresh: true });
+      setSelectedAssignment((prev) => {
+        if (!prev) return prev;
+        const rawSubmissionStatus = response.data?.status || (new Date(prev.dueDate) < new Date() ? 'late' : 'submitted');
+        const state = getAssignmentState({ ...prev, submissionStatus: rawSubmissionStatus });
+        return {
+          ...prev,
+          status: state.bucket,
+          statusLabel: state.label,
+          submissionStatus: state.rawStatus,
+          submittedAt: response.data?.submittedAt || new Date().toISOString(),
+          submissionText: response.data?.submissionText ?? submissionText,
+          submissionAttachmentUrl: response.data?.attachmentUrl ?? (requiresPdfUpload ? submissionFileUrl : ''),
+        };
+      });
+    } catch (err) {
+      console.error('Submit error:', err);
+      toast.error(`Submission failed: ${err.response?.data?.error || 'Failed to submit. Please try again.'}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmissionFileUpload = async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      toast.error('Invalid file: Please upload a PDF file.');
+      input.value = '';
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('File too large: File size must be under 20MB.');
+      input.value = '';
+      return;
+    }
+
+    setUploadingSubmissionFile(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_BASE_URL}/api/uploads/cloudinary/single`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+      const uploaded = response.data.files?.[0];
+      if (!uploaded?.secure_url) {
+        throw new Error('Upload failed');
+      }
+      setSubmissionFileUrl(uploaded.secure_url);
+      setSubmissionFileName(uploaded.originalName || file.name);
+    } catch (error) {
+      console.error('Assignment submission upload failed:', error);
+      toast.error('Upload failed: Failed to upload PDF. Please try again.');
+      setSubmissionFileUrl('');
+      setSubmissionFileName('');
+    } finally {
+      input.value = '';
+      setUploadingSubmissionFile(false);
+    }
+  };
+
+  const removeSubmissionFile = () => {
+    setSubmissionFileUrl('');
+    setSubmissionFileName('');
+  };
+
   // ─── Filtered assignments ──────────────────────────────────────
   const filteredAssignments = assignments
     .filter((assignment) => {
