@@ -1,9 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const MasteryScore = require('../models/MasteryScore');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
+const RecommendationEvent = require('../models/RecommendationEvent');
+const {
+  recordIssued,
+  recordDecision,
+  summarize,
+} = require('../services/recommendationImpactService');
+
+// Persist each recommendation the moment it is shown (deduped per day) and
+// attach its lifecycle id so the client can report acceptance / completion.
+async function attachTracking(schoolId, studentId, source, recs) {
+  return Promise.all((recs || []).map(async (rec) => {
+    try {
+      const ev = await recordIssued({ schoolId, studentId, source, recommendation: rec });
+      return ev ? { ...rec, id: String(ev._id), status: ev.status } : rec;
+    } catch (_) {
+      return rec;
+    }
+  }));
+}
 
 // GET /api/recommendations/student
 // Returns personalised topic + material recommendations based on:
@@ -105,7 +125,8 @@ router.get('/student', authStudent, async (req, res) => {
 
     recommendations.sort((a, b) => a.priority - b.priority);
 
-    return res.json({ success: true, data: recommendations.slice(0, 8) });
+    const tracked = await attachTracking(schoolId, studentId, 'student_feed', recommendations.slice(0, 8));
+    return res.json({ success: true, data: tracked });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -122,7 +143,8 @@ router.get('/next', authStudent, async (req, res) => {
     const { subject, className } = req.query;
     const { recommendNextTopic } = require('../services/recommendationEngine');
     const result = await recommendNextTopic({ studentId, schoolId, subject, className });
-    return res.json({ success: true, data: result.recommendation });
+    const [tracked] = await attachTracking(schoolId, studentId, 'next', result.recommendation ? [result.recommendation] : []);
+    return res.json({ success: true, data: tracked || null });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -137,7 +159,57 @@ router.get('/all-subjects', authStudent, async (req, res) => {
     if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
     const { recommendAcrossSubjects } = require('../services/recommendationEngine');
     const recommendations = await recommendAcrossSubjects({ studentId, schoolId });
-    return res.json({ success: true, data: recommendations });
+    const tracked = await attachTracking(schoolId, studentId, 'all_subjects', recommendations);
+    return res.json({ success: true, data: tracked });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/recommendations/:id/:decision  (decision: accept | dismiss | complete)
+// Records the student's response so acceptance, completion, and mastery impact
+// can be measured.
+const VALID_DECISIONS = ['accept', 'dismiss', 'complete'];
+router.post('/:id/:decision', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!VALID_DECISIONS.includes(req.params.decision)) {
+      return res.status(400).json({ error: 'decision must be accept, dismiss, or complete' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid recommendation id' });
+    }
+    const result = await recordDecision({
+      id: req.params.id, schoolId, studentId,
+      decision: req.params.decision,
+      reason: req.body?.reason || '',
+    });
+    if (result.notFound) return res.status(404).json({ error: 'Recommendation not found' });
+    if (result.invalid) return res.status(400).json({ error: 'Invalid decision' });
+    return res.json({ success: true, data: result.event });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/recommendations/history
+// The student's own recommendation history with acceptance / completion /
+// impact aggregates.
+router.get('/history', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const events = await RecommendationEvent.find({ schoolId, studentId })
+      .sort({ issuedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.json({ success: true, data: events, summary: summarize(events) });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -272,7 +272,10 @@ router.post('/interventions', authTeacher, async (req, res) => {
     const teacherId = req.user?.id || req.teacher?.id;
     if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { studentId, studentName, riskLevel, reason, action, notes, scheduledDate, planTemplate = 'targeted_reteach' } = req.body || {};
+    const {
+      studentId, studentName, riskLevel, reason, action, notes, scheduledDate,
+      planTemplate = 'targeted_reteach', subject = '', topicId = '', baselineScore,
+    } = req.body || {};
     if (!studentId || !reason || !action) {
       return res.status(400).json({ error: 'studentId, reason, and action are required' });
     }
@@ -287,10 +290,25 @@ router.post('/interventions', authTeacher, async (req, res) => {
     if (!studentIsWithinTeacherScope(student, scope)) {
       return res.status(403).json({ error: 'You are not allocated to this student\'s class' });
     }
+
+    // Freeze a pre-intervention baseline now so follow-up improvement can be
+    // measured automatically. Use the caller's value when given, otherwise the
+    // student's most recent credible assessment for this subject/topic.
+    let baseline = (baselineScore !== '' && baselineScore != null && Number.isFinite(Number(baselineScore)))
+      ? Number(baselineScore) : null;
+    if (baseline == null) {
+      const { computeBaseline } = require('../services/interventionFollowUpService');
+      const events = await require('../models/MasteryEvent')
+        .find({ schoolId, studentId, ...(subject ? { subject } : {}) })
+        .sort({ createdAt: 1 }).lean();
+      baseline = computeBaseline(events, Date.now(), { subject, topicId });
+    }
+
     const log = await InterventionLog.create({
       schoolId, campusId: req.campusId || null, teacherId,
       studentId, studentName: studentName || student.name || '',
       riskLevel: riskLevel || 'medium',
+      subject, topicId, baselineScore: baseline,
       reason, action, notes: notes || '',
       scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
       planTemplate,
@@ -772,8 +790,10 @@ router.get('/grade-book-csv', authTeacher, async (req, res) => {
 router.get('/low-mastery', authTeacher, async (req, res) => {
   try {
     const schoolId  = req.schoolId;
-    const teacherId = req.user?.id;
-    if (!schoolId || !teacherId) return res.status(401).json({ error: 'Unauthorized' });
+    const teacherId = req.user?.id || req.teacher?.id;
+
+    const scope = await requireTeacherScope(req, res);
+    if (!scope) return;
 
     const allocations = await TeacherAllocation.find({ schoolId, teacherId })
       .populate('subjectId', 'name')
@@ -781,8 +801,20 @@ router.get('/low-mastery', authTeacher, async (req, res) => {
     const subjects = [...new Set(allocations.map((a) => a.subjectId?.name).filter(Boolean))];
     if (!subjects.length) return res.json({ success: true, data: [] });
 
+    // Restrict the aggregation to students in the teacher's allocated
+    // class/section pairs — previously it averaged mastery across every
+    // student in the school for the subject.
+    const scopedIds = await StudentUser
+      .find(buildScopedStudentFilter(schoolId, scope))
+      .distinct('_id');
+    if (!scopedIds.length) return res.json({ success: true, data: [] });
+
     const pipeline = [
-      { $match: { schoolId: mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : schoolId, subject: { $in: subjects } } },
+      { $match: {
+        schoolId: mongoose.Types.ObjectId.isValid(schoolId) ? new mongoose.Types.ObjectId(schoolId) : schoolId,
+        studentId: { $in: scopedIds },
+        subject: { $in: subjects },
+      } },
       { $group: { _id: '$subject', avgScore: { $avg: '$score' }, studentCount: { $sum: 1 } } },
       { $match: { avgScore: { $lt: 50 } } },
       { $sort: { avgScore: 1 } },
@@ -881,6 +913,12 @@ router.get('/bloom-distribution', authTeacher, async (req, res) => {
 
     const scope = await requireTeacherScope(req, res, { className, subject });
     if (!scope) return;
+    // requireTeacherScope only enforces the allocation match when a class or
+    // section is named; a subject-only request must still be checked so a
+    // subject teacher can't read Bloom stats for a subject they don't teach.
+    if (subject && !scopeAllowsRequest(scope, { grade: className, subject })) {
+      return res.status(403).json({ error: 'You are not allocated to this subject' });
+    }
 
     const TeachingMaterial = require('../models/TeachingMaterial');
     const filter = { schoolId: req.schoolId };
@@ -906,13 +944,17 @@ router.get('/bloom-distribution', authTeacher, async (req, res) => {
 router.get('/error-breakdown', authTeacher, async (req, res) => {
   try {
     const { subject, classId } = req.query;
-    if (!(await requireClassIdAllocation(req, res, { classId }))) return;
+    const scope = await requireTeacherScope(req, res);
+    if (!scope) return;
+    if (classId && !(await requireClassIdAllocation(req, res, { classId }))) return;
 
     const ErrorRecord  = require('../models/ErrorRecord');
-    const studentIds   = await StudentUser.distinct('_id', {
-      schoolId: req.schoolId,
-      ...(classId ? { classId } : {}),
-    });
+    // With a classId the caller is already confirmed allocated to it; without
+    // one, fall back to the teacher's allocated class/section pairs rather than
+    // every student in the school.
+    const studentIds   = await StudentUser.distinct('_id', classId
+      ? { schoolId: req.schoolId, classId }
+      : buildScopedStudentFilter(req.schoolId, scope));
     const matchFilter = { schoolId: req.schoolId, studentId: { $in: studentIds } };
     if (subject) matchFilter.subject = { $regex: subject, $options: 'i' };
 
@@ -941,14 +983,20 @@ router.get('/error-breakdown', authTeacher, async (req, res) => {
 router.get('/class-insights', authTeacher, async (req, res) => {
   try {
     const { classId, subject, className } = req.query;
-    if (!(await requireClassIdAllocation(req, res, { classId }))) return;
+    const scope = await requireTeacherScope(req, res);
+    if (!scope) return;
+    if (classId && !(await requireClassIdAllocation(req, res, { classId }))) return;
 
     const MasteryScore = require('../models/MasteryScore');
     const axios = require('axios');
     const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-    const studentFilter = { schoolId: req.schoolId };
-    if (classId) studentFilter.classId = classId;
+    // Without a classId, restrict to the teacher's allocated class/section
+    // pairs — this handler aggregates mastery and forwards it to the LLM, so an
+    // unscoped query would leak the whole school's data into the prompt.
+    const studentFilter = classId
+      ? { schoolId: req.schoolId, classId }
+      : buildScopedStudentFilter(req.schoolId, scope);
     const students = await StudentUser.find(studentFilter).select('_id name grade section').lean();
 
     const filter = { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) } };

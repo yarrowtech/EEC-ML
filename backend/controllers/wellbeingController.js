@@ -69,6 +69,17 @@ exports.updateWellbeing = async (req, res) => {
 
     await wellbeing.save();
 
+    // Route a distressed check-in to leadership / counselling for human follow-up.
+    try {
+      const { escalateWellbeingIfNeeded } = require('../services/escalationService');
+      await escalateWellbeingIfNeeded({
+        schoolId, campusId: student.campusId || req.campusId || null,
+        student, wellbeing,
+      });
+    } catch (escErr) {
+      console.error('wellbeing escalation check failed:', escErr.message);
+    }
+
     res.json(wellbeing);
   } catch (err) {
     console.error(err.message);

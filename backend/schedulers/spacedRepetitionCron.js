@@ -91,6 +91,25 @@ async function runAtRiskSweep() {
   }
 }
 
+async function runRecommendationImpactSweep() {
+  try {
+    const { measureRecommendationImpact } = require('../services/recommendationImpactService');
+    const { finalized } = await measureRecommendationImpact();
+    console.log(`[recommendation-impact cron] finalized ${finalized} accepted recommendations`);
+  } catch (err) {
+    console.error('[recommendation-impact cron] error:', err.message);
+  }
+}
+
+async function runRetentionSweep() {
+  try {
+    const r = await require('../services/dataRetentionService').runRetentionSweep();
+    console.log('[retention cron]', JSON.stringify(r));
+  } catch (err) {
+    console.error('[retention cron] error:', err.message);
+  }
+}
+
 // ── 30-day class improvement report ──────────────────────────────────────────
 async function run30DayReport() {
   try {
@@ -165,6 +184,8 @@ function startSchedulers() {
     await runSpacedRepetitionNudges();
     await runEngagementSweep();
     await runAtRiskSweep();
+    await runRecommendationImpactSweep();
+    await runRetentionSweep();
   });
 
   // Monthly on the 1st at 7 AM — 30-day improvement report to each teacher
@@ -175,4 +196,4 @@ function startSchedulers() {
   console.log('[schedulers] SR, engagement, and 30-day report crons scheduled');
 }
 
-module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, runAtRiskSweep, run30DayReport };
+module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, runAtRiskSweep, runRecommendationImpactSweep, runRetentionSweep, run30DayReport };

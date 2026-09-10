@@ -181,6 +181,16 @@ async function alertTeachersIfAtRisk(studentId, schoolId, subject) {
     const scope = await buildTeacherAllocationScope({ schoolId, teacherId: teacher._id, campusId: student.campusId });
     if (studentIsWithinTeacherScope(student, scope) && subjectIsAllowedForStudent(student, subject, scope)) teacherIds.push(teacher._id);
   }
+  // Critical academic risk also goes to school leadership / counselling.
+  if ((risk.riskScore ?? 0) >= 85) {
+    require('./escalationService').raiseEscalation({
+      schoolId, campusId: student.campusId || null, studentId, studentName: student.name || '',
+      category: 'at_risk_academic', severity: 'critical',
+      summary: `Critical academic risk — recent average ${risk.recentAvg}% (${risk.trend}). Human follow-up recommended.`,
+      trigger: { source: 'at_risk_engine', signal: `riskScore=${risk.riskScore}`, detail: risk },
+    }).catch((err) => require('../utils/logger').logger.warn({ err: err.message, studentId }, 'at-risk escalation failed'));
+  }
+
   const dedupeKey = `${schoolId}:${studentId}:${subject || ''}:${new Date().toISOString().slice(0, 10)}`;
   const StudentInsight = require('../models/StudentInsight');
   try {

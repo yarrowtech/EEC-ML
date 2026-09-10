@@ -81,6 +81,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/teaching-materials', uploadApiLimiter, require('./teachingMaterialRoutes'));
   app.use('/api/reading-assessment', require('./readingAssessmentRoutes'));
   app.use('/api/writing-assessment', require('./writingAssessmentRoutes'));
+  app.use('/api/long-answer-assessments', aiApiLimiter, require('./longAnswerAssessmentRoutes'));
   app.use('/api/external-resources', require('./externalResourceRoutes'));
   app.use('/api/achievements', require('./achievementRoutes'));
 
@@ -93,6 +94,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/notifications', require('./notificationRoutes'));
   app.use('/api/feedback', require('./feedbackRoute'));
   app.use('/api/wellbeing', writeHeavyApiLimiter, require('./wellbeingRoute'));
+  app.use('/api/escalations', writeHeavyApiLimiter, require('./escalationRoutes'));
 
   // ── Reporting / Audit ────────────────────────────────────────────────────────
   app.use('/api/reports', writeHeavyApiLimiter, require('./reportRoutes'));

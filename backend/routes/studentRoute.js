@@ -1700,6 +1700,8 @@ router.get('/tutor-conversations', authStudent, async (req, res) => {
       .sort({ updatedAt: -1 })
       .limit(50)
       .lean();
+    // Join in any teacher corrections of AI answers so the student sees them.
+    await require('../services/tutorCorrectionService').attachCorrections(conversations, req.schoolId);
     res.json({ conversations });
     logStudentPortalEvent(req, {
       feature: 'ai_tutor',

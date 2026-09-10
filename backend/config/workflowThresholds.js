@@ -35,4 +35,12 @@ module.exports = {
   COMPLETION: {
     ALL_NODES_DONE: true,    // when all path nodes are 'done', fire progress report
   },
+
+  // AI data retention lifecycle (env-overridable). A student's tutor
+  // conversations and rolling memory are pruned past these windows, and all AI
+  // data is purged once StudentUser.dataRetentionExpiresAt has passed.
+  RETENTION: {
+    CONVERSATION_DAYS: Number(process.env.CONVERSATION_RETENTION_DAYS) || 365,
+    MEMORY_SUMMARY_DAYS: Number(process.env.MEMORY_SUMMARY_RETENTION_DAYS) || 730,
+  },
 };

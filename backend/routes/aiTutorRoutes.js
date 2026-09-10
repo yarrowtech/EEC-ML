@@ -10,6 +10,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
+const adminAuth = require('../middleware/adminAuth');
 const StudentUser = require('../models/StudentUser');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
@@ -343,33 +344,59 @@ router.post('/generate', authStudent, async (req, res) => {
       // Non-critical — fall back to generic response if context build fails
     }
 
-    const aiResponse = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
-      task_type: 'generate',
-      payload: {
-        mode: normalizedMode,
-        subject: normalizeString(subject) || 'General Knowledge',
-        topic: normalizedTopic || normalizedQuestion,
-        subTopic: normalizeString(subTopic) || null,
-        gradeLevel: student.grade ? `Grade ${student.grade}` : null,
-        question: normalizeString(question) || null,
-        candidates: [],
-        schoolId: String(schoolId),
-        classId: student.classId ? String(student.classId) : null,
-        sectionId: student.sectionId ? String(student.sectionId) : null,
-        academicYearId: academicYearId ? String(academicYearId) : null,
-        subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
-        curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
-        chapterTitle: resolvedChapterTitle,
-        difficulty: masteryBasedDifficulty,
-        responseDepth: normalizeString(responseDepth) || null,
-        learningGoal: normalizeString(learningGoal) || null,
-        wrongAnswer: normalizeString(wrongAnswer) || null,
-        bloomLevel: masteryBasedBloomLevel,
-        excludedMaterialIds,
-        studentContext: studentContext || null,
-        conversationHistory: conversationHistory.length ? conversationHistory : null,
-      },
-    }, { timeout: 180000 });
+    const aiStarted = Date.now();
+    let aiResponse;
+    try {
+      aiResponse = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
+        task_type: 'generate',
+        payload: {
+          mode: normalizedMode,
+          subject: normalizeString(subject) || 'General Knowledge',
+          topic: normalizedTopic || normalizedQuestion,
+          subTopic: normalizeString(subTopic) || null,
+          gradeLevel: student.grade ? `Grade ${student.grade}` : null,
+          question: normalizeString(question) || null,
+          candidates: [],
+          schoolId: String(schoolId),
+          classId: student.classId ? String(student.classId) : null,
+          sectionId: student.sectionId ? String(student.sectionId) : null,
+          academicYearId: academicYearId ? String(academicYearId) : null,
+          subjectId: selectedMaterial?.subjectId ? String(selectedMaterial.subjectId) : null,
+          curriculumCode: normalizeString(selectedMaterial?.curriculumCode) || null,
+          chapterTitle: resolvedChapterTitle,
+          difficulty: masteryBasedDifficulty,
+          responseDepth: normalizeString(responseDepth) || null,
+          learningGoal: normalizeString(learningGoal) || null,
+          wrongAnswer: normalizeString(wrongAnswer) || null,
+          bloomLevel: masteryBasedBloomLevel,
+          excludedMaterialIds,
+          studentContext: studentContext || null,
+          conversationHistory: conversationHistory.length ? conversationHistory : null,
+        },
+      }, { timeout: 180000 });
+    } catch (aiErr) {
+      require('../services/aiInteractionLogger').logAiInteraction({
+        schoolId, userId: studentId, userRole: 'student',
+        feature: 'tutor_generate', mode: normalizedMode, subject: normalizeString(subject),
+        topicTitle: normalizedTopic,
+        retrievalConfig: { classId: String(student.classId || ''), sectionId: String(student.sectionId || ''),
+          chapterTitle: resolvedChapterTitle, excludedMaterialCount: excludedMaterialIds.length },
+        status: 'error', httpStatus: aiErr.response?.status || null,
+        errorType: aiErr.response ? 'ai_service_error' : 'network_error',
+        latencyMs: Date.now() - aiStarted,
+      });
+      throw aiErr;
+    }
+
+    require('../services/aiInteractionLogger').logAiInteraction({
+      schoolId, userId: studentId, userRole: 'student',
+      feature: 'tutor_generate', mode: normalizedMode, subject: normalizeString(subject),
+      topicTitle: normalizedTopic, aiResponse: aiResponse.data || {},
+      retrievalConfig: { classId: String(student.classId || ''), sectionId: String(student.sectionId || ''),
+        chapterTitle: resolvedChapterTitle, excludedMaterialCount: excludedMaterialIds.length,
+        sourceMaterialCount: materials.length },
+      status: 'success', latencyMs: Date.now() - aiStarted,
+    });
 
     return res.json({
       success: true,
@@ -501,20 +528,41 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
       return res.status(400).json({ error: 'questionText, correctAnswer, and studentAnswer are required' });
     }
 
-    const evalResp = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
-      task_type: 'evaluate',
-      payload: {
-        questionText, correctAnswer, studentAnswer,
-        subject: normalizeString(subject),
+    const evalStarted = Date.now();
+    let evalResp;
+    try {
+      evalResp = await axios.post(`${AI_SERVICE_URL}/orchestrate`, {
+        task_type: 'evaluate',
+        payload: {
+          questionText, correctAnswer, studentAnswer,
+          subject: normalizeString(subject),
+          topicTitle: normalizeString(topicTitle),
+          chapterTitle: normalizeString(chapterTitle),
+          gradeLevel: normalizeString(gradeLevel),
+          questionType,
+          context: normalizeString(context),
+        },
+      }, { timeout: 120000 });
+    } catch (evalErr) {
+      require('../services/aiInteractionLogger').logAiInteraction({
+        schoolId, userId: studentId, userRole: 'student',
+        feature: 'answer_evaluate', mode: questionType, subject: normalizeString(subject),
         topicTitle: normalizeString(topicTitle),
-        chapterTitle: normalizeString(chapterTitle),
-        gradeLevel: normalizeString(gradeLevel),
-        questionType,
-        context: normalizeString(context),
-      },
-    }, { timeout: 120000 });
+        status: 'error', httpStatus: evalErr.response?.status || null,
+        errorType: evalErr.response ? 'ai_service_error' : 'network_error',
+        latencyMs: Date.now() - evalStarted,
+      });
+      throw evalErr;
+    }
 
     const result = evalResp.data;
+
+    require('../services/aiInteractionLogger').logAiInteraction({
+      schoolId, userId: studentId, userRole: 'student',
+      feature: 'answer_evaluate', mode: questionType, subject: normalizeString(subject),
+      topicTitle: normalizeString(topicTitle), aiResponse: result,
+      status: 'success', latencyMs: Date.now() - evalStarted,
+    });
 
     // Free-form tutor answers are practice feedback only. Official records are
     // evaluated from stored questions/rubrics by the assessment submission routes.
@@ -585,6 +633,8 @@ router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res)
       .sort({ updatedAt: -1 })
       .limit(Number(limit))
       .lean();
+
+    await require('../services/tutorCorrectionService').attachCorrections(conversations, req.schoolId);
 
     return res.json({ success: true, data: { student, conversations } });
   } catch (err) {
@@ -784,27 +834,233 @@ router.get('/saved-notes', authStudent, async (req, res) => {
   }
 });
 
+// ── Shared: confirm a teacher may act on a student's tutor conversation ───────
+const loadCorrectableConversation = async (req, res, conversationId) => {
+  if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+    res.status(400).json({ error: 'Invalid conversationId' });
+    return null;
+  }
+  const TutorConversation = require('../models/TutorConversation');
+  const conv = await TutorConversation.findOne({ _id: conversationId, schoolId: req.schoolId }).lean();
+  if (!conv) {
+    res.status(404).json({ error: 'Conversation not found' });
+    return null;
+  }
+  const student = await StudentUser.findOne({ _id: conv.studentId, schoolId: req.schoolId })
+    .select('name grade section className sectionName').lean();
+  if (!student) {
+    res.status(404).json({ error: 'Student not found' });
+    return null;
+  }
+  const scope = await buildTeacherAllocationScope({
+    schoolId: req.schoolId, campusId: req.campusId || null,
+    teacherId: req.user?.id || req.teacher?.id,
+  });
+  if (!studentIsWithinTeacherScope(student, scope)) {
+    res.status(403).json({ error: 'Student is outside your assigned scope' });
+    return null;
+  }
+  return { conv, student };
+};
+
 // ── POST /api/ai-tutor/teacher/correct-answer ─────────────────────────────────
-// Teacher can override/correct an AI tutor response in a student's conversation.
+// Teacher overrides a specific AI tutor answer in a student's conversation.
+// The correction is stored in its own collection so the student's next chat
+// sync cannot wipe it, and is joined back onto conversation reads.
 router.post('/teacher/correct-answer', authTeacher, async (req, res) => {
   try {
-    const TutorConversation = require('../models/TutorConversation');
-    const { conversationId, messageIndex, correctedText, reason } = req.body || {};
-    if (!conversationId || correctedText == null) {
-      return res.status(400).json({ error: 'conversationId and correctedText are required' });
+    const teacherId = req.user?.id || req.teacher?.id;
+    const { conversationId, messageId, messageIndex, correctedText, reason } = req.body || {};
+    if (!conversationId || !String(correctedText || '').trim()) {
+      return res.status(400).json({ error: 'conversationId and a non-empty correctedText are required' });
     }
-    const conv = await TutorConversation.findOne({ _id: conversationId, schoolId: req.schoolId });
-    if (!conv) return res.status(404).json({ error: 'Conversation not found' });
-    const idx = Number(messageIndex);
-    if (!Number.isNaN(idx) && conv.messages[idx]) {
-      conv.messages[idx].teacherCorrected = true;
-      conv.messages[idx].correctedText    = correctedText;
-      conv.messages[idx].correctionReason = reason || '';
-      conv.messages[idx].correctedBy      = req.userId;
-      conv.messages[idx].correctedAt      = new Date();
-      await conv.save();
+    if (messageId == null && messageIndex == null) {
+      return res.status(400).json({ error: 'messageId or messageIndex is required' });
     }
-    return res.json({ success: true, message: 'Answer correction saved' });
+
+    const loaded = await loadCorrectableConversation(req, res, conversationId);
+    if (!loaded) return;
+    const { conv } = loaded;
+
+    const { resolveTargetMessage } = require('../services/tutorCorrectionService');
+    const { message, index } = resolveTargetMessage(conv.messages, { messageId, messageIndex });
+    if (!message) return res.status(404).json({ error: 'Target message not found in this conversation' });
+    if (message.role !== 'assistant') {
+      return res.status(400).json({ error: 'Only an AI answer (assistant message) can be corrected' });
+    }
+
+    const TutorAnswerCorrection = require('../models/TutorAnswerCorrection');
+    const teacher = await require('../models/TeacherUser').findOne({ _id: teacherId, schoolId: req.schoolId })
+      .select('name').lean();
+
+    const correction = await TutorAnswerCorrection.findOneAndUpdate(
+      { conversationId: conv._id, messageId: String(message.id) },
+      {
+        $set: {
+          schoolId: req.schoolId, studentId: conv.studentId, clientId: conv.clientId || '',
+          messageIndex: index,
+          originalText: String(message.text || ''),
+          correctedText: String(correctedText).trim(),
+          reason: String(reason || '').trim(),
+          status: 'active', withdrawnAt: null,
+          teacherId, teacherName: teacher?.name || '',
+        },
+        $setOnInsert: { messageId: String(message.id) },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    try {
+      await require('../models/AuditLog').create({
+        schoolId: req.schoolId, actorId: teacherId, actorType: 'teacher', actorName: teacher?.name || '',
+        action: 'ai_tutor.answer_correction', entity: 'TutorAnswerCorrection', entityId: correction._id,
+        ip: req.ip,
+        meta: { conversationId: String(conv._id), studentId: String(conv.studentId), messageId: String(message.id), reason: correction.reason },
+      });
+    } catch (_) { /* audit failure must not block the correction */ }
+
+    return res.json({ success: true, data: correction });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/ai-tutor/teacher/correct-answer/:id ──────────────────────────
+// Withdraw a previously saved correction.
+router.delete('/teacher/correct-answer/:id', authTeacher, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid correction id' });
+    }
+    const TutorAnswerCorrection = require('../models/TutorAnswerCorrection');
+    const existing = await TutorAnswerCorrection.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!existing) return res.status(404).json({ error: 'Correction not found' });
+
+    const loaded = await loadCorrectableConversation(req, res, String(existing.conversationId));
+    if (!loaded) return;
+
+    const updated = await TutorAnswerCorrection.findOneAndUpdate(
+      { _id: existing._id, schoolId: req.schoolId },
+      { $set: { status: 'withdrawn', withdrawnAt: new Date() } },
+      { new: true }
+    );
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/teacher/corrections ────────────────────────────────────
+// List AI-answer corrections the teacher can see (their allocation scope),
+// optionally filtered by student or conversation.
+router.get('/teacher/corrections', authTeacher, async (req, res) => {
+  try {
+    const { studentId, conversationId, includeWithdrawn } = req.query;
+    const TutorAnswerCorrection = require('../models/TutorAnswerCorrection');
+
+    const filter = { schoolId: req.schoolId };
+    if (studentId && mongoose.Types.ObjectId.isValid(studentId)) filter.studentId = studentId;
+    if (conversationId && mongoose.Types.ObjectId.isValid(conversationId)) filter.conversationId = conversationId;
+    if (String(includeWithdrawn) !== 'true') filter.status = 'active';
+
+    const rows = await TutorAnswerCorrection.find(filter).sort({ updatedAt: -1 }).limit(200).lean();
+
+    // Restrict to students within the teacher's allocation scope.
+    const scope = await buildTeacherAllocationScope({
+      schoolId: req.schoolId, campusId: req.campusId || null,
+      teacherId: req.user?.id || req.teacher?.id,
+    });
+    const studentIds = [...new Set(rows.map((r) => String(r.studentId)))];
+    const students = await StudentUser.find({ _id: { $in: studentIds }, schoolId: req.schoolId })
+      .select('name grade section className sectionName').lean();
+    const inScope = new Set(students.filter((s) => studentIsWithinTeacherScope(s, scope)).map((s) => String(s._id)));
+
+    return res.json({ success: true, data: rows.filter((r) => inScope.has(String(r.studentId))) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/admin/interaction-logs ─────────────────────────────────
+// Explainable-AI audit trail: which model / prompt / retrieval config produced
+// each AI answer, how it went, and how long it took.
+router.get('/admin/interaction-logs', adminAuth, async (req, res) => {
+  try {
+    const AiInteractionLog = require('../models/AiInteractionLog');
+    const { feature, status, userId, from, to } = req.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+
+    const filter = { schoolId: req.schoolId };
+    if (feature) filter.feature = feature;
+    if (status) filter.status = status;
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) filter.userId = userId;
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+
+    const [logs, summary] = await Promise.all([
+      AiInteractionLog.find(filter).sort({ createdAt: -1 }).limit(limit).lean(),
+      AiInteractionLog.aggregate([
+        { $match: filter },
+        { $group: {
+          _id: '$feature',
+          total: { $sum: 1 },
+          errors: { $sum: { $cond: [{ $eq: ['$status', 'error'] }, 1, 0] } },
+          grounded: { $sum: { $cond: ['$grounded', 1, 0] } },
+          needsReview: { $sum: { $cond: ['$needsReview', 1, 0] } },
+          avgLatencyMs: { $avg: '$latencyMs' },
+        } },
+      ]),
+    ]);
+    return res.json({ success: true, data: logs, summary });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/admin/retention-policy ─────────────────────────────────
+router.get('/admin/retention-policy', adminAuth, async (req, res) => {
+  try {
+    const { RETENTION } = require('../config/workflowThresholds');
+    const StudentUser = require('../models/StudentUser');
+    const dueForPurge = await StudentUser.countDocuments({
+      schoolId: req.schoolId, dataRetentionExpiresAt: { $ne: null, $lte: new Date() },
+    });
+    return res.json({ success: true, data: {
+      conversationRetentionDays: RETENTION.CONVERSATION_DAYS,
+      memorySummaryRetentionDays: RETENTION.MEMORY_SUMMARY_DAYS,
+      aiInteractionLogRetentionDays: Number(process.env.AI_LOG_RETENTION_DAYS) || 180,
+      studentsDueForPurge: dueForPurge,
+    } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/admin/purge-ai-data/:studentId ────────────────────────
+// Explicit erasure of a student's AI data (deletion request / off-boarding).
+router.post('/admin/purge-ai-data/:studentId', adminAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.studentId)) {
+      return res.status(400).json({ error: 'Invalid studentId' });
+    }
+    const student = await StudentUser.findOne({ _id: req.params.studentId, schoolId: req.schoolId }).select('_id name').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found in this school' });
+
+    const result = await require('../services/dataRetentionService')
+      .purgeStudentAiData(student._id, req.schoolId);
+
+    try {
+      await require('../models/AuditLog').create({
+        schoolId: req.schoolId, actorId: req.user?.id || null, actorType: 'admin', actorName: req.user?.name || '',
+        action: 'ai_data.purged', entity: 'StudentUser', entityId: student._id,
+        ip: req.ip, meta: { result },
+      });
+    } catch (_) { /* audit must not block */ }
+
+    return res.json({ success: true, data: result });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -1187,6 +1187,18 @@ def _quiz_instruction_for_type(question_type: str, default: str, count: int | No
     )
 
 
+def _prompt_source(mode: str) -> str:
+    """Report whether a mode's instruction came from the file-based prompt
+    library or the hardcoded fallback — used in the response lineage block."""
+    try:
+        from prompts.loader import load_prompt as _load_prompt
+        if _load_prompt(mode):
+            return f"prompts/{mode}"
+    except Exception:
+        pass
+    return "inline" if MODE_INSTRUCTIONS.get(mode) else "unknown"
+
+
 def build_prompt(
     req: TutorGenerateRequest,
     context: str,
@@ -1779,4 +1791,14 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
         "noMaterialFound": False,
         "citations": citations,
         "visuals": visuals,
+        # Lineage for the backend's explainable-AI / quality audit trail.
+        "lineage": {
+            "model": active_model_name(req.mode),
+            "mode": req.mode,
+            "promptSource": _prompt_source(req.mode),
+            "rewrittenQuery": rewritten_query or "",
+            "retrievalChunkCount": len(chunks),
+            "citationCount": len(citations),
+            "visualCount": len(visuals),
+        },
     }
