@@ -337,6 +337,13 @@ function runWorkflowTriggers({ studentId, schoolId, subject, topicId, topicTitle
     const { runGapDetection } = require('./gapDetectionEngine');
     runGapDetection({ studentId: s, schoolId: sc, subject, topicTitle }).catch(() => {});
   }
+
+  // Clear any recorded misconceptions once the topic is mastered.
+  if (score >= 75 && topicTitle) {
+    require('./misconceptionService')
+      .resolveMisconceptionsForTopic({ studentId: s, schoolId: sc, subject, topicTitle, score })
+      .catch(() => {});
+  }
 }
 
 // ── Enhanced multi-factor mastery score ───────────────────────────────────────

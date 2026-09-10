@@ -307,12 +307,19 @@ router.post('/generate', authStudent, async (req, res) => {
     ) || null;
     const academicYearId = selectedMaterial?.academicYearId || materials[0]?.academicYearId || null;
 
-    // Build student context for personalised LLM response — fire and forget on error
+    // Build student context for personalised LLM response — fire and forget on error.
+    // Personalisation (mastery/gaps/memory/development profile in the prompt)
+    // requires recorded parental consent; without it the tutor answers from the
+    // retrieved course material only.
     let studentContext = '';
     let conversationHistory = clientHistory;
     let masteryBasedDifficulty = normalizeString(difficulty) || null;
     let masteryBasedBloomLevel = null;
+    const consent = await require('../services/aiConsentService')
+      .personalisationAllowed({ studentId, schoolId })
+      .catch(() => ({ allowed: false, reason: 'consent_check_failed' }));
     try {
+      if (!consent.allowed) throw new Error('personalisation_not_consented');
       const ctx = await buildStudentContext({
         studentId,
         schoolId,
@@ -416,6 +423,8 @@ router.post('/generate', authStudent, async (req, res) => {
         indexedAttachmentCount,
         ragSource: 'qdrant',
         resolvedChapterTitle,
+        personalisationApplied: Boolean(consent.allowed && studentContext),
+        personalisationBlockedReason: consent.allowed ? null : consent.reason,
       },
     });
   } catch (err) {
@@ -601,6 +610,75 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
     return res.json({ success: true, data: result });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/explain-photo ────────────────────────────────────────
+// Student uploads a photo of a problem (Cloudinary URL from /api/uploads) and
+// asks about it; the vision model explains what it sees.
+const _ALLOWED_IMAGE_HOSTS = new Set(['res.cloudinary.com']);
+router.post('/explain-photo', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { imageUrl, question, subject, topic } = req.body || {};
+    if (!imageUrl || !String(question || '').trim()) {
+      return res.status(400).json({ error: 'imageUrl and question are required' });
+    }
+    let parsed;
+    try { parsed = new URL(imageUrl); } catch { return res.status(400).json({ error: 'imageUrl is not a valid URL' }); }
+    if (parsed.protocol !== 'https:' || !_ALLOWED_IMAGE_HOSTS.has(parsed.hostname)) {
+      return res.status(400).json({ error: 'imageUrl must be an https Cloudinary URL from this app' });
+    }
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('grade').lean();
+
+    let imageBuf;
+    try {
+      const dl = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 15000, maxContentLength: 8 * 1024 * 1024 });
+      const ct = String(dl.headers['content-type'] || '');
+      if (!ct.startsWith('image/')) return res.status(400).json({ error: 'URL does not point to an image' });
+      imageBuf = Buffer.from(dl.data);
+    } catch (dlErr) {
+      return res.status(400).json({ error: 'Could not fetch the image', detail: dlErr.message });
+    }
+
+    const started = Date.now();
+    let visionRes;
+    try {
+      visionRes = await axios.post(`${AI_SERVICE_URL}/vision/explain-image`, {
+        image: imageBuf.toString('base64'),
+        question: normalizeString(question),
+        grade_level: student?.grade ? `Grade ${student.grade}` : null,
+        subject: normalizeString(subject) || null,
+      }, { timeout: 120000 });
+    } catch (vErr) {
+      require('../services/aiInteractionLogger').logAiInteraction({
+        schoolId, userId: studentId, userRole: 'student',
+        feature: 'vision_explain_photo', subject: normalizeString(subject), topicTitle: normalizeString(topic),
+        status: 'error', httpStatus: vErr.response?.status || null,
+        errorType: vErr.response ? 'ai_service_error' : 'network_error', latencyMs: Date.now() - started,
+      });
+      if (vErr.response) return res.status(502).json({ error: 'Vision service error', detail: vErr.response.data });
+      throw vErr;
+    }
+
+    require('../services/aiInteractionLogger').logAiInteraction({
+      schoolId, userId: studentId, userRole: 'student',
+      feature: 'vision_explain_photo', mode: 'explain', subject: normalizeString(subject),
+      topicTitle: normalizeString(topic),
+      aiResponse: { model: visionRes.data?.model_used, content: visionRes.data?.explanation },
+      status: 'success', latencyMs: Date.now() - started,
+    });
+
+    return res.json({
+      success: true,
+      data: { explanation: visionRes.data?.explanation || '', model: visionRes.data?.model_used || '' },
+    });
+  } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
@@ -1018,6 +1096,41 @@ router.get('/admin/interaction-logs', adminAuth, async (req, res) => {
       ]),
     ]);
     return res.json({ success: true, data: logs, summary });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/ai-tutor/consent-status ─────────────────────────────────────────
+// The calling student's AI-personalisation consent status.
+router.get('/consent-status', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    const status = await require('../services/aiConsentService').personalisationAllowed({ studentId, schoolId });
+    return res.json({ success: true, data: status });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-tutor/admin/consent/:studentId ──────────────────────────────
+// Record parental consent for AI personalisation (admin, audited).
+router.post('/admin/consent/:studentId', adminAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.studentId)) {
+      return res.status(400).json({ error: 'Invalid studentId' });
+    }
+    const { givenBy } = req.body || {};
+    if (!String(givenBy || '').trim()) return res.status(400).json({ error: 'givenBy (consenting parent/guardian name) is required' });
+
+    const result = await require('../services/aiConsentService').recordConsent({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+      givenBy, actor: { id: req.user?.id, type: 'admin', name: req.user?.name },
+    });
+    if (result.notFound) return res.status(404).json({ error: 'Student not found in this school' });
+    return res.json({ success: true, data: result.student });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

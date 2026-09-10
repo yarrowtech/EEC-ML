@@ -708,4 +708,51 @@ router.get('/error-analysis', authStudent, async (req, res) => {
   }
 });
 
+// ── GET /api/practice/adaptive/start?subject=&topicId=&topicTitle= ───────────
+// Returns the difficulty + Bloom level to open an adaptive practice session at.
+router.get('/adaptive/start', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id || req.userId;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+    const { subject, topicId, topicTitle } = req.query;
+    if (!subject || !topicId) return res.status(400).json({ error: 'subject and topicId are required' });
+
+    const { resume } = require('../services/adaptiveDifficultyService');
+    const state = await resume({ studentId, schoolId, subject, topicId, topicTitle });
+    return res.json({ success: true, data: state });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/practice/adaptive/next ─────────────────────────────────────────
+// Body: { subject, topicId, topicTitle?, currentDifficulty, lastCorrect,
+//         consecutiveCorrect?, responseMs? }
+// Steps the difficulty based on the last answer and persists the settled rung.
+router.post('/adaptive/next', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user?.id || req.userId;
+    const schoolId  = req.schoolId;
+    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { subject, topicId, topicTitle, currentDifficulty, lastCorrect, consecutiveCorrect, responseMs } = req.body || {};
+    if (!subject || !topicId || typeof lastCorrect !== 'boolean') {
+      return res.status(400).json({ error: 'subject, topicId and a boolean lastCorrect are required' });
+    }
+
+    const svc = require('../services/adaptiveDifficultyService');
+    const result = svc.step({ currentDifficulty, lastCorrect, consecutiveCorrect, responseMs });
+    await svc.persist({
+      studentId, schoolId, subject, topicId, topicTitle,
+      difficulty: result.nextDifficulty, bloomLevel: result.bloomLevel,
+      answered: true, correct: Boolean(lastCorrect),
+    }).catch(() => {});
+
+    return res.json({ success: true, data: result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -93,6 +93,67 @@ router.post('/generate', authTeacher, async (req, res) => {
 });
 
 /**
+ * POST /api/learning-paths/bridge   (teacher)
+ * Body: { studentId, subject, targetTopic }
+ * Builds a gap → target bridge path from the student's live mastery + the
+ * curriculum graph. Returns steps and TeacherLearningPath-shaped nodes ready
+ * to hand to POST /publish.
+ */
+router.post('/bridge', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Learning Paths']
+  try {
+    const { studentId, subject, targetTopic } = req.body || {};
+    if (!validateObjectId(studentId)) return res.status(400).json({ error: 'Invalid studentId' });
+    if (!subject || !targetTopic) return res.status(400).json({ error: 'subject and targetTopic are required' });
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId: req.schoolId })
+      .select('grade section className sectionName name').lean();
+    const scope = await buildTeacherAllocationScope({
+      schoolId: req.schoolId, campusId: req.campusId || null, teacherId: req.user?.id,
+    });
+    if (!student || !studentIsWithinTeacherScope(student, scope) || !subjectIsAllowedForStudent(student, subject, scope)) {
+      return res.status(403).json({ error: 'Student or subject is outside your assigned scope' });
+    }
+
+    const { buildBridgePath, toPathNodes } = require('../services/learningPathService');
+    const bridge = await buildBridgePath({
+      studentId, schoolId: req.schoolId, subject, targetTopic,
+      className: student.className || student.grade || '',
+    });
+    return res.json({ success: true, bridge, nodes: toPathNodes(bridge) });
+  } catch (err) {
+    logger.error({ err }, 'Error building bridge learning path');
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/learning-paths/bridge?subject=&targetTopic=   (student — own path)
+ */
+router.get('/bridge', authStudentSoft, async (req, res) => {
+  // #swagger.tags = ['Learning Paths']
+  try {
+    const studentId = req.userId;
+    const schoolId = req.schoolId;
+    if (!studentId) return res.status(401).json({ error: 'Student ID missing from token' });
+    const { subject, targetTopic, className } = req.query;
+    if (!subject || !targetTopic) return res.status(400).json({ error: 'subject and targetTopic are required' });
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+      .select('grade className').lean();
+    const { buildBridgePath } = require('../services/learningPathService');
+    const bridge = await buildBridgePath({
+      studentId, schoolId, subject, targetTopic,
+      className: className || student?.className || student?.grade || '',
+    });
+    return res.json({ success: true, bridge });
+  } catch (err) {
+    logger.error({ err }, 'Error building student bridge path');
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/learning-paths/publish
  * Body: { studentId, subject, focus, pace, notes, nodes[], cls }
  *

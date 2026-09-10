@@ -57,14 +57,18 @@ function classifyErrorType(questionText, correctAnswer, studentAnswer) {
  */
 async function recordErrors({ studentId, schoolId, source, wrongs }) {
   if (!wrongs || !wrongs.length) return;
-  const docs = wrongs.map((w) => ({
+  const classified = wrongs.map((w) => ({
+    ...w,
+    errorType: w.errorType || classifyErrorType(w.questionText, w.correctAnswer, w.studentAnswer),
+  }));
+  const docs = classified.map((w) => ({
     schoolId,
     studentId,
     questionId:    String(w.questionId || ''),
     questionText:  w.questionText  || '',
     correctAnswer: w.correctAnswer || '',
     studentAnswer: w.studentAnswer || '',
-    errorType:     classifyErrorType(w.questionText, w.correctAnswer, w.studentAnswer),
+    errorType:     w.errorType,
     subject:       w.subject       || '',
     subjectId:     w.subjectId     || null,
     topicTitle:    w.topicTitle    || '',
@@ -73,6 +77,11 @@ async function recordErrors({ studentId, schoolId, source, wrongs }) {
     attemptedAt:   new Date(),
   }));
   await ErrorRecord.insertMany(docs).catch(() => {});
+
+  // Roll recurring wrong answers into the explicit per-student misconception model.
+  require('./misconceptionService')
+    .recordMisconceptions({ studentId, schoolId, source, wrongs: classified, classify: classifyErrorType })
+    .catch(() => {});
 }
 
 /**

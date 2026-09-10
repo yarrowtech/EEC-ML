@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const ExamResult = require('../models/ExamResult');
@@ -12,6 +13,7 @@ const {
   buildTeacherAllocationScope,
   scopeAllowsRequest,
   studentIsWithinTeacherScope,
+  subjectIsAllowedForStudent,
   teacherHasClassAllocation,
 } = require('../utils/teacherAllocationScope');
 
@@ -1136,6 +1138,68 @@ router.post('/worksheet', authTeacher, async (req, res) => {
     return res.json({ success: true, data: { content: aiRes.data?.content || '' } });
   } catch (err) {
     if (err.response) return res.status(502).json({ error: 'AI service error' });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/ai-teacher/worksheet/personalised ───────────────────────────────
+// Body: { studentId, subject, topic?, gradeLevel? }
+// Generates a worksheet targeted at the student's live weak topics, root-cause
+// prerequisite gaps, and recurring error types.
+router.post('/worksheet/personalised', authTeacher, async (req, res) => {
+  try {
+    const { studentId, subject, topic, gradeLevel } = req.body || {};
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ error: 'A valid studentId is required' });
+    }
+    if (!subject) return res.status(400).json({ error: 'subject is required' });
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId: req.schoolId })
+      .select('name grade section className sectionName').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    const scope = await buildTeacherAllocationScope({
+      schoolId: req.schoolId, campusId: req.campusId || null, teacherId: req.user?.id || req.teacher?.id,
+    });
+    if (!studentIsWithinTeacherScope(student, scope) || !subjectIsAllowedForStudent(student, subject, scope)) {
+      return res.status(403).json({ error: 'Student or subject is outside your assigned scope' });
+    }
+
+    const { buildStudentGapProfile } = require('../services/personalisedContentService');
+    const profile = await buildStudentGapProfile({
+      studentId, schoolId: req.schoolId, subject,
+      className: student.className || student.grade || '',
+    });
+
+    const targetTopic = topic || profile.weakestTopic;
+    if (!targetTopic) {
+      return res.status(422).json({ error: 'No weak topic or mastery data for this student in this subject' });
+    }
+
+    const context = [
+      `This worksheet is personalised for ${student.name || 'a student'}.`,
+      profile.summaryText,
+      `Focus the worksheet on "${targetTopic}" and the weaknesses above. Scaffold from easier to harder.`,
+    ].join('\n');
+
+    const aiRes = await callTeacherAI(
+      'worksheet', subject, targetTopic,
+      gradeLevel || (student.grade ? `Grade ${student.grade}` : null),
+      context,
+    );
+    return res.json({
+      success: true,
+      data: {
+        content: aiRes.data?.content || '',
+        targetTopic,
+        gapProfile: {
+          weakTopics: profile.weakTopics,
+          rootCauses: profile.rootCauses,
+          dominantErrorType: profile.dominantErrorType,
+        },
+      },
+    });
+  } catch (err) {
+    if (err.response) return res.status(502).json({ error: 'AI service error', detail: err.response.data });
     return res.status(500).json({ error: err.message });
   }
 });

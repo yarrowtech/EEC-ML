@@ -519,6 +519,36 @@ router.get('/student-mastery-all', authTeacher, async (req, res) => {
   }
 });
 
+// ── GET /api/teacher-analytics/student-misconceptions/:studentId ─────────────
+// The explicit per-student misconception model (recurring same-type errors on a
+// topic), plus the resolved history.
+router.get('/student-misconceptions/:studentId', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const { studentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ error: 'Invalid studentId' });
+    }
+    const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const scope = await requireTeacherScope(req, res);
+    if (!scope) return;
+    if (!studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'You are not allocated to this student\'s class' });
+    }
+
+    const { getStudentMisconceptions } = require('../services/misconceptionService');
+    const [active, resolved] = await Promise.all([
+      getStudentMisconceptions(studentId, schoolId, { subject: req.query.subject, status: 'active' }),
+      getStudentMisconceptions(studentId, schoolId, { subject: req.query.subject, status: 'resolved', includeMinor: true }),
+    ]);
+    return res.json({ success: true, data: { student: { name: student.name, grade: student.grade, section: student.section }, active, resolved } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/teacher-analytics/mastery-growth/:studentId ──────────────────────
 // Time-series mastery scores for a student — used for the mastery growth report
 router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
@@ -1044,6 +1074,103 @@ router.get('/class-insights', authTeacher, async (req, res) => {
         aiInsight: aiRes.data?.answer || '',
       },
     });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Outcome studies — pre/post learning-outcome measurement ──────────────────
+// POST /api/teacher-analytics/outcome-studies
+router.post('/outcome-studies', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const teacherId = req.user?.id || req.teacher?.id;
+    const { name, className, section, subject, metric = 'assessment_avg', baselineWindow, postWindow } = req.body || {};
+    if (!name || !className || !subject || !baselineWindow?.start || !baselineWindow?.end || !postWindow?.start || !postWindow?.end) {
+      return res.status(400).json({ error: 'name, className, subject, baselineWindow{start,end} and postWindow{start,end} are required' });
+    }
+
+    const scope = await requireTeacherScope(req, res, { className, section, subject });
+    if (!scope) return;
+    const students = await StudentUser.find(buildScopedStudentFilter(schoolId, scope, { className, section }))
+      .select('_id').lean();
+    if (!students.length) return res.status(422).json({ error: 'No students in scope for this class/section' });
+
+    const OutcomeStudy = require('../models/OutcomeStudy');
+    const study = await OutcomeStudy.create({
+      schoolId, createdBy: teacherId, name: String(name).trim(),
+      grade: className, section: section || '', subject,
+      studentIds: students.map((s) => s._id),
+      metric: ['mastery_avg', 'assessment_avg'].includes(metric) ? metric : 'assessment_avg',
+      baselineWindow: { start: new Date(baselineWindow.start), end: new Date(baselineWindow.end) },
+      postWindow: { start: new Date(postWindow.start), end: new Date(postWindow.end) },
+      status: 'draft',
+    });
+    return res.status(201).json({ success: true, data: study });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+const loadOwnStudy = async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) { res.status(400).json({ error: 'Invalid study id' }); return null; }
+  const OutcomeStudy = require('../models/OutcomeStudy');
+  const study = await OutcomeStudy.findOne({ _id: req.params.id, schoolId: req.schoolId });
+  if (!study) { res.status(404).json({ error: 'Study not found' }); return null; }
+  return study;
+};
+
+// POST /api/teacher-analytics/outcome-studies/:id/baseline
+router.post('/outcome-studies/:id/baseline', authTeacher, async (req, res) => {
+  try {
+    const study = await loadOwnStudy(req, res);
+    if (!study) return;
+    const { captureBaseline } = require('../services/outcomeStudyService');
+    study.baseline = await captureBaseline(study);
+    study.status = 'baseline_captured';
+    await study.save();
+    return res.json({ success: true, data: study });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/teacher-analytics/outcome-studies/:id/measure  — capture post + compute the effect
+router.post('/outcome-studies/:id/measure', authTeacher, async (req, res) => {
+  try {
+    const study = await loadOwnStudy(req, res);
+    if (!study) return;
+    const { captureBaseline, capturePostAndResult } = require('../services/outcomeStudyService');
+    const baseline = study.baseline?.capturedAt ? study.baseline : await captureBaseline(study);
+    const { post, result } = await capturePostAndResult(study, baseline.toObject ? baseline.toObject() : baseline);
+    study.baseline = baseline;
+    study.post = post;
+    study.result = result;
+    study.status = 'complete';
+    await study.save();
+    return res.json({ success: true, data: study });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/teacher-analytics/outcome-studies  (and /:id)
+router.get('/outcome-studies', authTeacher, async (req, res) => {
+  try {
+    const OutcomeStudy = require('../models/OutcomeStudy');
+    const rows = await OutcomeStudy.find({ schoolId: req.schoolId, createdBy: req.user?.id || req.teacher?.id })
+      .sort({ createdAt: -1 }).limit(100).lean();
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/outcome-studies/:id', authTeacher, async (req, res) => {
+  try {
+    const study = await loadOwnStudy(req, res);
+    if (!study) return;
+    return res.json({ success: true, data: study });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
