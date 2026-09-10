@@ -90,6 +90,16 @@ def _handle_class_performance(payload: dict[str, Any]) -> dict[str, Any]:
         return {"insight": "Unable to generate insight at this time."}
 
 
+def _handle_graph_analyze(payload: dict[str, Any]) -> dict[str, Any]:
+    from app.modules.knowledge_graph.schemas import GraphAnalyzeRequest
+    from app.modules.knowledge_graph.service import analyze
+    try:
+        req = GraphAnalyzeRequest(**payload)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"graph_analyze payload invalid: {exc}")
+    return analyze(req).model_dump()
+
+
 # ── Main dispatcher ────────────────────────────────────────────────────────────
 
 _HANDLERS = {
@@ -98,6 +108,7 @@ _HANDLERS = {
     "evaluate":           _handle_evaluate,
     "summarize_session":  _handle_summarize_session,
     "class_performance":  _handle_class_performance,
+    "graph_analyze":      _handle_graph_analyze,
 }
 
 

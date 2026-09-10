@@ -20,6 +20,7 @@ from app.modules.assessment.router import router as assessment_router
 from app.modules.chat.router import router as chat_router
 from app.modules.documents.router import router as ingest_router
 from app.modules.evaluator.router import router as evaluator_router
+from app.modules.knowledge_graph.router import router as knowledge_graph_router
 from app.modules.language_memory.router import router as memory_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.speech.router import router as speech_router
@@ -72,6 +73,7 @@ app.include_router(admin_router)
 app.include_router(speech_router)
 app.include_router(assessment_router)
 app.include_router(evaluator_router)
+app.include_router(knowledge_graph_router)
 app.include_router(memory_router)
 app.include_router(vision_router)
 
