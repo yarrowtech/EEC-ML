@@ -1198,39 +1198,15 @@ router.post("/submit", authStudent, async (req, res) => {
             );
             (async () => {
                 try {
-                    const AI_URL = (process.env.AI_SERVICE_URL || 'http://localhost:8000').replace(/\/$/, '');
-                    const rubricLines = assignment.rubric.split('\n').filter(Boolean);
-                    const rubricArr = rubricLines.map((line, i) => ({
-                        criterion: line.replace(/^\d+[.)]\s*/, '').trim() || `Criterion ${i + 1}`,
-                        maxScore: Math.floor(assignment.marks / rubricLines.length),
-                    }));
-                    // Use dedicated rubric_grade teacher mode for per-criterion breakdown
-                    const aiRes = await fetch(`${AI_URL}/generate/teacher`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            mode: 'rubric_grade',
-                            subject: assignment.subject || '',
-                            topic: assignment.topic || assignment.title,
-                            question: assignment.description || assignment.title,
-                            context: `Student submission:\n${submissionText}\n\nRubric criteria:\n${
-                                rubricArr.map((r) => `- ${r.criterion} (max ${r.maxScore} marks)`).join('\n')
-                            }`,
-                        }),
+                    const evaluation = await require('../services/academicEvaluator').evaluateStoredAnswer({
+                        questionText: assignment.description || assignment.title,
+                        correctAnswer: assignment.rubric, studentAnswer: submissionText,
+                        subject: assignment.subject, topicTitle: assignment.topicTitle || assignment.topic || assignment.title,
+                        questionType: 'long_answer', context: 'Evaluate coverage against the teacher rubric. This is a proposed grade for teacher review.',
                     });
-                    if (!aiRes.ok) {
-                        throw new Error(`AI rubric review returned HTTP ${aiRes.status}`);
-                    }
-                    const aiData = await aiRes.json();
-                    const content = aiData?.content || '';
-                    const jsonMatch = content.match(/\{[\s\S]*\}/);
-                    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-                    const totalScore = Number(parsed?.totalScore ?? parsed?.total_score);
-                    if (!Number.isFinite(totalScore)) {
-                        throw new Error('AI rubric review did not return a numeric total score');
-                    }
-                    const gradingFeedback = parsed?.overallFeedback || parsed?.feedback || content;
-                    const criteriaBreakdown = Array.isArray(parsed?.criteria) ? parsed.criteria : [];
+                    const totalScore = evaluation.score * assignment.marks;
+                    const gradingFeedback = evaluation.feedback;
+                    const criteriaBreakdown = [];
                     if (submissionIdx >= 0) {
                         const freshProgress = await StudentProgress.findOne({ studentId: req.user.id, schoolId });
                         const idx = freshProgress?.submissions?.findIndex(
@@ -1240,6 +1216,11 @@ router.post("/submit", authStudent, async (req, res) => {
                             freshProgress.submissions[idx].aiScore = Math.max(0, Math.min(totalScore, assignment.marks));
                             freshProgress.submissions[idx].aiGradingFeedback = String(gradingFeedback).slice(0, 1000);
                             freshProgress.submissions[idx].aiGradingStatus = 'done';
+                            freshProgress.submissions[idx].aiMissingConcepts = evaluation.missingConcepts;
+                            freshProgress.submissions[idx].aiConfidenceScore = evaluation.confidenceScore;
+                            freshProgress.submissions[idx].aiErrorType = evaluation.errorType;
+                            freshProgress.submissions[idx].aiBloomLevel = evaluation.bloomLevel;
+                            freshProgress.submissions[idx].aiEvaluation = evaluation;
                             if (criteriaBreakdown.length) {
                                 freshProgress.submissions[idx].aiCriteriaBreakdown = criteriaBreakdown;
                             }

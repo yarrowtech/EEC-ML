@@ -1967,24 +1967,10 @@ router.put("/results/:id", adminOrTeacherAuth, async (req, res) => {
         const pct = exam.marks ? Math.round((scoreResult.score / exam.marks) * 100) : scoreResult.score;
         const topicId = (exam.subject || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const sId = String(updated.studentId?._id || updated.studentId);
-        const doc = await MasteryScore.findOneAndUpdate(
-          { studentId: sId, subject: exam.subject, topicId },
-          {
-            $set:  { schoolId, topicTitle: exam.subject, lastUpdated: new Date() },
-            $inc:  { attemptCount: 1 },
-            $max:  { score: pct },
-          },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-        runWorkflowTriggers({
-          studentId: sId,
-          schoolId,
-          subject: exam.subject,
-          topicId,
-          topicTitle: exam.subject,
-          chapterTitle: exam.title || '',
-          score: Math.max(doc.score, pct),
-          attemptCount: doc.attemptCount,
+        await require('../services/masteryEventService').applyAssessment({
+          studentId: sId, schoolId, subject: exam.subject, topicId, topicTitle: exam.subject,
+          chapterTitle: exam.title || '', source: 'exam', assessmentScore: pct,
+          eventId: String(updated._id) + ':' + String(updated.updatedAt || scoreResult.score),
         });
       } catch (_) { /* non-critical */ }
     }
@@ -2165,23 +2151,9 @@ router.put("/results/:id/publish", adminAuth, async (req, res) => {
         result.publishedAt = published ? new Date() : null;
         await result.save();
 
-        // Non-blocking post-exam mastery re-assessment
-        if (published) {
-          const fullResult = await ExamResult.findById(result._id).populate('examId', 'subject marks').lean();
-          if (fullResult?.examId?.subject && fullResult?.examId?.marks) {
-            const axios = require('axios');
-            const BACKEND_URL = `http://localhost:${process.env.PORT || 5000}`;
-            axios.post(`${BACKEND_URL}/api/mastery/post-exam`, {
-              studentId: String(fullResult.studentId),
-              schoolId: String(fullResult.schoolId),
-              subject: fullResult.examId.subject,
-              marksScored: fullResult.marks,
-              totalMarks: fullResult.examId.marks,
-            }, {
-              headers: { 'x-internal-secret': process.env.INTERNAL_API_SECRET },
-            }).catch(() => {});
-          }
-        }
+        if (published) await require('../services/assessmentSyncService').syncStudentAssessments({
+          schoolId, studentId: result.studentId,
+        });
 
         res.status(200).json({
             success: true,

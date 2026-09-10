@@ -23,7 +23,7 @@ const notificationSchema = new mongoose.Schema(
     // Notification metadata
     type: {
       type: String,
-      enum: ['notice', 'class_note', 'assignment', 'exam', 'result', 'fee', 'meeting', 'general', 'announcement', 'other'],
+      enum: ['notice', 'class_note', 'assignment', 'exam', 'result', 'fee', 'meeting', 'general', 'announcement', 'learning', 'alert', 'other'],
       default: 'general',
       index: true
     },
@@ -43,7 +43,7 @@ const notificationSchema = new mongoose.Schema(
 
     // Related entity reference
     relatedEntity: {
-      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', null] },
+      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', null] },
       entityId: { type: mongoose.Schema.Types.ObjectId }
     },
     attachments: [
@@ -119,4 +119,6 @@ notificationSchema.post('insertMany', function (docs = []) {
   });
 });
 
+notificationSchema.add({ dedupeKey: { type: String } });
+notificationSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 module.exports = mongoose.model('Notification', notificationSchema);

@@ -621,21 +621,9 @@ router.post('/student/submit', authStudent, async (req, res) => {
           const subjectDoc = await Subject.findById(entry.subjectId).lean().catch(() => null);
           const subjectName = subjectDoc?.name || key;
           const topicId = `${subjectName}::practice`;
-          const existing = await MasteryScore.findOne({ studentId, subject: subjectName, topicId }).lean();
-          const currentScore = existing?.score ?? 0;
-          const attemptCount = (existing?.attemptCount ?? 0) + 1;
-          const daysSince = existing?.lastUpdated
-            ? Math.floor((Date.now() - new Date(existing.lastUpdated)) / 86400000)
-            : 0;
-          const finalScore = computeEnhancedMasteryScore({ currentScore, newScore: pct, attemptCount, daysSinceLastPractice: daysSince });
-          await MasteryScore.findOneAndUpdate(
-            { studentId, subject: subjectName, topicId },
-            { $set: { schoolId, topicTitle: 'Practice', chapterTitle: '', score: finalScore, attemptCount, lastUpdated: new Date() } },
-            { upsert: true }
-          );
-          runWorkflowTriggers({
-            studentId, schoolId, subject: subjectName, topicId,
-            topicTitle: 'Practice', chapterTitle: '', score: finalScore, attemptCount,
+          await require('../services/masteryEventService').applyAssessment({
+            studentId, schoolId, subject: subjectName, topicId, topicTitle: 'Practice',
+            source: 'practice', assessmentScore: pct,
           });
         }
       }

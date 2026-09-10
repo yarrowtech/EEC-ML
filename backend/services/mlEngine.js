@@ -29,7 +29,7 @@ async function computeWeightedMastery({ studentId, schoolId, subject }) {
     // EMA: treat each attempt as contributing alpha*(1-alpha)^k weight
     // With a single stored score and attemptCount, approximate: weightedScore pulls score toward target by decay
     const decay = Math.pow(1 - ALPHA, n - 1);
-    const weightedScore = Math.round(r.score * (1 - decay * (1 - ALPHA)) + (decay * ALPHA * r.score));
+    const weightedScore = Math.round(r.score);
     return {
       topicId: r.topicId,
       topicTitle: r.topicTitle,
@@ -43,79 +43,14 @@ async function computeWeightedMastery({ studentId, schoolId, subject }) {
   });
 }
 
-async function computeAtRisk({ studentId, schoolId }) {
-  const progress = await StudentProgress.findOne({ studentId, schoolId }).lean();
-  const submissions = (progress?.submissions || []).filter(
-    (s) => s.score != null && s.submittedAt
-  );
-
-  const now = Date.now();
-  const DAY = 86400000;
-  const recent = submissions.filter((s) => now - new Date(s.submittedAt).getTime() <= 7 * DAY);
-  const prior = submissions.filter((s) => {
-    const age = now - new Date(s.submittedAt).getTime();
-    return age > 7 * DAY && age <= 14 * DAY;
-  });
-
-  const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b.score, 0) / arr.length : null;
-  const recentAvg = avg(recent);
-  const priorAvg = avg(prior);
-
-  if (recentAvg === null) {
-    return { isAtRisk: false, riskScore: 0, recentAvg: null, priorAvg: null, delta: 0, trend: 'stable', daysAnalyzed: 14 };
-  }
-
-  const delta = priorAvg !== null ? recentAvg - priorAvg : 0;
-  const trend = delta < -5 ? 'declining' : delta > 5 ? 'improving' : 'stable';
-  const isAtRisk = trend === 'declining' || recentAvg < 50;
-
-  // riskScore: 0=safe, 100=critical
-  let riskScore = 0;
-  if (recentAvg < 40) riskScore = 90;
-  else if (recentAvg < 50) riskScore = 70;
-  else if (recentAvg < 60) riskScore = 50;
-  else riskScore = 20;
-  if (delta < -15) riskScore = Math.min(100, riskScore + 20);
-  else if (delta < -5) riskScore = Math.min(100, riskScore + 10);
-
-  return { isAtRisk, riskScore, recentAvg: Math.round(recentAvg), priorAvg: priorAvg !== null ? Math.round(priorAvg) : null, delta: Math.round(delta), trend, daysAnalyzed: 14 };
+async function computeAtRisk(scope) {
+  const { loadEvidence, summarizeEvidence } = require('./learningEvidenceService');
+  return summarizeEvidence(await loadEvidence(scope));
 }
 
-async function computeRollingTrend({ studentId, schoolId, days = 14 }) {
-  const progress = await StudentProgress.findOne({ studentId, schoolId }).lean();
-  const submissions = (progress?.submissions || []).filter(
-    (s) => s.score != null && s.submittedAt
-  );
-
-  const now = Date.now();
-  const DAY = 86400000;
-  const bucketSize = Math.ceil(days / 7);
-  const buckets = [];
-
-  for (let i = 6; i >= 0; i--) {
-    const end = now - i * bucketSize * DAY;
-    const start = end - bucketSize * DAY;
-    const inBucket = submissions.filter((s) => {
-      const t = new Date(s.submittedAt).getTime();
-      return t >= start && t < end;
-    });
-    const avg = inBucket.length ? Math.round(inBucket.reduce((a, b) => a + b.score, 0) / inBucket.length) : null;
-    const label = `Day ${days - (i + 1) * bucketSize + 1}–${days - i * bucketSize}`;
-    buckets.push({ label, avg, count: inBucket.length });
-  }
-
-  const scored = buckets.filter((b) => b.avg !== null);
-  const rollingAvg = scored.length ? Math.round(scored.reduce((a, b) => a + b.avg, 0) / scored.length) : null;
-
-  let overallTrend = 'stable';
-  if (scored.length >= 2) {
-    const first = scored[0].avg;
-    const last = scored[scored.length - 1].avg;
-    const diff = last - first;
-    overallTrend = diff < -5 ? 'declining' : diff > 5 ? 'improving' : 'stable';
-  }
-
-  return { buckets, overallTrend, rollingAvg };
+async function computeRollingTrend(scope) {
+  const { loadEvidence, summarizeEvidence } = require('./learningEvidenceService');
+  return summarizeEvidence(await loadEvidence(scope));
 }
 
 async function computeEngagement({ studentId, schoolId }) {

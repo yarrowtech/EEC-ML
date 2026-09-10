@@ -13,6 +13,7 @@ const {
   sanitizeBillingSetting,
   computeMonthlyBill,
 } = require('../utils/billing');
+const { ACTIVE_STUDENT_FILTER } = require('../utils/studentStatus');
 const { recordPlatformAudit } = require('../utils/platformAudit');
 
 const router = express.Router();
@@ -189,7 +190,7 @@ router.get('/super-admin/organizations/payment-status', adminAuth, ensureSuperAd
         .lean(),
       // Active students grouped per school for per-student billing.
       StudentUser.aggregate([
-        { $match: { schoolId: { $in: schoolIds }, status: { $ne: 'Inactive' } } },
+        { $match: { schoolId: { $in: schoolIds }, ...ACTIVE_STUDENT_FILTER } },
         { $group: { _id: '$schoolId', count: { $sum: 1 } } },
       ]),
     ]);

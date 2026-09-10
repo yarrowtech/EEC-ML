@@ -70,6 +70,27 @@ async function runEngagementSweep() {
   }
 }
 
+async function runAtRiskSweep() {
+  try {
+    const StudentProgress = require('../models/StudentProgress');
+    const MasteryScore = require('../models/MasteryScore');
+    const { alertTeachersIfAtRisk } = require('../services/masteryEngine');
+    const progressRows = await StudentProgress.find({ schoolId: { $exists: true } })
+      .select('studentId schoolId').lean();
+    const subjects = await MasteryScore.find({
+      studentId: { $in: progressRows.map((row) => row.studentId) },
+    }).select('studentId schoolId subject').lean();
+    const keys = new Set(subjects.map((row) => `${row.studentId}:${row.schoolId}:${row.subject}`));
+    await Promise.allSettled([...keys].map((key) => {
+      const [studentId, schoolId, ...subjectParts] = key.split(':');
+      return alertTeachersIfAtRisk(studentId, schoolId, subjectParts.join(':'));
+    }));
+    console.log(`[at-risk cron] checked ${keys.size} student-subject combinations`);
+  } catch (err) {
+    console.error('[at-risk cron] error:', err.message);
+  }
+}
+
 // ── 30-day class improvement report ──────────────────────────────────────────
 async function run30DayReport() {
   try {
@@ -135,10 +156,15 @@ async function run30DayReport() {
 }
 
 function startSchedulers() {
+  cron.schedule('*/15 * * * *', async () => {
+    await require('../services/assessmentSyncService').reconcileAssessments();
+    await require('../services/interventionFollowUpService').measureFollowUps();
+  }, { noOverlap: true });
   // Daily at midnight — SR nudges + engagement sweep
   cron.schedule('0 0 * * *', async () => {
     await runSpacedRepetitionNudges();
     await runEngagementSweep();
+    await runAtRiskSweep();
   });
 
   // Monthly on the 1st at 7 AM — 30-day improvement report to each teacher
@@ -149,4 +175,4 @@ function startSchedulers() {
   console.log('[schedulers] SR, engagement, and 30-day report crons scheduled');
 }
 
-module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, run30DayReport };
+module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, runAtRiskSweep, run30DayReport };

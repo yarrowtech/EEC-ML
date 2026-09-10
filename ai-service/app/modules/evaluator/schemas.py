@@ -14,6 +14,8 @@ class AnswerEvalRequest(BaseModel):
 
 
 class AnswerEvalResult(BaseModel):
+    evaluationMethod: str = "llm"
+    evaluatorVersion: str = "academic-v1"
     isCorrect: bool
     score: float                # 0.0–1.0
     confidenceScore: float      # how confident the model is in its evaluation (0-1)

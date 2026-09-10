@@ -346,6 +346,61 @@ def test_subject_results_capped_at_max_context_chunks(monkeypatch):
     assert len(_retrieve(chapter_title=None)) == settings.max_context_chunks
 
 
+def test_chapter_bloom_filter_falls_back_when_legacy_chunks_lack_bloom_level(monkeypatch):
+    # Legacy chunks carry no bloom_level payload field, so a strict Qdrant
+    # equality filter excludes them entirely. Requesting a target Bloom level
+    # against a chapter with only legacy content must not silently starve
+    # retrieval — it should retry once without the filter.
+    calls = []
+
+    def fake_chapter(**kwargs):
+        calls.append(kwargs.get("bloom_level"))
+        if kwargs.get("bloom_level"):
+            return []
+        return [_hit("legacy chapter text", 1.0, 0)]
+
+    monkeypatch.setattr(service, "get_chapter_chunks", fake_chapter)
+    result = _retrieve(bloom_level="analyse")
+    assert "legacy chapter text" in result[0]
+    assert calls == ["analyse", None]
+
+
+def test_subject_search_bloom_filter_falls_back_when_legacy_chunks_lack_bloom_level(monkeypatch):
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [])
+    calls = []
+
+    def fake_search(**kwargs):
+        calls.append(kwargs.get("bloom_level"))
+        if kwargs.get("bloom_level"):
+            return []
+        return [_hit("relevant legacy", settings.rag_relevance_threshold + 0.1, 0)]
+
+    monkeypatch.setattr(service, "search_chunks", fake_search)
+    monkeypatch.setattr(service, "keyword_search_chunks", lambda **kw: [])
+    assert _retrieve(chapter_title=None, bloom_level="analyse") == ["relevant legacy"]
+    assert None in calls
+
+
+def test_excluded_material_ids_drops_disabled_material_chapter_chunks(monkeypatch):
+    kept = {**_hit("enabled content", 1.0, 0), "material_id": "material-enabled"}
+    dropped = {**_hit("disabled content", 1.0, 1), "material_id": "material-disabled"}
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [kept, dropped])
+
+    result = _retrieve(excluded_material_ids=["material-disabled"])
+    assert "enabled content" in result[0]
+    assert "disabled content" not in result[0]
+
+
+def test_excluded_material_ids_drops_disabled_material_subject_chunks(monkeypatch):
+    monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [])
+    kept = {**_hit("enabled hit", settings.rag_relevance_threshold + 0.1, 0), "material_id": "material-enabled"}
+    dropped = {**_hit("disabled hit", settings.rag_relevance_threshold + 0.1, 1), "material_id": "material-disabled"}
+    monkeypatch.setattr(service, "search_chunks", lambda **kw: [kept, dropped])
+
+    result = _retrieve(chapter_title=None, excluded_material_ids=["material-disabled"])
+    assert result == ["enabled hit"]
+
+
 def test_hybrid_search_prefers_exact_formula_match(monkeypatch):
     monkeypatch.setattr(service, "get_chapter_chunks", lambda **kw: [])
     threshold = settings.rag_relevance_threshold

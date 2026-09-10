@@ -37,9 +37,11 @@ async function applyKnowledgeDecay(studentId, schoolId) {
       if (!doc) continue;
       const newScore = Math.max(DECAY_FLOOR, doc.score - decay);
       if (newScore < doc.score) {
-        doc.score = newScore;
-        doc.lastUpdated = now;
-        await doc.save();
+        await require('./masteryEventService').applyAssessment({
+          studentId, schoolId, subject: doc.subject, topicId: doc.topicId, topicTitle: doc.topicTitle,
+          chapterTitle: doc.chapterTitle, source: 'decay', assessmentScore: newScore,
+          eventId: now.toISOString().slice(0, 10),
+        });
       }
     }
   } catch (_) { /* non-critical */ }
@@ -79,7 +81,7 @@ async function awardBadgeIfEarned(studentId, schoolId, subject, topicTitle, scor
 }
 
 // ── Unlock next learning-path node ───────────────────────────────────────────
-async function unlockNextNode(studentId, subject, score) {
+async function unlockNextNode(studentId, schoolId, subject, score) {
   if (score < MASTERY.MID) return;
   try {
     const TeacherLearningPath = require('../models/TeacherLearningPath');
@@ -162,6 +164,58 @@ async function alertTeacherIfStuck(studentId, schoolId, subject, topicTitle, sco
       teacherIds.forEach((tid) => io.to(`user:${tid}`).emit('intervention_alert', payload));
     }
   } catch (_) { /* non-critical */ }
+}
+
+// Persist and notify on a newly observed at-risk trend. This is separate from
+// the repeated-low-score alert above: a student may be declining before they
+// have accumulated three attempts on one topic.
+async function alertTeachersIfAtRisk(studentId, schoolId, subject) {
+  const risk = await require('./mlEngine').computeAtRisk({ studentId, schoolId });
+  if (!risk?.isAtRisk) return;
+  const student = await require('../models/StudentUser').findOne({ _id: studentId, schoolId }).lean();
+  if (!student) return;
+  const { buildTeacherAllocationScope, studentIsWithinTeacherScope, subjectIsAllowedForStudent } = require('../utils/teacherAllocationScope');
+  const teachers = await require('../models/TeacherUser').find({ schoolId }).select('_id').lean();
+  const teacherIds = [];
+  for (const teacher of teachers) {
+    const scope = await buildTeacherAllocationScope({ schoolId, teacherId: teacher._id, campusId: student.campusId });
+    if (studentIsWithinTeacherScope(student, scope) && subjectIsAllowedForStudent(student, subject, scope)) teacherIds.push(teacher._id);
+  }
+  const dedupeKey = `${schoolId}:${studentId}:${subject || ''}:${new Date().toISOString().slice(0, 10)}`;
+  const StudentInsight = require('../models/StudentInsight');
+  try {
+    await StudentInsight.updateOne({ dedupeKey }, { $setOnInsert: {
+      studentId, schoolId, insightType: 'at_risk', subject: subject || '',
+      title: 'At-risk assessment trend', summary: `Recent average ${risk.recentAvg}% (${risk.trend})`,
+      payload: risk, dedupeKey,
+    } }, { upsert: true, runValidators: true });
+  } catch (err) { if (err.code !== 11000) throw err; }
+  const InterventionLog = require('../models/InterventionLog');
+  const { templates } = require('./interventionFollowUpService');
+  for (const teacherId of teacherIds) {
+    const automationKey = `${dedupeKey}:${teacherId}`;
+    try {
+      await InterventionLog.updateOne({ automationKey }, { $setOnInsert: {
+        automationKey, schoolId, studentId, teacherId, studentName: student.name || '', subject: subject || '',
+        riskLevel: risk.riskScore >= 80 ? 'critical' : 'high', reason: `Recent assessment average ${risk.recentAvg}% (${risk.trend})`,
+        action: templates.targeted_reteach.action, planTemplate: 'targeted_reteach', status: 'planned',
+        baselineScore: risk.recentAvg, scheduledDate: new Date(Date.now() + 86400000),
+        followUpAssessments: [7, 14, 30].map((daysAfter) => ({ daysAfter, scheduledDate: new Date(Date.now() + (daysAfter + 1) * 86400000) })),
+      } }, { upsert: true, runValidators: true });
+    } catch (err) { if (err.code !== 11000) throw err; }
+  }
+  if (!teacherIds.length) return;
+  // Atomic unique key makes concurrent scans/retries safe, including recovery
+  // after a plan is saved but notification persistence fails.
+  const Notification = require('../models/Notification');
+  try {
+    await Notification.updateOne({ dedupeKey }, { $setOnInsert: {
+      dedupeKey, schoolId, title: `At-risk student: ${student.name || 'Student'}`,
+      message: `Recent assessment average ${risk.recentAvg}%. A support plan is ready for review.`,
+      audience: 'Specific', type: 'alert', priority: 'high', category: 'academic', targetUserIds: teacherIds,
+      relatedEntity: { entityType: 'at_risk', entityId: studentId },
+    } }, { upsert: true, runValidators: true });
+  } catch (err) { if (err.code !== 11000) throw err; }
 }
 
 // ── Mastery nudge notification ────────────────────────────────────────────────
@@ -251,7 +305,7 @@ function runWorkflowTriggers({ studentId, schoolId, subject, topicId, topicTitle
   sendNudge(s, sc, subject, topicTitle, score).catch(() => {});
 
   if (score >= MASTERY.MID) {
-    unlockNextNode(s, subject, score).catch(() => {});
+    unlockNextNode(s, sc, subject, score).catch(() => {});
   }
 
   if (score >= BADGE.MASTERY_THRESHOLD) {
@@ -261,6 +315,8 @@ function runWorkflowTriggers({ studentId, schoolId, subject, topicId, topicTitle
   if (score < ENGAGEMENT.DIFFICULTY_THRESHOLD && attemptCount >= ENGAGEMENT.DIFFICULTY_ATTEMPTS) {
     alertTeacherIfStuck(s, sc, subject, topicTitle, score, attemptCount).catch(() => {});
   }
+
+  alertTeachersIfAtRisk(s, sc, subject).catch(() => {});
 
   if (topicTitle) {
     scheduleSpacedRepetition(s, sc, subject, topicTitle, chapterTitle || '', score).catch(() => {});
@@ -296,6 +352,7 @@ module.exports = {
   awardBadgeIfEarned,
   unlockNextNode,
   alertTeacherIfStuck,
+  alertTeachersIfAtRisk,
   sendNudge,
   scheduleSpacedRepetition,
   computeEnhancedMasteryScore,

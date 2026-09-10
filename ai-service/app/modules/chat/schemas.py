@@ -32,6 +32,8 @@ class TutorGenerateRequest(BaseModel):
     responseDepth: str | None = None
     learningGoal: str | None = None
     wrongAnswer: str | None = None
+    bloomLevel: str | None = None
+    excludedMaterialIds: list[str] = Field(default_factory=list)
     # Student personalisation fields
     studentContext: str | None = None          # built by studentContextBuilder.js
     conversationHistory: list[ConversationTurn] | None = None  # recent 3 turns

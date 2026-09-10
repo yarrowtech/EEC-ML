@@ -13,6 +13,7 @@ const Payment = require('../models/Payment');
 const PaymentAudit = require('../models/PaymentAudit');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
+const { EXITED_STUDENT_STATUSES } = require('../utils/studentStatus');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
@@ -1403,7 +1404,6 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     // Only students still on the roll — archived / left / expelled students keep
     // their historical invoices but must not inflate the dashboard counts, the
     // same rule the rest of the admin portal applies.
-    const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
     const studentFilter = {
       schoolId,
       isArchived: { $ne: true },

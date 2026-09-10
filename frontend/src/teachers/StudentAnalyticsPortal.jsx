@@ -304,7 +304,7 @@ const StudentAnalyticsPortal = () => {
     if (!interventionModal || !interventionForm.action.trim()) return;
     setSavingIntervention(true);
     try {
-      await fetch(`${API_BASE}/api/teacher-analytics/interventions`, {
+      const response = await fetch(`${API_BASE}/api/teacher-analytics/interventions`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
@@ -315,6 +315,7 @@ const StudentAnalyticsPortal = () => {
           ...interventionForm,
         }),
       });
+      if (!response.ok) throw new Error('Unable to save intervention');
       setInterventionModal(null);
       setInterventionForm({ action: '', notes: '', scheduledDate: '' });
       fetchInterventionLogs();
@@ -326,7 +327,7 @@ const StudentAnalyticsPortal = () => {
   const recordOutcome = async () => {
     if (!outcomeModal) return;
     try {
-      await fetch(`${API_BASE}/api/teacher-analytics/interventions/${outcomeModal.interventionId}/outcome`, {
+      const response = await fetch(`${API_BASE}/api/teacher-analytics/interventions/${outcomeModal.interventionId}/outcome`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({
@@ -335,6 +336,7 @@ const StudentAnalyticsPortal = () => {
           status: 'completed',
         }),
       });
+      if (!response.ok) throw new Error('Unable to save intervention outcome');
       setOutcomeModal(null);
       setOutcomeForm({ outcome: '', improvement: '' });
       fetchInterventionLogs();

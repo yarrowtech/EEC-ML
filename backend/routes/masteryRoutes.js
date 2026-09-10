@@ -81,40 +81,10 @@ router.post('/update', authStudent, async (req, res) => {
     const { subject, topicId, topicTitle = '', chapterTitle = '', score } = req.body || {};
     if (!subject || !topicId) return res.status(400).json({ error: 'subject and topicId are required' });
 
-    const numericScore = Math.max(0, Math.min(100, Number(score) || 0));
-
-    const doc = await MasteryScore.findOneAndUpdate(
-      { studentId, subject, topicId },
-      {
-        $set:  { schoolId, topicTitle, chapterTitle, lastUpdated: new Date() },
-        $inc:  { attemptCount: 1 },
-        $max:  { score: numericScore },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    const prev = doc.score || 0;
-    // First attempt seeds directly (still capped); later attempts blend so a
-    // student can't ratchet straight to the ceiling by re-submitting.
-    const blended = doc.attemptCount <= 1
-      ? numericScore
-      : Math.round((prev * 0.7) + (numericScore * 0.3));
-    const finalScore = Math.max(prev, blended);
-    doc.score = finalScore;
-    await doc.save();
-
-    // Side effects — non-blocking via central engine
-    const { runWorkflowTriggers } = require('../services/masteryEngine');
-    runWorkflowTriggers({
-      studentId,
-      schoolId,
-      subject,
-      topicId,
-      topicTitle,
-      chapterTitle,
-      score: finalScore,
-      attemptCount: doc.attemptCount,
-    });
+    const { applyAssessment } = require('../services/masteryEventService');
+    const doc = await applyAssessment({ studentId, schoolId, subject, topicId, topicTitle, chapterTitle,
+      source: 'tutor', assessmentScore: score, eventId: req.body.eventId,
+      metadata: { provenance: 'student_reported' } });
 
     return res.json({ success: true, data: doc });
   } catch (err) {
@@ -192,26 +162,12 @@ router.post('/post-exam', internalAuth, async (req, res) => {
     if (!studentId || !schoolId || !subject || totalMarks == null) {
       return res.status(400).json({ error: 'studentId, schoolId, subject, totalMarks are required' });
     }
-    const pct = Math.max(0, Math.min(100, Math.round((Number(marksScored) / Number(totalMarks)) * 100)));
+    if (!(Number(totalMarks) > 0)) return res.status(400).json({ error: 'totalMarks must be positive' });
+    const { applyAssessment } = require('../services/masteryEventService');
     const topicId = subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-    const doc = await MasteryScore.findOneAndUpdate(
-      { studentId, subject, topicId },
-      {
-        $set:  { schoolId, topicTitle: subject, lastUpdated: new Date() },
-        $inc:  { attemptCount: 1 },
-        $max:  { score: pct },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    const blended  = doc.attemptCount <= 1 ? pct : Math.round((doc.score * 0.6) + (pct * 0.4));
-    const finalScore = Math.max(doc.score, blended);
-    doc.score = finalScore;
-    await doc.save();
-
-    if (finalScore >= 75) unlockNextPathNode(studentId, subject, finalScore);
-    if (finalScore >= 90)  awardMasteryBadge(studentId, subject, subject, schoolId);
-    sendMasteryNudge(studentId, schoolId, subject, subject, finalScore);
+    const doc = await applyAssessment({ studentId, schoolId, subject, topicId, topicTitle: subject,
+      source: 'exam', assessmentScore: Number(marksScored) / Number(totalMarks) * 100, eventId: req.body.eventId });
+    const finalScore = doc.score;
     return res.json({ success: true, data: { finalScore } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -260,34 +216,9 @@ router.post('/lesson-complete', authStudent, async (req, res) => {
     // selfRating: 1-5 (1=very confused, 5=fully understood) — convert to 0-100 score
     const ratingScore = selfRating ? Math.min(100, Math.round((Number(selfRating) / 5) * 100)) : 60;
 
-    const doc = await MasteryScore.findOneAndUpdate(
-      { studentId, subject, topicId },
-      {
-        $set:  { schoolId, topicTitle, chapterTitle, lastUpdated: new Date() },
-        $inc:  { attemptCount: 1 },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    // Weighted blend: lesson self-rating carries 30% weight
-    const prev = doc.score || 0;
-    const blended = doc.attemptCount <= 1
-      ? ratingScore
-      : Math.round((prev * 0.7) + (ratingScore * 0.3));
-    doc.score = Math.max(prev, blended);
-    await doc.save();
-
-    const { runWorkflowTriggers } = require('../services/masteryEngine');
-    runWorkflowTriggers({
-      studentId,
-      schoolId,
-      subject,
-      topicId,
-      topicTitle,
-      chapterTitle,
-      score: doc.score,
-      attemptCount: doc.attemptCount,
-    });
+    const { applyAssessment } = require('../services/masteryEventService');
+    const doc = await applyAssessment({ studentId, schoolId, subject, topicId, topicTitle, chapterTitle,
+      source: 'self-report', assessmentScore: ratingScore, metadata: { provenance: 'self_rating' } });
 
     const nextAction = await getNextAction(studentId, subject, topicId);
     return res.json({ success: true, data: { mastery: doc, nextAction } });

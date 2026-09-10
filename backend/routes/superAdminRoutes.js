@@ -16,6 +16,13 @@ const adminAuth = require('../middleware/adminAuth');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { deleteSchoolScopedData } = require('../utils/deleteSchoolCascade');
 const { recordPlatformAudit } = require('../utils/platformAudit');
+const {
+  ACTIVE_STUDENT_FILTER,
+  ACTIVE_PARENT_FILTER,
+  ACTIVE_TEACHER_FILTER,
+  ACTIVE_STAFF_FILTER,
+  ACTIVE_ADMIN_FILTER,
+} = require('../utils/studentStatus');
 
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -132,9 +139,9 @@ router.get('/overview', adminAuth, ensureSuperAdmin, async (_req, res) => {
       School.countDocuments({ registrationStatus: 'rejected' }),
       Admin.countDocuments({ schoolId: null }),
       Admin.countDocuments({ schoolId: { $ne: null } }),
-      StudentUser.countDocuments(),
-      TeacherUser.countDocuments(),
-      ParentUser.countDocuments(),
+      StudentUser.countDocuments(ACTIVE_STUDENT_FILTER),
+      TeacherUser.countDocuments(ACTIVE_TEACHER_FILTER),
+      ParentUser.countDocuments(ACTIVE_PARENT_FILTER),
       Principal.countDocuments(),
     ]);
 
@@ -634,12 +641,12 @@ router.delete('/admins/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 const USAGE_ROLES = [
-  { key: 'student', Model: StudentUser, idField: 'studentCode', statusField: 'status', baseFilter: {} },
-  { key: 'teacher', Model: TeacherUser, idField: 'employeeCode', statusField: null, baseFilter: {} },
-  { key: 'parent', Model: ParentUser, idField: 'username', statusField: null, baseFilter: {} },
-  { key: 'staff', Model: StaffUser, idField: 'employeeCode', statusField: 'status', baseFilter: {} },
+  { key: 'student', Model: StudentUser, idField: 'studentCode', statusField: 'status', baseFilter: ACTIVE_STUDENT_FILTER },
+  { key: 'teacher', Model: TeacherUser, idField: 'employeeCode', statusField: null, baseFilter: ACTIVE_TEACHER_FILTER },
+  { key: 'parent', Model: ParentUser, idField: 'username', statusField: null, baseFilter: ACTIVE_PARENT_FILTER },
+  { key: 'staff', Model: StaffUser, idField: 'employeeCode', statusField: 'status', baseFilter: ACTIVE_STAFF_FILTER },
   { key: 'principal', Model: Principal, idField: 'username', statusField: null, baseFilter: {} },
-  { key: 'admin', Model: Admin, idField: 'username', statusField: 'status', baseFilter: { role: { $ne: 'super_admin' } } },
+  { key: 'admin', Model: Admin, idField: 'username', statusField: 'status', baseFilter: { role: { $ne: 'super_admin' }, ...ACTIVE_ADMIN_FILTER } },
 ];
 
 const USAGE_PER_ROLE_CAP = 500;

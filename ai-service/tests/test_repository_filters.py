@@ -72,6 +72,30 @@ def test_search_failure_returns_empty_not_raise(monkeypatch):
     assert repository.search_chunks(query_vector=[0.1], school_id="school-1") == []
 
 
+def test_get_chapter_chunks_accepts_bloom_level(monkeypatch):
+    # Regression: get_chapter_chunks's signature once lacked bloom_level while
+    # its body (and every caller in retrieval/service.py) referenced it,
+    # raising TypeError on every chapter-scoped RAG request.
+    class ScrollClient:
+        kwargs = None
+
+        def scroll(self, **kwargs):
+            self.kwargs = kwargs
+            return [], None
+
+    fake = ScrollClient()
+    monkeypatch.setattr(repository, "make_qdrant_client", lambda: fake)
+
+    repository.get_chapter_chunks(
+        school_id="school-1",
+        chapter_title="Light",
+        bloom_level="apply",
+    )
+
+    conditions = {c.key: c.match.value for c in fake.kwargs["scroll_filter"].must}
+    assert conditions["bloom_level"] == "apply"
+
+
 def test_material_source_lookup_keeps_student_scope(monkeypatch):
     class ScrollClient:
         kwargs = None

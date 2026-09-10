@@ -12,6 +12,7 @@ const FeeStructure = require('../models/FeeStructure');
 const FeeInvoice = require('../models/FeeInvoice');
 const { syncAllocationGroupThreads, syncTimetableGroupThreads } = require('../utils/chatGroupProvisioning');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
+const { syncParentArchiveStatusForStudents } = require('../utils/parentArchiveSync');
 
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
@@ -841,6 +842,8 @@ router.post('/mark-leaving', adminAuth, async (req, res) => {
       message: `${result.modifiedCount} student(s) marked as leaving`,
     });
 
+    await syncParentArchiveStatusForStudents(validIds);
+
     await writeAuditLog({
       schoolId,
       actorId: req.admin?._id || req.admin?.id,
@@ -905,6 +908,8 @@ router.put('/mark-left/:id', adminAuth, async (req, res) => {
       message: `${updated.name} marked as Left`,
     });
 
+    await syncParentArchiveStatusForStudents([updated._id]);
+
     await writeAuditLog({
       schoolId,
       actorId: req.admin?._id || req.admin?.id,
@@ -955,6 +960,8 @@ router.put('/restore-student/:id', adminAuth, async (req, res) => {
     }
 
     res.json({ success: true, student, message: `${student.name} restored to Active` });
+
+    await syncParentArchiveStatusForStudents([student._id]);
 
     await writeAuditLog({
       schoolId,

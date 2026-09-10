@@ -23,6 +23,7 @@ const submissionSchema = new mongoose.Schema({
     min: 0
   },
   feedback: String,
+  gradedAt: { type: Date, default: null },
   status: {
     type: String,
     enum: ['submitted', 'graded', 'late', 'missing'],
@@ -32,6 +33,11 @@ const submissionSchema = new mongoose.Schema({
   aiGradingFeedback: { type: String, default: '' },
   aiGradingStatus: { type: String, enum: ['pending', 'done', 'failed', 'skipped'], default: 'skipped' },
   aiCriteriaBreakdown: { type: mongoose.Schema.Types.Mixed, default: null },
+  aiErrorType: { type: String, default: '' },
+  aiMissingConcepts: { type: [String], default: [] },
+  aiConfidenceScore: { type: Number, min: 0, max: 1, default: null },
+  aiBloomLevel: { type: String, default: '' },
+  aiEvaluation: { type: mongoose.Schema.Types.Mixed, default: null },
   publishedByTeacher: { type: Boolean, default: false },
   publishedAt: { type: Date, default: null },
   submissionHash: { type: String, default: '' }, // SHA-256 of submissionText for plagiarism detection
@@ -176,5 +182,16 @@ const studentProgressSchema = new mongoose.Schema({
 
 // Index for efficient queries
 studentProgressSchema.index({ 'progressMetrics.subject': 1 });
+
+studentProgressSchema.pre('save', function () {
+  for (const sub of this.submissions || []) {
+    if (sub.isModified('score')) sub.gradedAt = new Date();
+  }
+});
+studentProgressSchema.post('save', function (doc) {
+  require('../services/assessmentSyncService').syncStudentAssessments({
+    schoolId: doc.schoolId, studentId: doc.studentId,
+  }).catch((err) => require('../utils/logger').error({ err }, 'Assignment mastery sync failed; scheduled retry pending'));
+});
 
 module.exports = mongoose.model('StudentProgress', studentProgressSchema);

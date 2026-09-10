@@ -160,6 +160,20 @@ def _reconstruct_from_offsets(chunks: list[dict]) -> str:
     return merged
 
 
+def _exclude_disabled_materials(chunks: list[dict], excluded_material_ids: list[str] | None) -> list[dict]:
+    """Drop chunks belonging to materials a teacher has disabled.
+
+    Qdrant has no notion of TeachingMaterial.isEnabled — disabling a material
+    only flips a flag in Mongo, it never touches the already-ingested vectors.
+    The backend resolves the disabled-material id set per request and passes
+    it through so a disabled material can't still surface via RAG.
+    """
+    if not excluded_material_ids:
+        return chunks
+    excluded = set(excluded_material_ids)
+    return [chunk for chunk in chunks if chunk.get("material_id") not in excluded]
+
+
 def _get_chapter_chunks_with_legacy_subject_fallback(
     *,
     school_id: str,
@@ -169,6 +183,7 @@ def _get_chapter_chunks_with_legacy_subject_fallback(
     subject_id: str | None,
     subject_name: str | None,
     chapter_title: str,
+    bloom_level: str | None = None,
 ) -> list[dict]:
     chapter_titles = [chapter_title]
     normalized_title = chapter_title.casefold()
@@ -188,33 +203,55 @@ def _get_chapter_chunks_with_legacy_subject_fallback(
             subject_id=subject_id,
             subject_name=subject_name,
             chapter_title=candidate_title,
+            bloom_level=bloom_level,
         )
         if chunks:
             matched_title = candidate_title
             break
-    if chunks or not subject_id or not subject_name:
-        return chunks
 
-    # Points created before subject_id metadata was introduced remain safely
-    # scoped by school/class/section/chapter and the normalized subject name.
-    logger.info(
-        "No chapter chunks for subject_id=%s; retrying legacy subject_name=%r",
-        subject_id,
-        subject_name,
-    )
-    for candidate_title in dict.fromkeys([matched_title, *chapter_titles]):
-        chunks = get_chapter_chunks(
+    if not chunks and subject_id and subject_name:
+        # Points created before subject_id metadata was introduced remain safely
+        # scoped by school/class/section/chapter and the normalized subject name.
+        logger.info(
+            "No chapter chunks for subject_id=%s; retrying legacy subject_name=%r",
+            subject_id,
+            subject_name,
+        )
+        for candidate_title in dict.fromkeys([matched_title, *chapter_titles]):
+            chunks = get_chapter_chunks(
+                school_id=school_id,
+                class_id=class_id,
+                section_id=section_id,
+                academic_year_id=academic_year_id,
+                subject_id=None,
+                subject_name=subject_name,
+                chapter_title=candidate_title,
+                bloom_level=bloom_level,
+            )
+            if chunks:
+                break
+
+    if not chunks and bloom_level:
+        # Legacy chunks ingested before Bloom classification shipped carry no
+        # bloom_level payload field, so the strict-equality filter above can
+        # starve retrieval entirely for chapters that were never re-indexed.
+        # Retry once without the Bloom filter rather than returning empty context.
+        logger.info(
+            "No chapter chunks for bloom_level=%r; retrying without Bloom filter chapter=%r",
+            bloom_level,
+            chapter_title,
+        )
+        return _get_chapter_chunks_with_legacy_subject_fallback(
             school_id=school_id,
             class_id=class_id,
             section_id=section_id,
             academic_year_id=academic_year_id,
-            subject_id=None,
+            subject_id=subject_id,
             subject_name=subject_name,
-            chapter_title=candidate_title,
+            chapter_title=chapter_title,
+            bloom_level=None,
         )
-        if chunks:
-            return chunks
-    return []
+    return chunks
 
 
 def _search_chunks_with_legacy_subject_fallback(
@@ -228,6 +265,7 @@ def _search_chunks_with_legacy_subject_fallback(
     subject_id: str | None,
     subject_name: str | None,
     limit: int,
+    bloom_level: str | None = None,
 ) -> list[dict]:
     # ── Semantic retrieval ─────────────────────────────────────────────────────
     semantic_hits = search_chunks(
@@ -240,6 +278,7 @@ def _search_chunks_with_legacy_subject_fallback(
         chapter_title=None,
         subject_name=subject_name,
         limit=limit,
+        bloom_level=bloom_level,
     )
     if not semantic_hits and subject_id and subject_name:
         logger.info(
@@ -257,6 +296,7 @@ def _search_chunks_with_legacy_subject_fallback(
             chapter_title=None,
             subject_name=subject_name,
             limit=limit,
+            bloom_level=bloom_level,
         )
 
     # ── Keyword (BM25-style) retrieval — runs even when semantic succeeds ──────
@@ -269,9 +309,32 @@ def _search_chunks_with_legacy_subject_fallback(
         subject_id=subject_id,
         subject_name=subject_name,
         limit=limit // 2,
+        bloom_level=bloom_level,
     )
 
     if not keyword_hits and not semantic_hits:
+        if bloom_level:
+            # Same legacy-data concern as the chapter path: chunks ingested
+            # before Bloom classification shipped have no bloom_level payload
+            # field, so the strict-equality filter can silently starve both
+            # semantic and keyword retrieval. Retry once unfiltered.
+            logger.info(
+                "No hits for bloom_level=%r; retrying without Bloom filter subject=%r",
+                bloom_level,
+                subject_name,
+            )
+            return _search_chunks_with_legacy_subject_fallback(
+                query_vector=query_vector,
+                query_text=query_text,
+                school_id=school_id,
+                class_id=class_id,
+                section_id=section_id,
+                academic_year_id=academic_year_id,
+                subject_id=subject_id,
+                subject_name=subject_name,
+                limit=limit,
+                bloom_level=None,
+            )
         return []
 
     if not keyword_hits:
@@ -302,6 +365,8 @@ def retrieve_from_qdrant(
     sub_topic: str | None,
     question: str | None,
     mode: str | None = None,
+    bloom_level: str | None = None,
+    excluded_material_ids: list[str] | None = None,
 ) -> list[str]:
     subject_norm = _normalize_subject(subject)
 
@@ -310,14 +375,18 @@ def retrieve_from_qdrant(
     # scores low against task-style queries. For question-answering modes with an actual
     # question, focus the window on the question instead of always the chapter opening.
     if chapter_title:
-        chunks = _get_chapter_chunks_with_legacy_subject_fallback(
-            school_id=school_id,
-            class_id=class_id,
-            section_id=section_id,
-            academic_year_id=academic_year_id,
-            subject_id=subject_id,
-            subject_name=subject_norm,
-            chapter_title=chapter_title,
+        chunks = _exclude_disabled_materials(
+            _get_chapter_chunks_with_legacy_subject_fallback(
+                school_id=school_id,
+                class_id=class_id,
+                section_id=section_id,
+                academic_year_id=academic_year_id,
+                subject_id=subject_id,
+                subject_name=subject_norm,
+                chapter_title=chapter_title,
+                bloom_level=bloom_level,
+            ),
+            excluded_material_ids,
         )
         if chunks:
             text_chunks = [chunk for chunk in chunks if chunk.get("chunk_type", "text") != "visual"]
@@ -353,16 +422,20 @@ def retrieve_from_qdrant(
     vectors = embed_texts([query_text], kind="query")
     query_vector = vectors[0]
 
-    hits = _search_chunks_with_legacy_subject_fallback(
-        query_vector=query_vector,
-        query_text=query_text,
-        school_id=school_id,
-        class_id=class_id,
-        section_id=section_id,
-        academic_year_id=academic_year_id,
-        subject_id=subject_id,
-        subject_name=subject_norm,
-        limit=settings.max_context_chunks * 3,
+    hits = _exclude_disabled_materials(
+        _search_chunks_with_legacy_subject_fallback(
+            query_vector=query_vector,
+            query_text=query_text,
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=subject_id,
+            subject_name=subject_norm,
+            limit=settings.max_context_chunks * 3,
+            bloom_level=bloom_level,
+        ),
+        excluded_material_ids,
     )
     relevant = _select_hybrid_hits(query_text, hits)
     if relevant:
@@ -404,19 +477,25 @@ def retrieve_from_qdrant_with_meta(
     sub_topic: str | None,
     question: str | None,
     mode: str | None = None,
+    bloom_level: str | None = None,
+    excluded_material_ids: list[str] | None = None,
 ) -> tuple[list[str], list[dict]]:
     """Like retrieve_from_qdrant but also returns citation metadata per unique source."""
     subject_norm = _normalize_subject(subject)
 
     if chapter_title:
-        chunks = _get_chapter_chunks_with_legacy_subject_fallback(
-            school_id=school_id,
-            class_id=class_id,
-            section_id=section_id,
-            academic_year_id=academic_year_id,
-            subject_id=subject_id,
-            subject_name=subject_norm,
-            chapter_title=chapter_title,
+        chunks = _exclude_disabled_materials(
+            _get_chapter_chunks_with_legacy_subject_fallback(
+                school_id=school_id,
+                class_id=class_id,
+                section_id=section_id,
+                academic_year_id=academic_year_id,
+                subject_id=subject_id,
+                subject_name=subject_norm,
+                chapter_title=chapter_title,
+                bloom_level=bloom_level,
+            ),
+            excluded_material_ids,
         )
         if chunks:
             text_chunks = [chunk for chunk in chunks if chunk.get("chunk_type", "text") != "visual"]
@@ -445,16 +524,20 @@ def retrieve_from_qdrant_with_meta(
     vectors = embed_texts([query_text], kind="query")
     query_vector = vectors[0]
 
-    hits = _search_chunks_with_legacy_subject_fallback(
-        query_vector=query_vector,
-        query_text=query_text,
-        school_id=school_id,
-        class_id=class_id,
-        section_id=section_id,
-        academic_year_id=academic_year_id,
-        subject_id=subject_id,
-        subject_name=subject_norm,
-        limit=settings.max_context_chunks * 3,
+    hits = _exclude_disabled_materials(
+        _search_chunks_with_legacy_subject_fallback(
+            query_vector=query_vector,
+            query_text=query_text,
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=subject_id,
+            subject_name=subject_norm,
+            limit=settings.max_context_chunks * 3,
+            bloom_level=bloom_level,
+        ),
+        excluded_material_ids,
     )
     relevant = _select_hybrid_hits(query_text, hits)
 

@@ -26,7 +26,13 @@ router.post('/', authTeacher, async (req, res) => {
     const { subject, className, section = '', topics = [] } = req.body;
     if (!subject || !className) return res.status(400).json({ error: 'subject and className are required' });
 
-    const ordered = topics.map((t, i) => ({ ...t, order: i + 1 }));
+    const ordered = topics.map((t, i) => ({
+      ...t,
+      order: i + 1,
+      prerequisites: Array.isArray(t.prerequisites)
+        ? t.prerequisites.map((value) => String(value).trim()).filter(Boolean)
+        : [],
+    }));
 
     const map = await CurriculumMap.findOneAndUpdate(
       { schoolId: req.schoolId, subject, className, section },
@@ -42,14 +48,22 @@ router.post('/', authTeacher, async (req, res) => {
 // PATCH /api/curriculum-map/:id/topic — add a single topic
 router.patch('/:id/topic', authTeacher, async (req, res) => {
   try {
-    const { title, description = '', estimatedWeeks = 1 } = req.body;
+    const { title, description = '', estimatedWeeks = 1, prerequisites = [] } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
 
     const map = await CurriculumMap.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!map) return res.status(404).json({ error: 'Curriculum map not found' });
 
     const order = map.topics.length + 1;
-    map.topics.push({ order, title, description, estimatedWeeks });
+    map.topics.push({
+      order,
+      title,
+      description,
+      estimatedWeeks,
+      prerequisites: Array.isArray(prerequisites)
+        ? prerequisites.map((value) => String(value).trim()).filter(Boolean)
+        : [],
+    });
     await map.save();
     return res.json({ success: true, data: map });
   } catch (err) {

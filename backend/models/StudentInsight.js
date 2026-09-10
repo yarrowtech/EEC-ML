@@ -14,11 +14,13 @@ const studentInsightSchema = new mongoose.Schema({
   title:       { type: String, default: '' },
   summary:     { type: String, default: '' },
   payload:     { type: mongoose.Schema.Types.Mixed, default: {} },
+  dedupeKey:   { type: String },
   seenByTeacher: { type: Boolean, default: false },
   generatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
 studentInsightSchema.index({ studentId: 1, insightType: 1, generatedAt: -1 });
 studentInsightSchema.index({ schoolId: 1, subject: 1, generatedAt: -1 });
+studentInsightSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('StudentInsight', studentInsightSchema);

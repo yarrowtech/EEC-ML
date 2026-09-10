@@ -222,6 +222,10 @@ def ingest_material(
         )
         for chunk in chunks
     ]
+    # Store a cognitive-level label on every chunk. This allows future
+    # retrieval filters to select material appropriate to the learner's Bloom
+    # target while retaining the material-level classification for MongoDB.
+    chunk_bloom_levels = [classify_bloom(chunk) for chunk in chunks]
     embedding_texts = [
         build_embedding_text(
             chunk,
@@ -266,6 +270,7 @@ def ingest_material(
         chunk_metadata=chunk_metadata,
         page_numbers=page_numbers,
         chunk_types=chunk_types,
+        bloom_levels=chunk_bloom_levels,
     )
     logger.info(
         "Ingested material %s → Qdrant: %d chunks (%s, %d visual pages)",

@@ -8,6 +8,9 @@ const topicSchema = new mongoose.Schema({
   // Knowledge-graph enrichment populated on document ingest
   learningOutcomes: [{ type: String, trim: true }],
   concepts:         [{ type: String, trim: true }],
+  // Optional explicit prerequisite edges. Titles are used instead of ObjectIds
+  // so maps can be authored before topic subdocuments receive stable IDs.
+  prerequisites:    [{ type: String, trim: true }],
 }, { _id: true });
 
 const curriculumMapSchema = new mongoose.Schema({

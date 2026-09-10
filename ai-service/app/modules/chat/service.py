@@ -1100,6 +1100,8 @@ def retrieve_relevant_chunks(req: TutorGenerateRequest) -> list[str]:
             sub_topic=req.subTopic,
             question=req.question,
             mode=req.mode,
+            bloom_level=req.bloomLevel,
+            excluded_material_ids=req.excludedMaterialIds,
         )
     return _retrieve_in_memory(req)
 
@@ -1120,6 +1122,8 @@ def retrieve_relevant_chunks_with_citations(req: TutorGenerateRequest) -> tuple[
             sub_topic=req.subTopic,
             question=req.question,
             mode=req.mode,
+            bloom_level=req.bloomLevel,
+            excluded_material_ids=req.excludedMaterialIds,
         )
     return _retrieve_in_memory(req), []
 

@@ -177,6 +177,11 @@ const parentUserSchema = new mongoose.Schema({
   childrenIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser' }],
   children: [String],
   grade: [String],
+  // Derived from childrenIds: true once every linked child is archived/exited
+  // (Leaving/Left/Expelled). Kept in sync by utils/parentArchiveSync.js
+  // whenever a StudentUser's archive/status fields change.
+  isArchived: { type: Boolean, default: false },
+  archivedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 parentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });

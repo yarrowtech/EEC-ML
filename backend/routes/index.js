@@ -72,6 +72,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/spaced-repetition', require('./spacedRepetitionRoutes'));
   app.use('/api/mastery', require('./masteryRoutes'));
   app.use('/api/recommendations', require('./recommendationRoutes'));
+  app.use('/api/study-plans', require('./weeklyStudyPlanRoutes'));
   app.use('/api/engagement', require('./engagementRoutes'));
   app.use('/api/ml', require('./mlRoutes'));
   app.use('/api/practice', require('./practiceRoutes'));

@@ -64,9 +64,8 @@ const stripProtectedFields = (payload) => {
 // proxy timeout or pin memory. Larger imports must be split client-side.
 const MAX_BULK_USER_ROWS = 1000;
 
-const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
-const isExitedStudentStatus = (status) =>
-  EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
+const { EXITED_STUDENT_STATUSES, isExitedStudentStatus } = require('../utils/studentStatus');
+const { syncParentArchiveStatusForStudents } = require('../utils/parentArchiveSync');
 
 const parseCsvLine = (line = '') => {
   const out = [];
@@ -2480,6 +2479,7 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
                 dataRetentionExpiresAt: new Date(),
             },
         });
+        await syncParentArchiveStatusForStudents([studentId]);
 
         const AuditLog = require('../models/AuditLog');
         await AuditLog.create({

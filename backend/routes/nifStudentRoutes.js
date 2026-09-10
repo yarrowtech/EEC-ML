@@ -10,6 +10,7 @@ const { generatePassword } = require('../utils/generator');
 const { hashPasswordsBulk } = require('../utils/passwordHash');
 const { buildRollAllocator } = require('../utils/rollAllocator');
 const { deriveGuardianMeta } = require('../utils/guardianMeta');
+const { syncParentArchiveStatusForStudents } = require('../utils/parentArchiveSync');
 
 const router = express.Router();
 
@@ -705,6 +706,7 @@ const runBulkArchiveJob = async (jobId, { ids, schoolId, campusId }) => {
       const result = await StudentUser.bulkWrite(ops, { ordered: false });
       job.results.archived += result.modifiedCount || 0;
       job.processed += batch.length;
+      await syncParentArchiveStatusForStudents(batch.map((doc) => doc._id));
     }
 
     job.status = 'completed';
@@ -842,6 +844,7 @@ const runBulkUnarchiveJob = async (jobId, { ids, schoolId, campusId }) => {
       if (ops.length) {
         const result = await StudentUser.bulkWrite(ops, { ordered: false });
         job.results.restored += result.modifiedCount || 0;
+        await syncParentArchiveStatusForStudents(ops.map((op) => op.updateOne.filter._id));
       }
       job.processed += batch.length;
     }
@@ -950,6 +953,7 @@ router.put('/students/:id/archive', adminAuth, async (req, res) => {
       existing.roll = undefined;
       existing.status = 'Archived';
       await existing.save();
+      await syncParentArchiveStatusForStudents([existing._id]);
     }
 
     res.json({ ok: true, student: existing.toObject() });
@@ -1011,6 +1015,7 @@ router.patch('/students/:id/unarchive', adminAuth, async (req, res) => {
     existing.status = archivedPlacement.previousStatus || 'Active';
     existing.archivedPlacement = undefined;
     await existing.save();
+    await syncParentArchiveStatusForStudents([existing._id]);
 
     res.json({ ok: true, student: existing.toObject() });
   } catch (err) {

@@ -20,7 +20,9 @@ async function detectGaps({ studentId, schoolId, subject, className }) {
   const CurriculumMap  = require('../models/CurriculumMap');
 
   // Fetch all mastery scores for this student + subject
-  const masteryDocs = await MasteryScore.find({ studentId, subject }).lean();
+  // Keep the prerequisite analysis tenant-scoped. Student IDs are not a
+  // sufficient boundary for legacy or migrated records.
+  const masteryDocs = await MasteryScore.find({ studentId, schoolId, subject }).lean();
   const masteryByTitle = new Map(
     masteryDocs.map((d) => [d.topicTitle.toLowerCase().trim(), d.score])
   );
@@ -42,12 +44,21 @@ async function detectGaps({ studentId, schoolId, subject, className }) {
     return score == null || score < GAP_THRESHOLD;
   });
 
-  // For each weak topic, find earlier topics that are also not mastered — root causes
+  // For each weak topic, follow explicit prerequisite edges when available. For
+  // legacy maps without edges, retain the ordered-topic fallback.
   const rootCauseSet = new Set();
   const rootCauses   = [];
 
   for (const weak of weakTopics) {
-    const prereqs = sorted.filter((t) => t.order < weak.order);
+    const explicitPrerequisites = Array.isArray(weak.prerequisites)
+      ? weak.prerequisites
+        .map((title) => String(title).toLowerCase().trim())
+        .map((title) => sorted.find((candidate) => candidate.title.toLowerCase().trim() === title))
+        .filter(Boolean)
+      : [];
+    const prereqs = explicitPrerequisites.length
+      ? explicitPrerequisites
+      : sorted.filter((t) => t.order < weak.order);
     for (const prereq of prereqs) {
       const score = masteryByTitle.get(prereq.title.toLowerCase().trim());
       if ((score == null || score < GAP_THRESHOLD) && !rootCauseSet.has(prereq.title)) {

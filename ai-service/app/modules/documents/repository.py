@@ -43,7 +43,7 @@ def _ensure_collection() -> None:
         "school_id", "class_id", "section_id", "academic_year_id", "chapter_title",
         "chapter_id", "subject_id", "subject_name", "discipline", "curriculum_code",
         "material_id", "source_id", "concepts", "formulas", "units",
-        "chunk_type",
+        "chunk_type", "bloom_level",
     ):
         try:
             client.create_payload_index(
@@ -93,6 +93,7 @@ def upsert_chunks(
     curriculum_code: str,
     chapter_id: str,
     chapter_title: str,
+    bloom_level: str | None = None,
     topic_title: str,
     chunks: list[str],
     vectors: list[list[float]],
@@ -100,6 +101,7 @@ def upsert_chunks(
     chunk_metadata: list[dict] | None = None,
     page_numbers: list[int | None] | None = None,
     chunk_types: list[str] | None = None,
+    bloom_levels: list[str] | None = None,
 ) -> int:
     _ensure_collection()
     client = make_qdrant_client()
@@ -127,6 +129,7 @@ def upsert_chunks(
                 "chunk_text": chunk,
                 "chunk_index": i,
                 "chunk_type": chunk_types[i] if chunk_types else "text",
+                "bloom_level": bloom_levels[i] if bloom_levels else "understand",
                 "page_number": page_numbers[i] if page_numbers else None,
                 "start_char": start_chars[i] if start_chars else None,
                 "concepts": (chunk_metadata[i].get("concepts", []) if chunk_metadata else []),
@@ -150,6 +153,7 @@ def get_chapter_chunks(
     subject_name: str | None = None,
     chapter_title: str,
     limit: int = 200,
+    bloom_level: str | None = None,
 ) -> list[dict[str, Any]]:
     """Scroll all chunks for a chapter without vector similarity ranking.
 
@@ -173,6 +177,8 @@ def get_chapter_chunks(
         conditions.append(FieldCondition(key="subject_id", match=MatchValue(value=subject_id)))
     elif subject_name:
         conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
+    if bloom_level:
+        conditions.append(FieldCondition(key="bloom_level", match=MatchValue(value=bloom_level)))
 
     try:
         results, _ = client.scroll(
@@ -206,6 +212,7 @@ def get_chapter_chunks(
             "concepts": point.payload.get("concepts", []),
             "formulas": point.payload.get("formulas", []),
             "units": point.payload.get("units", []),
+            "bloom_level": point.payload.get("bloom_level", ""),
         }
         for point in results
         if point.payload.get("chunk_text")
@@ -222,6 +229,7 @@ def keyword_search_chunks(
     subject_id: str | None = None,
     subject_name: str | None = None,
     limit: int = 12,
+    bloom_level: str | None = None,
 ) -> list[dict]:
     """Keyword retrieval using Qdrant full-text search on chunk_text.
 
@@ -244,6 +252,8 @@ def keyword_search_chunks(
         conditions.append(FieldCondition(key="subject_id", match=MatchValue(value=subject_id)))
     elif subject_name:
         conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
+    if bloom_level:
+        conditions.append(FieldCondition(key="bloom_level", match=MatchValue(value=bloom_level)))
 
     try:
         results, _ = client.scroll(
@@ -344,6 +354,7 @@ def search_chunks(
     chapter_title: str | None = None,
     subject_name: str | None = None,
     limit: int = 6,
+    bloom_level: str | None = None,
 ) -> list[dict[str, Any]]:
     client = make_qdrant_client()
     conditions: list[FieldCondition] = [
@@ -361,6 +372,8 @@ def search_chunks(
         conditions.append(FieldCondition(key="chapter_title", match=MatchValue(value=chapter_title)))
     if subject_name and not chapter_title and not subject_id:
         conditions.append(FieldCondition(key="subject_name", match=MatchValue(value=subject_name)))
+    if bloom_level:
+        conditions.append(FieldCondition(key="bloom_level", match=MatchValue(value=bloom_level)))
 
     try:
         response = client.query_points(
@@ -393,6 +406,7 @@ def search_chunks(
             "concepts": hit.payload.get("concepts", []),
             "formulas": hit.payload.get("formulas", []),
             "units": hit.payload.get("units", []),
+            "bloom_level": hit.payload.get("bloom_level", ""),
         }
         for hit in response.points
     ]

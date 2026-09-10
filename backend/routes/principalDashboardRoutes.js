@@ -28,8 +28,7 @@ const EXPENSE_CATEGORY_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8
 
 // Same "active" rule as /admin/users/dashboard-stats: a student who has left,
 // been expelled, or been archived shouldn't count toward the live totals.
-const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left', 'expelled'];
-const isExitedStudentStatus = (status) => EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
+const { EXITED_STUDENT_STATUSES, isExitedStudentStatus } = require('../utils/studentStatus');
 
 // `StudentUser.academicYear` is a free-text label (e.g. "2025-26"), not an
 // AcademicYear reference, and its formatting drifts ("2025-2026" vs

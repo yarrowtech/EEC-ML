@@ -3,6 +3,7 @@ const router = express.Router();
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
+const { scopedStudents } = require('../utils/analyticsScope');
 const {
   computeAllScores,
 } = require('../services/mlEngine');
@@ -46,9 +47,8 @@ async function buildClassScores(students, schoolId) {
 // GET /api/ml/student/:studentId
 router.get('/student/:studentId', authTeacher, async (req, res) => {
   try {
-    const student = await StudentUser.findOne({ _id: req.params.studentId, schoolId: req.schoolId })
-      .select('name roll grade section')
-      .lean();
+    const students = await scopedStudents(req);
+    const student = students.find((s) => String(s._id) === req.params.studentId);
     if (!student) return res.status(404).json({ success: false, error: 'Student not found' });
     const scores = await computeAllScores({ studentId: req.params.studentId, schoolId: req.schoolId });
     return res.json({ success: true, data: { ...student, ...scores } });
@@ -61,7 +61,7 @@ router.get('/student/:studentId', authTeacher, async (req, res) => {
 router.get('/class/scores', authTeacher, async (req, res) => {
   try {
     const { className, section } = req.query;
-    const students = await getStudentsForClass({ schoolId: req.schoolId, className, section });
+    const students = await scopedStudents(req);
     const data = await buildClassScores(students, req.schoolId);
     return res.json({ success: true, data });
   } catch (err) {
@@ -73,7 +73,7 @@ router.get('/class/scores', authTeacher, async (req, res) => {
 router.get('/class/at-risk', authTeacher, async (req, res) => {
   try {
     const { className, section } = req.query;
-    const students = await getStudentsForClass({ schoolId: req.schoolId, className, section });
+    const students = await scopedStudents(req);
     const data = await buildClassScores(students, req.schoolId);
     const atRisk = data
       .filter((s) => s.atRisk?.isAtRisk)
@@ -88,7 +88,7 @@ router.get('/class/at-risk', authTeacher, async (req, res) => {
 router.get('/class/engagement', authTeacher, async (req, res) => {
   try {
     const { className, section } = req.query;
-    const students = await getStudentsForClass({ schoolId: req.schoolId, className, section });
+    const students = await scopedStudents(req);
     const data = await buildClassScores(students, req.schoolId);
     const sorted = data.sort((a, b) => (a.engagement?.engagementScore || 0) - (b.engagement?.engagementScore || 0));
     return res.json({ success: true, data: sorted });
@@ -101,7 +101,7 @@ router.get('/class/engagement', authTeacher, async (req, res) => {
 router.get('/class/trends', authTeacher, async (req, res) => {
   try {
     const { className, section } = req.query;
-    const students = await getStudentsForClass({ schoolId: req.schoolId, className, section });
+    const students = await scopedStudents(req);
     const data = await buildClassScores(students, req.schoolId);
     const trends = data.map((s) => ({
       studentId: s.studentId,

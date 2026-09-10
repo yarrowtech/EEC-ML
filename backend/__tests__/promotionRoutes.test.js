@@ -35,6 +35,11 @@ const mockChatProvisioning = {
 };
 jest.mock('../utils/chatGroupProvisioning', () => mockChatProvisioning);
 
+const mockParentArchiveSync = {
+  syncParentArchiveStatusForStudents: jest.fn().mockResolvedValue(undefined),
+};
+jest.mock('../utils/parentArchiveSync', () => mockParentArchiveSync);
+
 const StudentUser = require('../models/StudentUser');
 const ExamResult = require('../models/ExamResult');
 const PromotionHistory = require('../models/PromotionHistory');

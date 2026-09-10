@@ -7,6 +7,12 @@ const answerSchema = new mongoose.Schema({
   marksAwarded: { type: Number, default: 0 },
   topicTitle:   { type: String, default: '' },
   subject:      { type: String, default: '' },
+  errorType:    { type: String, default: 'None' },
+  missingConcepts: { type: [String], default: [] },
+  confidenceScore: { type: Number, min: 0, max: 1, default: null },
+  bloomLevel:   { type: String, default: '' },
+  evaluatorFeedback: { type: String, default: '' },
+  evaluation: { type: mongoose.Schema.Types.Mixed, default: null },
 }, { _id: false });
 
 const examAttemptSchema = new mongoose.Schema({

@@ -583,44 +583,11 @@ router.post('/student/papers/:id/submit', authStudent, async (req, res, next) =>
       const topicId = paper.topicTitle
         ? `${paper.subjectName}::${paper.topicTitle}`
         : `${paper.subjectName}::${paper.chapterTitle || 'general'}`;
-      Promise.resolve().then(async () => {
-        const existing = await MasteryScore.findOne({ studentId: req.userId, subject: paper.subjectName, topicId }).lean();
-        const currentScore = existing?.score ?? 0;
-        const attemptCount = (existing?.attemptCount ?? 0) + 1;
-        const daysSince = existing?.lastUpdated
-          ? Math.floor((Date.now() - new Date(existing.lastUpdated)) / 86400000)
-          : 0;
-        const finalScore = computeEnhancedMasteryScore({
-          currentScore,
-          newScore: gradeResult.percentage,
-          attemptCount,
-          daysSinceLastPractice: daysSince,
-        });
-        await MasteryScore.findOneAndUpdate(
-          { studentId: req.userId, subject: paper.subjectName, topicId },
-          {
-            $set: {
-              schoolId: req.schoolId,
-              topicTitle: paper.topicTitle || paper.chapterTitle || '',
-              chapterTitle: paper.chapterTitle || '',
-              score: finalScore,
-              attemptCount,
-              lastUpdated: new Date(),
-            },
-          },
-          { upsert: true }
-        );
-        runWorkflowTriggers({
-          studentId: req.userId,
-          schoolId: req.schoolId,
-          subject: paper.subjectName,
-          topicId,
-          topicTitle: paper.topicTitle || paper.chapterTitle || '',
-          chapterTitle: paper.chapterTitle || '',
-          score: finalScore,
-          attemptCount,
-        });
-      }).catch(() => {});
+      await require('../services/masteryEventService').applyAssessment({
+        studentId: req.userId, schoolId: req.schoolId, subject: paper.subjectName, topicId,
+        topicTitle: paper.topicTitle || paper.chapterTitle || '', chapterTitle: paper.chapterTitle || '',
+        source: 'practice-paper', assessmentScore: gradeResult.percentage,
+      });
     }
 
     // Non-blocking: classify and store wrong answers as error records

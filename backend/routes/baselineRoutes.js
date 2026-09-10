@@ -249,32 +249,10 @@ router.post('/:quizId/submit', authStudent, async (req, res) => {
 
     // Bootstrap mastery score for this subject
     const topicId = quiz.subject.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const masteryDoc = await MasteryScore.findOneAndUpdate(
-      { studentId, subject: quiz.subject, topicId },
-      {
-        $set:  { schoolId, topicTitle: quiz.subject, chapterTitle: 'Baseline', lastUpdated: new Date() },
-        $setOnInsert: { attemptCount: 1, score },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    // Only set score from baseline if no previous attempts exist
-    if (masteryDoc.attemptCount <= 1) {
-      masteryDoc.score = score;
-      await masteryDoc.save();
-    }
-
-    // Fire all workflow triggers (badge, unlock, teacher alert, spaced rep)
-    runWorkflowTriggers({
-      studentId,
-      schoolId,
-      subject: quiz.subject,
-      topicId,
-      topicTitle: quiz.subject,
-      chapterTitle: 'Baseline',
-      score,
-      attemptCount: masteryDoc.attemptCount,
-    });
+    const { applyAssessment } = require('../services/masteryEventService');
+    const masteryDoc = await applyAssessment({ studentId, schoolId, subject: quiz.subject, topicId,
+      topicTitle: quiz.subject, chapterTitle: 'Baseline', source: 'baseline', assessmentScore: score,
+      eventId: String(quiz._id) });
 
     return res.json({
       success: true,

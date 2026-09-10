@@ -19,5 +19,9 @@ const examResultSchema = new mongoose.Schema(
 );
 
 examResultSchema.index({ examId: 1, studentId: 1 }, { unique: true });
+examResultSchema.post('save', function (doc) {
+  require('../services/assessmentSyncService').syncStudentAssessments({ schoolId: doc.schoolId, studentId: doc.studentId })
+    .catch((err) => require('../utils/logger').error({ err }, 'Exam mastery sync failed; scheduled retry pending'));
+});
 
 module.exports = mongoose.model('ExamResult', examResultSchema);

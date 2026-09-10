@@ -13,7 +13,10 @@ const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const LessonPlan = require('../models/LessonPlan');
+const StudentProgress = require('../models/StudentProgress');
 const { buildStudentContext } = require('../utils/studentContextBuilder');
+const { buildTeacherAllocationScope, studentIsWithinTeacherScope } = require('../utils/teacherAllocationScope');
+const { partitionMaterialsByEnabled } = require('../utils/teachingMaterialAccess');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const ALLOWED_MODES = ['custom', 'explain', 'visual_explain', 'summarize', 'quiz', 'visual_quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'diagram', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary', 'quiz_generate', 'short_answer', 'long_answer', 'bloom_question', 'hinge_question', 'explain_back'];
@@ -24,6 +27,13 @@ const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 const normalizeString = (value) => String(value || '').trim();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const normalizeLookup = (value) => normalizeString(value).toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ');
+const bloomLevelFromMastery = (score) => {
+  if (score < 40) return 'remember';
+  if (score < 60) return 'understand';
+  if (score < 75) return 'apply';
+  if (score < 90) return 'analyse';
+  return 'evaluate';
+};
 
 const GENERIC_TEXTBOOK_SECTION_TITLES = new Set([
   'let us recite',
@@ -167,6 +177,7 @@ router.get('/source-page', authStudent, async (req, res) => {
       schoolId,
       status: 'published',
       publishedForStudentPortal: true,
+      isEnabled: true,
     };
     if (campusId) {
       materialFilter.$or = [
@@ -268,10 +279,16 @@ router.post('/generate', authStudent, async (req, res) => {
       lessonPlanFilter.subject = { $regex: `^${escapeRegex(normalizeString(subject))}$`, $options: 'i' };
     }
 
-    const [materials, lessonPlans] = await Promise.all([
+    const [scopedMaterials, lessonPlans] = await Promise.all([
       TeachingMaterial.find(materialFilter).limit(MAX_MATERIALS).lean(),
       LessonPlan.find(lessonPlanFilter).limit(25).lean(),
     ]);
+    // A teacher can disable a material after it was already ingested into
+    // Qdrant; disabling never touches the vector store (see
+    // teachingMaterialRoutes.js toggle-enabled), so ai-service must be told
+    // which materials to exclude or a disabled material's content can still
+    // surface via semantic/keyword retrieval.
+    const { enabled: materials, disabledIds: excludedMaterialIds } = partitionMaterialsByEnabled(scopedMaterials);
     // Do NOT re-ingest here. Publish already indexes attachments into Qdrant.
     // Re-ingesting on every student query deletes and rewrites Qdrant chunks;
     // if the re-parse fails mid-flight the material ends up with zero chunks,
@@ -293,6 +310,7 @@ router.post('/generate', authStudent, async (req, res) => {
     let studentContext = '';
     let conversationHistory = clientHistory;
     let masteryBasedDifficulty = normalizeString(difficulty) || null;
+    let masteryBasedBloomLevel = null;
     try {
       const ctx = await buildStudentContext({
         studentId,
@@ -315,6 +333,7 @@ router.post('/generate', authStudent, async (req, res) => {
           topicTitle: { $regex: normalizeString(topic), $options: 'i' },
         }).lean().catch(() => null);
         if (topicMastery) {
+          masteryBasedBloomLevel = bloomLevelFromMastery(topicMastery.score);
           masteryBasedDifficulty = topicMastery.score >= 75 ? 'hard'
             : topicMastery.score >= 50 ? 'medium'
             : 'easy';
@@ -345,6 +364,8 @@ router.post('/generate', authStudent, async (req, res) => {
         responseDepth: normalizeString(responseDepth) || null,
         learningGoal: normalizeString(learningGoal) || null,
         wrongAnswer: normalizeString(wrongAnswer) || null,
+        bloomLevel: masteryBasedBloomLevel,
+        excludedMaterialIds,
         studentContext: studentContext || null,
         conversationHistory: conversationHistory.length ? conversationHistory : null,
       },
@@ -473,6 +494,7 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
       questionText, correctAnswer, studentAnswer,
       subject, topicTitle, chapterTitle, gradeLevel,
       questionType = 'mcq', context = '', topicId,
+      examAttemptId, answerIndex, assignmentSubmissionId,
     } = req.body || {};
 
     if (!questionText || !correctAnswer || !studentAnswer) {
@@ -494,6 +516,9 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
 
     const result = evalResp.data;
 
+    // Free-form tutor answers are practice feedback only. Official records are
+    // evaluated from stored questions/rubrics by the assessment submission routes.
+
     // Store wrong answers as error records (non-blocking)
     if (!result.isCorrect && studentId && subject) {
       const { recordErrors } = require('../services/errorClassifier');
@@ -511,38 +536,15 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
       }).catch(() => {});
     }
 
-    // Feed result into mastery engine (non-blocking)
     if (studentId && schoolId && subject && topicTitle) {
-      const MasteryScore = require('../models/MasteryScore');
-      const { runWorkflowTriggers } = require('../services/masteryEngine');
-      const scorePercent = Math.round(result.score * 100);
-      const tid = topicId || `${normalizeString(subject)}::${normalizeString(topicTitle)}`;
-      MasteryScore.findOneAndUpdate(
-        { studentId, subject: normalizeString(subject), topicId: tid },
-        {
-          $set: {
-            schoolId,
-            topicTitle: normalizeString(topicTitle),
-            chapterTitle: normalizeString(chapterTitle),
-            lastUpdated: new Date(),
-          },
-          $inc: { attemptCount: 1 },
-          $max: { score: scorePercent },
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      ).then((doc) => {
-        if (!doc) return;
-        const blended = doc.attemptCount <= 1
-          ? scorePercent
-          : Math.round((doc.score * 0.7) + (scorePercent * 0.3));
-        doc.score = Math.max(doc.score, blended);
-        return doc.save().then(() => runWorkflowTriggers({
-          studentId, schoolId, subject: normalizeString(subject),
-          topicId: tid, topicTitle: normalizeString(topicTitle),
-          chapterTitle: normalizeString(chapterTitle),
-          score: doc.score, attemptCount: doc.attemptCount,
-        }));
-      }).catch(() => {});
+      await require('../services/masteryEventService').applyAssessment({
+        studentId, schoolId, subject: normalizeString(subject),
+        topicId: topicId || `${normalizeString(subject)}::${normalizeString(topicTitle)}`,
+        topicTitle: normalizeString(topicTitle), chapterTitle: normalizeString(chapterTitle),
+        source: 'tutor', assessmentScore: result.score * 100,
+        metadata: { errorType: result.errorType, missingConcepts: result.missingConcepts,
+          confidenceScore: result.confidenceScore, bloomLevel: result.bloomLevel, provenance: 'student_reported' },
+      });
     }
 
     return res.json({ success: true, data: result });
@@ -566,6 +568,15 @@ router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res)
       schoolId: req.schoolId,
     }).select('name roll className sectionName').lean();
     if (!student) return res.status(404).json({ error: 'Student not found in this school' });
+
+    const scope = await buildTeacherAllocationScope({
+      schoolId: req.schoolId,
+      campusId: req.campusId || null,
+      teacherId: req.user?.id || req.teacher?.id,
+    });
+    if (!studentIsWithinTeacherScope(student, scope)) {
+      return res.status(403).json({ error: 'Student is outside your assigned scope' });
+    }
 
     const conversations = await TutorConversation.find({
       studentId,
@@ -602,16 +613,11 @@ router.post('/flashcard-rating', authStudent, async (req, res) => {
     const newScore = Math.min(100, Math.max(0, currentScore + delta));
     const attemptCount = (existing?.attemptCount ?? 0) + 1;
 
-    const updated = await MasteryScore.findOneAndUpdate(
-      { studentId, schoolId, subject, topicTitle },
-      {
-        $set: { score: newScore, chapterTitle: chapterTitle || '', lastUpdated: new Date(), attemptCount },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    // Fire workflow side-effects non-blocking
-    runWorkflowTriggers({ studentId, schoolId, subject, topicTitle, chapterTitle: chapterTitle || '', score: newScore, attemptCount });
+    await require('../services/masteryEventService').applyAssessment({
+      studentId, schoolId, subject, topicId: existing?.topicId || `${subject}::${topicTitle}`,
+      topicTitle, chapterTitle: chapterTitle || '', source: 'self-report',
+      assessmentScore: rating === 'got_it' ? 100 : 0, metadata: { rating },
+    });
 
     return res.json({ success: true, data: { newScore, rating, topicTitle } });
   } catch (err) {

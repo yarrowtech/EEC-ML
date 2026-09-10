@@ -450,13 +450,13 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       <div className="relative mx-auto max-w-[1400px] space-y-5">
 
       {/* ── Page header ── */}
-      <div className="fm-in flex flex-wrap items-center justify-between gap-3" style={{ animationDelay: '0ms' }}>
+      <div className="fm-in flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" style={{ animationDelay: '0ms' }}>
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_24px_rgba(139,92,246,0.25)] backdrop-blur-md">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_24px_rgba(139,92,246,0.25)] backdrop-blur-md">
             <Layers className="h-5 w-5 text-violet-500" />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold leading-tight tracking-tight text-slate-900">Fee Structure Management</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold leading-tight tracking-tight text-slate-900 sm:text-xl">Fee Structure Management</h1>
             <p className="mt-0.5 text-xs text-slate-500">Build class-wise fee structures with heads and installment plans</p>
           </div>
         </div>
@@ -464,7 +464,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
           <button
             onClick={loadAll}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 disabled:opacity-50 sm:w-auto"
           >
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
@@ -473,7 +473,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── Stats cards ── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: 'Structures',      value: loading ? '…' : dashboardStats.count,               icon: BookOpen,    ic: 'text-violet-500'  },
           { label: 'Total Value',     value: loading ? '…' : money(dashboardStats.totalValue),   icon: IndianRupee, ic: 'text-violet-500'  },
@@ -565,7 +565,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                 className={`fm-in px-6 py-4 transition-colors duration-150 ${activeId === item._id ? 'border-l-4 border-l-violet-400 bg-violet-50/50' : 'border-l-4 border-l-transparent hover:bg-white/50'}`}
                 style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</h3>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -585,12 +585,12 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                       )}
                     </div>
                   </div>
-                  <div className="shrink-0 text-right">
+                  <div className="shrink-0 text-left sm:text-right">
                     <p className="text-base font-semibold text-slate-900">{money(item.totalAmount)}</p>
                     <p className="mt-0.5 text-[11px] text-slate-400">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
                   </div>
                 </div>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => editStructure(item)} className={ghostBtn}>
                     <Edit3 className="h-3 w-3 text-violet-500" />
                     Edit
@@ -652,13 +652,11 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             {/* Step 1 — Basics */}
             <div className="space-y-3">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 1 — Basics</p>
-              <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Board</label>
                 <select value={form.board} onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))} className={sCls}>
                   {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
-              </div>
               </div>
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Structure Name <span className="text-rose-400">*</span></label>
@@ -819,7 +817,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                         placeholder="e.g. Term 1, Quarter 2"
                         className={iCls}
                       />
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div className="relative">
                           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
                           <input
@@ -873,17 +871,17 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 border-t border-white/50 pt-4">
+            <div className="flex flex-col-reverse gap-3 border-t border-white/50 pt-4 sm:flex-row sm:items-center sm:justify-end">
               <button
                 onClick={resetForm}
-                className="rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-sm font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80"
+                className="w-full rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-sm font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 sm:w-auto"
               >
                 Reset
               </button>
               <button
                 onClick={saveStructure}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 disabled:opacity-60 sm:w-auto"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {saving ? 'Saving…' : activeId ? 'Update Structure' : 'Save Structure'}

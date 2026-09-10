@@ -124,32 +124,40 @@ router.post('/attempt/submit', authStudent, async (req, res) => {
     const { examId, answers = [], timedOut = false } = req.body || {};
     if (!examId) return res.status(400).json({ error: 'examId required' });
 
-    const attempt = await ExamAttempt.findOne({ examId, studentId });
+    const attempt = await ExamAttempt.findOne({ schoolId, examId, studentId });
     if (!attempt) return res.status(404).json({ error: 'Attempt not found. Call /start first.' });
-    if (attempt.status === 'submitted') return res.json({ success: true, data: attempt });
+    if (['submitted', 'timed_out'].includes(attempt.status)) {
+      await require('../services/assessmentSyncService').syncStudentAssessments({ schoolId, studentId });
+      return res.json({ success: true, data: attempt });
+    }
 
     const questions = await ExamQuestion.find({ schoolId, examId }).lean();
     const questionMap = {};
     questions.forEach((q) => { questionMap[String(q._id)] = q; });
 
+    const seen = new Set();
+    for (const a of answers) {
+      const key = String(a.questionId);
+      if (!questionMap[key] || seen.has(key)) return res.status(400).json({ error: 'Unknown or duplicate question' });
+      seen.add(key);
+    }
     let marksScored = 0;
-    const gradedAnswers = answers.map((a) => {
-      const q = questionMap[String(a.questionId)];
-      if (!q) return { ...a, isCorrect: false, marksAwarded: 0 };
-      const isCorrect = q.type === 'mcq' || q.type === 'true_false'
-        ? String(a.studentAnswer || '').trim().toLowerCase() === String(q.answer || '').trim().toLowerCase()
-        : null;
-      const awarded = isCorrect === true ? (q.marks || 1) : 0;
+    const gradedAnswers = [];
+    const { evaluateStoredAnswer } = require('../services/academicEvaluator');
+    for (const q of questions) {
+      const submitted = answers.find((a) => String(a.questionId) === String(q._id));
+      const studentAnswer = String(submitted?.studentAnswer || '');
+      const evaluation = await evaluateStoredAnswer({ questionText: q.question, correctAnswer: q.answer,
+        studentAnswer, subject: q.subject, topicTitle: q.topicTitle,
+        questionType: q.type === 'subjective' ? 'long_answer' : 'mcq' });
+      const awarded = Math.round(evaluation.score * (q.marks || 1) * 100) / 100;
       marksScored += awarded;
-      return {
-        questionId: q._id,
-        studentAnswer: a.studentAnswer || '',
-        isCorrect,
-        marksAwarded: awarded,
-        topicTitle: q.topicTitle || '',
-        subject: q.subject || '',
-      };
-    });
+      gradedAnswers.push({ questionId: q._id, studentAnswer, isCorrect: evaluation.isCorrect,
+        marksAwarded: awarded, topicTitle: q.topicTitle, subject: q.subject, evaluation,
+        errorType: evaluation.errorType, missingConcepts: evaluation.missingConcepts,
+        confidenceScore: evaluation.confidenceScore, bloomLevel: evaluation.bloomLevel,
+        evaluatorFeedback: evaluation.feedback });
+    }
 
     const percentage = attempt.totalMarks > 0
       ? Math.round((marksScored / attempt.totalMarks) * 100) : 0;
@@ -161,31 +169,7 @@ router.post('/attempt/submit', authStudent, async (req, res) => {
     attempt.status = timedOut ? 'timed_out' : 'submitted';
     await attempt.save();
 
-    // Non-blocking: trigger mastery update per topic cluster
-    if (questions.length > 0) {
-      const subjectGroups = {};
-      gradedAnswers.forEach((a) => {
-        const key = `${a.subject}|||${a.topicTitle}`;
-        if (!subjectGroups[key]) subjectGroups[key] = { correct: 0, total: 0, subject: a.subject, topicTitle: a.topicTitle };
-        subjectGroups[key].total++;
-        if (a.isCorrect) subjectGroups[key].correct++;
-      });
-      const axios = require('axios');
-      const BASE = `http://localhost:${process.env.PORT || 5000}`;
-      Object.values(subjectGroups).forEach(({ subject, topicTitle, correct, total }) => {
-        if (!subject) return;
-        const pct = Math.round((correct / total) * 100);
-        axios.post(`${BASE}/api/mastery/post-exam`, {
-          studentId: String(studentId),
-          schoolId: String(schoolId),
-          subject,
-          marksScored: correct,
-          totalMarks: total,
-        }, {
-          headers: { 'x-internal-secret': process.env.INTERNAL_API_SECRET },
-        }).catch(() => {});
-      });
-    }
+    await require('../services/assessmentSyncService').syncStudentAssessments({ schoolId, studentId });
 
     return res.json({ success: true, data: attempt });
   } catch (err) {

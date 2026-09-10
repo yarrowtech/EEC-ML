@@ -218,6 +218,7 @@ def _lexical_fallback(req: AnswerEvalRequest) -> AnswerEvalResult:
     overlap = len(correct_key & student_key)
     score = round(overlap / max(len(correct_key), 1), 2)
     return AnswerEvalResult(
+        evaluationMethod="lexical_fallback",
         isCorrect=score >= 0.6,
         score=min(1.0, score),
         confidenceScore=0.5,
