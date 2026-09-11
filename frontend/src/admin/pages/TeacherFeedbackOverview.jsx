@@ -87,6 +87,15 @@ const formatDateRangeChip = (from, to) => {
   return `${formatDateChip(from) || '...'} - ${formatDateChip(to) || '...'}`;
 };
 
+// Local calendar date (not UTC) so the "today" cutoff matches what the admin
+// actually sees on their own clock, regardless of timezone.
+const toLocalIsoDate = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 const computeCategoryAverages = (items) => {
   const result = RATING_KEYS.reduce((acc, key) => {
     acc[key] = { total: 0, count: 0, average: 0 };
@@ -762,6 +771,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                   <input
                     type="date"
                     value={windowSettings.startDate}
+                    min={toLocalIsoDate(new Date())}
                     onChange={(e) => setWindowSettings((prev) => ({ ...prev, startDate: e.target.value }))}
                     className={selectClass}
                     disabled={!windowSettings.enabled || !selectedSessionId}
@@ -769,6 +779,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                   <input
                     type="date"
                     value={windowSettings.endDate}
+                    min={windowSettings.startDate || toLocalIsoDate(new Date())}
                     onChange={(e) => setWindowSettings((prev) => ({ ...prev, endDate: e.target.value }))}
                     className={selectClass}
                     disabled={!windowSettings.enabled || !selectedSessionId}

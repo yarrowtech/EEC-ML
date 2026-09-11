@@ -15,13 +15,21 @@ const toObjectId = (value) => {
 
 const normalizeText = (value) => String(value || '').trim();
 
+// Build the date directly in UTC from its Y-M-D components instead of
+// `new Date(value)` + `setHours(...)` — the latter mutates in the server's
+// *local* timezone, which silently shifts the stored instant onto the
+// previous UTC day whenever the server runs ahead of UTC (e.g. IST),
+// making the saved start/end date look one day earlier on reload.
 const parseDate = (value, endOfDay = false) => {
   if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  if (endOfDay) d.setHours(23, 59, 59, 999);
-  else d.setHours(0, 0, 0, 0);
-  return d;
+  const str = String(value).slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (!match) return null;
+  const [, y, m, d] = match.map(Number);
+  const date = endOfDay
+    ? new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999))
+    : new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const normalizeTeacherFeedbackSettings = (schoolDoc, sessionId) => {
