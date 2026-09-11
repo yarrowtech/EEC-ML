@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
-  ChevronDown, ChevronRight, ChevronLeft, File, Trophy, Bell,
+  ChevronDown, ChevronRight, ChevronLeft , Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
   Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
-  GraduationCap, CalendarClock, ClipboardCheck,
+  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen,
 } from 'lucide-react';
+
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
@@ -32,7 +33,7 @@ const MENU_ITEMS = [
     children: [
       { id: 'learning',                     name: 'Learning Hub',    icon: Brain     },
       { id: 'assignments',                  name: 'Assignments',     icon: FileText  },
-      { id: 'assignments-journal',          name: 'Journal',         icon: File      },
+      { id: 'assignments-journal',          name: 'Journal',         icon: NotebookPen },
       { id: 'assignments-academic-alcove',  name: 'Class Wall',      icon: Target    },
       { id: 'results',                      name: 'Results',         icon: BarChart3 },
       { id: 'mastery',                      name: 'Mastery Progress', icon: Zap      },
