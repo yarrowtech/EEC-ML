@@ -56,6 +56,24 @@ const buildCampusFilter = (schoolId, campusId) => {
   return filter;
 };
 
+// Short-lived in-memory cache for the read-only setup lists (years, classes,
+// sections, subjects, buildings, floors, rooms) — every admin page that needs
+// a dropdown of classes/subjects/etc. hits these independently with no shared
+// frontend cache, so the same list gets recomputed over and over within the
+// same few seconds. This data only changes via the Academic Setup page, so a
+// short TTL (no explicit invalidation, same tradeoff already used for the
+// tenant-resolver and directory-list caches elsewhere in this codebase) cuts
+// that down to about once every 30s per key.
+const ACADEMIC_LIST_TTL_MS = 30 * 1000;
+const academicListCache = new Map(); // key -> { data, expires }
+const getAcademicCache = (key) => {
+  const entry = academicListCache.get(key);
+  if (entry && entry.expires > Date.now()) return entry.data;
+  if (entry) academicListCache.delete(key);
+  return undefined;
+};
+const setAcademicCache = (key, data) => academicListCache.set(key, { data, expires: Date.now() + ACADEMIC_LIST_TTL_MS });
+
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const SENIOR_SECONDARY_STANDARDS = new Set([11, 12]);
 const ALLOWED_CLASS_STREAMS = new Set(['science', 'commerce', 'arts', 'mixed']);
@@ -336,7 +354,11 @@ router.get('/years', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
+    const cacheKey = `years:${schoolId}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await AcademicYear.find({ schoolId }).sort({ createdAt: -1 }).lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -772,9 +794,14 @@ router.get('/classes', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const items = await ClassModel.find(buildCampusFilter(schoolId, resolveCampusScope(req)))
+    const campusId = resolveCampusScope(req);
+    const cacheKey = `classes:${schoolId}:${campusId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
+    const items = await ClassModel.find(buildCampusFilter(schoolId, campusId))
       .sort({ order: 1, name: 1 })
       .lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -968,14 +995,19 @@ router.get('/sections', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const filter = buildCampusFilter(schoolId, resolveCampusScope(req));
+    const campusId = resolveCampusScope(req);
+    const filter = buildCampusFilter(schoolId, campusId);
     if (req.query.classId) {
       if (!mongoose.isValidObjectId(req.query.classId)) {
         return res.status(400).json({ error: 'Invalid classId' });
       }
       filter.classId = req.query.classId;
     }
+    const cacheKey = `sections:${schoolId}:${campusId || 'x'}:${req.query.classId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await Section.find(filter).sort({ name: 1 }).lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1127,14 +1159,19 @@ router.get('/subjects', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const filter = buildCampusFilter(schoolId, resolveCampusId(req));
+    const campusId = resolveCampusId(req);
+    const filter = buildCampusFilter(schoolId, campusId);
     if (req.query.classId) {
       if (!mongoose.isValidObjectId(req.query.classId)) {
         return res.status(400).json({ error: 'Invalid classId' });
       }
       filter.classId = req.query.classId;
     }
+    const cacheKey = `subjects:${schoolId}:${campusId || 'x'}:${req.query.classId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await Subject.find(filter).sort({ name: 1 }).lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1276,9 +1313,13 @@ router.get('/buildings', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusScope(req);
+    const cacheKey = `buildings:${schoolId}:${campusId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await Building.find(buildCampusFilter(schoolId, campusId))
       .sort({ order: 1, name: 1 })
       .lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1400,10 +1441,14 @@ router.get('/floors', adminAuth, async (req, res) => {
     if (req.query.buildingId && mongoose.isValidObjectId(req.query.buildingId)) {
       filter.buildingId = req.query.buildingId;
     }
+    const cacheKey = `floors:${schoolId}:${campusId || 'x'}:${req.query.buildingId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await Floor.find(filter)
       .populate('buildingId', 'name code order isActive')
       .sort({ order: 1, name: 1 })
       .lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1587,6 +1632,9 @@ router.get('/rooms', adminAuth, async (req, res) => {
       filter.buildingId = req.query.buildingId;
     }
 
+    const cacheKey = `rooms:${schoolId}:${campusId || 'x'}:${req.query.floorId || 'x'}:${req.query.buildingId || 'x'}`;
+    const cached = getAcademicCache(cacheKey);
+    if (cached !== undefined) return res.json(cached);
     const items = await Room.find(filter)
       .populate({
         path: 'floorId',
@@ -1595,6 +1643,7 @@ router.get('/rooms', adminAuth, async (req, res) => {
       })
       .sort({ roomNumber: 1 })
       .lean();
+    setAcademicCache(cacheKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });

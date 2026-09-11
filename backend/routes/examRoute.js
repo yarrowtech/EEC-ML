@@ -46,6 +46,17 @@ const resolveSchoolId = (req, res) => {
 
 const resolveCampusId = (req) => req.campusId || null;
 
+// GET /groups fans out into an ExamGroup query plus a 3-level-populated Exam
+// query (room -> floor -> building) across the whole school — the main
+// Examinations page hits it on every load. Short TTL (data changes whenever
+// an exam/subject is created, edited, deleted, or published) paired with
+// explicit invalidation at every mutation below, so the admin's own actions
+// are reflected instantly and the cache only helps with repeat/parallel reads.
+const EXAM_GROUPS_CACHE_TTL_MS = 10 * 1000;
+const examGroupsCache = new Map(); // key -> { data, expires }
+const examGroupsCacheKey = (schoolId, campusId) => `${schoolId}:${campusId || 'x'}`;
+const clearExamGroupsCache = () => examGroupsCache.clear();
+
 const resolveAcademicContext = async ({ schoolId, campusId, classId, sectionId, subjectId }) => {
   if (!classId || !mongoose.isValidObjectId(classId)) {
     return { error: 'Valid classId is required' };
@@ -495,6 +506,11 @@ router.get('/groups', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
+    const cacheKey = examGroupsCacheKey(schoolId, campusId);
+    const cached = examGroupsCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.json(cached.data);
+    }
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
 
     const [groups, exams] = await Promise.all([
@@ -523,7 +539,9 @@ router.get('/groups', adminAuth, async (req, res) => {
       examsByGroup.get(gid).push(e);
     });
 
-    res.json(groups.map(g => ({ ...g, subjects: examsByGroup.get(String(g._id)) || [] })));
+    const payload = groups.map(g => ({ ...g, subjects: examsByGroup.get(String(g._id)) || [] }));
+    examGroupsCache.set(cacheKey, { data: payload, expires: Date.now() + EXAM_GROUPS_CACHE_TTL_MS });
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -647,6 +665,7 @@ router.post('/groups', adminAuth, async (req, res) => {
       .populate('sectionId', 'name')
       .lean();
 
+    clearExamGroupsCache();
     res.status(201).json({ message: 'Exam group created', group: { ...populated, subjects: [] } });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -738,6 +757,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       group.routineNoticeId = null;
     }
 
+    clearExamGroupsCache();
     res.json({ message: 'Exam group updated', group });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -757,6 +777,7 @@ router.delete('/groups/:groupId', adminAuth, async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Exam group not found' });
 
     await Exam.deleteMany({ groupId, schoolId });
+    clearExamGroupsCache();
     res.json({ message: 'Exam group and all its subject exams deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -955,6 +976,7 @@ router.post("/add", adminAuth, async (req, res) => {
           }
         }
 
+        clearExamGroupsCache();
         res.status(201).json({message: "Exam added successfully", exam});
     } catch(err) {
         res.status(400).json({error: err.message});
@@ -1073,6 +1095,7 @@ router.put("/:id", adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'Exam not found' });
     }
 
+    clearExamGroupsCache();
     res.status(200).json({ message: 'Exam updated successfully', exam });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1103,6 +1126,7 @@ router.delete("/:id", adminAuth, async (req, res) => {
       ExamResult.deleteMany({ examId: id, schoolId, ...(campusId ? { campusId } : {}) }),
     ]);
 
+    clearExamGroupsCache();
     res.status(200).json({ message: 'Exam and linked results deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });

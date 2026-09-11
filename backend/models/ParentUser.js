@@ -186,6 +186,10 @@ const parentUserSchema = new mongoose.Schema({
 
 parentUserSchema.index({ organizationId: 1, username: 1 }, { unique: true });
 parentUserSchema.index({ schoolId: 1, lastActiveAt: -1 });
+// Matches the /get-parents directory-list filter exactly (organizationId is
+// auto-added by the tenant plugin, then schoolId) — without this the query
+// falls back to the schoolId+lastActiveAt index above.
+parentUserSchema.index({ organizationId: 1, schoolId: 1 });
 
 parentUserSchema.pre('save', async function (next) {
   if (this.isModified('password') && !looksHashed(this.password)) {

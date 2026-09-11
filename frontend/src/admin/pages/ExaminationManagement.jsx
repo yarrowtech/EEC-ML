@@ -13,6 +13,64 @@ import toast from 'react-hot-toast';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const EXAM_DRAFTS_API = `${API_BASE}/api/exam/creation-drafts`;
 
+// ── Client-side cache (sessionStorage, stale-while-revalidate) ─────────────
+// Same pattern as the admin Dashboard: render cached data instantly on mount,
+// then silently refetch in the background — so switching back to this page
+// doesn't show a loading skeleton every time. `groups` (the exam list) gets a
+// short TTL since it changes with every create/edit/delete; the setup/options
+// bundle (years, classes, subjects, buildings/floors/rooms, teachers,
+// students, pdf header) gets a longer one since it only changes via Academic
+// Setup, not the exam workflow.
+const EXAM_CACHE_PREFIX = 'admin_examination_cache_v1';
+const EXAM_CACHE_TTL = { groups: 20 * 1000, options: 2 * 60 * 1000 };
+
+const getExamCacheStorage = () => {
+  try {
+    return typeof window !== 'undefined' && window.sessionStorage ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
+
+const getExamTokenScope = () => {
+  const token = localStorage.getItem('token');
+  if (!token) return 'anonymous';
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return `${payload?.schoolId || 'school'}_${payload?.campusId || 'campus'}`;
+  } catch {
+    return 'fallback';
+  }
+};
+
+const examCacheKey = (segment) => `${EXAM_CACHE_PREFIX}:${segment}:${getExamTokenScope()}`;
+
+const readExamCache = (key, ttlMs) => {
+  const storage = getExamCacheStorage();
+  if (!storage) return null;
+  try {
+    const parsed = JSON.parse(storage.getItem(key) || 'null');
+    const cachedAt = Number(parsed?.cachedAt || 0);
+    if (!cachedAt || Date.now() - cachedAt > ttlMs) {
+      storage.removeItem(key);
+      return null;
+    }
+    return parsed?.data ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const writeExamCache = (key, data) => {
+  const storage = getExamCacheStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(key, JSON.stringify({ cachedAt: Date.now(), data }));
+  } catch {
+    /* quota / private mode — ignore */
+  }
+};
+
 const draftTimeAgo = (iso) => {
   const t = new Date(iso).getTime();
   if (!t) return '';
@@ -387,19 +445,25 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const authH = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` });
 
   /* ── data ── */
-  const [groups, setGroups] = useState([]);
+  // Hydrate from sessionStorage synchronously so a repeat visit within the TTL
+  // renders instantly instead of showing a loading state — loadGroups()/
+  // loadOptions() below still run in the background and refresh it.
+  const cachedGroups = readExamCache(examCacheKey('groups'), EXAM_CACHE_TTL.groups);
+  const cachedOptions = readExamCache(examCacheKey('options'), EXAM_CACHE_TTL.options);
+
+  const [groups, setGroups] = useState(() => cachedGroups || []);
   const [ungrouped, setUngrouped] = useState([]);   // legacy exams without groupId
-  const [classes, setClasses] = useState([]);
-  const [years, setYears] = useState([]);
-  const [sections, setSections] = useState([]);
-  const [subjects, setSubjects] = useState([]);
-  const [buildings, setBuildings] = useState([]);
-  const [floors, setFloors] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [teachers, setTeachers] = useState([]);
-  const [students, setStudents] = useState([]); // for the Step 5 "Total Students" count
-  const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '', principalName: '' });
-  const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState(() => cachedOptions?.classes || []);
+  const [years, setYears] = useState(() => cachedOptions?.years || []);
+  const [sections, setSections] = useState(() => cachedOptions?.sections || []);
+  const [subjects, setSubjects] = useState(() => cachedOptions?.subjects || []);
+  const [buildings, setBuildings] = useState(() => cachedOptions?.buildings || []);
+  const [floors, setFloors] = useState(() => cachedOptions?.floors || []);
+  const [rooms, setRooms] = useState(() => cachedOptions?.rooms || []);
+  const [teachers, setTeachers] = useState(() => cachedOptions?.teachers || []);
+  const [students, setStudents] = useState(() => cachedOptions?.students || []); // for the Step 5 "Total Students" count
+  const [pdfHeader, setPdfHeader] = useState(() => cachedOptions?.pdfHeader || { schoolName: '', schoolAddressLine: '', logoUrl: '', principalName: '' });
+  const [loading, setLoading] = useState(() => !cachedGroups);
   const [saving, setSaving] = useState(false);
   const [publishingGroupId, setPublishingGroupId] = useState('');
 
@@ -476,13 +540,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   /* ── load ── */
   const loadGroups = async () => {
-    setLoading(true);
+    // No forced loading flip here — if we already have cached groups to show
+    // (initial state above), this just silently refreshes them in the
+    // background; `loading` only ever starts true when there was nothing
+    // cached to render yet.
     try {
       const res = await fetch(`${API_BASE}/api/exam/groups`, { headers: authH() });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed');
       const list = Array.isArray(data) ? data : [];
       setGroups(list);
+      writeExamCache(examCacheKey('groups'), list);
       return list;
     } catch (err) { toast.error(err.message || 'Failed to load exam groups'); }
     finally { setLoading(false); }
@@ -527,19 +595,40 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       setGroupYearId(String(yearItems[0]._id));
       setYearFilterId((current) => current || String(yearItems[0]._id));
     }
-    setClasses(Array.isArray(c) ? c : []);
-    setSections(Array.isArray(s) ? s : []);
-    setSubjects(Array.isArray(sub) ? sub : []);
-    setBuildings(Array.isArray(b) ? b : []);
-    setFloors(Array.isArray(f) ? f : []);
-    setRooms(Array.isArray(rm) ? rm : []);
-    setTeachers(Array.isArray(tch) ? tch : []);
-    setStudents(Array.isArray(stu) ? stu : []);
-    setPdfHeader({
+    const classItems = Array.isArray(c) ? c : [];
+    const sectionItems = Array.isArray(s) ? s : [];
+    const subjectItems = Array.isArray(sub) ? sub : [];
+    const buildingItems = Array.isArray(b) ? b : [];
+    const floorItems = Array.isArray(f) ? f : [];
+    const roomItems = Array.isArray(rm) ? rm : [];
+    const teacherItems = Array.isArray(tch) ? tch : [];
+    const studentItems = Array.isArray(stu) ? stu : [];
+    const pdfHeaderData = {
       schoolName: String(template?.schoolName || '').trim(),
       schoolAddressLine: String(template?.schoolAddressLine || '').trim(),
       logoUrl: String(template?.logoUrl || '').trim(),
       principalName: String(signatories?.principalName || '').trim(),
+    };
+    setClasses(classItems);
+    setSections(sectionItems);
+    setSubjects(subjectItems);
+    setBuildings(buildingItems);
+    setFloors(floorItems);
+    setRooms(roomItems);
+    setTeachers(teacherItems);
+    setStudents(studentItems);
+    setPdfHeader(pdfHeaderData);
+    writeExamCache(examCacheKey('options'), {
+      years: yearItems,
+      classes: classItems,
+      sections: sectionItems,
+      subjects: subjectItems,
+      buildings: buildingItems,
+      floors: floorItems,
+      rooms: roomItems,
+      teachers: teacherItems,
+      students: studentItems,
+      pdfHeader: pdfHeaderData,
     });
   };
 
@@ -2615,51 +2704,84 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         }
       );
 
-      y += 10;
+      // y += 10;
+      // const badgeText =
+      //   `CLASS ${className}  •  SECTION ${sectionName}`;
+
+      // const badgeWidth = 82;
+      // const badgeHeight = 10;
+
+      // const badgeX =
+      //   (pageWidth - badgeWidth) / 2;
+
+      // doc.setFillColor(
+      //   ...colors.badgeBg
+      // );
+
+      // doc.roundedRect(
+      //   badgeX,
+      //   y,
+      //   badgeWidth,
+      //   badgeHeight,
+      //   3,
+      //   3,
+      //   "F"
+      // );
+
+      // doc.setFont(
+      //   "helvetica",
+      //   "bold"
+      // );
+
+      // doc.setFontSize(9);
+
+      // doc.setTextColor(
+      //   ...colors.dark
+      // );
+
+      // doc.text(
+      //   badgeText,
+      //   pageWidth / 2,
+      //   y + 6.5,
+      //   {
+      //     align: "center",
+      //   }
+      // );
+
+      // y += badgeHeight + 9;
+      y += 5;
+
       const badgeText =
         `CLASS ${className}  •  SECTION ${sectionName}`;
 
-      const badgeWidth = 82;
-      const badgeHeight = 10;
-
-      const badgeX =
-        (pageWidth - badgeWidth) / 2;
-
-      doc.setFillColor(
-        ...colors.badgeBg
-      );
-
-      doc.roundedRect(
-        badgeX,
-        y,
-        badgeWidth,
-        badgeHeight,
-        3,
-        3,
-        "F"
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-
-      doc.setTextColor(
-        ...colors.dark
-      );
+      doc.setTextColor(...colors.dark);
 
       doc.text(
         badgeText,
         pageWidth / 2,
-        y + 6.5,
+        y,
         {
           align: "center",
+          baseline: "middle",
         }
       );
 
-      y += badgeHeight + 9;
+      // Underline
+      const textWidth = doc.getTextWidth(badgeText);
+
+      doc.setDrawColor(...colors.dark);
+      doc.setLineWidth(0.35);
+
+      doc.line(
+        (pageWidth - textWidth) / 2,
+        y + 1.5,
+        (pageWidth + textWidth) / 2,
+        y + 1.5
+      );
+
+      y += 7;
 
       // ==========================================================
       // TABLE
@@ -2709,8 +2831,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         y,
         tableWidth,
         headerHeight,
-        2,
-        2,
+        0,
+        0,
         "F"
       );
 
@@ -3102,87 +3224,61 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       y += 8;
 
+      // const instructions = [
+      //   "Students must report to the examination venue at least 15 minutes before the scheduled time.",
+      //   "Carry the valid admit card/identity card and all necessary stationery.",
+      //   "Occupy only the seat/room assigned and follow the instructions of the invigilator.",
+      //   "Mobile phones, smartwatches, electronic devices, notes, books, and other unauthorized materials are strictly prohibited.",
+      //   "Maintain silence, discipline, and proper conduct throughout the examination.",
+      //   "Read all instructions on the question paper carefully before starting the examination.",
+      //   "Write all required details correctly on the answer script.",
+      //   "Communication, exchange of materials, or any form of unfair practice is strictly prohibited.",
+      //   "Submit the answer script to the invigilator before leaving the examination hall.",
+      //   "Any change in the examination schedule will be communicated officially by the school authority.",
+      // ];
       const instructions = [
-        "Students must report 15 minutes before the examination time.",
-        "Carry the admit card and necessary stationery.",
-        "Follow all school rules and maintain discipline.",
-        "Any change in the routine will be notified by the school authority.",
+        "Students must report to the examination venue at least 15 minutes before the scheduled time.",
+        "Carry the valid admit card/identity card and all necessary stationery.",
+        "Occupy only the assigned seat/room and follow the instructions of the invigilator.",
+        "Mobile phones, smartwatches, electronic devices, notes, books, and unauthorized materials are strictly prohibited.",
+        "Maintain silence, discipline, and proper conduct throughout the examination.",
       ];
 
-      const instructionHeight =
-        28;
-
       // Only draw if enough room
-      if (
-        y + instructionHeight <
-        pageHeight - 35
-      ) {
-
-        doc.setFillColor(
-          ...colors.instructionBg
-        );
-
-        doc.setDrawColor(
-          ...colors.lightBorder
-        );
-
-        doc.roundedRect(
-          margin,
-          y,
-          contentWidth,
-          instructionHeight,
-          2,
-          2,
-          "FD"
-        );
-
-        doc.setFont(
-          "helvetica",
-          "bold"
-        );
-
+      if (y < pageHeight - 35) {
+        // Heading
+        doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
-
-        doc.setTextColor(
-          ...colors.dark
-        );
+        doc.setTextColor(...colors.dark);
 
         doc.text(
           "Important Instructions",
-          margin + 4,
-          y + 6
+          margin,
+          y
         );
 
-        doc.setFont(
-          "helvetica",
-          "normal"
-        );
-
+        // Instructions
+        doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
+        doc.setTextColor(...colors.text);
 
-        instructions.forEach(
-          (
+        instructions.forEach((instruction, index) => {
+          const instructionY = y + 5 + index * 4;
+
+          doc.text(
+            `${index + 1}.`,
+            margin,
+            instructionY
+          );
+
+          doc.text(
             instruction,
-            index
-          ) => {
+            margin + 5,
+            instructionY
+          );
+        });
 
-            doc.text(
-              `${index + 1}.`,
-              margin + 5,
-              y +
-              11 +
-              index * 4
-            );
-
-            doc.text(
-              instruction,
-              margin + 10,
-              y +
-              11 +
-              index * 4
-            );
-          }
-        );
+        y += 5 + instructions.length * 4;
       }
 
       // ==========================================================
