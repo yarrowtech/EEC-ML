@@ -20,6 +20,7 @@ import {
   MessageCircle,
   MessageSquare,
   PieChart as PieChartIcon,
+  Plus,
   RefreshCw,
   Search,
   Star,
@@ -33,6 +34,7 @@ import {
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import * as XLSX from 'xlsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -582,25 +584,38 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
     return Math.round(((Number(dist[4] || 0) + Number(dist[5] || 0)) / stats.totalFeedback) * 100);
   }, [stats]);
 
-  const exportCsv = () => {
-    const rows = [
-      ['Teacher', 'Subject', 'Class', 'Section', 'Student', 'Rating', 'Comments', 'Date'],
-      ...feedback.map((f) => [
-        f.teacherName, f.subjectName, f.className, f.sectionName,
-        f.isAnonymous ? 'Anonymous Student' : f.studentName,
-        f.overallRating, (f.comments || '').replace(/\n/g, ' '), formatDate(f.createdAt),
-      ]),
-    ];
-    const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `teacher-feedback-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const exportExcel = () => {
+    const summaryRows = teacherGroups
+      .slice()
+      .sort((a, b) => b.avgRating - a.avgRating)
+      .map((group) => ({
+        Teacher: group.name,
+        Subject: group.subLabel || '',
+        'Total Feedback': group.count,
+        'Average Rating': Number(group.avgRating.toFixed(2)),
+        'Positive %': group.positivePct,
+        'Neutral %': group.neutralPct,
+        'Needs Improvement %': group.needsImprovementPct,
+      }));
+
+    const detailRows = feedback
+      .slice()
+      .sort((a, b) => (a.teacherName || '').localeCompare(b.teacherName || '') || new Date(b.createdAt) - new Date(a.createdAt))
+      .map((f) => ({
+        Teacher: f.teacherName || '',
+        Subject: f.subjectName || '',
+        Class: f.className || '',
+        Section: f.sectionName || '',
+        Student: f.isAnonymous ? 'Anonymous Student' : (f.studentName || ''),
+        Rating: f.overallRating || '',
+        Comments: f.comments || '',
+        Date: formatDate(f.createdAt),
+      }));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'Teacher Summary');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), 'All Feedback');
+    XLSX.writeFile(workbook, `teacher-feedback-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const applyDateRange = () => {
@@ -686,14 +701,14 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setWindowPanelOpen((v) => !v)}
+            onClick={() => setWindowPanelOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
           >
-            <Clock className="w-4 h-4" />
-            Feedback Window
+            <Plus className="w-4 h-4" />
+            Add Feedback Window
           </button>
           <button
-            onClick={exportCsv}
+            onClick={exportExcel}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             <Download className="w-4 h-4" />
@@ -705,13 +720,8 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       {/* Feedback window settings (session-wise) */}
       <AnimatePresence>
         {windowPanelOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-5 shadow-sm space-y-4">
+          <Modal title="Add Student Feedback Window" onClose={() => setWindowPanelOpen(false)}>
+            <div className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-sm">
@@ -733,7 +743,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 <select
                   value={selectedSessionId}
                   onChange={(e) => setSelectedSessionId(e.target.value)}
-                  className={`${selectClass} w-full sm:w-72`}
+                  className={`${selectClass} w-full`}
                   disabled={settingsLoading || sessions.length === 0}
                 >
                   {sessions.length === 0 && <option value="">No sessions found</option>}
@@ -748,7 +758,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">
                   2. Feedback Window Dates
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <input
                     type="date"
                     value={windowSettings.startDate}
@@ -776,7 +786,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="w-4 h-4" /> 3. Save Window
+                        <CheckCircle2 className="w-4 h-4" /> Save Window
                       </>
                     )}
                   </motion.button>
@@ -796,7 +806,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 )}
               </AnimatePresence>
             </div>
-          </motion.div>
+          </Modal>
         )}
       </AnimatePresence>
 

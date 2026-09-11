@@ -4014,7 +4014,7 @@ const Students = ({ setShowAdminHeader }) => {
         </div>
         <div className="flex-1 flex flex-col min-h-0">
           {/* Enrollment summary — total / per class / per section */}
-          <div className="mb-1 flex-shrink-0 rounded-xl border border-gray-200 bg-white">
+          {/* <div className="mb-1 flex-shrink-0 rounded-xl border border-gray-200 bg-white">
             <button
               type="button"
               onClick={() => setShowEnrollmentSummary((v) => !v)}
@@ -4106,7 +4106,7 @@ const Students = ({ setShowAdminHeader }) => {
                 )}
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* Filter Bar */}
           <div className="mb-1 p-3 md:p-4 flex-shrink-0  ">
