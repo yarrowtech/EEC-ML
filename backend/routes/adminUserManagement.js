@@ -560,10 +560,18 @@ const directoryCacheKey = (req) =>
 const invalidateDirectoryCaches = () => {
   studentsListCache.clear();
   parentsListCache.clear();
+  dashboardStatsCache.clear();
 };
 // Back-compat alias — existing call sites use this name.
 const invalidateParentsListCache = invalidateDirectoryCaches;
 const PARENTS_LIST_TTL_MS = DIRECTORY_LIST_TTL_MS;
+
+// /dashboard-stats fans out into ~9 count/find queries (including a
+// ParentUser.find + populate over every parent) — cheap to cache since the
+// admin dashboard re-hits it constantly and the numbers don't need
+// second-level freshness.
+const DASHBOARD_STATS_TTL_MS = 60 * 1000;
+const dashboardStatsCache = new Map(); // key -> { data, expires }
 
 router.get("/get-students", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
@@ -1958,6 +1966,11 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
 router.get("/dashboard-stats", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
+    const cacheKey = directoryCacheKey(req);
+    const cached = dashboardStatsCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.status(200).json(cached.data);
+    }
     const filter = buildScopedFilter(req);
 
     // Get recent registrations (last 30 days)
@@ -2012,7 +2025,7 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
       (parent) => parent.createdAt && new Date(parent.createdAt) >= thirtyDaysAgo
     ).length;
 
-    res.status(200).json({
+    const payload = {
       students: {
         total: studentCount,
         recent: recentStudents
@@ -2036,7 +2049,9 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
       totalUsers,
       recentTotal: recentStudents + recentTeachers + recentParents + recentStaff + recentPrincipals,
       timestamp: new Date().toISOString()
-    });
+    };
+    dashboardStatsCache.set(cacheKey, { data: payload, expires: Date.now() + DASHBOARD_STATS_TTL_MS });
+    res.status(200).json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

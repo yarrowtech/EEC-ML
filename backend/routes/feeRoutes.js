@@ -42,6 +42,19 @@ const {
 
 const router = express.Router();
 
+// Short-lived in-memory cache for /admin/summary — it's a heavy aggregation
+// (every active student, every invoice, a FeePayment aggregate, a 500-row
+// recent-payments query, and another aggregate for the trend) hit repeatedly
+// by both the main admin dashboard and the Fees Dashboard page for the same
+// school. Same TTL-Map pattern as the students/teachers directory caches in
+// adminUserManagement.js.
+const FEE_SUMMARY_TTL_MS = 60 * 1000;
+const feeSummaryCache = new Map(); // key -> { data, expires }
+const feeSummaryCacheKey = (req) => {
+  const { academicYearId = '', classId = '', section = '' } = req.query || {};
+  return `${req.schoolId || 'x'}:${req.campusId || 'x'}:${academicYearId}:${classId}:${section}`;
+};
+
 const formatReceiptDateTime = (value) => {
   const date = new Date(value || Date.now());
   if (Number.isNaN(date.getTime())) return '-';
@@ -888,6 +901,7 @@ router.post('/payments', adminAuth, async (req, res) => {
         source: 'admin_manual',
       },
     });
+    feeSummaryCache.clear();
 
     res.status(201).json({
       success: true,
@@ -1175,6 +1189,7 @@ router.post('/admin/razorpay/verify', adminAuth, paymentGatewayResolver, async (
       source: 'admin_callback',
       userId: req.admin?.id || null,
     });
+    feeSummaryCache.clear();
     return res.json({
       success: true,
       message: 'Payment verified and captured',
@@ -1319,6 +1334,7 @@ router.get('/admin/razorpay/qr/:qrCodeId/status', adminAuth, paymentGatewayResol
         source: 'admin_qr_poll',
         userId: req.admin?.id || null,
       });
+      feeSummaryCache.clear();
       return res.json({ status: 'captured', payment: captured.receipt });
     }
 
@@ -1399,6 +1415,12 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
 
+    const cacheKey = feeSummaryCacheKey(req);
+    const cached = feeSummaryCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.json(cached.data);
+    }
+
     const { academicYearId, classId, section } = req.query || {};
 
     // Only students still on the roll — archived / left / expelled students keep
@@ -1432,7 +1454,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
 
     const invoiceFilter = { schoolId };
     if (req.campusId && studentIds.length === 0) {
-      return res.json({
+      const emptySummary = {
         totals: {
           totalOutstanding: 0,
           totalCollected: 0,
@@ -1445,7 +1467,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         enrollment: [],
         outstandingSegments: [],
         recentPayments: [],
-      });
+      };
+      feeSummaryCache.set(cacheKey, { data: emptySummary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
+      return res.json(emptySummary);
     }
     if (studentIds.length > 0) {
       invoiceFilter.studentId = { $in: studentIds };
@@ -1630,7 +1654,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       if (b) b.collected += Number(row.total || 0);
     });
 
-    res.json({
+    const summary = {
       totals: {
         totalOutstanding: Math.round(totals.totalOutstanding),
         totalCollected: Math.round(totals.totalCollected),
@@ -1647,7 +1671,9 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       enrollment: enrollmentNormalized,
       outstandingSegments: outstandingNormalized,
       recentPayments,
-    });
+    };
+    feeSummaryCache.set(cacheKey, { data: summary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
+    res.json(summary);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load summary' });
   }
@@ -2278,6 +2304,7 @@ router.post('/payments/razorpay/verify', authAnyUser, paymentGatewayResolver, as
       source: `${actor.type}_callback`,
       userId: actor.id,
     });
+    feeSummaryCache.clear();
     return res.json({ success: true, payment: captured.receipt, invoice: captured.invoice });
   } catch (error) {
     return res.status(error.statusCode || 400).json({ error: error.message || 'Unable to verify payment' });
