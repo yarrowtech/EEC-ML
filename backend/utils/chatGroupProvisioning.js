@@ -25,6 +25,28 @@ const addParticipant = (map, userId, userType, name) => {
 
 const yy = () => String(new Date().getFullYear()).slice(-2);
 
+// Runs `fn` over `items` with at most `limit` in flight at once. The sync
+// loops below used to await one allocation/timetable-combo at a time — each
+// iteration is several sequential DB round trips, so for a school with
+// hundreds of allocations that serialized into 40-70+ seconds per sync and,
+// worse, blocked the shared Mongo connection pool for every other request in
+// the app for that whole window. Iterations are independent (distinct group
+// keys), so running them concurrently is safe.
+const mapWithConcurrency = async (items, limit, fn) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (true) {
+      const i = nextIndex;
+      nextIndex += 1;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+};
+
 const buildAllocationGroupKey = ({
   schoolId,
   campusId,
@@ -302,10 +324,9 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
     .lean();
 
   const validGroupKeys = new Set();
-  let createdOrUpdated = 0;
-  for (const allocation of allocations) {
-    const isClassTeacher = Boolean(allocation.isClassTeacher);
-    if (!isClassTeacher) continue;
+  const classTeacherAllocations = allocations.filter((allocation) => Boolean(allocation.isClassTeacher));
+  const threadIds = await mapWithConcurrency(classTeacherAllocations, 8, async (allocation) => {
+    const isClassTeacher = true;
     const groupKey = buildAllocationGroupKey({
       schoolId: allocation.schoolId,
       campusId: allocation.campusId || null,
@@ -316,7 +337,7 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
     });
     if (groupKey) validGroupKeys.add(groupKey);
 
-    const threadId = await ensureAllocationGroupThread({
+    return ensureAllocationGroupThread({
       schoolId: allocation.schoolId,
       campusId: allocation.campusId || null,
       teacherId: allocation.teacherId,
@@ -326,8 +347,8 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
       sectionId: allocation.sectionId,
       isClassTeacher,
     });
-    if (threadId) createdOrUpdated += 1;
-  }
+  });
+  const createdOrUpdated = threadIds.filter(Boolean).length;
 
   const scopeFilter = {
     ...(schoolId ? { schoolId } : {}),
@@ -383,20 +404,22 @@ const syncTimetableGroupThreads = async ({ schoolId = null, campusId = null } = 
   });
 
   const validGroupKeys = new Set();
-  let createdOrUpdated = 0;
-  for (const combo of combos.values()) {
-    const groupKey = buildAllocationGroupKey({
+  const comboList = [...combos.values()].map((combo) => ({
+    combo,
+    groupKey: buildAllocationGroupKey({
       schoolId: combo.schoolId,
       campusId: combo.campusId,
       subjectId: combo.subjectId,
       classId: combo.classId,
       sectionId: combo.sectionId,
       isClassTeacher: false,
-    });
-    if (!groupKey) continue;
-    validGroupKeys.add(groupKey);
+    }),
+  })).filter(({ groupKey }) => Boolean(groupKey));
+  comboList.forEach(({ groupKey }) => validGroupKeys.add(groupKey));
+
+  const threadIds = await mapWithConcurrency(comboList, 8, async ({ combo }) => {
     const teacherIds = [...combo.teacherIds];
-    const threadId = await ensureAllocationGroupThread({
+    return ensureAllocationGroupThread({
       schoolId: combo.schoolId,
       campusId: combo.campusId,
       teacherIds,
@@ -406,8 +429,8 @@ const syncTimetableGroupThreads = async ({ schoolId = null, campusId = null } = 
       sectionId: combo.sectionId,
       isClassTeacher: false,
     });
-    if (threadId) createdOrUpdated += 1;
-  }
+  });
+  const createdOrUpdated = threadIds.filter(Boolean).length;
 
   const scopeFilter = {
     ...(schoolId ? { schoolId } : {}),

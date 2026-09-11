@@ -169,21 +169,21 @@ describe('Dashboard', () => {
     latestStudentChatProps = null;
   });
 
-  test('renders attendance view for /student/attendance', () => {
+  test('renders attendance view for /student/attendance', async () => {
     mockPathname = '/student/attendance';
 
     render(<Dashboard />);
 
-    expect(screen.getByTestId('attendance-view')).toBeInTheDocument();
+    expect(await screen.findByTestId('attendance-view')).toBeInTheDocument();
     expect(latestMobileNavProps?.activeView).toBe('attendance');
   });
 
-  test('hides the student header and mobile footer when the chat box is open', () => {
+  test('hides the student header and mobile footer when the chat box is open', async () => {
     mockPathname = '/student/chat';
 
     render(<Dashboard />);
 
-    expect(screen.getByTestId('student-chat-view')).toBeInTheDocument();
+    expect(await screen.findByTestId('student-chat-view')).toBeInTheDocument();
     expect(screen.getByTestId('header')).toBeInTheDocument();
     expect(screen.getByTestId('mobile-bottom-nav')).toBeInTheDocument();
 
@@ -203,7 +203,7 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/student/assignments', { replace: true });
     });
-    expect(screen.getByTestId('assignment-view-school')).toBeInTheDocument();
+    expect(await screen.findByTestId('assignment-view-school')).toBeInTheDocument();
   });
 
   test('navigates to /student when active view is unknown', async () => {
@@ -232,10 +232,10 @@ describe('Dashboard', () => {
     ['/student/health', 'student-health-view'],
     ['/student/complaints', 'student-complaints-view'],
     ['/student/meetings', 'student-meetings-view'],
-  ])('renders the student service for %s', (path, testId) => {
+  ])('renders the student service for %s', async (path, testId) => {
     mockPathname = path;
     render(<Dashboard />);
-    expect(screen.getByTestId(testId)).toBeInTheDocument();
+    expect(await screen.findByTestId(testId)).toBeInTheDocument();
   });
 
   test('setActiveView navigates to the derived route', () => {
@@ -250,12 +250,12 @@ describe('Dashboard', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/student/attendance');
   });
 
-  test('tapping save journal triggers AssignmentView ref handler', () => {
+  test('tapping save journal triggers AssignmentView ref handler', async () => {
     mockPathname = '/student/assignments-journal';
 
     render(<Dashboard />);
 
-    expect(screen.getByTestId('assignment-view-journal')).toBeInTheDocument();
+    expect(await screen.findByTestId('assignment-view-journal')).toBeInTheDocument();
     expect(latestMobileNavProps?.activeView).toBe('assignments-journal');
 
     act(() => {

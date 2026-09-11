@@ -1162,13 +1162,18 @@ router.get('/threads', async (req, res) => {
     try {
       await ensureUserSubjectGroups(req, { wait: false });
     } catch {
-      // best effort self-heal if groups were deleted manually/out of sync
+      // best effort self-heal if groups were deleted manually/out of sync.
+      // Never block the response on this — for schools with many
+      // allocations/timetable slots the full resync can take a minute or
+      // more (see chatGroupProvisioning.js), so it just runs in the
+      // background and the client picks up new threads on its next fetch.
       if ((userType === 'teacher' || userType === 'student') && schoolId) {
-        try {
-          await ensureUserSubjectGroups(req, { wait: true, force: true });
-        } catch {
-          // ignore; read path should still return whatever exists
-        }
+        // Not force:true — this endpoint gets polled frequently (unread badge),
+        // and forcing here would re-trigger the full resync on every poll for
+        // any account that never ends up with threads, starving the DB
+        // connection pool for the rest of the app. The existing
+        // GROUP_SYNC_MIN_INTERVAL_MS throttle is enough for self-heal.
+        ensureUserSubjectGroups(req, { wait: false }).catch(() => {});
       }
     }
 
@@ -1181,18 +1186,10 @@ router.get('/threads', async (req, res) => {
       .lean();
 
     if (threads.length === 0 && (userType === 'teacher' || userType === 'student') && schoolId) {
-      try {
-        await ensureUserSubjectGroups(req, { wait: true, force: true });
-        threads = await ChatThread.find({
-          schoolId,
-          campusId,
-          'participants.userId': userId,
-        })
-          .sort({ lastMessageAt: -1, updatedAt: -1 })
-          .lean();
-      } catch {
-        // ignore sync failures and continue with empty list
-      }
+      // Same as above: kick the (throttled) self-heal in the background
+      // rather than forcing and blocking this request on a potentially
+      // minutes-long resync.
+      ensureUserSubjectGroups(req, { wait: false }).catch(() => {});
     }
 
     if (userType === 'student') {

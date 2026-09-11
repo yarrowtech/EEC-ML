@@ -1,38 +1,42 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import DashboardHome from './DashboardHome';
-import AttendanceView from './AttendanceView';
-import RoutineView from './RoutineView';
-import AssignmentView from './AssignmentView';
-import CoursesView from './CoursesView';
-import ResultsView from './ResultsView';
-import AchievementsView from './AchievementsView';
-import ThemeCustomizer from './ThemeCustomizer';
-import ProfileUpdate from './ProfileUpdate';
-import NoticeBoard from './NoticeBoard';
-import TeacherFeedback from './TeacherFeedback';
-import StudentChat from './StudentChat';
-import ExcuseLetter from './ExcuseLetter';
-import LearningHub from './LearningHub';
-import AcademicAlcove from './AcademicAlcove';
-import StudentWellbeing from './StudentWellbeing';
-import LessonPlanStatusView from './LessonPlanStatusView';
-import StudentExamsView from './StudentExamsView';
 import { StudentDashboardProvider, useStudentDashboard } from './StudentDashboardContext';
 import MobileBottomNav from './MobileBottomNav';
-import HolidayListView from './HolidayListView';
-import StudentNotificationCenter from './StudentNotificationCenter';
-import StudentOnboarding from './StudentOnboarding';
-import LearningPathMapView from './LearningPathMapView';
-import MasteryView from './MasteryView';
-import ErrorAnalysisView from './ErrorAnalysisView';
-import StudentHealthReport from './StudentHealthReport';
-import StudentComplaints from './StudentComplaints';
-import StudentMeetings from './StudentMeetings';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+
+// Lazy-loaded: each of these is only fetched when the student actually opens
+// that tab, instead of all being bundled into the one chunk Dashboard ships
+// on first load (LearningHub alone pulls in the ~6k-line AI Tutor screen).
+const AttendanceView = lazy(() => import('./AttendanceView'));
+const RoutineView = lazy(() => import('./RoutineView'));
+const AssignmentView = lazy(() => import('./AssignmentView'));
+const CoursesView = lazy(() => import('./CoursesView'));
+const ResultsView = lazy(() => import('./ResultsView'));
+const AchievementsView = lazy(() => import('./AchievementsView'));
+const ThemeCustomizer = lazy(() => import('./ThemeCustomizer'));
+const ProfileUpdate = lazy(() => import('./ProfileUpdate'));
+const NoticeBoard = lazy(() => import('./NoticeBoard'));
+const TeacherFeedback = lazy(() => import('./TeacherFeedback'));
+const StudentChat = lazy(() => import('./StudentChat'));
+const ExcuseLetter = lazy(() => import('./ExcuseLetter'));
+const LearningHub = lazy(() => import('./LearningHub'));
+const AcademicAlcove = lazy(() => import('./AcademicAlcove'));
+const StudentWellbeing = lazy(() => import('./StudentWellbeing'));
+const LessonPlanStatusView = lazy(() => import('./LessonPlanStatusView'));
+const StudentExamsView = lazy(() => import('./StudentExamsView'));
+const HolidayListView = lazy(() => import('./HolidayListView'));
+const StudentNotificationCenter = lazy(() => import('./StudentNotificationCenter'));
+const StudentOnboarding = lazy(() => import('./StudentOnboarding'));
+const LearningPathMapView = lazy(() => import('./LearningPathMapView'));
+const MasteryView = lazy(() => import('./MasteryView'));
+const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
+const StudentHealthReport = lazy(() => import('./StudentHealthReport'));
+const StudentComplaints = lazy(() => import('./StudentComplaints'));
+const StudentMeetings = lazy(() => import('./StudentMeetings'));
 
 // Per-route tab titles. The school name is appended automatically, so
 // `/student/attendance` shows "Attendance · <School>". Falls back to "Student".
@@ -278,7 +282,15 @@ const Dashboard = () => {
               transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
               className={`w-full flex flex-col ${isFullscreenView ? 'flex-1 min-h-0' : ''}`}
             >
-              {renderContent()}
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center py-16" role="status">
+                    <span className="sr-only">Loading</span>
+                  </div>
+                }
+              >
+                {renderContent()}
+              </Suspense>
             </Motion.div>
             {!isFullscreenView && (
               <div className="h-16 sm:h-18 lg:hidden shrink-0" aria-hidden="true" />
@@ -290,10 +302,12 @@ const Dashboard = () => {
         )}
       </div>
       {showOnboarding && (
-        <StudentOnboarding
-          studentName={profile?.name || ''}
-          onComplete={() => setShowOnboarding(false)}
-        />
+        <Suspense fallback={null}>
+          <StudentOnboarding
+            studentName={profile?.name || ''}
+            onComplete={() => setShowOnboarding(false)}
+          />
+        </Suspense>
       )}
     </StudentDashboardProvider>
   );
