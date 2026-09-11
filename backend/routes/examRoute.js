@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const Exam = require('../models/Exam');
 const ExamGroup = require('../models/ExamGroup');
 const ExamResult = require('../models/ExamResult');
+const ExamCreationDraft = require('../models/ExamCreationDraft');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
@@ -759,6 +760,87 @@ router.delete('/groups/:groupId', adminAuth, async (req, res) => {
     res.json({ message: 'Exam group and all its subject exams deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* ───────────────────────── Create-exam wizard drafts (admin) ───────────────────────── */
+
+const MAX_EXAM_DRAFTS_PER_SCOPE = 30;
+
+// List drafts for the current admin's school / campus
+router.get('/creation-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const drafts = await ExamCreationDraft.find({ schoolId, ...(campusId ? { campusId } : {}) })
+      .sort({ updatedAt: -1 })
+      .limit(MAX_EXAM_DRAFTS_PER_SCOPE)
+      .lean();
+    return res.json({ success: true, data: drafts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Create a new draft, or update an existing one when `id` is supplied
+router.post('/creation-drafts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const scopeFilter = { schoolId, ...(campusId ? { campusId } : {}) };
+
+    const { id, label, step, data } = req.body || {};
+    const doc = {
+      label: String(label || '').trim().slice(0, 120) || 'Untitled draft',
+      step: Number.isFinite(Number(step)) ? Math.max(1, Math.floor(Number(step))) : 1,
+      data: data && typeof data === 'object' ? data : {},
+    };
+
+    if (id && mongoose.isValidObjectId(id)) {
+      const updated = await ExamCreationDraft.findOneAndUpdate(
+        { _id: id, ...scopeFilter },
+        { $set: doc },
+        { new: true }
+      ).lean();
+      if (!updated) return res.status(404).json({ error: 'Draft not found' });
+      return res.json({ success: true, data: updated });
+    }
+
+    const count = await ExamCreationDraft.countDocuments(scopeFilter);
+    if (count >= MAX_EXAM_DRAFTS_PER_SCOPE) {
+      return res.status(400).json({ error: `Draft limit reached (${MAX_EXAM_DRAFTS_PER_SCOPE}). Delete an old draft first.` });
+    }
+
+    const created = await ExamCreationDraft.create({
+      schoolId,
+      campusId: campusId || null,
+      ...doc,
+      createdBy: req.admin?.username || req.admin?.id || '',
+    });
+    return res.status(201).json({ success: true, data: created.toObject() });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Delete a draft
+router.delete('/creation-drafts/:id', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid draft id' });
+    const removed = await ExamCreationDraft.findOneAndDelete({ _id: id, schoolId, ...(campusId ? { campusId } : {}) }).lean();
+    if (!removed) return res.status(404).json({ error: 'Draft not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 
