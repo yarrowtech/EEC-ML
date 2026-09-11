@@ -350,8 +350,20 @@ const resolveTeacherFeedbackAvailability = async (schoolId) => {
     };
   }
 
-  const school = await School.findById(schoolId).select('teacherFeedbackSettings').lean();
-  const settings = school?.teacherFeedbackSettings || {};
+  const activeSession = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean();
+  if (!activeSession) {
+    return {
+      isOpen: false,
+      reason: 'feedback_not_configured',
+      message: 'Teacher feedback is not available right now.',
+      settings: { enabled: false, startDate: null, endDate: null },
+    };
+  }
+
+  const school = await School.findById(schoolId).select('teacherFeedbackWindows').lean();
+  const settings = (school?.teacherFeedbackWindows || []).find(
+    (window) => String(window.sessionId) === String(activeSession._id)
+  ) || {};
   const enabled = Boolean(settings.enabled);
   const startDate = settings.startDate ? new Date(settings.startDate) : null;
   const endDate = settings.endDate ? new Date(settings.endDate) : null;

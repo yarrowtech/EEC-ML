@@ -124,35 +124,31 @@ function TeacherStepRail({ step, maxVisited, onJump }) {
             <li key={s.key} className="relative">
               {i < TEACHER_STEPS.length - 1 && (
                 <span
-                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${
-                    i < step ? 'bg-sky-300' : 'bg-gray-200'
-                  }`}
+                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${i < step ? 'bg-sky-300' : 'bg-gray-200'
+                    }`}
                 />
               )}
               <button
                 type="button"
                 disabled={!reachable}
                 onClick={() => reachable && onJump(i)}
-                className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
-                  state === 'active' ? 'bg-sky-50' : reachable ? 'hover:bg-gray-50' : 'cursor-default'
-                }`}
+                className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${state === 'active' ? 'bg-sky-50' : reachable ? 'hover:bg-gray-50' : 'cursor-default'
+                  }`}
               >
                 <span
-                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
-                    state === 'done'
+                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${state === 'done'
                       ? 'bg-emerald-600 text-white'
                       : state === 'active'
                         ? 'bg-sky-600 text-white ring-4 ring-sky-100'
                         : 'border border-gray-300 bg-white text-gray-400'
-                  }`}
+                    }`}
                 >
                   {state === 'done' ? <Check className="h-4 w-4" /> : i + 1}
                 </span>
                 <span className="min-w-0 pt-0.5">
                   <span
-                    className={`block text-sm font-semibold leading-tight ${
-                      state === 'active' ? 'text-sky-700' : state === 'done' ? 'text-gray-800' : 'text-gray-500'
-                    }`}
+                    className={`block text-sm font-semibold leading-tight ${state === 'active' ? 'text-sky-700' : state === 'done' ? 'text-gray-800' : 'text-gray-500'
+                      }`}
                   >
                     {s.label}
                   </span>
@@ -365,7 +361,7 @@ const resolveTeacherStatus = (teacher, todayCheckedInTeacherIds, todayApprovedLe
   return 'Absent';
 };
 
-const Teachers = ({setShowAdminHeader}) => {
+const Teachers = ({ setShowAdminHeader }) => {
   const [activeTab, setActiveTab] = useState('teachers');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
@@ -501,8 +497,8 @@ const Teachers = ({setShowAdminHeader}) => {
     const teacherSubject = (teacher.subject || '').toLowerCase();
     const teacherEmail = (teacher.email || '').toLowerCase();
     const matchesSearch = teacherName.includes(searchTerm.toLowerCase()) ||
-                         teacherSubject.includes(searchTerm.toLowerCase()) ||
-                         teacherEmail.includes(searchTerm.toLowerCase());
+      teacherSubject.includes(searchTerm.toLowerCase()) ||
+      teacherEmail.includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'All' || teacher.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -1141,7 +1137,7 @@ const Teachers = ({setShowAdminHeader}) => {
       } else {
         setSubmitStatus(null);
         // The teacher is now real — the draft it was saved from is stale, drop it.
-        if (activeTeacherDraftId) deleteTeacherDraft(activeTeacherDraftId).catch(() => {});
+        if (activeTeacherDraftId) deleteTeacherDraft(activeTeacherDraftId).catch(() => { });
         toast.success(
           data?.emailSent
             ? 'Teacher added and credentials emailed.'
@@ -1357,7 +1353,7 @@ const Teachers = ({setShowAdminHeader}) => {
       setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'archive' });
 
       let data;
-      for (;;) {
+      for (; ;) {
         await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -1421,7 +1417,7 @@ const Teachers = ({setShowAdminHeader}) => {
       setTeacherBulkDeleteJob({ total: jobTotal, processed: 0, deleted: 0 });
 
       let data;
-      for (;;) {
+      for (; ;) {
         await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -1555,7 +1551,7 @@ const Teachers = ({setShowAdminHeader}) => {
       setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'restore' });
 
       let data;
-      for (;;) {
+      for (; ;) {
         await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/unarchive/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -1851,7 +1847,7 @@ const Teachers = ({setShowAdminHeader}) => {
       setTeacherBulkUploadJob({ total: jobTotal, processed: 0, created: 0, failed: 0 });
 
       let data;
-      for (;;) {
+      for (; ;) {
         await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk-upload/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -2001,7 +1997,7 @@ const Teachers = ({setShowAdminHeader}) => {
             >
               <FileDown size={15} /> Download Data
             </button>
-            
+
             {activeTab === 'teachers' && selectedTeacherIds.length > 0 && (
               <button
                 onClick={handleBulkArchiveTeachers}
@@ -2060,11 +2056,10 @@ const Teachers = ({setShowAdminHeader}) => {
 
         {submitStatus && (
           <div
-            className={`mt-2 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 flex-shrink-0 ${
-              submitStatus.type === 'success'
+            className={`mt-2 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 flex-shrink-0 ${submitStatus.type === 'success'
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                 : 'border-red-200 bg-red-50 text-red-700'
-            }`}
+              }`}
           >
             {submitStatus.type === 'success'
               ? <Check size={15} className="flex-shrink-0" />
@@ -2075,38 +2070,38 @@ const Teachers = ({setShowAdminHeader}) => {
 
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="relative mt-1 mb-2 flex justify-center items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-full w-fit shadow-sm flex-shrink-0">
-            {[
-              { key: 'teachers', label: 'Teachers', icon: GraduationCap, count: teachers.length },
-              { key: 'principals', label: 'Principals', icon: Crown, count: principals.length },
-            ].map((tab) => {
-              const TabIcon = tab.icon;
-              const active = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`relative z-10 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
-                    active ? 'text-white' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {active && (
-                    <Motion.span
-                      layoutId="teachersTabIndicator"
-                      className="absolute inset-0 -z-10 rounded-full bg-sky-500 shadow-sm"
-                      transition={{ type: 'spring', duration: 0.5, bounce: 0.2 }}
-                    />
-                  )}
-                  <TabIcon size={15} />
-                  {tab.label}
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                    {tab.count}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="w-full flex justify-center items-center">
+            <div className="relative mt-1 mb-2 flex justify-center items-center gap-1 p-1.5 bg-white border border-gray-200 rounded-full w-fit shadow-sm flex-shrink-0">
+              {[
+                { key: 'teachers', label: 'Teachers', icon: GraduationCap, count: teachers.length },
+                { key: 'principals', label: 'Principals', icon: Crown, count: principals.length },
+              ].map((tab) => {
+                const TabIcon = tab.icon;
+                const active = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`relative z-10 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold transition-colors ${active ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                  >
+                    {active && (
+                      <Motion.span
+                        layoutId="teachersTabIndicator"
+                        className="absolute inset-0 -z-10 rounded-full bg-sky-500 shadow-sm"
+                        transition={{ type: 'spring', duration: 0.5, bounce: 0.2 }}
+                      />
+                    )}
+                    <TabIcon size={15} />
+                    {tab.label}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${active ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-
           {/* Filter Bar — Teachers only */}
           {activeTab === 'teachers' && (
             <div className="mb-1 p-3 md:p-4 flex-shrink-0">
@@ -2152,76 +2147,76 @@ const Teachers = ({setShowAdminHeader}) => {
             </div>
           )}
 
-        {/* Teachers Table */}
-        {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
-                  <th className="w-10 px-4 py-3.5 text-left">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
-                      checked={isAllFilteredSelected}
-                      disabled={filteredTeacherIds.length === 0}
-                      onChange={toggleSelectAllFilteredTeachers}
-                      aria-label="Select all teachers"
-                    />
-                  </th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher</th>
-                  {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
-                  {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject & Dept</th> */}
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Weekly Routine</th>
-                  {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Qualification</th> */}
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {currentTeachers.map((teacher) => {
-                  const avatarColor = getAvatarColor(teacher.name);
-                  const teacherInitials = (teacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-                  const teacherIsPrincipal = principalIdentitySet.has(String(teacher?.email || '').trim().toLowerCase());
-                  const teacherId = String(teacher._id || teacher.id || '');
-                  return (
-                    <tr key={teacher._id || teacher.id} className="hover:bg-sky-50/30 transition-colors">
-                      <td className="px-4 py-4">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
-                          checked={selectedTeacherIds.includes(teacherId)}
-                          onChange={() => toggleTeacherSelection(teacherId)}
-                          aria-label={`Select ${teacher.name || 'teacher'}`}
-                        />
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
-                            {teacher.profilePic ? (
-                              <img
-                                src={teacher.profilePic}
-                                alt={teacher.name || 'Teacher'}
-                                className="w-full h-full object-cover rounded-full"
-                              />
-                            ) : (
-                              teacherInitials
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                              <span>{teacher.name}</span>
-                              {teacherIsPrincipal && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
-                                  <Crown size={11} />
-                                  Principal
-                                </span>
+          {/* Teachers Table */}
+          {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
+                    <th className="w-10 px-4 py-3.5 text-left">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                        checked={isAllFilteredSelected}
+                        disabled={filteredTeacherIds.length === 0}
+                        onChange={toggleSelectAllFilteredTeachers}
+                        aria-label="Select all teachers"
+                      />
+                    </th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher</th>
+                    {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
+                    {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject & Dept</th> */}
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Weekly Routine</th>
+                    {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Qualification</th> */}
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {currentTeachers.map((teacher) => {
+                    const avatarColor = getAvatarColor(teacher.name);
+                    const teacherInitials = (teacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                    const teacherIsPrincipal = principalIdentitySet.has(String(teacher?.email || '').trim().toLowerCase());
+                    const teacherId = String(teacher._id || teacher.id || '');
+                    return (
+                      <tr key={teacher._id || teacher.id} className="hover:bg-sky-50/30 transition-colors">
+                        <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                            checked={selectedTeacherIds.includes(teacherId)}
+                            onChange={() => toggleTeacherSelection(teacherId)}
+                            aria-label={`Select ${teacher.name || 'teacher'}`}
+                          />
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                              {teacher.profilePic ? (
+                                <img
+                                  src={teacher.profilePic}
+                                  alt={teacher.name || 'Teacher'}
+                                  className="w-full h-full object-cover rounded-full"
+                                />
+                              ) : (
+                                teacherInitials
                               )}
                             </div>
-                            <div className="text-xs text-gray-400 font-mono">ID:{teacher.empId}</div>
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                <span>{teacher.name}</span>
+                                {teacherIsPrincipal && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
+                                    <Crown size={11} />
+                                    Principal
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-400 font-mono">ID:{teacher.empId}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      {/* <td className="px-6 py-4">
+                        </td>
+                        {/* <td className="px-6 py-4">
                         <div className="space-y-1.5">
                           <div className="flex items-center text-sm text-gray-600">
                             <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
@@ -2233,7 +2228,7 @@ const Teachers = ({setShowAdminHeader}) => {
                           </div>
                         </div>
                       </td> */}
-                      {/* <td className="px-6 py-4">
+                        {/* <td className="px-6 py-4">
                         <div className="space-y-1.5">
                           <div className="flex items-center text-sm font-medium text-gray-800">
                             <BookOpen size={13} className="mr-2 text-sky-400 flex-shrink-0" />
@@ -2244,324 +2239,323 @@ const Teachers = ({setShowAdminHeader}) => {
                           </span>
                         </div>
                       </td> */}
-                      <td className="px-6 py-4">
-                        {teacher.scheduleTodayEntries?.length ? (
-                          <div className="space-y-2 min-w-[250px]">
-                            {teacher.scheduleTodayEntries.slice(0, 1).map((entry, idx) => (
-                              <div key={`${teacher.id || teacher._id}-sched-${idx}`} className="text-sm">
-                                <div className="font-medium text-gray-800">{entry.subjectName || 'Class'}</div>
-                                <div className="text-xs text-gray-500">({formatScheduleMeta(entry)})</div>
-                              </div>
-                            ))}
-                            {teacher.scheduleTodayEntries.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setScheduleModal({ teacherName: teacher.name, entries: teacher.scheduleTodayEntries })}
-                                className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline"
-                              >
-                                More ({teacher.scheduleTodayEntries.length - 1})
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-sm text-gray-400">No routine assigned</div>
-                        )}
-                      </td>
-                      {/* <td className="px-6 py-4">
+                        <td className="px-6 py-4">
+                          {teacher.scheduleTodayEntries?.length ? (
+                            <div className="space-y-2 min-w-[250px]">
+                              {teacher.scheduleTodayEntries.slice(0, 1).map((entry, idx) => (
+                                <div key={`${teacher.id || teacher._id}-sched-${idx}`} className="text-sm">
+                                  <div className="font-medium text-gray-800">{entry.subjectName || 'Class'}</div>
+                                  <div className="text-xs text-gray-500">({formatScheduleMeta(entry)})</div>
+                                </div>
+                              ))}
+                              {teacher.scheduleTodayEntries.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setScheduleModal({ teacherName: teacher.name, entries: teacher.scheduleTodayEntries })}
+                                  className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                                >
+                                  More ({teacher.scheduleTodayEntries.length - 1})
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-400">No routine assigned</div>
+                          )}
+                        </td>
+                        {/* <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-800">{teacher.qualification || '-'}</div>
                         <div className="text-xs text-gray-400 mt-0.5">
                           Joined: {teacher.joiningDate ? new Date(teacher.joiningDate).toLocaleDateString() : '-'}
                         </div>
                       </td> */}
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
                           ${teacher.status === 'Present'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : teacher.status === 'Absent'
-                              ? 'bg-rose-100 text-rose-700'
-                              : 'bg-amber-100 text-amber-700'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                            teacher.status === 'Present'
-                              ? 'bg-emerald-500'
+                              ? 'bg-emerald-100 text-emerald-700'
                               : teacher.status === 'Absent'
-                                ? 'bg-rose-500'
-                                : 'bg-amber-500'
-                          }`} />
-                          {teacher.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleViewCredentials(teacher)}
-                            disabled={credentialLoadingId === (teacher._id || teacher.id)}
-                            className="inline-flex items-center gap-1.5 rounded-full font-medium bg-amber-500 text-white hover:bg-amber-600 transition p-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
-                            title="View Credentials"
-                          >
-                            <KeyRound size={13} />
-                            {credentialLoadingId === (teacher._id || teacher.id) ? '' : ''}
-                          </button>
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all"
-                            title="View Details"
-                            onClick={() => setViewTeacher(teacher)}
-                          >
-                            <Eye size={15} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
-                            title={teacherIsPrincipal ? 'Already Principal' : 'Make Principal'}
-                            onClick={() => setMakePrincipalConfirmTeacher(teacher)}
-                            disabled={teacherIsPrincipal || principalLoadingId === (teacher._id || teacher.id)}
-                          >
-                            <Crown size={15} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
-                            title="Edit"
-                            onClick={() => handleEditTeacher(teacher)}
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
-                            title="Archive"
-                            onClick={() => handleArchiveTeacher(teacher)}
-                            disabled={archivingTeacherId === (teacher._id || teacher.id)}
-                          >
-                            {archivingTeacherId === (teacher._id || teacher.id)
-                              ? <Loader2 size={15} className="animate-spin" />
-                              : <Archive size={15} />}
-                          </button>
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all disabled:opacity-40"
-                            title="Delete"
-                            onClick={() => setDeleteConfirmTeacher(teacher)}
-                            disabled={deletingTeacherId === (teacher._id || teacher.id)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {filteredTeachers.length > 0 && (
-            <div className="flex-shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="text-sm text-gray-500">
-                  Showing{' '}
-                  <span className="font-semibold text-gray-700">{indexOfFirstItem + 1}</span>
-                  {' '}–{' '}
-                  <span className="font-semibold text-gray-700">{Math.min(indexOfLastItem, filteredTeachers.length)}</span>
-                  {' '}of{' '}
-                  <span className="font-semibold text-gray-700">{filteredTeachers.length}</span> teachers
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={prevPage}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Previous
-                  </button>
-                  <div className="flex gap-1">
-                    {[...Array(totalPages)].map((_, i) => (
-                      <button
-                        key={i + 1}
-                        onClick={() => paginate(i + 1)}
-                        className={`w-8 h-8 rounded-full text-sm font-medium transition-all
-                          ${currentPage === i + 1
-                            ? 'bg-sky-600 text-white shadow-sm shadow-sky-200'
-                            : 'border border-gray-200 text-gray-600 bg-white hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200'
-                          }`}
-                      >
-                        {i + 1}
-                      </button>
-                    )).slice(Math.max(0, currentPage - 3), Math.min(totalPages, currentPage + 2))}
-                  </div>
-                  <button
-                    onClick={nextPage}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {filteredTeachers.length === 0 && (
-            <div className="text-center py-16">
-              <div className="w-16 h-16 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-4">
-                <GraduationCap size={28} className="text-sky-400" />
-              </div>
-              <p className="text-gray-600 font-semibold">No teachers found</p>
-              <p className="text-gray-400 text-sm mt-1">Try adjusting your search or filters</p>
-            </div>
-          )}
-        </div>}
-
-        {/* Principals Tab */}
-        {activeTab === 'principals' && (
-          <div>
-            {/* Principals search */}
-            <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4">
-              <div className="flex-1 relative">
-                <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search by name or email..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent bg-white shadow-sm text-sm"
-                  value={principalSearchTerm}
-                  onChange={(e) => setPrincipalSearchTerm(e.target.value)}
-                />
-              </div>
-              <button
-                onClick={fetchPrincipals}
-                className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors"
-              >
-                <RefreshCcw />
-              </button>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
-                      <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
-                      <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
-                      <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
-                      <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {loadingPrincipals ? (
-                      <tr>
-                        <td colSpan={4} className="py-16 text-center">
-                          <div className="flex items-center justify-center gap-2 text-gray-400">
-                            <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
-                            Loading principals...
+                                ? 'bg-rose-100 text-rose-700'
+                                : 'bg-amber-100 text-amber-700'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${teacher.status === 'Present'
+                                ? 'bg-emerald-500'
+                                : teacher.status === 'Absent'
+                                  ? 'bg-rose-500'
+                                  : 'bg-amber-500'
+                              }`} />
+                            {teacher.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleViewCredentials(teacher)}
+                              disabled={credentialLoadingId === (teacher._id || teacher.id)}
+                              className="inline-flex items-center gap-1.5 rounded-full font-medium bg-amber-500 text-white hover:bg-amber-600 transition p-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                              title="View Credentials"
+                            >
+                              <KeyRound size={13} />
+                              {credentialLoadingId === (teacher._id || teacher.id) ? '' : ''}
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all"
+                              title="View Details"
+                              onClick={() => setViewTeacher(teacher)}
+                            >
+                              <Eye size={15} />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
+                              title={teacherIsPrincipal ? 'Already Principal' : 'Make Principal'}
+                              onClick={() => setMakePrincipalConfirmTeacher(teacher)}
+                              disabled={teacherIsPrincipal || principalLoadingId === (teacher._id || teacher.id)}
+                            >
+                              <Crown size={15} />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                              title="Edit"
+                              onClick={() => handleEditTeacher(teacher)}
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
+                              title="Archive"
+                              onClick={() => handleArchiveTeacher(teacher)}
+                              disabled={archivingTeacherId === (teacher._id || teacher.id)}
+                            >
+                              {archivingTeacherId === (teacher._id || teacher.id)
+                                ? <Loader2 size={15} className="animate-spin" />
+                                : <Archive size={15} />}
+                            </button>
+                            <button
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all disabled:opacity-40"
+                              title="Delete"
+                              onClick={() => setDeleteConfirmTeacher(teacher)}
+                              disabled={deletingTeacherId === (teacher._id || teacher.id)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
                         </td>
                       </tr>
-                    ) : principals.filter(p => {
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {filteredTeachers.length > 0 && (
+              <div className="flex-shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="text-sm text-gray-500">
+                    Showing{' '}
+                    <span className="font-semibold text-gray-700">{indexOfFirstItem + 1}</span>
+                    {' '}–{' '}
+                    <span className="font-semibold text-gray-700">{Math.min(indexOfLastItem, filteredTeachers.length)}</span>
+                    {' '}of{' '}
+                    <span className="font-semibold text-gray-700">{filteredTeachers.length}</span> teachers
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={prevPage}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Previous
+                    </button>
+                    <div className="flex gap-1">
+                      {[...Array(totalPages)].map((_, i) => (
+                        <button
+                          key={i + 1}
+                          onClick={() => paginate(i + 1)}
+                          className={`w-8 h-8 rounded-full text-sm font-medium transition-all
+                          ${currentPage === i + 1
+                              ? 'bg-sky-600 text-white shadow-sm shadow-sky-200'
+                              : 'border border-gray-200 text-gray-600 bg-white hover:bg-sky-50 hover:text-sky-600 hover:border-sky-200'
+                            }`}
+                        >
+                          {i + 1}
+                        </button>
+                      )).slice(Math.max(0, currentPage - 3), Math.min(totalPages, currentPage + 2))}
+                    </div>
+                    <button
+                      onClick={nextPage}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {filteredTeachers.length === 0 && (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-4">
+                  <GraduationCap size={28} className="text-sky-400" />
+                </div>
+                <p className="text-gray-600 font-semibold">No teachers found</p>
+                <p className="text-gray-400 text-sm mt-1">Try adjusting your search or filters</p>
+              </div>
+            )}
+          </div>}
+
+          {/* Principals Tab */}
+          {activeTab === 'principals' && (
+            <div>
+              {/* Principals search */}
+              <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4">
+                <div className="flex-1 relative">
+                  <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent bg-white shadow-sm text-sm"
+                    value={principalSearchTerm}
+                    onChange={(e) => setPrincipalSearchTerm(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={fetchPrincipals}
+                  className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors"
+                >
+                  <RefreshCcw />
+                </button>
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
+                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
+                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
+                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
+                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {loadingPrincipals ? (
+                        <tr>
+                          <td colSpan={4} className="py-16 text-center">
+                            <div className="flex items-center justify-center gap-2 text-gray-400">
+                              <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
+                              Loading principals...
+                            </div>
+                          </td>
+                        </tr>
+                      ) : principals.filter(p => {
                         const q = principalSearchTerm.toLowerCase();
                         return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
                       }).length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="py-16 text-center">
-                          <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
-                            <Crown size={24} className="text-sky-300" />
-                          </div>
-                          <p className="text-gray-500 font-medium text-sm">No principals found</p>
-                          <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      principals
-                        .filter(p => {
-                          const q = principalSearchTerm.toLowerCase();
-                          return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
-                        })
-                        .map((principal) => {
-                          const avatarColor = getAvatarColor(principal.name);
-                          const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-                          const loginId = principal.username || principal.employeeCode || principal.email || '—';
-                          const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
-                          const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
-                          return (
-                            <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-9 h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
-                                    {principalPhoto ? (
-                                      <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
-                                    ) : initials}
-                                  </div>
-                                  <div>
-                                    <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                                      {principal.name}
-                                      <Crown size={12} className="text-sky-400" />
+                        <tr>
+                          <td colSpan={4} className="py-16 text-center">
+                            <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                              <Crown size={24} className="text-sky-300" />
+                            </div>
+                            <p className="text-gray-500 font-medium text-sm">No principals found</p>
+                            <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        principals
+                          .filter(p => {
+                            const q = principalSearchTerm.toLowerCase();
+                            return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+                          })
+                          .map((principal) => {
+                            const avatarColor = getAvatarColor(principal.name);
+                            const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                            const loginId = principal.username || principal.employeeCode || principal.email || '—';
+                            const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
+                            const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
+                            return (
+                              <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-9 h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                                      {principalPhoto ? (
+                                        <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
+                                      ) : initials}
                                     </div>
-                                    <div className="text-xs text-gray-400">Principal</div>
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                        {principal.name}
+                                        <Crown size={12} className="text-sky-400" />
+                                      </div>
+                                      <div className="text-xs text-gray-400">Principal</div>
+                                    </div>
                                   </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center text-sm text-gray-600">
-                                    <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
-                                    <span className="truncate max-w-[180px]">{principal.email || '—'}</span>
-                                  </div>
-                                  {principal.mobile && (
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="space-y-1.5">
                                     <div className="flex items-center text-sm text-gray-600">
-                                      <Phone size={13} className="mr-2 text-emerald-400 flex-shrink-0" />
-                                      <span>{principal.mobile}</span>
+                                      <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
+                                      <span className="truncate max-w-[180px]">{principal.email || '—'}</span>
                                     </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
-                                  <button
-                                    onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
-                                    className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
-                                    title="Copy Login ID"
-                                  >
-                                    {copiedField === `pid_${principal._id || principal.id}` ? <Check size={13} /> : <Copy size={13} />}
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleViewPrincipalCredentials(principal)}
-                                    disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                    title="Reset & View Credentials"
-                                  >
-                                    {principalCredLoadingId === (principal._id || principal.id) ? (
-                                      <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                      <KeyRound size={13} />
+                                    {principal.mobile && (
+                                      <div className="flex items-center text-sm text-gray-600">
+                                        <Phone size={13} className="mr-2 text-emerald-400 flex-shrink-0" />
+                                        <span>{principal.mobile}</span>
+                                      </div>
                                     )}
-                                    Credentials
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteConfirmPrincipal(principal)}
-                                    disabled={principalDeleteLoadingId === (principal._id || principal.id) || principalCredLoadingId === (principal._id || principal.id)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                    title="Delete Principal"
-                                  >
-                                    {principalDeleteLoadingId === (principal._id || principal.id) ? (
-                                      <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                      <Trash2 size={13} />
-                                    )}
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                    )}
-                  </tbody>
-                </table>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
+                                    <button
+                                      onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
+                                      className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
+                                      title="Copy Login ID"
+                                    >
+                                      {copiedField === `pid_${principal._id || principal.id}` ? <Check size={13} /> : <Copy size={13} />}
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => handleViewPrincipalCredentials(principal)}
+                                      disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                      title="Reset & View Credentials"
+                                    >
+                                      {principalCredLoadingId === (principal._id || principal.id) ? (
+                                        <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <KeyRound size={13} />
+                                      )}
+                                      Credentials
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirmPrincipal(principal)}
+                                      disabled={principalDeleteLoadingId === (principal._id || principal.id) || principalCredLoadingId === (principal._id || principal.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                      title="Delete Principal"
+                                    >
+                                      {principalDeleteLoadingId === (principal._id || principal.id) ? (
+                                        <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <Trash2 size={13} />
+                                      )}
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
 
@@ -2569,10 +2563,9 @@ const Teachers = ({setShowAdminHeader}) => {
       {showAddForm && (() => {
         const fe = (field) => formTouched[field] && formErrors[field];
         const fieldClass = (field) =>
-          `w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all bg-white ${
-            fe(field)
-              ? 'border-red-400 focus:ring-red-300 bg-red-50/30'
-              : 'border-gray-200 focus:ring-sky-400 focus:border-transparent'
+          `w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 transition-all bg-white ${fe(field)
+            ? 'border-red-400 focus:ring-red-300 bg-red-50/30'
+            : 'border-gray-200 focus:ring-sky-400 focus:border-transparent'
           }`;
         const hasErrors = Object.values(formErrors).some(Boolean);
         const isLastTeacherStep = teacherFormStep === TEACHER_STEPS.length - 1;
@@ -2629,508 +2622,508 @@ const Teachers = ({setShowAdminHeader}) => {
                   {/* form card */}
                   <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-7 space-y-6">
 
-                  {/* Section: Basic Information */}
-                  {teacherFormStep === 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <User size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Basic Information</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                      {editingTeacherId && (
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Employee ID</label>
-                          <input type="text" readOnly value={teachers.find((t) => (t._id || t.id) === editingTeacherId)?.empId || '—'}
-                            className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
-                          <p className="mt-1 text-[11px] text-gray-400">Auto-generated, cannot be changed</p>
-                        </div>
-                      )}
-
-                      {/* Full Name */}
+                    {/* Section: Basic Information */}
+                    {teacherFormStep === 0 && (
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Full Name <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="name"
-                            value={newTeacher.name}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., Priya Sharma"
-                            className={`${fieldClass('name')} pl-9`}
+                        <div className="flex items-center gap-2 mb-4">
+                          <User size={13} className="text-sky-500" />
+                          <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Basic Information</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {editingTeacherId && (
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Employee ID</label>
+                              <input type="text" readOnly value={teachers.find((t) => (t._id || t.id) === editingTeacherId)?.empId || '—'}
+                                className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
+                              <p className="mt-1 text-[11px] text-gray-400">Auto-generated, cannot be changed</p>
+                            </div>
+                          )}
+
+                          {/* Full Name */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Full Name <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                name="name"
+                                value={newTeacher.name}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="e.g., Priya Sharma"
+                                className={`${fieldClass('name')} pl-9`}
+                              />
+                            </div>
+                            {fe('name') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.name}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Date of Birth */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Birth</label>
+                            <div className="relative">
+                              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="date"
+                                name="dob"
+                                value={newTeacher.dob}
+                                onChange={handleAddTeacherChange}
+                                className={`${fieldClass('dob')} pl-9`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Gender */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Gender</label>
+                            <select
+                              name="gender"
+                              value={newTeacher.gender}
+                              onChange={handleAddTeacherChange}
+                              onBlur={handleFormBlur}
+                              className={fieldClass('gender')}
+                            >
+                              <option value="">Select gender</option>
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </div>
+
+                          {/* Profile Photo */}
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Profile Photo</label>
+                            <TeacherDocRow
+                              label="Profile Photo"
+                              value={newTeacher.profilePic}
+                              onUpload={async (file, onProgress) => {
+                                const url = await uploadTeacherFile(file, 'teacher_profiles', onProgress);
+                                setNewTeacher((prev) => ({ ...prev, profilePic: url }));
+                              }}
+                              onRemove={() => setNewTeacher((prev) => ({ ...prev, profilePic: '' }))}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Section: Contact Details */}
+                    {teacherFormStep === 1 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Phone size={13} className="text-sky-500" />
+                          <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Contact Details</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {/* Mobile */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Mobile Number <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="tel"
+                                name="mobile"
+                                value={newTeacher.mobile}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="e.g., 9876543210"
+                                className={`${fieldClass('mobile')} pl-9`}
+                              />
+                            </div>
+                            {fe('mobile') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.mobile}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Email */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Email Address <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="email"
+                                name="email"
+                                value={newTeacher.email}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="teacher@school.edu"
+                                className={`${fieldClass('email')} pl-9`}
+                                autoComplete="off"
+                              />
+                            </div>
+                            {fe('email') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.email}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Alternate Phone */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Alternate Phone</label>
+                            <div className="relative">
+                              <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="tel"
+                                name="alternatePhone"
+                                value={newTeacher.alternatePhone}
+                                onChange={handleAddTeacherChange}
+                                placeholder="Optional"
+                                className={`${fieldClass('alternatePhone')} pl-9`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Address */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+                            <div className="relative">
+                              <MapPin size={14} className="absolute left-3 top-3 text-gray-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                name="address"
+                                value={newTeacher.address}
+                                onChange={handleAddTeacherChange}
+                                placeholder="Street address"
+                                className={`${fieldClass('address')} pl-9`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* City */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">City</label>
+                            <input type="text" name="city" value={newTeacher.city} onChange={handleAddTeacherChange}
+                              placeholder="e.g., Kolkata" className={fieldClass('city')} />
+                          </div>
+
+                          {/* District */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">District</label>
+                            <input type="text" name="district" value={newTeacher.district} onChange={handleAddTeacherChange}
+                              placeholder="e.g., Kolkata" className={fieldClass('district')} />
+                          </div>
+
+                          {/* State */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">State</label>
+                            <input type="text" name="state" value={newTeacher.state} onChange={handleAddTeacherChange}
+                              placeholder="e.g., West Bengal" className={fieldClass('state')} />
+                          </div>
+
+                          {/* Pin Code */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">PIN Code</label>
+                            <div className="relative">
+                              <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                name="pinCode"
+                                value={newTeacher.pinCode}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="e.g., 110001"
+                                maxLength={10}
+                                className={`${fieldClass('pinCode')} pl-9`}
+                              />
+                            </div>
+                            {fe('pinCode') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.pinCode}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Section: Professional Information */}
+                    {teacherFormStep === 2 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Briefcase size={13} className="text-sky-500" />
+                          <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Professional Information</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                          {/* Qualification */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Qualification <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Award size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                name="qualification"
+                                value={newTeacher.qualification}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="e.g., M.Sc, B.Ed"
+                                className={`${fieldClass('qualification')} pl-9`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Specialization */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Specialization</label>
+                            <input type="text" name="specialization" value={newTeacher.specialization} onChange={handleAddTeacherChange}
+                              placeholder="e.g., Organic Chemistry" className={fieldClass('specialization')} />
+                          </div>
+
+                          {/* Experience */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Total Teaching Experience (years) <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="number"
+                                name="experience"
+                                value={newTeacher.experience}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="0"
+                                min="0"
+                                max="60"
+                                className={`${fieldClass('experience')} pl-9`}
+                              />
+                            </div>
+                            {fe('experience') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.experience}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Joining Date */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Joining Date <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="date"
+                                name="joiningDate"
+                                value={newTeacher.joiningDate}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                className={`${fieldClass('joiningDate')} pl-9`}
+                              />
+                            </div>
+                            {fe('joiningDate') && (
+                              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                                <XCircle size={11} /> {formErrors.joiningDate}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Designation */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Designation <span className="text-red-500">*</span>
+                            </label>
+                            <input type="text" name="designation" value={newTeacher.designation} onChange={handleAddTeacherChange}
+                              placeholder="e.g., PGT, TGT, Senior Teacher" className={fieldClass('designation')} />
+                          </div>
+
+                          {/* Employee Type */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                              Employee Type <span className="text-red-500">*</span>
+                            </label>
+                            <select name="employeeType" value={newTeacher.employeeType} onChange={handleAddTeacherChange} className={fieldClass('employeeType')}>
+                              <option value="">Select type</option>
+                              <option value="Full-time">Full-time</option>
+                              <option value="Part-time">Part-time</option>
+                              <option value="Contract">Contract</option>
+                              <option value="Visiting">Visiting</option>
+                            </select>
+                          </div>
+
+                          {/* Department */}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department</label>
+                            <div className="relative">
+                              <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                name="department"
+                                value={newTeacher.department}
+                                onChange={handleAddTeacherChange}
+                                onBlur={handleFormBlur}
+                                placeholder="e.g., Science"
+                                className={`${fieldClass('department')} pl-9`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Section: Academic Assignment */}
+                    {/* Section: Login & Access */}
+                    {teacherFormStep === 3 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <KeyRound size={13} className="text-sky-500" />
+                          <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Login & Access</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {!editingTeacherId && (
+                            <div className="md:col-span-2 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
+                              <Info size={14} className="mt-0.5 flex-shrink-0" />
+                              Username and a temporary password are generated automatically on save — you'll see them right after, with an option to email or copy them.
+                            </div>
+                          )}
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Role</label>
+                            <input type="text" readOnly value="Teacher" className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Account Status</label>
+                            <select name="accountStatus" value={newTeacher.accountStatus} onChange={handleAddTeacherChange} className={fieldClass('accountStatus')}>
+                              <option value="Active">Active</option>
+                              <option value="Inactive">Inactive</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Section: Documents */}
+                    {teacherFormStep === 4 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <FileText size={13} className="text-sky-500" />
+                          <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Documents</span>
+                        </div>
+                        <div className="space-y-3">
+                          <TeacherDocRow
+                            label="Aadhaar / ID Proof"
+                            value={newTeacher.documents.aadhaarUrl}
+                            onUpload={async (file, onProgress) => {
+                              const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                              setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: url } }));
+                            }}
+                            onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: '' } }))}
+                          />
+                          <TeacherDocRow
+                            label="Qualification Certificate"
+                            value={newTeacher.documents.qualificationCertUrl}
+                            onUpload={async (file, onProgress) => {
+                              const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                              setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: url } }));
+                            }}
+                            onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: '' } }))}
+                          />
+                          <TeacherDocRow
+                            label="Experience Certificate"
+                            value={newTeacher.documents.experienceCertUrl}
+                            onUpload={async (file, onProgress) => {
+                              const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                              setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: url } }));
+                            }}
+                            onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: '' } }))}
+                          />
+                          <TeacherDocRow
+                            label="Appointment Letter"
+                            value={newTeacher.documents.appointmentLetterUrl}
+                            onUpload={async (file, onProgress) => {
+                              const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
+                              setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: url } }));
+                            }}
+                            onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: '' } }))}
                           />
                         </div>
-                        {fe('name') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.name}
-                          </p>
+                      </div>
+                    )}
+
+                    {/* Section: Additional */}
+                    {teacherFormStep === 5 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Info size={13} className="text-rose-500" />
+                          <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Additional</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Name</label>
+                            <input type="text" name="emergencyContactName" value={newTeacher.emergencyContactName} onChange={handleAddTeacherChange}
+                              className={fieldClass('emergencyContactName')} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Number</label>
+                            <input type="tel" name="emergencyContact" value={newTeacher.emergencyContact} onChange={handleAddTeacherChange}
+                              className={fieldClass('emergencyContact')} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Blood Group</label>
+                            <select name="bloodGroup" value={newTeacher.bloodGroup} onChange={handleAddTeacherChange} className={fieldClass('bloodGroup')}>
+                              <option value="">Select</option>
+                              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                                <option key={bg} value={bg}>{bg}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Notes / Remarks</label>
+                            <textarea name="notes" value={newTeacher.notes} onChange={handleAddTeacherChange} rows={2}
+                              className={fieldClass('notes')} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Section: Review & Submit */}
+                    {isLastTeacherStep && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Check size={13} className="text-emerald-500" />
+                          <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Review & Submit</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                          <div><dt className="text-xs text-gray-400">Full Name</dt><dd className="font-medium text-gray-800">{newTeacher.name || '—'}</dd></div>
+                          <div><dt className="text-xs text-gray-400">Mobile</dt><dd className="font-medium text-gray-800">{newTeacher.mobile || '—'}</dd></div>
+                          <div><dt className="text-xs text-gray-400">Email</dt><dd className="font-medium text-gray-800">{newTeacher.email || '—'}</dd></div>
+                          <div><dt className="text-xs text-gray-400">Designation</dt><dd className="font-medium text-gray-800">{newTeacher.designation || '—'}</dd></div>
+                          <div><dt className="text-xs text-gray-400">Employee Type</dt><dd className="font-medium text-gray-800">{newTeacher.employeeType || '—'}</dd></div>
+                          <div><dt className="text-xs text-gray-400">Account Status</dt><dd className="font-medium text-gray-800">{newTeacher.accountStatus}</dd></div>
+                        </div>
+                        {!editingTeacherId && (
+                          <div className="mt-4 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
+                            <Info size={14} className="mt-0.5 flex-shrink-0" />
+                            Username and a temporary password will be generated automatically once saved.
+                          </div>
                         )}
                       </div>
+                    )}
 
-                      {/* Date of Birth */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Birth</label>
-                        <div className="relative">
-                          <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="date"
-                            name="dob"
-                            value={newTeacher.dob}
-                            onChange={handleAddTeacherChange}
-                            className={`${fieldClass('dob')} pl-9`}
-                          />
-                        </div>
-                      </div>
+                    {/* Required fields note */}
+                    <p className="text-xs text-gray-400"><span className="text-red-500">*</span> Required fields</p>
 
-                      {/* Gender */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Gender</label>
-                        <select
-                          name="gender"
-                          value={newTeacher.gender}
-                          onChange={handleAddTeacherChange}
-                          onBlur={handleFormBlur}
-                          className={fieldClass('gender')}
-                        >
-                          <option value="">Select gender</option>
-                          <option value="male">Male</option>
-                          <option value="female">Female</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </div>
-
-                      {/* Profile Photo */}
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Profile Photo</label>
-                        <TeacherDocRow
-                          label="Profile Photo"
-                          value={newTeacher.profilePic}
-                          onUpload={async (file, onProgress) => {
-                            const url = await uploadTeacherFile(file, 'teacher_profiles', onProgress);
-                            setNewTeacher((prev) => ({ ...prev, profilePic: url }));
-                          }}
-                          onRemove={() => setNewTeacher((prev) => ({ ...prev, profilePic: '' }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Contact Details */}
-                  {teacherFormStep === 1 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Phone size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Contact Details</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                      {/* Mobile */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Mobile Number <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="tel"
-                            name="mobile"
-                            value={newTeacher.mobile}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., 9876543210"
-                            className={`${fieldClass('mobile')} pl-9`}
-                          />
-                        </div>
-                        {fe('mobile') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.mobile}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Email */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Email Address <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="email"
-                            name="email"
-                            value={newTeacher.email}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="teacher@school.edu"
-                            className={`${fieldClass('email')} pl-9`}
-                            autoComplete="off"
-                          />
-                        </div>
-                        {fe('email') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.email}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Alternate Phone */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Alternate Phone</label>
-                        <div className="relative">
-                          <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="tel"
-                            name="alternatePhone"
-                            value={newTeacher.alternatePhone}
-                            onChange={handleAddTeacherChange}
-                            placeholder="Optional"
-                            className={`${fieldClass('alternatePhone')} pl-9`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Address */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
-                        <div className="relative">
-                          <MapPin size={14} className="absolute left-3 top-3 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="address"
-                            value={newTeacher.address}
-                            onChange={handleAddTeacherChange}
-                            placeholder="Street address"
-                            className={`${fieldClass('address')} pl-9`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* City */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">City</label>
-                        <input type="text" name="city" value={newTeacher.city} onChange={handleAddTeacherChange}
-                          placeholder="e.g., Kolkata" className={fieldClass('city')} />
-                      </div>
-
-                      {/* District */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">District</label>
-                        <input type="text" name="district" value={newTeacher.district} onChange={handleAddTeacherChange}
-                          placeholder="e.g., Kolkata" className={fieldClass('district')} />
-                      </div>
-
-                      {/* State */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">State</label>
-                        <input type="text" name="state" value={newTeacher.state} onChange={handleAddTeacherChange}
-                          placeholder="e.g., West Bengal" className={fieldClass('state')} />
-                      </div>
-
-                      {/* Pin Code */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">PIN Code</label>
-                        <div className="relative">
-                          <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="pinCode"
-                            value={newTeacher.pinCode}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., 110001"
-                            maxLength={10}
-                            className={`${fieldClass('pinCode')} pl-9`}
-                          />
-                        </div>
-                        {fe('pinCode') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.pinCode}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Professional Information */}
-                  {teacherFormStep === 2 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Briefcase size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Professional Information</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                      {/* Qualification */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Qualification <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Award size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="qualification"
-                            value={newTeacher.qualification}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., M.Sc, B.Ed"
-                            className={`${fieldClass('qualification')} pl-9`}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Specialization */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Specialization</label>
-                        <input type="text" name="specialization" value={newTeacher.specialization} onChange={handleAddTeacherChange}
-                          placeholder="e.g., Organic Chemistry" className={fieldClass('specialization')} />
-                      </div>
-
-                      {/* Experience */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Total Teaching Experience (years) <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="number"
-                            name="experience"
-                            value={newTeacher.experience}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="0"
-                            min="0"
-                            max="60"
-                            className={`${fieldClass('experience')} pl-9`}
-                          />
-                        </div>
-                        {fe('experience') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.experience}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Joining Date */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Joining Date <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="date"
-                            name="joiningDate"
-                            value={newTeacher.joiningDate}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            className={`${fieldClass('joiningDate')} pl-9`}
-                          />
-                        </div>
-                        {fe('joiningDate') && (
-                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
-                            <XCircle size={11} /> {formErrors.joiningDate}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Designation */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Designation <span className="text-red-500">*</span>
-                        </label>
-                        <input type="text" name="designation" value={newTeacher.designation} onChange={handleAddTeacherChange}
-                          placeholder="e.g., PGT, TGT, Senior Teacher" className={fieldClass('designation')} />
-                      </div>
-
-                      {/* Employee Type */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                          Employee Type <span className="text-red-500">*</span>
-                        </label>
-                        <select name="employeeType" value={newTeacher.employeeType} onChange={handleAddTeacherChange} className={fieldClass('employeeType')}>
-                          <option value="">Select type</option>
-                          <option value="Full-time">Full-time</option>
-                          <option value="Part-time">Part-time</option>
-                          <option value="Contract">Contract</option>
-                          <option value="Visiting">Visiting</option>
-                        </select>
-                      </div>
-
-                      {/* Department */}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department</label>
-                        <div className="relative">
-                          <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                          <input
-                            type="text"
-                            name="department"
-                            value={newTeacher.department}
-                            onChange={handleAddTeacherChange}
-                            onBlur={handleFormBlur}
-                            placeholder="e.g., Science"
-                            className={`${fieldClass('department')} pl-9`}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Academic Assignment */}
-                  {/* Section: Login & Access */}
-                  {teacherFormStep === 3 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <KeyRound size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Login & Access</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {!editingTeacherId && (
-                        <div className="md:col-span-2 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
-                          <Info size={14} className="mt-0.5 flex-shrink-0" />
-                          Username and a temporary password are generated automatically on save — you'll see them right after, with an option to email or copy them.
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Role</label>
-                        <input type="text" readOnly value="Teacher" className="w-full rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-500" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Account Status</label>
-                        <select name="accountStatus" value={newTeacher.accountStatus} onChange={handleAddTeacherChange} className={fieldClass('accountStatus')}>
-                          <option value="Active">Active</option>
-                          <option value="Inactive">Inactive</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Documents */}
-                  {teacherFormStep === 4 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <FileText size={13} className="text-sky-500" />
-                      <span className="text-xs font-bold text-sky-600 uppercase tracking-widest">Documents</span>
-                    </div>
-                    <div className="space-y-3">
-                      <TeacherDocRow
-                        label="Aadhaar / ID Proof"
-                        value={newTeacher.documents.aadhaarUrl}
-                        onUpload={async (file, onProgress) => {
-                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
-                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: url } }));
-                        }}
-                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: '' } }))}
-                      />
-                      <TeacherDocRow
-                        label="Qualification Certificate"
-                        value={newTeacher.documents.qualificationCertUrl}
-                        onUpload={async (file, onProgress) => {
-                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
-                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: url } }));
-                        }}
-                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: '' } }))}
-                      />
-                      <TeacherDocRow
-                        label="Experience Certificate"
-                        value={newTeacher.documents.experienceCertUrl}
-                        onUpload={async (file, onProgress) => {
-                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
-                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: url } }));
-                        }}
-                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: '' } }))}
-                      />
-                      <TeacherDocRow
-                        label="Appointment Letter"
-                        value={newTeacher.documents.appointmentLetterUrl}
-                        onUpload={async (file, onProgress) => {
-                          const url = await uploadTeacherFile(file, 'teacher_documents', onProgress);
-                          setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: url } }));
-                        }}
-                        onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: '' } }))}
-                      />
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Additional */}
-                  {teacherFormStep === 5 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Info size={13} className="text-rose-500" />
-                      <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Additional</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Name</label>
-                        <input type="text" name="emergencyContactName" value={newTeacher.emergencyContactName} onChange={handleAddTeacherChange}
-                          className={fieldClass('emergencyContactName')} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Emergency Contact Number</label>
-                        <input type="tel" name="emergencyContact" value={newTeacher.emergencyContact} onChange={handleAddTeacherChange}
-                          className={fieldClass('emergencyContact')} />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Blood Group</label>
-                        <select name="bloodGroup" value={newTeacher.bloodGroup} onChange={handleAddTeacherChange} className={fieldClass('bloodGroup')}>
-                          <option value="">Select</option>
-                          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
-                            <option key={bg} value={bg}>{bg}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Notes / Remarks</label>
-                        <textarea name="notes" value={newTeacher.notes} onChange={handleAddTeacherChange} rows={2}
-                          className={fieldClass('notes')} />
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Section: Review & Submit */}
-                  {isLastTeacherStep && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <Check size={13} className="text-emerald-500" />
-                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Review & Submit</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                        <div><dt className="text-xs text-gray-400">Full Name</dt><dd className="font-medium text-gray-800">{newTeacher.name || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Mobile</dt><dd className="font-medium text-gray-800">{newTeacher.mobile || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Email</dt><dd className="font-medium text-gray-800">{newTeacher.email || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Designation</dt><dd className="font-medium text-gray-800">{newTeacher.designation || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Employee Type</dt><dd className="font-medium text-gray-800">{newTeacher.employeeType || '—'}</dd></div>
-                        <div><dt className="text-xs text-gray-400">Account Status</dt><dd className="font-medium text-gray-800">{newTeacher.accountStatus}</dd></div>
-                      </div>
-                      {!editingTeacherId && (
-                        <div className="mt-4 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3.5 py-3 text-xs text-sky-700">
-                          <Info size={14} className="mt-0.5 flex-shrink-0" />
-                          Username and a temporary password will be generated automatically once saved.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Required fields note */}
-                  <p className="text-xs text-gray-400"><span className="text-red-500">*</span> Required fields</p>
-
-                  {hasErrors && Object.values(formTouched).some(Boolean) && (
-                    <p className="text-xs text-red-500 flex items-center gap-1.5">
-                      <XCircle size={13} />
-                      Please fix the errors above before submitting.
-                    </p>
-                  )}
+                    {hasErrors && Object.values(formTouched).some(Boolean) && (
+                      <p className="text-xs text-red-500 flex items-center gap-1.5">
+                        <XCircle size={13} />
+                        Please fix the errors above before submitting.
+                      </p>
+                    )}
                   </div>
 
                   {/* right rail */}
@@ -3194,135 +3187,134 @@ const Teachers = ({setShowAdminHeader}) => {
           </div>
         );
         return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden max-h-[88vh] flex flex-col">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden max-h-[88vh] flex flex-col">
 
-            {/* Compact header */}
-            <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 py-4 relative flex-shrink-0">
-              <button
-                onClick={() => setViewTeacher(null)}
-                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
-              >
-                <XCircle size={18} />
-              </button>
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold shadow-lg flex-shrink-0 ${getAvatarColor(viewTeacher.name).bg} ${getAvatarColor(viewTeacher.name).text} overflow-hidden`}>
-                  {viewTeacher.profilePic ? (
-                    <img src={viewTeacher.profilePic} alt={viewTeacher.name || 'Teacher'} className="w-full h-full object-cover" />
-                  ) : (
-                    (viewTeacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-                  )}
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <span>{viewTeacher.name}</span>
-                    {principalIdentitySet.has(String(viewTeacher?.email || '').trim().toLowerCase()) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-100/90 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
-                        <Crown size={11} />
-                        Principal
-                      </span>
+              {/* Compact header */}
+              <div className="bg-gradient-to-r from-sky-600 to-sky-600 px-6 py-4 relative flex-shrink-0">
+                <button
+                  onClick={() => setViewTeacher(null)}
+                  className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"
+                >
+                  <XCircle size={18} />
+                </button>
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold shadow-lg flex-shrink-0 ${getAvatarColor(viewTeacher.name).bg} ${getAvatarColor(viewTeacher.name).text} overflow-hidden`}>
+                    {viewTeacher.profilePic ? (
+                      <img src={viewTeacher.profilePic} alt={viewTeacher.name || 'Teacher'} className="w-full h-full object-cover" />
+                    ) : (
+                      (viewTeacher.name || 'NA').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
                     )}
-                  </h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-sky-200 text-xs font-mono">#{viewTeacher.empId}</p>
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>{viewTeacher.name}</span>
+                      {principalIdentitySet.has(String(viewTeacher?.email || '').trim().toLowerCase()) && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100/90 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
+                          <Crown size={11} />
+                          Principal
+                        </span>
+                      )}
+                    </h2>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-sky-200 text-xs font-mono">#{viewTeacher.empId}</p>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold
                       ${viewTeacher.status === 'Present'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : viewTeacher.status === 'Absent'
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-amber-100 text-amber-700'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        viewTeacher.status === 'Present' ? 'bg-emerald-500' : viewTeacher.status === 'Absent' ? 'bg-rose-500' : 'bg-amber-500'
-                      }`} />
-                      {viewTeacher.status}
-                    </span>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${viewTeacher.accountStatus === 'Inactive' ? 'bg-gray-200 text-gray-600' : 'bg-white/20 text-white'}`}>
-                      {viewTeacher.accountStatus || 'Active'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Body — 3 columns side by side instead of one tall stack */}
-            <div className="overflow-y-auto flex-1">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5 px-6 py-5">
-
-                {/* Column 1: Basic + Contact */}
-                <div className="space-y-4">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Basic & Contact</p>
-                  <div className="space-y-3">
-                    {detail('Email', viewTeacher.email)}
-                    {detail('Mobile', viewTeacher.mobile)}
-                    {detail('Alternate Phone', viewTeacher.alternatePhone)}
-                    {detail('Date of Birth', viewTeacher.dob ? new Date(viewTeacher.dob).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
-                    {detail('Gender', viewTeacher.gender ? viewTeacher.gender.charAt(0).toUpperCase() + viewTeacher.gender.slice(1) : '')}
-                    {detail('Address', [viewTeacher.address, viewTeacher.city, viewTeacher.district, viewTeacher.state, viewTeacher.pinCode].filter(Boolean).join(', '))}
-                  </div>
-                </div>
-
-                {/* Column 2: Professional */}
-                <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Professional</p>
-                  <div className="space-y-3">
-                    {detail('Subject', viewTeacher.subject)}
-                    {detail('Department', viewTeacher.department)}
-                    {detail('Designation', viewTeacher.designation)}
-                    {detail('Employee Type', viewTeacher.employeeType)}
-                    {detail('Qualification', viewTeacher.qualification)}
-                    {detail('Specialization', viewTeacher.specialization)}
-                    {detail('Experience', viewTeacher.experience ? `${viewTeacher.experience} yrs` : '')}
-                    {detail('Joining Date', viewTeacher.joiningDate ? new Date(viewTeacher.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
-                  </div>
-                </div>
-
-                {/* Column 3: Additional + Documents */}
-                <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Additional</p>
-                  <div className="space-y-3">
-                    {detail('Emergency Contact', [viewTeacher.emergencyContactName, viewTeacher.emergencyContact].filter(Boolean).join(' · '))}
-                    {detail('Blood Group', viewTeacher.bloodGroup)}
-                    {detail('Notes', viewTeacher.notes)}
-                  </div>
-
-                  {(viewTeacher.documents?.aadhaarUrl || viewTeacher.documents?.qualificationCertUrl || viewTeacher.documents?.experienceCertUrl || viewTeacher.documents?.appointmentLetterUrl) && (
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1.5">Documents</p>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          ['Aadhaar / ID', viewTeacher.documents?.aadhaarUrl],
-                          ['Qualification Cert.', viewTeacher.documents?.qualificationCertUrl],
-                          ['Experience Cert.', viewTeacher.documents?.experienceCertUrl],
-                          ['Appointment Letter', viewTeacher.documents?.appointmentLetterUrl],
-                        ].filter(([, url]) => url).map(([label, url]) => (
-                          <a
-                            key={label}
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium"
-                          >
-                            <FileText size={12} /> {label}
-                          </a>
-                        ))}
-                      </div>
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : viewTeacher.status === 'Absent'
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-amber-100 text-amber-700'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${viewTeacher.status === 'Present' ? 'bg-emerald-500' : viewTeacher.status === 'Absent' ? 'bg-rose-500' : 'bg-amber-500'
+                          }`} />
+                        {viewTeacher.status}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${viewTeacher.accountStatus === 'Inactive' ? 'bg-gray-200 text-gray-600' : 'bg-white/20 text-white'}`}>
+                        {viewTeacher.accountStatus || 'Active'}
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
-              <button
-                onClick={() => setViewTeacher(null)}
-                className="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
-              >
-                Close
-              </button>
+              {/* Body — 3 columns side by side instead of one tall stack */}
+              <div className="overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5 px-6 py-5">
+
+                  {/* Column 1: Basic + Contact */}
+                  <div className="space-y-4">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Basic & Contact</p>
+                    <div className="space-y-3">
+                      {detail('Email', viewTeacher.email)}
+                      {detail('Mobile', viewTeacher.mobile)}
+                      {detail('Alternate Phone', viewTeacher.alternatePhone)}
+                      {detail('Date of Birth', viewTeacher.dob ? new Date(viewTeacher.dob).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
+                      {detail('Gender', viewTeacher.gender ? viewTeacher.gender.charAt(0).toUpperCase() + viewTeacher.gender.slice(1) : '')}
+                      {detail('Address', [viewTeacher.address, viewTeacher.city, viewTeacher.district, viewTeacher.state, viewTeacher.pinCode].filter(Boolean).join(', '))}
+                    </div>
+                  </div>
+
+                  {/* Column 2: Professional */}
+                  <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Professional</p>
+                    <div className="space-y-3">
+                      {detail('Subject', viewTeacher.subject)}
+                      {detail('Department', viewTeacher.department)}
+                      {detail('Designation', viewTeacher.designation)}
+                      {detail('Employee Type', viewTeacher.employeeType)}
+                      {detail('Qualification', viewTeacher.qualification)}
+                      {detail('Specialization', viewTeacher.specialization)}
+                      {detail('Experience', viewTeacher.experience ? `${viewTeacher.experience} yrs` : '')}
+                      {detail('Joining Date', viewTeacher.joiningDate ? new Date(viewTeacher.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '')}
+                    </div>
+                  </div>
+
+                  {/* Column 3: Additional + Documents */}
+                  <div className="space-y-4 md:border-l md:border-gray-100 md:pl-6">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Additional</p>
+                    <div className="space-y-3">
+                      {detail('Emergency Contact', [viewTeacher.emergencyContactName, viewTeacher.emergencyContact].filter(Boolean).join(' · '))}
+                      {detail('Blood Group', viewTeacher.bloodGroup)}
+                      {detail('Notes', viewTeacher.notes)}
+                    </div>
+
+                    {(viewTeacher.documents?.aadhaarUrl || viewTeacher.documents?.qualificationCertUrl || viewTeacher.documents?.experienceCertUrl || viewTeacher.documents?.appointmentLetterUrl) && (
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1.5">Documents</p>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ['Aadhaar / ID', viewTeacher.documents?.aadhaarUrl],
+                            ['Qualification Cert.', viewTeacher.documents?.qualificationCertUrl],
+                            ['Experience Cert.', viewTeacher.documents?.experienceCertUrl],
+                            ['Appointment Letter', viewTeacher.documents?.appointmentLetterUrl],
+                          ].filter(([, url]) => url).map(([label, url]) => (
+                            <a
+                              key={label}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium"
+                            >
+                              <FileText size={12} /> {label}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+                <button
+                  onClick={() => setViewTeacher(null)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         );
       })()}
 
@@ -3750,11 +3742,10 @@ const Teachers = ({setShowAdminHeader}) => {
                     </code>
                     <button
                       onClick={() => copyCredential(credentialView.employeeCode || credentialView.username, 'id')}
-                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
-                        copiedField === 'id'
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${copiedField === 'id'
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
-                      }`}
+                        }`}
                     >
                       {copiedField === 'id' ? <Check size={12} /> : <Copy size={12} />}
                       {copiedField === 'id' ? 'Copied' : 'Copy'}
@@ -3770,11 +3761,10 @@ const Teachers = ({setShowAdminHeader}) => {
                     {credentialView.canCopyPassword && (
                       <button
                         onClick={() => copyCredential(credentialView.password, 'pass')}
-                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
-                          copiedField === 'pass'
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${copiedField === 'pass'
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
-                        }`}
+                          }`}
                       >
                         {copiedField === 'pass' ? <Check size={12} /> : <Copy size={12} />}
                         {copiedField === 'pass' ? 'Copied' : 'Copy'}
@@ -3861,11 +3851,10 @@ const Teachers = ({setShowAdminHeader}) => {
                     </code>
                     <button
                       onClick={() => copyCredential(principalCredentialView.username || principalCredentialView.email, 'principal_id')}
-                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
-                        copiedField === 'principal_id'
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${copiedField === 'principal_id'
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
-                      }`}
+                        }`}
                     >
                       {copiedField === 'principal_id' ? <Check size={12} /> : <Copy size={12} />}
                       {copiedField === 'principal_id' ? 'Copied' : 'Copy'}
@@ -3881,11 +3870,10 @@ const Teachers = ({setShowAdminHeader}) => {
                     {principalCredentialView.canCopy && (
                       <button
                         onClick={() => copyCredential(principalCredentialView.password, 'principal_pass')}
-                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${
-                          copiedField === 'principal_pass'
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg transition-all font-medium ${copiedField === 'principal_pass'
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-gray-200 hover:bg-sky-100 hover:text-sky-700 text-gray-600'
-                        }`}
+                          }`}
                       >
                         {copiedField === 'principal_pass' ? <Check size={12} /> : <Copy size={12} />}
                         {copiedField === 'principal_pass' ? 'Copied' : 'Copy'}

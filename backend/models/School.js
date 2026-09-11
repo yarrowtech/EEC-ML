@@ -140,11 +140,12 @@ const schoolSchema = new mongoose.Schema(
     teacherLeaveSettings: {
       casualLeaveDays: { type: Number, default: 12 },
     },
-    teacherFeedbackSettings: {
+    teacherFeedbackWindows: [{
+      sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'AcademicYear', required: true },
       enabled: { type: Boolean, default: false },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
-    },
+    }],
   },
   { timestamps: true }
 );

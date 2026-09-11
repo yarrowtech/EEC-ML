@@ -665,7 +665,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                 onChange={(e) => handleFilterGrade(e.target.value)}
                 className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-w-[130px]"
               >
-                <option value="">All Grades</option>
+                <option value="">All Classes</option>
                 {gradeOptions.map((grade) => (
                   <option key={grade} value={grade}>{grade}</option>
                 ))}

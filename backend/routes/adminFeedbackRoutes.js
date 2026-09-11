@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const TeacherFeedback = require('../models/TeacherFeedback');
 const School = require('../models/School');
+const AcademicYear = require('../models/AcademicYear');
 const { notifyTeacherFeedbackWindowStarted } = require('../utils/teacherFeedbackNotify');
 
 const router = express.Router();
@@ -23,12 +24,14 @@ const parseDate = (value, endOfDay = false) => {
   return d;
 };
 
-const normalizeTeacherFeedbackSettings = (schoolDoc) => {
-  const settings = schoolDoc?.teacherFeedbackSettings || {};
+const normalizeTeacherFeedbackSettings = (schoolDoc, sessionId) => {
+  const windows = schoolDoc?.teacherFeedbackWindows || [];
+  const match = windows.find((window) => String(window.sessionId) === String(sessionId));
   return {
-    enabled: Boolean(settings.enabled),
-    startDate: settings.startDate || null,
-    endDate: settings.endDate || null,
+    sessionId: String(sessionId),
+    enabled: Boolean(match?.enabled),
+    startDate: match?.startDate || null,
+    endDate: match?.endDate || null,
   };
 };
 
@@ -40,12 +43,23 @@ router.get('/teacher-feedback/settings', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Valid schoolId is required' });
     }
 
-    const school = await School.findById(schoolId).select('teacherFeedbackSettings').lean();
+    const sessionId = req.query?.sessionId;
+    if (!sessionId || !mongoose.isValidObjectId(sessionId)) {
+      return res.status(400).json({ error: 'Valid sessionId is required' });
+    }
+
+    const [school, session] = await Promise.all([
+      School.findById(schoolId).select('teacherFeedbackWindows').lean(),
+      AcademicYear.findOne({ _id: sessionId, schoolId }).select('_id').lean(),
+    ]);
     if (!school) {
       return res.status(404).json({ error: 'School not found' });
     }
+    if (!session) {
+      return res.status(404).json({ error: 'Academic session not found' });
+    }
 
-    return res.json({ settings: normalizeTeacherFeedbackSettings(school) });
+    return res.json({ settings: normalizeTeacherFeedbackSettings(school, sessionId) });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to load teacher feedback settings' });
   }
@@ -57,6 +71,11 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
     const schoolId = req.schoolId || req.admin?.schoolId || null;
     if (!schoolId || !mongoose.isValidObjectId(schoolId)) {
       return res.status(400).json({ error: 'Valid schoolId is required' });
+    }
+
+    const sessionId = req.body?.sessionId;
+    if (!sessionId || !mongoose.isValidObjectId(sessionId)) {
+      return res.status(400).json({ error: 'Valid sessionId is required' });
     }
 
     const enabled = Boolean(req.body?.enabled);
@@ -72,30 +91,40 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
       }
     }
 
-    const school = await School.findById(schoolId);
+    const [school, session] = await Promise.all([
+      School.findById(schoolId),
+      AcademicYear.findOne({ _id: sessionId, schoolId }).select('_id').lean(),
+    ]);
     if (!school) {
       return res.status(404).json({ error: 'School not found' });
     }
+    if (!session) {
+      return res.status(404).json({ error: 'Academic session not found' });
+    }
 
-    const wasEnabled = Boolean(school.teacherFeedbackSettings?.enabled);
+    const existingIndex = (school.teacherFeedbackWindows || []).findIndex(
+      (window) => String(window.sessionId) === String(sessionId)
+    );
+    const wasEnabled = existingIndex >= 0 ? Boolean(school.teacherFeedbackWindows[existingIndex].enabled) : false;
 
-    school.teacherFeedbackSettings = {
-      enabled,
-      startDate: startDate || null,
-      endDate: endDate || null,
-    };
+    const nextWindow = { sessionId, enabled, startDate: startDate || null, endDate: endDate || null };
+    if (existingIndex >= 0) {
+      school.teacherFeedbackWindows[existingIndex] = nextWindow;
+    } else {
+      school.teacherFeedbackWindows.push(nextWindow);
+    }
 
     await school.save();
 
     if (enabled && !wasEnabled) {
-      notifyTeacherFeedbackWindowStarted({ schoolId: school._id, startDate, endDate }).catch((err) => {
+      notifyTeacherFeedbackWindowStarted({ schoolId: school._id, sessionId, startDate, endDate }).catch((err) => {
         console.error('[teacher-feedback] failed to send start notifications:', err.message);
       });
     }
 
     return res.json({
       message: 'Teacher feedback settings updated',
-      settings: normalizeTeacherFeedbackSettings(school),
+      settings: normalizeTeacherFeedbackSettings(school, sessionId),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to update teacher feedback settings' });

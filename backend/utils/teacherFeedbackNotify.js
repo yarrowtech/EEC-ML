@@ -91,10 +91,10 @@ const createIfMissing = async ({ schoolId, audience, typeLabel, title, message, 
   });
 };
 
-const notifyTeacherFeedbackWindowStarted = async ({ schoolId, startDate, endDate }) => {
+const notifyTeacherFeedbackWindowStarted = async ({ schoolId, sessionId, startDate, endDate }) => {
   if (!schoolId || !startDate || !endDate) return { created: 0 };
   const endLabel = formatDateLabel(endDate);
-  const key = `teacher_feedback_started:${dateKey(startDate)}:${dateKey(endDate)}`;
+  const key = `teacher_feedback_started:${sessionId || 'none'}:${dateKey(startDate)}:${dateKey(endDate)}`;
 
   let created = 0;
   for (const audience of AUDIENCES) {
@@ -120,47 +120,53 @@ const dispatchTeacherFeedbackReminders = async () => {
   if (!todayUtc) return { scanned: 0, created: 0 };
 
   const schools = await School.find({
-    'teacherFeedbackSettings.enabled': true,
-    'teacherFeedbackSettings.endDate': { $gte: todayUtc },
+    teacherFeedbackWindows: {
+      $elemMatch: { enabled: true, endDate: { $gte: todayUtc } },
+    },
   })
-    .select('_id teacherFeedbackSettings')
+    .select('_id teacherFeedbackWindows')
     .lean();
 
   let created = 0;
+  let scanned = 0;
 
   for (const school of schools) {
-    const endDate = school.teacherFeedbackSettings?.endDate;
-    const endUtc = toUtcDateStart(endDate);
-    if (!endUtc) continue;
+    const windows = (school.teacherFeedbackWindows || []).filter((window) => window.enabled && window.endDate);
+    for (const window of windows) {
+      scanned += 1;
+      const endDate = window.endDate;
+      const endUtc = toUtcDateStart(endDate);
+      if (!endUtc) continue;
 
-    const daysLeft = Math.round((endUtc.getTime() - todayUtc.getTime()) / DAY_MS);
+      const daysLeft = Math.round((endUtc.getTime() - todayUtc.getTime()) / DAY_MS);
 
-    let stage = null;
-    if (daysLeft === CLOSING_SOON_DAYS_BEFORE) stage = 'closingSoon';
-    else if (daysLeft === 0) stage = 'lastDay';
-    if (!stage) continue;
+      let stage = null;
+      if (daysLeft === CLOSING_SOON_DAYS_BEFORE) stage = 'closingSoon';
+      else if (daysLeft === 0) stage = 'lastDay';
+      if (!stage) continue;
 
-    const endLabel = formatDateLabel(endDate);
-    const key = stage === 'closingSoon'
-      ? `teacher_feedback_closing_soon:${dateKey(endDate)}`
-      : `teacher_feedback_last_day:${dateKey(endDate)}`;
+      const endLabel = formatDateLabel(endDate);
+      const key = stage === 'closingSoon'
+        ? `teacher_feedback_closing_soon:${window.sessionId}:${dateKey(endDate)}`
+        : `teacher_feedback_last_day:${window.sessionId}:${dateKey(endDate)}`;
 
-    for (const audience of AUDIENCES) {
-      const copy = COPY[stage][audience](endLabel, daysLeft);
-      const doc = await createIfMissing({
-        schoolId: school._id,
-        audience,
-        typeLabel: `${key}:${audience}`,
-        title: copy.title,
-        message: copy.message,
-        expiresAt: endDate,
-        priority: stage === 'lastDay' ? 'high' : 'medium',
-      });
-      if (doc) created += 1;
+      for (const audience of AUDIENCES) {
+        const copy = COPY[stage][audience](endLabel, daysLeft);
+        const doc = await createIfMissing({
+          schoolId: school._id,
+          audience,
+          typeLabel: `${key}:${audience}`,
+          title: copy.title,
+          message: copy.message,
+          expiresAt: endDate,
+          priority: stage === 'lastDay' ? 'high' : 'medium',
+        });
+        if (doc) created += 1;
+      }
     }
   }
 
-  return { scanned: schools.length, created };
+  return { scanned, created };
 };
 
 module.exports = {
