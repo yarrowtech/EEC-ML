@@ -382,6 +382,19 @@ router.get('/at-risk-7day', authTeacher, async (req, res) => {
   } catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
 });
 
+// ── GET /api/teacher-analytics/forecast-validation ────────────────────────────
+// Retrospective backtest of the 7-day score forecast: predicts from evidence up
+// to (now - 7d), then checks each student's own following week as ground truth.
+router.get('/forecast-validation', authTeacher, async (req, res) => {
+  try {
+    const students = await require('../utils/analyticsScope').scopedStudents(req);
+    const data = await require('../services/forecastValidationService').backtestScoreForecast({
+      schoolId: req.schoolId, studentIds: students.map((s) => s._id),
+    });
+    return res.json({ success: true, data });
+  } catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
+});
+
 // ── GET /api/teacher-analytics/misconceptions ─────────────────────────────────
 // Aggregate wrong practice-attempt answers to detect class-wide misconceptions
 router.get('/misconceptions', authTeacher, async (req, res) => {

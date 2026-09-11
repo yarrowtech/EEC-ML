@@ -39,6 +39,7 @@ MODE_TEMPERATURE: dict[str, float] = {
     "summarize":             0.4,
     "notes":                 0.3,
     "mind_map":              0.3,
+    "code_help":             0.35,
 }
 DEFAULT_TEMPERATURE = 0.7
 

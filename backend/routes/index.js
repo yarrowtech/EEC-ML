@@ -69,12 +69,17 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/learning-paths', writeHeavyApiLimiter, require('./learningPathRoutes'));
   app.use('/api/ai-tutor', aiApiLimiter, require('./aiTutorRoutes'));
   app.use('/api/ai-teacher', aiApiLimiter, require('./aiTeacherRoutes'));
+  app.use('/api/video', aiApiLimiter, require('./videoUnderstandingRoutes'));
   app.use('/api/spaced-repetition', require('./spacedRepetitionRoutes'));
   app.use('/api/mastery', require('./masteryRoutes'));
   app.use('/api/recommendations', require('./recommendationRoutes'));
   app.use('/api/study-plans', require('./weeklyStudyPlanRoutes'));
   app.use('/api/engagement', require('./engagementRoutes'));
   app.use('/api/ml', require('./mlRoutes'));
+  app.use('/api/confidence', require('./confidenceRoutes'));
+  app.use('/api/help-seeking', require('./helpSeekingRoutes'));
+  app.use('/api/learning-style', require('./learningStyleRoutes'));
+  app.use('/api/belonging', require('./belongingRoutes'));
   app.use('/api/practice', require('./practiceRoutes'));
   app.use('/api/practice-papers', writeHeavyApiLimiter, require('./practicePaperRoutes'));
   app.use('/api/practice-sections', writeHeavyApiLimiter, require('./practiceSectionRoutes'));

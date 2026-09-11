@@ -25,6 +25,7 @@ from app.modules.language_memory.router import router as memory_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.speech.router import router as speech_router
 from app.modules.summaries.router import router as summaries_router
+from app.modules.video.router import router as video_router
 from app.modules.vision.router import router as vision_router
 
 setup_logging()
@@ -76,6 +77,7 @@ app.include_router(evaluator_router)
 app.include_router(knowledge_graph_router)
 app.include_router(memory_router)
 app.include_router(vision_router)
+app.include_router(video_router)
 
 
 @app.get("/health")

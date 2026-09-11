@@ -596,4 +596,20 @@ router.post('/ai-insights', aiInsightsLimiter, adminAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/admin-analytics/equity-monitoring ────────────────────────────────
+// Checks whether the AI answer evaluator's average score and needs-review rate
+// are consistent across gender cohorts. A flagged gap is a prompt for a human
+// to look closer, not a verdict — see equityMonitoringService.js for the
+// deliberate scope decision (gender only; caste/religion/category excluded).
+router.get('/equity-monitoring', adminAuth, async (req, res) => {
+  try {
+    const { computeGenderModelParity } = require('../services/equityMonitoringService');
+    const sinceDays = Number(req.query.sinceDays) || 90;
+    const data = await computeGenderModelParity({ schoolId: req.schoolId, sinceDays });
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

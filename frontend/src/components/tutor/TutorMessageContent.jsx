@@ -5,8 +5,24 @@
  */
 
 import React from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 import MermaidBlock from './MermaidBlock';
+
+// KaTeX's default settings (trust: false) never evaluate raw HTML/macros like
+// \href, so renderToString's output is safe to inject even though the source
+// LaTeX comes from an LLM response. throwOnError is forced true (rather than
+// KaTeX's default inline red-error-text behavior) so malformed LaTeX falls
+// back to the plain-text rendering below instead of showing a parse error to
+// the student.
+const renderKatexHtml = (expr, displayMode) => {
+  try {
+    return katex.renderToString(expr, { throwOnError: true, displayMode, strict: 'ignore' });
+  } catch {
+    return null;
+  }
+};
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
 // Fenced block: ``` optionally followed by a language token and trailing spaces,
@@ -70,12 +86,23 @@ export const renderInlineTutorText = (text, keyPrefix) => {
         return <strong key={`${keyPrefix}-b-${index}-${segmentIndex}`}>{segment.slice(2, -2)}</strong>;
       }
       if (segment.startsWith('$') && segment.endsWith('$')) {
+        const expr = segment.slice(1, -1);
+        const html = renderKatexHtml(expr, false);
+        if (html) {
+          return (
+            <span
+              key={`${keyPrefix}-math-${index}-${segmentIndex}`}
+              className="mx-0.5 inline-block max-w-full overflow-x-auto align-middle"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        }
         return (
           <code
             key={`${keyPrefix}-math-${index}-${segmentIndex}`}
             className="mx-0.5 inline-block max-w-full overflow-x-auto rounded bg-sky-50 px-1.5 py-0.5 font-mono text-[0.95em] text-sky-950 align-middle"
           >
-            {segment.slice(1, -1)}
+            {expr}
           </code>
         );
       }
@@ -100,11 +127,15 @@ const TutorTextLines = ({ text }) => {
 
         const blockMathMatch = trimmed.match(/^\$\$(.+)\$\$$/);
         if (blockMathMatch) {
+          const expr = blockMathMatch[1].trim();
+          const html = renderKatexHtml(expr, true);
           return (
             <div key={`math-${index}`} className="max-w-full overflow-x-auto rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
-              <code className="block w-max min-w-full whitespace-pre font-mono text-sm text-sky-950">
-                {blockMathMatch[1].trim()}
-              </code>
+              {html ? (
+                <div dangerouslySetInnerHTML={{ __html: html }} />
+              ) : (
+                <code className="block w-max min-w-full whitespace-pre font-mono text-sm text-sky-950">{expr}</code>
+              )}
             </div>
           );
         }

@@ -85,16 +85,14 @@ def parse_summary_json(content: str) -> SummaryResponse:
         raise HTTPException(status_code=502, detail="LLM summary response has an invalid shape.") from exc
 
 
-async def summarize_document(file: UploadFile) -> SummaryResponse:
-    ocr_result = await extract_pdf_text(file)
-    if not ocr_result.text.strip():
-        raise HTTPException(status_code=422, detail="No readable text found in the PDF.")
-
+def summarize_text(text: str) -> SummaryResponse:
+    """Shared summarization core: any already-extracted text (PDF OCR output,
+    a video transcript, ...) in, a structured SummaryResponse out."""
     prompt = (
         "Summarize this document.\n\n"
         "Return only valid JSON with this exact shape:\n"
         '{"summary":"...","keywords":[],"topics":[],"difficulty":"Easy"}\n\n'
-        f"Document text:\n{ocr_result.text}"
+        f"Document text:\n{text}"
     )
 
     llm = ChatOllama(
@@ -115,3 +113,10 @@ async def summarize_document(file: UploadFile) -> SummaryResponse:
         ) from exc
 
     return parse_summary_json(content)
+
+
+async def summarize_document(file: UploadFile) -> SummaryResponse:
+    ocr_result = await extract_pdf_text(file)
+    if not ocr_result.text.strip():
+        raise HTTPException(status_code=422, detail="No readable text found in the PDF.")
+    return summarize_text(ocr_result.text)

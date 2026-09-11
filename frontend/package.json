@@ -25,6 +25,7 @@
     "html2canvas": "^1.4.1",
     "jodit-react": "^5.3.21",
     "jspdf": "^4.2.1",
+    "katex": "^0.18.7",
     "lucide-react": "^0.514.0",
     "mermaid": "^11.17.2",
     "quill": "^2.0.3",

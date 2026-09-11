@@ -405,6 +405,11 @@ router.post('/generate', authStudent, async (req, res) => {
       status: 'success', latencyMs: Date.now() - aiStarted,
     });
 
+    require('../services/helpSeekingService').logFromTutorTurn({
+      schoolId, studentId, subject: normalizeString(subject), topicTitle: normalizedTopic,
+      mode: normalizedMode, question,
+    });
+
     return res.json({
       success: true,
       data: {

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { BookOpen, ClipboardList, CalendarDays, Compass } from 'lucide-react';
 import WelcomeCard from './WelcomeCard';
 import CourseProgress from './CourseProgress';
@@ -98,6 +98,191 @@ const ProgressTrendChart = () => {
           />
         </LineChart>
       </ResponsiveContainer>
+    </div>
+  );
+};
+
+// Same exponential-decay formula the backend uses for /api/spaced-repetition/retention
+// (see estimateRetention in spacedRepetitionRoutes.js) — swept over a day range to draw
+// an actual curve instead of the single-point snapshot the API returns.
+const FORGETTING_CURVE_COLORS = ['#dc2626', '#d97706', '#059669'];
+const forgettingCurvePoints = (intervalDays, maxDays) => Array.from({ length: maxDays + 1 }, (_, day) => ({
+  day, retention: Math.round(100 * Math.pow(0.9, day / (intervalDays || 1))),
+}));
+
+const ForgettingCurveChart = () => {
+  const { data: topics, loading, error, reload } = useCardData(
+    `${API_BASE}/api/spaced-repetition/retention`,
+    (r) => (r?.data || []).slice()
+  );
+
+  if (error) return <CardError label="Retention Forecast" onRetry={reload} />;
+  if (loading || !topics || !topics.length) return null;
+
+  const tracked = [...topics]
+    .sort((a, b) => (a.estimatedRetention ?? 100) - (b.estimatedRetention ?? 100))
+    .slice(0, 3);
+  const maxDays = Math.max(21, ...tracked.map((t) => Math.ceil(t.daysSinceReview || 0) + 3));
+
+  const chartData = Array.from({ length: maxDays + 1 }, (_, day) => {
+    const point = { day };
+    tracked.forEach((t) => {
+      point[t.topicTitle || t.subject] = forgettingCurvePoints(t.intervalDays, maxDays)[day].retention;
+    });
+    return point;
+  });
+
+  return (
+    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm">
+      <p className="mb-1 text-sm font-black text-violet-900">Retention Forecast</p>
+      <p className="mb-3 text-xs text-violet-600">Estimated memory decay since your last review of each topic</p>
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e9d5ff" />
+          <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#7c3aed' }} label={{ value: 'Days since review', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#7c3aed' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#7c3aed' }} domain={[0, 100]} />
+          <ReTooltip contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e9d5ff' }} formatter={(v) => [`${v}%`, 'Retention']} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {tracked.map((t, i) => (
+            <Line
+              key={t.topicTitle || t.subject || i}
+              type="monotone"
+              dataKey={t.topicTitle || t.subject}
+              stroke={FORGETTING_CURVE_COLORS[i % FORGETTING_CURVE_COLORS.length]}
+              strokeWidth={2.5}
+              dot={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+const CALIBRATION_META = {
+  overconfident: { label: 'Overconfident', color: 'text-amber-700 bg-amber-100' },
+  underconfident: { label: 'Underconfident', color: 'text-sky-700 bg-sky-100' },
+  calibrated: { label: 'Well calibrated', color: 'text-emerald-700 bg-emerald-100' },
+  insufficient_data: { label: 'Not enough data', color: 'text-gray-500 bg-gray-100' },
+};
+
+// Learner confidence calibration: the student's own self-rating vs. their actual
+// mastery score per topic (see backend/services/confidenceTrackingService.js).
+const ConfidenceCalibrationCard = () => {
+  const { data: profile, loading, error, reload } = useCardData(
+    `${API_BASE}/api/confidence/profile`,
+    (r) => r?.data || null
+  );
+
+  if (error) return <CardError label="Confidence Calibration" onRetry={reload} />;
+  if (loading || !profile || !profile.topics?.length) return null;
+
+  const overall = CALIBRATION_META[profile.overallLabel] || CALIBRATION_META.insufficient_data;
+
+  return (
+    <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-black text-rose-900">Confidence Calibration</p>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${overall.color}`}>{overall.label}</span>
+      </div>
+      <p className="mb-3 text-xs text-rose-600">How your self-rated confidence compares to your actual mastery</p>
+      <div className="space-y-2">
+        {profile.topics.slice(0, 5).map((t) => {
+          const meta = CALIBRATION_META[t.calibrationLabel] || CALIBRATION_META.insufficient_data;
+          return (
+            <div key={`${t.subject}-${t.topicId}`} className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-3 py-1.5">
+              <span className="truncate text-xs font-semibold text-gray-700">{t.topicTitle || t.topicId}</span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const LEARNING_STYLE_META = {
+  visual: { label: 'Visual', emoji: '🖼️' },
+  reading: { label: 'Reading', emoji: '📖' },
+  'hands-on': { label: 'Hands-on', emoji: '✍️' },
+  listening: { label: 'Guided/Verbal', emoji: '💬' },
+};
+
+// Learning style detection: which tutor content format the student actually
+// engages with most, compared against their self-reported preference.
+// See backend/services/learningStyleService.js.
+const LearningStyleCard = () => {
+  const { data: profile, loading, error, reload } = useCardData(
+    `${API_BASE}/api/learning-style/me`,
+    (r) => r?.data || null
+  );
+
+  if (error) return <CardError label="Learning Style" onRetry={reload} />;
+  if (loading || !profile || profile.dataStatus !== 'available') return null;
+
+  const meta = LEARNING_STYLE_META[profile.detectedStyle] || { label: profile.detectedStyle, emoji: '✨' };
+
+  return (
+    <div className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 shadow-sm">
+      <p className="mb-1 text-sm font-black text-cyan-900">Your Learning Style</p>
+      <p className="mb-3 text-xs text-cyan-600">Based on which study modes you actually use most</p>
+      <div className="flex items-center gap-3 rounded-xl bg-white/70 px-3 py-2.5">
+        <span className="text-2xl">{meta.emoji}</span>
+        <div>
+          <p className="text-sm font-bold text-gray-800">{meta.label}</p>
+          <p className="text-[11px] text-gray-500">{profile.confidence}% of your recent sessions</p>
+        </div>
+      </div>
+      {profile.selfReported && profile.agreesWithSelfReport === false && (
+        <p className="mt-2 text-[11px] text-cyan-700">
+          You told us you prefer <strong>{LEARNING_STYLE_META[profile.selfReported]?.label || profile.selfReported}</strong> — worth trying those modes more often!
+        </p>
+      )}
+    </div>
+  );
+};
+
+const BELONGING_BAND_META = {
+  isolated: { label: 'Just getting started', color: 'text-slate-600 bg-slate-100' },
+  low: { label: 'Getting involved', color: 'text-amber-700 bg-amber-100' },
+  moderate: { label: 'Active in the community', color: 'text-sky-700 bg-sky-100' },
+  active: { label: 'Community champion', color: 'text-emerald-700 bg-emerald-100' },
+};
+
+// Social / belonging — participation in the Alcove peer community (posts,
+// comments, likes) as a light-touch nudge toward staying connected with
+// classmates. See backend/services/belongingService.js.
+const BelongingCard = () => {
+  const { data: profile, loading, error, reload } = useCardData(
+    `${API_BASE}/api/belonging/me`,
+    (r) => r?.data || null
+  );
+
+  if (error) return <CardError label="Community" onRetry={reload} />;
+  if (loading || !profile) return null;
+
+  const meta = BELONGING_BAND_META[profile.band] || BELONGING_BAND_META.isolated;
+
+  return (
+    <div className="rounded-2xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-pink-50 p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-black text-fuchsia-900">Community</p>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.postsAuthored}</p>
+          <p className="text-[10px] text-gray-500">Posts</p>
+        </div>
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.commentsAuthored}</p>
+          <p className="text-[10px] text-gray-500">Comments</p>
+        </div>
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.likesReceived}</p>
+          <p className="text-[10px] text-gray-500">Likes received</p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -383,6 +568,18 @@ const DashboardHome = () => {
 
           {/* Progress Trend */}
           <ProgressTrendChart />
+
+          {/* Forgetting curve — knowledge decay since last review, per topic */}
+          <ForgettingCurveChart />
+
+          {/* Confidence calibration — self-rating vs. actual mastery, per topic */}
+          <ConfidenceCalibrationCard />
+
+          {/* Learning style — detected content-format preference vs. self-report */}
+          <LearningStyleCard />
+
+          {/* Social / belonging — Alcove peer community participation */}
+          <BelongingCard />
 
           {/* Quick Stats */}
           <QuickStats />

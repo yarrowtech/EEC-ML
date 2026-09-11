@@ -7,7 +7,7 @@ import {
   Calendar, Eye, FileText, AlertCircle, Minus, ChevronDown, ChevronRight, Loader2,
   X, RefreshCcw, AlertTriangle, Brain, BookOpen, Clock, Filter,
   Play, CheckCircle, XCircle, ArrowRight, ArrowUp, Lightbulb, Star,
-  UserCheck, Activity, TrendingUp as TrendingUpIcon
+  UserCheck, Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -199,6 +199,11 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const [forecast7d, setForecast7d] = useState([]);
   const [loadingForecast, setLoadingForecast] = useState(false);
+  const [forecastValidation, setForecastValidation] = useState(null);
+  const [confidenceData, setConfidenceData] = useState([]);
+  const [loadingConfidence, setLoadingConfidence] = useState(false);
+  const [helpSeekingData, setHelpSeekingData] = useState([]);
+  const [loadingHelpSeeking, setLoadingHelpSeeking] = useState(false);
   const [forecastFilters, setForecastFilters] = useState({});
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -266,9 +271,11 @@ const StudentAnalyticsPortal = () => {
     if (activeTab === 'intervention') fetchInterventionLogs();
     if (activeTab === 'misconceptions') fetchMisconceptions();
     if (activeTab === 'gaps') fetchClassGaps();
-    if (activeTab === 'forecast') fetchForecast7d();
+    if (activeTab === 'forecast') { fetchForecast7d(); fetchForecastValidation(); }
     if (activeTab === 'mastery-growth') fetchMasteryAll();
     if (activeTab === 'ml') fetchMlScores();
+    if (activeTab === 'confidence') fetchConfidence();
+    if (activeTab === 'help-seeking') fetchHelpSeeking();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -461,6 +468,39 @@ const StudentAnalyticsPortal = () => {
     } catch { /* silent */ } finally { setLoadingForecast(false); }
   }, [forecastFilters]);
 
+  // Retrospective backtest of the underlying score-forecast engine — surfaces how
+  // accurate last week's predictions actually were, instead of leaving the
+  // forecast unvalidated. See backend/services/forecastValidationService.js.
+  const fetchForecastValidation = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/teacher-analytics/forecast-validation`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setForecastValidation(d.data || null); }
+    } catch { /* silent */ }
+  }, []);
+
+  // Teacher-facing confidence calibration — which students most over/under-rate
+  // themselves relative to actual mastery. See backend/routes/confidenceRoutes.js.
+  const fetchConfidence = useCallback(async () => {
+    setLoadingConfidence(true);
+    try {
+      const params = new URLSearchParams();
+      if (ctxGrade) params.set('className', ctxGrade);
+      if (ctxSection) params.set('section', ctxSection);
+      const res = await fetch(`${API_BASE}/api/confidence/class?${params}`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setConfidenceData(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingConfidence(false); }
+  }, []);
+
+  // Teacher-facing help-seeking behaviour — how often each student proactively
+  // reaches for Homework Help / signals they're stuck. See helpSeekingService.js.
+  const fetchHelpSeeking = useCallback(async () => {
+    setLoadingHelpSeeking(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/help-seeking/class`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setHelpSeekingData(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingHelpSeeking(false); }
+  }, []);
+
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH: MASTERY ALL STUDENTS
   // ─────────────────────────────────────────────────────────────────────────
@@ -576,6 +616,8 @@ const StudentAnalyticsPortal = () => {
                 { key: 'forecast',      label: '7-Day Forecast',  icon: Activity       },
                 { key: 'mastery-growth',label: 'Mastery Growth',  icon: Star           },
                 { key: 'ml',            label: 'ML Insights',     icon: Brain          },
+                { key: 'confidence',    label: 'Confidence',      icon: Gauge          },
+                { key: 'help-seeking',  label: 'Help-Seeking',    icon: HandHelping    },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -679,6 +721,7 @@ const StudentAnalyticsPortal = () => {
                 filters={forecastFilters}
                 setFilters={setForecastFilters}
                 onFetch={fetchForecast7d}
+                validation={forecastValidation}
               />
             )}
             {activeTab === 'mastery-growth' && (
@@ -703,9 +746,187 @@ const StudentAnalyticsPortal = () => {
                 ctxSection={ctxSection}
               />
             )}
+            {activeTab === 'confidence' && (
+              <ConfidenceTab data={confidenceData} loading={loadingConfidence} onFetch={fetchConfidence} />
+            )}
+            {activeTab === 'help-seeking' && (
+              <HelpSeekingTab data={helpSeekingData} loading={loadingHelpSeeking} onFetch={fetchHelpSeeking} />
+            )}
           </Motion.div>
         </AnimatePresence>
       </Motion.div>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// CONFIDENCE CALIBRATION TAB — students most over/under-confident relative to
+// their actual mastery score, ranked by the size of the gap. See
+// backend/services/confidenceTrackingService.js for how the gap is computed.
+// ═════════════════════════════════════════════════════════════════════════════
+const CONFIDENCE_LABEL_META = {
+  overconfident: { label: 'Overconfident', cls: 'bg-amber-100 text-amber-700', badge: 'border-amber-200 bg-amber-50' },
+  underconfident: { label: 'Underconfident', cls: 'bg-sky-100 text-sky-700', badge: 'border-sky-200 bg-sky-50' },
+  calibrated: { label: 'Well calibrated', cls: 'bg-emerald-100 text-emerald-700', badge: 'border-emerald-200 bg-emerald-50' },
+};
+
+const ConfidenceTab = ({ data, loading, onFetch }) => {
+  const overconfident = data.filter((s) => s.overallLabel === 'overconfident').length;
+  const underconfident = data.filter((s) => s.overallLabel === 'underconfident').length;
+  const calibrated = data.filter((s) => s.overallLabel === 'calibrated').length;
+
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Gauge className="size-4" /></span>
+            Confidence Calibration
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Students whose self-rated confidence diverges most from their actual mastery, ranked by gap size.</p>
+        </div>
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        </button>
+      </header>
+
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-[1.2rem] border border-amber-200 bg-amber-50 p-3 text-center text-amber-700">
+            <p className="text-2xl font-bold">{overconfident}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Overconfident</p>
+          </div>
+          <div className="rounded-[1.2rem] border border-sky-200 bg-sky-50 p-3 text-center text-sky-700">
+            <p className="text-2xl font-bold">{underconfident}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Underconfident</p>
+          </div>
+          <div className="rounded-[1.2rem] border border-emerald-200 bg-emerald-50 p-3 text-center text-emerald-700">
+            <p className="text-2xl font-bold">{calibrated}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Well calibrated</p>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading calibration data…
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <Gauge className="mb-2 size-10 text-[#8fa8b8]" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No confidence check-ins yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Students haven&apos;t rated their confidence after a quiz in this class yet.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.map((s, i) => {
+            const meta = CONFIDENCE_LABEL_META[s.overallLabel] || CONFIDENCE_LABEL_META.calibrated;
+            return (
+              <Motion.article
+                key={s.studentId || i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.045 }}
+                whileHover={{ y: -2 }}
+                className={`rounded-[1.4rem] border p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5 ${meta.badge}`}
+              >
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
+                    <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}{s.sampleSize ? ` · ${s.sampleSize} check-ins` : ''}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
+                  <span>Avg. gap: <strong>{s.overallGap != null ? `${s.overallGap > 0 ? '+' : ''}${s.overallGap}` : '—'}</strong></span>
+                  <span className="truncate">Topics: {s.topics?.slice(0, 3).map((t) => t.topicTitle || t.topicId).join(', ') || '—'}</span>
+                </div>
+              </Motion.article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HELP-SEEKING BEHAVIOUR TAB — how often each student proactively reaches for
+// help (Homework Help mode, "I don't know" signals). Both extremes matter: a
+// student who never seeks help despite struggling elsewhere is as much a
+// signal as one who seeks it constantly. See backend/services/helpSeekingService.js.
+// ═════════════════════════════════════════════════════════════════════════════
+const HelpSeekingTab = ({ data, loading, onFetch }) => {
+  const activeSeekers = data.filter((s) => s.totalEvents >= 3).length;
+  const frequentStuck = data.filter((s) => s.stuckSignals >= 3).length;
+
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-600"><HandHelping className="size-4" /></span>
+            Help-Seeking Behaviour
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">How often students reach for Homework Help mode or signal they are stuck, in the last 30 days.</p>
+        </div>
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        </button>
+      </header>
+
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-[1.2rem] border border-teal-200 bg-teal-50 p-3 text-center text-teal-700">
+            <p className="text-2xl font-bold">{activeSeekers}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Active help-seekers</p>
+          </div>
+          <div className="rounded-[1.2rem] border border-amber-200 bg-amber-50 p-3 text-center text-amber-700">
+            <p className="text-2xl font-bold">{frequentStuck}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Frequently stuck</p>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading help-seeking data…
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <HandHelping className="mb-2 size-10 text-[#8fa8b8]" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No help-seeking activity yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Nobody in this class has used Homework Help mode in the last 30 days.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.map((s, i) => (
+            <Motion.article
+              key={s.studentId || i}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.045 }}
+              whileHover={{ y: -2 }}
+              className="rounded-[1.4rem] border border-teal-100 bg-teal-50/40 p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5"
+            >
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
+                  <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-teal-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-teal-700">
+                  {s.totalEvents} event{s.totalEvents === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
+                <span>Homework Help: <strong>{s.homeworkHelpUsed}</strong></span>
+                <span>Stuck signals: <strong>{s.stuckSignals}</strong></span>
+                <span className="truncate">Top: {s.topSubjects?.map((t) => t.subject).join(', ') || '—'}</span>
+              </div>
+            </Motion.article>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1654,7 +1875,7 @@ const ClassGapsTab = ({ data, loading, filters, setFilters, onFetch }) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // 7-DAY FORECAST TAB
 // ═════════════════════════════════════════════════════════════════════════════
-const ForecastTab = ({ data, loading, onFetch }) => {
+const ForecastTab = ({ data, loading, onFetch, validation }) => {
   const levelBg    = (l) => l === 'critical' ? 'border-red-200 bg-red-50'     : l === 'high' ? 'border-orange-200 bg-orange-50'  : 'border-amber-200 bg-amber-50';
   const levelBadge = (l) => l === 'critical' ? 'bg-red-100 text-red-700'      : l === 'high' ? 'bg-orange-100 text-orange-700'  : 'bg-amber-100 text-amber-700';
   const levelIcon  = (l) => l === 'critical' ? <XCircle className="size-4" /> : l === 'high' ? <AlertCircle className="size-4" /> : <AlertTriangle className="size-4" />;
@@ -1678,6 +1899,34 @@ const ForecastTab = ({ data, loading, onFetch }) => {
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
         </button>
       </header>
+
+      {/* Forecast validation — how accurate the underlying prediction engine has
+          actually been, backtested against each student's own later results. */}
+      {validation && validation.dataStatus === 'available' && (
+        <div className="rounded-[1.2rem] border border-[#e2e8ee] bg-[#f8fafc] p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#5a7a8e]">
+            Forecast accuracy (last {validation.horizonDays}-day backtest, {validation.sampleSize} students)
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div>
+              <p className="text-lg font-bold text-[#1a2e3f]">{validation.failurePrediction.accuracy != null ? `${Math.round(validation.failurePrediction.accuracy * 100)}%` : '—'}</p>
+              <p className="text-[10px] text-[#5a7a8e]">Pass/fail accuracy</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-[#1a2e3f]">{validation.failurePrediction.precision != null ? `${Math.round(validation.failurePrediction.precision * 100)}%` : '—'}</p>
+              <p className="text-[10px] text-[#5a7a8e]">Precision</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-[#1a2e3f]">{validation.failurePrediction.recall != null ? `${Math.round(validation.failurePrediction.recall * 100)}%` : '—'}</p>
+              <p className="text-[10px] text-[#5a7a8e]">Recall</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-[#1a2e3f]">{validation.regression.mae != null ? `±${validation.regression.mae}` : '—'}</p>
+              <p className="text-[10px] text-[#5a7a8e]">Avg. score error</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stat strip */}
       {!loading && data.length > 0 && (
@@ -2093,6 +2342,26 @@ const MLStudentDetailModal = ({ student, onClose }) => {
                     <div className="flex justify-between text-xs text-gray-600 mb-1"><span>{labels[key]}</span><span>{val}%</span></div>
                     <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
                       <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${val}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+
+              <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-400">Dimensions</p>
+              {[
+                { key: 'behavioural', label: 'Behavioural', color: 'bg-sky-400', hint: 'views + time + submissions' },
+                { key: 'situational', label: 'Situational', color: 'bg-amber-400', hint: 'recency of last activity' },
+                { key: 'emotional', label: 'Emotional', color: 'bg-rose-400', hint: 'wellbeing signals, if available' },
+              ].map(({ key, label, color, hint }) => {
+                const val = detail.engagement?.dimensions?.[key];
+                return (
+                  <div key={key} className="mb-2">
+                    <div className="flex justify-between text-xs text-gray-600 mb-1">
+                      <span title={hint}>{label}</span>
+                      <span>{val == null ? '—' : `${val}%`}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div className={`h-full rounded-full ${color}`} style={{ width: `${val ?? 0}%` }} />
                     </div>
                   </div>
                 );

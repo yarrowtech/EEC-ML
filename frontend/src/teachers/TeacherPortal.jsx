@@ -50,6 +50,7 @@ import StudentAnalyticsPortal from './StudentAnalyticsPortal';
 import AILearningPath from './AILearningPath';
 import TestTeacherPortal from './TestTeacherPortal';
 import AIPoweredTeaching from './AIPoweredTeaching';
+import VideoUnderstandingTool from './VideoUnderstandingTool';
 import GenerateAIPathPortal from './GenerateAIPathPortal';
 import TeacherAIToolsPanel from './TeacherAIToolsPanel';
 import MyWorkPortal from './MyWorkPortal';
@@ -121,6 +122,7 @@ const teachingSectionLinks = [
   { label: 'Language Practice', to: 'language-practice' },
   { label: 'Study Materials', to: 'study-materials' },
   { label: 'AI Teaching Assistant', to: 'ai-assistant' },
+  { label: 'Video Lecture', to: 'video-lecture' },
 ];
 
 const assessmentSectionLinks = [
@@ -1810,6 +1812,7 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
                 <Route path="teaching/study-materials" element={<TeacherAlcove />} />
                 <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
+                <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
                 <Route path="assignments" element={<Navigate to="manage" replace />} />
                 <Route path="assignments/manage" element={<AssignmentPortal view="manage" />} />
                 <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" />} />

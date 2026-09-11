@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, ChevronRight, RefreshCw, Brain, BookOpen, Repeat2, Zap, Leaf } from 'lucide-react';
+import { Sparkles, ChevronRight, RefreshCw, Brain, BookOpen, Repeat2, Zap, Leaf, X } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
@@ -32,6 +32,23 @@ const RecommendationWidget = ({ onStartTutor }) => {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Student agency: record the student's own accept/dismiss decision on each
+  // recommendation instead of only inferring it from whether they clicked through.
+  const respond = (id, decision) => {
+    if (!id) return;
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE}/api/recommendations/${id}/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  };
+
+  const dismiss = (e, item) => {
+    e.stopPropagation();
+    setItems((prev) => prev.filter((i) => i !== item));
+    respond(item.id, 'dismiss');
+  };
 
   if (loading) return (
     <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
@@ -67,28 +84,43 @@ const RecommendationWidget = ({ onStartTutor }) => {
             const meta = TYPE_META[item.type] || TYPE_META.new_topic;
             const Icon = meta.icon;
             return (
-              <Motion.button
+              <Motion.div
                 key={`${item.subject}-${item.topicId}-${i}`}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, height: 0 }}
                 transition={{ delay: i * 0.06 }}
-                onClick={() => onStartTutor?.({
-                  subject: item.subject,
-                  topic:   item.topicTitle,
-                  mode:    item.action,
-                  difficulty: item.difficulty,
-                })}
-                className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all hover:shadow-md hover:-translate-y-0.5 ${meta.border} ${meta.color.replace('text-', 'hover:bg-').replace('-700','-50')} bg-white`}
+                className={`group flex w-full items-center gap-1 rounded-xl border p-1 transition-all hover:shadow-md ${meta.border} bg-white`}
               >
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.color}`}>
-                  <Icon className="size-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-800 truncate">{item.label} — {item.topicTitle || item.subject}</p>
-                  <p className="text-[11px] text-slate-500 truncate mt-0.5">{item.reason}</p>
-                </div>
-                <ChevronRight className="size-4 shrink-0 text-slate-300" />
-              </Motion.button>
+                <button
+                  onClick={() => {
+                    respond(item.id, 'accept');
+                    onStartTutor?.({
+                      subject: item.subject,
+                      topic:   item.topicTitle,
+                      mode:    item.action,
+                      difficulty: item.difficulty,
+                    });
+                  }}
+                  className="flex flex-1 min-w-0 items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-slate-50"
+                >
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.color}`}>
+                    <Icon className="size-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{item.label} — {item.topicTitle || item.subject}</p>
+                    <p className="text-[11px] text-slate-500 truncate mt-0.5">{item.reason}</p>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                </button>
+                <button
+                  onClick={(e) => dismiss(e, item)}
+                  title="Not interested in this right now"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-300 opacity-0 transition-opacity hover:bg-slate-100 hover:text-slate-500 group-hover:opacity-100"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </Motion.div>
             );
           })}
         </AnimatePresence>

@@ -65,6 +65,8 @@ import {
   Trash2,
   MessageSquarePlus,
   Images,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -94,6 +96,7 @@ import { useStudentDashboard } from './StudentDashboardContext';
 import { saveLearningActivity } from '../utils/learningContinuity';
 import { TutorMessageContent, renderInlineTutorText } from './tutor/TutorMessageContent';
 import TutorVisualSources from './tutor/TutorVisualSources';
+import TutorReasoningTrace from './tutor/TutorReasoningTrace';
 import TutorGeneratedVisuals from './tutor/TutorGeneratedVisuals';
 import TutorAnswerActions from './tutor/TutorAnswerActions';
 import TutorEmptyState from './tutor/TutorEmptyState';
@@ -118,6 +121,7 @@ const CHIP_MODES = {
   'Mind Map':             'mind_map',
   Flashcards:             'flashcards',
   'Homework Help':        'homework_help',
+  'Code Help':            'code_help',
   'Explain Back':         'explain_back',
   'Real World':           'real_world',
   'Basic Practice':       'practice_basic',
@@ -146,6 +150,7 @@ const GENERATED_MODE_META = {
   notes:                   { label: 'Notes',                   icon: NotebookPen          },
   explain:                 { label: 'Explanation',             icon: Lightbulb            },
   homework_help:           { label: 'Homework help',           icon: MessageCircleQuestion},
+  code_help:               { label: 'Code help',               icon: Code2                },
   explain_back:            { label: 'Explain Back',            icon: RotateCw             },
   real_world:              { label: 'Real world',              icon: Globe2               },
   misconception:           { label: 'Misconception explainer', icon: BrainCircuit         },
@@ -277,6 +282,8 @@ function QuizUI({ text, onMisconception, onQuizComplete, subject, topic }) {
   const [picks, setPicks] = useState({});
   const [shown, setShown] = useState({});
   const [done, setDone] = useState(false);
+  const [confidenceRating, setConfidenceRating] = useState(null);
+  const [calibration, setCalibration] = useState(null);
 
   const finishQuiz = () => {
     setDone(true);
@@ -284,6 +291,26 @@ function QuizUI({ text, onMisconception, onQuizComplete, subject, topic }) {
       const correct = questions.filter((q, i) => picks[i] === q.answer).length;
       const pct = Math.round((correct / questions.length) * 100);
       onQuizComplete(pct, subject, topic);
+    }
+  };
+
+  // Learner confidence check-in: self-rating is compared server-side against
+  // the student's actual mastery score for this topic to flag over/under-confidence.
+  const submitConfidence = async (rating) => {
+    setConfidenceRating(rating);
+    if (!subject && !topic) return;
+    try {
+      const token = localStorage.getItem('token');
+      const topicId = topic ? topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'general';
+      const res = await fetch(`${API_BASE}/api/confidence/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject, topicId, topicTitle: topic, confidenceRating: rating, source: 'post_quiz' }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) setCalibration(data.data.calibrationLabel);
+    } catch {
+      // non-critical — confidence tracking must never block the quiz UI
     }
   };
 
@@ -301,8 +328,37 @@ function QuizUI({ text, onMisconception, onQuizComplete, subject, topic }) {
         <p className="text-4xl mb-1">{emoji}</p>
         <p className="text-3xl font-extrabold text-violet-800">{correct}/{questions.length}</p>
         <p className="text-sm text-violet-600 mt-1">Questions correct</p>
+
+        {(subject || topic) && (
+          <div className="mt-4 border-t border-violet-100 pt-4">
+            {confidenceRating == null ? (
+              <>
+                <p className="mb-2 text-xs font-semibold text-violet-700">How confident do you feel about this topic now?</p>
+                <div className="flex justify-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => submitConfidence(n)}
+                      title={['Not at all', 'A little', 'Somewhat', 'Confident', 'Very confident'][n - 1]}
+                      className="flex size-8 items-center justify-center rounded-full border border-violet-200 bg-white text-xs font-bold text-violet-600 transition-colors hover:bg-violet-100"
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-violet-600">
+                Thanks for checking in!{' '}
+                {calibration === 'overconfident' && "This topic might need another look even though it feels easy."}
+                {calibration === 'underconfident' && "You're doing better here than you think."}
+              </p>
+            )}
+          </div>
+        )}
+
         <button
-          onClick={() => { setIdx(0); setPicks({}); setShown({}); setDone(false); }}
+          onClick={() => { setIdx(0); setPicks({}); setShown({}); setDone(false); setConfidenceRating(null); setCalibration(null); }}
           className="mt-4 rounded-xl bg-violet-500 px-5 py-2 text-sm font-semibold text-white hover:bg-violet-600 transition-colors"
         >
           Try Again
@@ -2706,6 +2762,7 @@ const COMPANION_CHIPS = [
   { label: 'Mind Map',              icon: Network              },
   { label: 'Flashcards',            icon: Layers3              },
   { label: 'Homework Help',         icon: MessageCircleQuestion},
+  { label: 'Code Help',             icon: Code2                },
   { label: 'Explain Back',          icon: RotateCw             },
   { label: 'Real World',            icon: Globe2               },
   { label: 'Basic Practice',        icon: BookOpen             },
@@ -2744,6 +2801,7 @@ const STARTER_PROMPTS = [
   { mode: 'Create Quiz', text: 'Make me a 5-question quiz', icon: Target },
   { mode: 'Flashcards', text: 'Turn this chapter into flashcards', icon: Layers3 },
   { mode: 'Homework Help', text: 'Help me solve this step by step', icon: MessageCircleQuestion },
+  { mode: 'Code Help', text: 'Help me fix a bug in my code', icon: Code2 },
   { mode: 'Explain Back', text: 'Check if my understanding is correct', icon: RotateCw },
 ];
 
@@ -3502,6 +3560,9 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const composerRef = useRef(null);
   const recognitionRef = useRef(null);
   const [listening, setListening] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [speakingId, setSpeakingId] = useState(null);
+  const lastAutoSpokenIdRef = useRef(null);
   const [copiedId, setCopiedId] = useState(null);
   const [showJump, setShowJump] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -3672,6 +3733,43 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     rec.start();
   };
   useEffect(() => () => { try { recognitionRef.current?.stop(); } catch { /* noop */ } }, []);
+
+  // Voice Tutor output half of the loop: read a tutor answer aloud via the
+  // browser's native TTS engine. Strips markdown/LaTeX markup so the speech
+  // doesn't read out asterisks, dollar signs, or fenced code blocks.
+  const supportsSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const speakText = (text, id) => {
+    if (!supportsSpeech) return;
+    window.speechSynthesis.cancel();
+    const clean = String(text || '')
+      .replace(/```[\s\S]*?```/g, ' code block omitted ')
+      .replace(/\$\$?[^$]+\$\$?/g, ' formula omitted ')
+      .replace(/[*_#>`]/g, '')
+      .trim();
+    if (!clean) return;
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1;
+    utterance.onend = () => setSpeakingId((current) => (current === id ? null : current));
+    utterance.onerror = () => setSpeakingId((current) => (current === id ? null : current));
+    setSpeakingId(id);
+    window.speechSynthesis.speak(utterance);
+  };
+  const stopSpeaking = () => {
+    if (supportsSpeech) window.speechSynthesis.cancel();
+    setSpeakingId(null);
+  };
+  useEffect(() => () => { if (supportsSpeech) window.speechSynthesis.cancel(); }, [supportsSpeech]);
+
+  // When auto-speak is on, read the tutor's latest answer aloud as soon as it
+  // finishes streaming — completes the voice loop for a student who asked by mic.
+  useEffect(() => {
+    if (!autoSpeak) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.text) return;
+    if (lastAutoSpokenIdRef.current === last.id) return;
+    lastAutoSpokenIdRef.current = last.id;
+    speakText(last.text, last.id);
+  }, [autoSpeak, messages]);
   const streamTimersRef = useRef([]);
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
   const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
@@ -3878,6 +3976,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
         noMaterialFound: payload.data?.noMaterialFound,
         citations: Array.isArray(payload.data?.citations) ? payload.data.citations : [],
         visuals: Array.isArray(payload.data?.visuals) ? payload.data.visuals : [],
+        lineage: payload.data?.lineage || null,
       });
       if (generatedContent.trim()) {
         onGeneratedStudyItem(buildGeneratedStudyItem({
@@ -4128,7 +4227,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram', 'explain_back'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'diagram', 'explain_back'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -4157,7 +4256,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'diagram', 'explain_back'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'diagram', 'explain_back'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
@@ -4238,7 +4337,20 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                         : <><Copy className="size-3" /> Copy</>}
                                     </button>
                                   )}
+                                  {!msg.streaming && supportsSpeech && (
+                                    <button
+                                      type="button"
+                                      onClick={() => (speakingId === msg.id ? stopSpeaking() : speakText(msg.text, msg.id))}
+                                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#FEF3C7] hover:text-[#B45309]"
+                                      aria-label={speakingId === msg.id ? 'Stop reading aloud' : 'Read answer aloud'}
+                                    >
+                                      {speakingId === msg.id
+                                        ? <><VolumeX className="size-3 text-[#F59E0B]" /> Stop</>
+                                        : <><Volume2 className="size-3" /> Listen</>}
+                                    </button>
+                                  )}
                                 </div>
+                                {!msg.streaming && <TutorReasoningTrace lineage={msg.lineage} citations={msg.citations} />}
                                 {!msg.streaming && i === messages.length - 1 && (
                                   <TutorAnswerActions
                                     onRetry={msg.requestChip
@@ -4515,6 +4627,26 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                   </Motion.button>
                 </TooltipTrigger>
                 <TooltipContent>{listening ? 'Listening… tap to stop' : 'Speak your question'}</TooltipContent>
+              </Tooltip>
+            )}
+
+            {supportsSpeech && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => { if (autoSpeak) stopSpeaking(); setAutoSpeak((v) => !v); }}
+                    className={cn(
+                      'flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors',
+                      autoSpeak ? 'bg-[#F59E0B] text-white' : 'text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]'
+                    )}
+                    aria-label={autoSpeak ? 'Turn off reading answers aloud' : 'Turn on reading answers aloud'}
+                    aria-pressed={autoSpeak}
+                  >
+                    {autoSpeak ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{autoSpeak ? 'Voice replies on — tap to mute' : 'Read answers aloud automatically'}</TooltipContent>
               </Tooltip>
             )}
 
