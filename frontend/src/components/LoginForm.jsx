@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AUTH_NOTICE, consumeAuthNotice } from '../utils/authSession';
+import { AUTH_NOTICE, consumeAuthNotice, purgeStaleSessionCaches } from '../utils/authSession';
 import { useTenant } from '../context/TenantContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -262,6 +262,7 @@ const LoginForm = () => {
         }
 
         const loginData = await loginRes.json();
+        purgeStaleSessionCaches();
         localStorage.setItem('token', loginData.token);
         localStorage.setItem('userType', resetUserType);
         await refreshBranding();
@@ -303,6 +304,7 @@ const LoginForm = () => {
         return;
       }
 
+      purgeStaleSessionCaches();
       localStorage.setItem('token', data.token);
       localStorage.setItem('userType', data.userType);
       await refreshBranding();

@@ -27,7 +27,7 @@ const resolveApiBaseUrl = () => {
 // Keys / key-prefixes that hold user-scoped data (dashboard snapshots, cached
 // API responses, points, chat history, E2EE material). These must not survive a
 // logout on a shared device.
-const SENSITIVE_LS_KEYS = ['token', 'userType', 'studentDashboardCacheV1'];
+const SENSITIVE_LS_KEYS = ['token', 'userType'];
 const SENSITIVE_LS_PREFIXES = [
   'student-api-cache:',
   'parent-api-cache:',
@@ -39,6 +39,11 @@ const SENSITIVE_LS_PREFIXES = [
   'tutorChatHistory',
   'learningContinuity',
 ];
+
+// Same idea, but for caches written to sessionStorage (see utils/studentCache.js).
+// These aren't scoped per-user/per-token, so a stale entry left behind by a
+// previous login on the same tab must be removed explicitly on logout.
+const SENSITIVE_SS_KEYS = ['studentDashboardCacheV1', 'studentRoutineCacheV1'];
 
 const purgeSensitiveLocalStorage = () => {
   try {
@@ -52,11 +57,28 @@ const purgeSensitiveLocalStorage = () => {
   } catch {
     // ignore storage access errors
   }
+  try {
+    SENSITIVE_SS_KEYS.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    // ignore storage access errors
+  }
+};
+
+// Call right before writing a fresh token/userType at login, so a new session
+// on a shared tab never inherits a previous account's cached sessionStorage
+// data (e.g. if the prior session ended without going through logout).
+export const purgeStaleSessionCaches = () => {
+  try {
+    SENSITIVE_SS_KEYS.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    // ignore storage access errors
+  }
 };
 
 export const clearAuthData = ({ clearAllLocalStorage = false } = {}) => {
   if (clearAllLocalStorage) {
     try { localStorage.clear(); } catch { /* ignore */ }
+    try { SENSITIVE_SS_KEYS.forEach((k) => sessionStorage.removeItem(k)); } catch { /* ignore */ }
     resetBrowserBranding();
     return;
   }
