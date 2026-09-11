@@ -398,7 +398,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [rooms, setRooms] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]); // for the Step 5 "Total Students" count
-  const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '' });
+  const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '', principalName: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishingGroupId, setPublishingGroupId] = useState('');
@@ -510,9 +510,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       fetch(`${API_BASE}/api/admin/users/get-teachers`, { headers: h }),
       fetch(`${API_BASE}/api/admin/users/get-students`, { headers: h }),
       fetch(`${API_BASE}/api/reports/report-cards/template`, { headers: h }),
+      // The template endpoint only carries `principalLabel` (a caption like
+      // "Principal", not a person) — the actual principal's name lives on
+      // this endpoint instead.
+      fetch(`${API_BASE}/api/reports/report-cards/signatories`, { headers: h }),
     ]);
     const parse = async (r) => r.status === 'fulfilled' ? (await r.value.json().catch(() => [])) : [];
-    const [y, c, s, sub, b, f, rm, tch, stu, template] = await Promise.all(results.map(parse));
+    const [y, c, s, sub, b, f, rm, tch, stu, template, signatories] = await Promise.all(results.map(parse));
     const yearItems = Array.isArray(y) ? y : [];
     setYears(yearItems);
     const activeYear = yearItems.find((item) => item?.isActive);
@@ -534,7 +538,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     setPdfHeader({
       schoolName: String(template?.schoolName || '').trim(),
       schoolAddressLine: String(template?.schoolAddressLine || '').trim(),
-      logoUrl: String(template?.logoUrl || template?.logoUrlOverride || '').trim(),
+      logoUrl: String(template?.logoUrl || '').trim(),
+      principalName: String(signatories?.principalName || '').trim(),
     });
   };
 
@@ -695,8 +700,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         .sort((a, b) => naturalCompare(a.name, b.name));
       const classNames = classItems.map((c) => c.name);
       const academicYearId = classItems[0]?.academicYearId || '';
+      // Ascending class order everywhere this batch's groups are consumed
+      // (Routine tab, routine PDF, etc.) — Class 5 before Class 6, and by
+      // section within the same class — instead of DB/insertion order.
+      const orderedGroups = [...batch.groups].sort((a, b) => {
+        const classDiff = naturalCompare(a.classId?.name || a.grade, b.classId?.name || b.grade);
+        if (classDiff !== 0) return classDiff;
+        return naturalCompare(a.sectionId?.name || a.section, b.sectionId?.name || b.section);
+      });
       return {
         ...batch,
+        groups: orderedGroups,
         classIds: Array.from(batch.classIdSet),
         classNames,
         totalClasses: classItems.length,
@@ -1994,176 +2008,1344 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     };
   };
 
+  // const generateBatchExamSchedulePdf = async (batch) => {
+  //   if (!batch?.groups?.length) return;
+  //   const title = String(batch.title || 'Exam Schedule').trim();
+  //   const firstClassId = batch.groups[0]?.classId?._id || batch.groups[0]?.classId || '';
+  //   const classItem = classes.find((item) => String(item._id) === String(firstClassId));
+  //   const yearName = years.find((y) => String(y._id) === String(classItem?.academicYearId || ''))?.name || '';
+
+  //   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  //   const pageWidth = doc.internal.pageSize.getWidth();
+  //   const margin = 12;
+  //   let y = 0;
+
+  //   doc.setFillColor(15, 23, 42);
+  //   doc.rect(0, 0, pageWidth, 38, 'F');
+  //   doc.setFillColor(30, 58, 138);
+  //   doc.rect(0, 0, 5, 38, 'F');
+
+  //   const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
+  //   if (logoDataUrl) {
+  //     try {
+  //       doc.setFillColor(255, 255, 255);
+  //       doc.roundedRect(margin, 6, 24, 24, 2, 2, 'F');
+  //       doc.addImage(logoDataUrl, 'PNG', margin + 1, 7, 22, 22);
+  //     } catch { /* ignore */ }
+  //   }
+
+  //   const textX = logoDataUrl ? margin + 30 : margin + 8;
+  //   doc.setTextColor(255, 255, 255);
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(14);
+  //   doc.text((pdfHeader.schoolName || 'School').toUpperCase(), textX, 18);
+  //   doc.setFont('helvetica', 'normal');
+  //   doc.setFontSize(8.5);
+  //   doc.setTextColor(148, 163, 184);
+  //   if (pdfHeader.schoolAddressLine) {
+  //     doc.text(pdfHeader.schoolAddressLine, textX, 26);
+  //   }
+
+  //   y = 46;
+
+  //   doc.setFillColor(238, 242, 255);
+  //   doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'F');
+  //   doc.setDrawColor(199, 210, 254);
+  //   doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'S');
+
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(13);
+  //   doc.setTextColor(30, 27, 75);
+  //   doc.text(title, pageWidth / 2, y + 4, { align: 'center' });
+
+  //   doc.setFont('helvetica', 'normal');
+  //   doc.setFontSize(8.5);
+  //   doc.setTextColor(99, 102, 241);
+  //   const meta = [
+  //     yearName ? `Session: ${yearName}` : '',
+  //     `Classes: ${batch.classRangeLabel || '—'}`,
+  //     `${batch.groups.length} Section${batch.groups.length !== 1 ? 's' : ''}`,
+  //   ].filter(Boolean).join('   •   ');
+  //   doc.text(meta, pageWidth / 2, y + 11, { align: 'center' });
+
+  //   y += 26;
+
+  //   // const headers = ['Date', 'Day', 'Class', 'Subject', 'Venue'];
+  //   const headers = [
+  //     "Date",
+  //     "Day",
+  //     "Subject",
+  //     "Time",
+  //     "Duration",
+  //     "Building",
+  //     "Floor",
+  //     "Room",
+  //   ];
+  //   const colWidths = [22, 22, 28, 52, 62];
+  //   const tableW = colWidths.reduce((s, v) => s + v, 0);
+  //   const startX = margin;
+  //   const headerRowH = 9;
+  //   const lineH = 4.3;
+
+  //   doc.setFillColor(30, 41, 59);
+  //   doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
+  //   doc.setTextColor(255, 255, 255);
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(9);
+  //   let x = startX;
+  //   headers.forEach((h, i) => {
+  //     doc.text(h, x + colWidths[i] / 2, y + 6, { align: 'center' });
+  //     x += colWidths[i];
+  //   });
+  //   y += headerRowH;
+
+  //   // Every subject from every class/section, sorted by actual date (falling
+  //   // back to class name so undated rows still group predictably).
+  //   const rows = batch.groups.flatMap((group) => {
+  //     const className = group.classId?.name || group.grade || '—';
+  //     const sectionName = group.sectionId?.name || group.section || '—';
+  //     return (group.subjects || []).map((exam) => {
+  //       const date = exam?.date ? new Date(exam.date) : null;
+  //       const dateText = date && !Number.isNaN(date.getTime())
+  //         ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  //         : '—';
+  //       const dayText = date && !Number.isNaN(date.getTime())
+  //         ? date.toLocaleDateString('en-US', { weekday: 'long' })
+  //         : '—';
+  //       const subjectName = exam?.subjectId?.name || exam?.subject || 'Subject';
+  //       const buildingName = exam?.roomId?.floorId?.buildingId?.name;
+  //       const floorName = exam?.roomId?.floorId?.name;
+  //       const roomNumber = exam?.roomId?.roomNumber;
+  //       const venueParts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
+  //       const venue = venueParts.length ? venueParts.join(' / ') : (exam?.venue || '—');
+  //       return { sortKey: exam?.date || '', classSection: `${className} - ${sectionName}`, cells: [dateText, dayText, `${className} - ${sectionName}`, subjectName, venue] };
+  //     });
+  //   }).sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)) || a.classSection.localeCompare(b.classSection, undefined, { numeric: true }))
+  //     .map((r) => r.cells);
+
+  //   if (!rows.length) {
+  //     rows.push(['—', '—', '—', 'No subjects added yet', '—']);
+  //   }
+
+  //   rows.forEach((row, idx) => {
+  //     const wrapped = row.map((cell, i) => doc.splitTextToSize(String(cell || ''), colWidths[i] - 4));
+  //     const lineCount = Math.max(...wrapped.map((lines) => lines.length));
+  //     const rowH = Math.max(9, lineCount * lineH + 4.5);
+
+  //     if (y + rowH > 285) {
+  //       doc.addPage();
+  //       y = 14;
+  //     }
+  //     const isEven = idx % 2 === 0;
+  //     doc.setFillColor(isEven ? 248 : 255, isEven ? 250 : 255, isEven ? 252 : 255);
+  //     doc.rect(startX, y, tableW, rowH, 'F');
+
+  //     doc.setDrawColor(226, 232, 240);
+  //     doc.rect(startX, y, tableW, rowH, 'S');
+
+  //     doc.setDrawColor(226, 232, 240);
+  //     let sepX = startX;
+  //     colWidths.forEach((w, i) => {
+  //       sepX += w;
+  //       if (i < colWidths.length - 1) {
+  //         doc.line(sepX, y, sepX, y + rowH);
+  //       }
+  //     });
+
+  //     doc.setTextColor(51, 65, 85);
+  //     doc.setFont('helvetica', 'normal');
+  //     doc.setFontSize(9);
+  //     let cx = startX;
+  //     wrapped.forEach((lines, i) => {
+  //       const align = i >= 3 ? 'left' : 'center';
+  //       const textXPos = align === 'left' ? cx + 2.5 : cx + colWidths[i] / 2;
+  //       lines.forEach((line, li) => {
+  //         doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
+  //       });
+  //       cx += colWidths[i];
+  //     });
+  //     y += rowH;
+  //   });
+
+  //   y += 8;
+  //   doc.setDrawColor(226, 232, 240);
+  //   doc.line(margin, y, pageWidth - margin, y);
+  //   y += 5;
+  //   doc.setFontSize(7.5);
+  //   doc.setTextColor(148, 163, 184);
+  //   doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`, margin, y);
+  //   doc.text(pdfHeader.schoolName || '', pageWidth - margin, y, { align: 'right' });
+
+  //   const safeFile = `${title}_all_classes`.replace(/[^\w.-]+/g, '_').toLowerCase();
+  //   doc.save(`${safeFile}_schedule.pdf`);
+  // };
   const generateBatchExamSchedulePdf = async (batch) => {
-    if (!batch?.groups?.length) return;
-    const title = String(batch.title || 'Exam Schedule').trim();
-    const firstClassId = batch.groups[0]?.classId?._id || batch.groups[0]?.classId || '';
-    const classItem = classes.find((item) => String(item._id) === String(firstClassId));
-    const yearName = years.find((y) => String(y._id) === String(classItem?.academicYearId || ''))?.name || '';
+    if (!batch?.groups?.length) {
+      toast.error("No classes found for this exam.");
+      return;
+    }
 
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
+    // ============================================================
+    // BASIC DATA
+    // ============================================================
+
+    const title =
+      String(batch.title || "Exam Schedule").trim();
+
+    // batch.academicYearId is already resolved by the examBatches aggregation
+    // (from the first class in natural sort order) — reuse it directly so the
+    // PDF always matches what the Overview tab's "Academic Year" row shows,
+    // instead of recomputing from batch.groups[0] (insertion order, which can
+    // land on a different, unassigned-year class).
+    const yearName =
+      years.find(
+        (y) =>
+          String(y._id) ===
+          String(batch.academicYearId || "")
+      )?.name || "";
+
+    // ============================================================
+    // PDF
+    // ============================================================
+
+    const doc = new jsPDF({
+      orientation: "p",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth =
+      doc.internal.pageSize.getWidth();
+
+    const pageHeight =
+      doc.internal.pageSize.getHeight();
+
     const margin = 12;
-    let y = 0;
 
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, pageWidth, 38, 'F');
-    doc.setFillColor(30, 58, 138);
-    doc.rect(0, 0, 5, 38, 'F');
+    const contentWidth =
+      pageWidth - margin * 2;
 
-    const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
-    if (logoDataUrl) {
-      try {
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(margin, 6, 24, 24, 2, 2, 'F');
-        doc.addImage(logoDataUrl, 'PNG', margin + 1, 7, 22, 22);
-      } catch { /* ignore */ }
-    }
+    const totalPages =
+      batch.groups.length;
 
-    const textX = logoDataUrl ? margin + 30 : margin + 8;
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text((pdfHeader.schoolName || 'School').toUpperCase(), textX, 18);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(148, 163, 184);
-    if (pdfHeader.schoolAddressLine) {
-      doc.text(pdfHeader.schoolAddressLine, textX, 26);
-    }
+    // ============================================================
+    // COLORS
+    // ============================================================
 
-    y = 46;
+    const colors = {
+      navy: [15, 41, 82],
+      dark: [30, 41, 59],
+      text: [51, 65, 85],
+      muted: [100, 116, 139],
 
-    doc.setFillColor(238, 242, 255);
-    doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'F');
-    doc.setDrawColor(199, 210, 254);
-    doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'S');
+      border: [203, 213, 225],
+      lightBorder: [226, 232, 240],
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(30, 27, 75);
-    doc.text(title, pageWidth / 2, y + 4, { align: 'center' });
+      headerBg: [241, 243, 255],
+      headerBorder: [199, 210, 254],
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(99, 102, 241);
-    const meta = [
-      yearName ? `Session: ${yearName}` : '',
-      `Classes: ${batch.classRangeLabel || '—'}`,
-      `${batch.groups.length} Section${batch.groups.length !== 1 ? 's' : ''}`,
-    ].filter(Boolean).join('   •   ');
-    doc.text(meta, pageWidth / 2, y + 11, { align: 'center' });
+      badgeBg: [232, 221, 255],
 
-    y += 26;
+      instructionBg: [247, 249, 252],
+    };
 
-    // const headers = ['Date', 'Day', 'Class', 'Subject', 'Venue'];
-    const headers = [
-      "Date",
-      "Day",
-      "Subject",
-      "Time",
-      "Duration",
-      "Building",
-      "Floor",
-      "Room",
-    ];
-    const colWidths = [22, 22, 28, 52, 62];
-    const tableW = colWidths.reduce((s, v) => s + v, 0);
-    const startX = margin;
-    const headerRowH = 9;
-    const lineH = 4.3;
+    // ============================================================
+    // SCHOOL INFORMATION
+    // ============================================================
 
-    doc.setFillColor(30, 41, 59);
-    doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    let x = startX;
-    headers.forEach((h, i) => {
-      doc.text(h, x + colWidths[i] / 2, y + 6, { align: 'center' });
-      x += colWidths[i];
-    });
-    y += headerRowH;
+    const schoolName =
+      pdfHeader?.schoolName ||
+      "School Name";
 
-    // Every subject from every class/section, sorted by actual date (falling
-    // back to class name so undated rows still group predictably).
-    const rows = batch.groups.flatMap((group) => {
-      const className = group.classId?.name || group.grade || '—';
-      const sectionName = group.sectionId?.name || group.section || '—';
-      return (group.subjects || []).map((exam) => {
-        const date = exam?.date ? new Date(exam.date) : null;
-        const dateText = date && !Number.isNaN(date.getTime())
-          ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-          : '—';
-        const dayText = date && !Number.isNaN(date.getTime())
-          ? date.toLocaleDateString('en-US', { weekday: 'long' })
-          : '—';
-        const subjectName = exam?.subjectId?.name || exam?.subject || 'Subject';
-        const buildingName = exam?.roomId?.floorId?.buildingId?.name;
-        const floorName = exam?.roomId?.floorId?.name;
-        const roomNumber = exam?.roomId?.roomNumber;
-        const venueParts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
-        const venue = venueParts.length ? venueParts.join(' / ') : (exam?.venue || '—');
-        return { sortKey: exam?.date || '', classSection: `${className} - ${sectionName}`, cells: [dateText, dayText, `${className} - ${sectionName}`, subjectName, venue] };
-      });
-    }).sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)) || a.classSection.localeCompare(b.classSection, undefined, { numeric: true }))
-      .map((r) => r.cells);
+    const schoolAddress =
+      pdfHeader?.schoolAddressLine ||
+      "";
 
-    if (!rows.length) {
-      rows.push(['—', '—', '—', 'No subjects added yet', '—']);
-    }
+    const principalName =
+      pdfHeader?.principalName ||
+      "";
 
-    rows.forEach((row, idx) => {
-      const wrapped = row.map((cell, i) => doc.splitTextToSize(String(cell || ''), colWidths[i] - 4));
-      const lineCount = Math.max(...wrapped.map((lines) => lines.length));
-      const rowH = Math.max(9, lineCount * lineH + 4.5);
+    // ============================================================
+    // LOGO
+    // ============================================================
 
-      if (y + rowH > 285) {
-        doc.addPage();
-        y = 14;
+    let logoDataUrl = null;
+
+    try {
+      if (pdfHeader?.logoUrl) {
+        logoDataUrl =
+          await toDataUrl(
+            pdfHeader.logoUrl
+          );
       }
-      const isEven = idx % 2 === 0;
-      doc.setFillColor(isEven ? 248 : 255, isEven ? 250 : 255, isEven ? 252 : 255);
-      doc.rect(startX, y, tableW, rowH, 'F');
+    } catch (error) {
+      console.warn(
+        "Unable to load school logo:",
+        error
+      );
+    }
 
-      doc.setDrawColor(226, 232, 240);
-      doc.rect(startX, y, tableW, rowH, 'S');
+    // ============================================================
+    // RENDER ONE CLASS / SECTION PAGE
+    // ============================================================
 
-      doc.setDrawColor(226, 232, 240);
-      let sepX = startX;
-      colWidths.forEach((w, i) => {
-        sepX += w;
-        if (i < colWidths.length - 1) {
-          doc.line(sepX, y, sepX, y + rowH);
+    const renderClassPage = (
+      group,
+      pageIndex
+    ) => {
+
+      // ----------------------------------------------------------
+      // PAGE
+      // ----------------------------------------------------------
+
+      if (pageIndex > 0) {
+        doc.addPage();
+      }
+
+      let y = 12;
+
+      // ----------------------------------------------------------
+      // CLASS / SECTION
+      // ----------------------------------------------------------
+
+      const className =
+        group?.classId?.name ||
+        group?.grade ||
+        "—";
+
+      const sectionName =
+        group?.sectionId?.name ||
+        group?.section ||
+        "—";
+
+      // ----------------------------------------------------------
+      // SCHOOL HEADER
+      // ----------------------------------------------------------
+
+      const schoolHeaderHeight = 30;
+
+      // Logo
+      if (logoDataUrl) {
+        try {
+          doc.addImage(
+            logoDataUrl,
+            "PNG",
+            margin,
+            y,
+            24,
+            24
+          );
+        } catch (error) {
+          console.warn(
+            "Logo could not be added:",
+            error
+          );
         }
-      });
+      }
 
-      doc.setTextColor(51, 65, 85);
-      doc.setFont('helvetica', 'normal');
+      // ----------------------------------------------------------
+      // SCHOOL NAME
+      // ----------------------------------------------------------
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(15);
+
+      doc.setTextColor(
+        ...colors.navy
+      );
+
+      doc.text(
+        schoolName.toUpperCase(),
+        pageWidth / 2,
+        y + 8,
+        {
+          align: "center",
+        }
+      );
+
+      // ----------------------------------------------------------
+      // ADDRESS
+      // ----------------------------------------------------------
+
+      // if (schoolAddress) {
+      //   doc.setFont(
+      //     "helvetica",
+      //     "normal"
+      //   );
+
+      //   doc.setFontSize(7.5);
+
+      //   doc.setTextColor(
+      //     ...colors.text
+      //   );
+
+      //   const addressLines =
+      //     doc.splitTextToSize(
+      //       schoolAddress,
+      //       contentWidth - 45
+      //     );
+
+      //   doc.text(
+      //     addressLines,
+      //     pageWidth / 2,
+      //     y + 14,
+      //     {
+      //       align: "center",
+      //       lineHeightFactor: 1.3,
+      //     }
+      //   );
+      // }
+
+      if (schoolAddress) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(...colors.text);
+
+        const addressLines = doc.splitTextToSize(
+          schoolAddress,
+          contentWidth - 45
+        );
+
+        doc.text(
+          addressLines,
+          pageWidth / 2,
+          y + 14,
+          {
+            align: "center",
+            lineHeightFactor: 1.3,
+          }
+        );
+
+        // Academic Year - centered below address
+        // doc.setFont("helvetica", "bold");
+        // doc.setFontSize(8);
+        // doc.setTextColor(...colors.text);
+
+        // doc.text(
+        //   "Academic Year: 2025-2026",
+        //   pageWidth / 2,
+        //   y + 14 + (addressLines.length * 7.5 * 1.3) + 4,
+        //   {
+        //     align: "center",
+        //   }
+        // );
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(...colors.text);
+
+        doc.text(
+          "ACADEMIC SESSION",
+          pageWidth / 2,
+          y + 14 + (addressLines.length * 7.5 * 1.3) - 3,
+          {
+            align: "center",
+          }
+        );
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+
+        doc.text(
+          "2025-2026",
+          pageWidth / 2,
+          y + 14 + (addressLines.length * 7.5 * 1.3) + 4,
+          {
+            align: "center",
+          }
+        );
+      }
+
+      // ----------------------------------------------------------
+      // ACADEMIC SESSION
+      // ----------------------------------------------------------
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(7);
+
+      doc.setTextColor(
+        ...colors.muted
+      );
+
+      doc.text(
+        "ACADEMIC SESSION",
+        pageWidth - margin,
+        y + 6,
+        {
+          align: "right",
+        }
+      );
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(8);
+
+      doc.setTextColor(
+        ...colors.dark
+      );
+
+      doc.text(
+        yearName || "—",
+        pageWidth - margin,
+        y + 12,
+        {
+          align: "right",
+        }
+      );
+
+      // ----------------------------------------------------------
+      // HEADER LINE
+      // ----------------------------------------------------------
+
+      doc.setDrawColor(
+        ...colors.dark
+      );
+
+      doc.setLineWidth(0.35);
+
+      doc.line(
+        margin,
+        y + schoolHeaderHeight,
+        pageWidth - margin,
+        y + schoolHeaderHeight
+      );
+
+      y += schoolHeaderHeight + 8;
+
+      // ==========================================================
+      // EXAM TITLE
+      // ==========================================================
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(15);
+
+      doc.setTextColor(
+        ...colors.navy
+      );
+
+      // doc.text(
+      //   title,
+      //   pageWidth / 2,
+      //   y,
+      //   {
+      //     align: "center",
+      //   }
+      // );
+
+      // y += 6;
+
+      // // Examination Routine
+      // doc.setFontSize(10);
+
+      // doc.setTextColor(
+      //   ...colors.muted
+      // );
+
+      // doc.text(
+      //   "EXAMINATION ROUTINE",
+      //   pageWidth / 2,
+      //   y,
+      //   {
+      //     align: "center",
+      //   }
+      // );
+
+      // y += 8;
+
+      // ==========================================================
+      // CLASS BADGE
+      // ==========================================================
+      // Examination Routine
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(...colors.muted);
+
+      doc.text(
+        "EXAMINATION ROUTINE",
+        pageWidth / 2,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 5;
+
+      // "for"
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...colors.muted);
+
+      doc.text(
+        "for",
+        pageWidth / 2,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 6;
+
+      // Exam title
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(...colors.navy);
+
+      doc.text(
+        title,
+        pageWidth / 2,
+        y,
+        {
+          align: "center",
+        }
+      );
+
+      y += 10;
+      const badgeText =
+        `CLASS ${className}  •  SECTION ${sectionName}`;
+
+      const badgeWidth = 82;
+      const badgeHeight = 10;
+
+      const badgeX =
+        (pageWidth - badgeWidth) / 2;
+
+      doc.setFillColor(
+        ...colors.badgeBg
+      );
+
+      doc.roundedRect(
+        badgeX,
+        y,
+        badgeWidth,
+        badgeHeight,
+        3,
+        3,
+        "F"
+      );
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
       doc.setFontSize(9);
-      let cx = startX;
-      wrapped.forEach((lines, i) => {
-        const align = i >= 3 ? 'left' : 'center';
-        const textXPos = align === 'left' ? cx + 2.5 : cx + colWidths[i] / 2;
-        lines.forEach((line, li) => {
-          doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
-        });
-        cx += colWidths[i];
-      });
-      y += rowH;
-    });
 
-    y += 8;
-    doc.setDrawColor(226, 232, 240);
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 5;
-    doc.setFontSize(7.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`, margin, y);
-    doc.text(pdfHeader.schoolName || '', pageWidth - margin, y, { align: 'right' });
+      doc.setTextColor(
+        ...colors.dark
+      );
 
-    const safeFile = `${title}_all_classes`.replace(/[^\w.-]+/g, '_').toLowerCase();
-    doc.save(`${safeFile}_schedule.pdf`);
+      doc.text(
+        badgeText,
+        pageWidth / 2,
+        y + 6.5,
+        {
+          align: "center",
+        }
+      );
+
+      y += badgeHeight + 9;
+
+      // ==========================================================
+      // TABLE
+      // ==========================================================
+
+      const headers = [
+        "Date",
+        "Day",
+        "Subject",
+        "Time",
+        "Duration",
+        "Building",
+        "Floor",
+        "Room",
+      ];
+
+      const colWidths = [
+        21,
+        16,
+        37,
+        25,
+        19,
+        29,
+        18,
+        27,
+      ];
+
+      const tableWidth =
+        colWidths.reduce(
+          (sum, width) =>
+            sum + width,
+          0
+        );
+
+      const headerHeight = 9;
+
+      // ----------------------------------------------------------
+      // TABLE HEADER
+      // ----------------------------------------------------------
+
+      doc.setFillColor(
+        ...colors.navy
+      );
+
+      doc.roundedRect(
+        margin,
+        y,
+        tableWidth,
+        headerHeight,
+        2,
+        2,
+        "F"
+      );
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(7);
+
+      doc.setTextColor(
+        255,
+        255,
+        255
+      );
+
+      let x = margin;
+
+      headers.forEach(
+        (header, index) => {
+
+          doc.text(
+            header,
+            x +
+            colWidths[index] / 2,
+            y + 5.8,
+            {
+              align: "center",
+            }
+          );
+
+          x +=
+            colWidths[index];
+        }
+      );
+
+      y += headerHeight;
+
+      // ==========================================================
+      // SUBJECT ROWS
+      // ==========================================================
+
+      const subjects =
+        Array.isArray(group?.subjects)
+          ? [...group.subjects]
+          : [];
+
+      subjects.sort(
+        (a, b) =>
+          String(
+            a?.date || ""
+          ).localeCompare(
+            String(
+              b?.date || ""
+            )
+          )
+      );
+
+      if (!subjects.length) {
+        subjects.push(null);
+      }
+
+      subjects.forEach(
+        (exam, rowIndex) => {
+
+          // ------------------------------------------------------
+          // DATE
+          // ------------------------------------------------------
+
+          const date =
+            exam?.date
+              ? new Date(exam.date)
+              : null;
+
+          const validDate =
+            date &&
+            !Number.isNaN(
+              date.getTime()
+            );
+
+          const dateText =
+            validDate
+              ? date.toLocaleDateString(
+                "en-GB",
+                {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                }
+              )
+              : "—";
+
+          const dayText =
+            validDate
+              ? date.toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "short",
+                }
+              )
+              : "—";
+
+          // ------------------------------------------------------
+          // SUBJECT
+          // ------------------------------------------------------
+
+          const subjectName =
+            exam?.subjectId?.name ||
+            exam?.subject ||
+            "No subjects added yet";
+
+          // ------------------------------------------------------
+          // TIME
+          // ------------------------------------------------------
+
+          let timeText = "—";
+
+          if (exam?.time) {
+            timeText =
+              formatTimeLabel(
+                exam.time
+              );
+          }
+
+          // If your backend contains start/end time
+          if (
+            exam?.startTime &&
+            exam?.endTime
+          ) {
+            timeText =
+              `${exam.startTime} – ${exam.endTime}`;
+          }
+
+          // ------------------------------------------------------
+          // DURATION
+          // ------------------------------------------------------
+
+          let durationText =
+            "—";
+
+          if (
+            exam?.duration !==
+            undefined &&
+            exam?.duration !==
+            null &&
+            exam?.duration !== ""
+          ) {
+            durationText =
+              formatDuration(
+                exam.duration
+              );
+          }
+
+          // ------------------------------------------------------
+          // BUILDING
+          // ------------------------------------------------------
+
+          const buildingName =
+            exam?.roomId
+              ?.floorId
+              ?.buildingId
+              ?.name ||
+            exam?.building ||
+            "—";
+
+          // ------------------------------------------------------
+          // FLOOR
+          // ------------------------------------------------------
+
+          const floorName =
+            exam?.roomId
+              ?.floorId
+              ?.name ||
+            exam?.floor ||
+            "—";
+
+          // ------------------------------------------------------
+          // ROOM
+          // ------------------------------------------------------
+
+          const roomNumber =
+            exam?.roomId
+              ?.roomNumber ||
+            exam?.roomNumber ||
+            exam?.room ||
+            "";
+
+          const roomText =
+            roomNumber
+              ? `Room ${roomNumber}`
+              : "—";
+
+          // ------------------------------------------------------
+          // DATA
+          // ------------------------------------------------------
+
+          const rowData = [
+            dateText,
+            dayText,
+            subjectName,
+            timeText,
+            durationText,
+            buildingName,
+            floorName,
+            roomText,
+          ];
+
+          // ------------------------------------------------------
+          // WRAP CELLS
+          // ------------------------------------------------------
+
+          const wrapped =
+            rowData.map(
+              (cell, index) =>
+                doc.splitTextToSize(
+                  String(
+                    cell || "—"
+                  ),
+                  colWidths[index] - 4
+                )
+            );
+
+          const maxLines =
+            Math.max(
+              ...wrapped.map(
+                (lines) =>
+                  lines.length
+              )
+            );
+
+          const lineHeight = 3.6;
+
+          const rowHeight =
+            Math.max(
+              10,
+              maxLines *
+              lineHeight +
+              5
+            );
+
+          // ------------------------------------------------------
+          // CHECK PAGE SPACE
+          // ------------------------------------------------------
+
+          if (
+            y + rowHeight >
+            pageHeight - 42
+          ) {
+            doc.addPage();
+            y = 15;
+          }
+
+          // ------------------------------------------------------
+          // ROW BACKGROUND
+          // ------------------------------------------------------
+
+          if (
+            rowIndex % 2 ===
+            0
+          ) {
+            doc.setFillColor(
+              248,
+              250,
+              252
+            );
+          } else {
+            doc.setFillColor(
+              255,
+              255,
+              255
+            );
+          }
+
+          doc.setDrawColor(
+            ...colors.lightBorder
+          );
+
+          doc.rect(
+            margin,
+            y,
+            tableWidth,
+            rowHeight,
+            "FD"
+          );
+
+          // ------------------------------------------------------
+          // VERTICAL LINES
+          // ------------------------------------------------------
+
+          let separatorX =
+            margin;
+
+          colWidths.forEach(
+            (width, index) => {
+
+              separatorX +=
+                width;
+
+              if (
+                index <
+                colWidths.length -
+                1
+              ) {
+                doc.line(
+                  separatorX,
+                  y,
+                  separatorX,
+                  y +
+                  rowHeight
+                );
+              }
+            }
+          );
+
+          // ------------------------------------------------------
+          // CELL TEXT
+          // ------------------------------------------------------
+
+          let cellX =
+            margin;
+
+          wrapped.forEach(
+            (lines, index) => {
+
+              const centerX =
+                cellX +
+                colWidths[index] /
+                2;
+
+              const totalTextHeight =
+                lines.length *
+                lineHeight;
+
+              const startY =
+                y +
+                (rowHeight -
+                  totalTextHeight) /
+                2 +
+                3;
+
+              doc.setFont(
+                "helvetica",
+                index === 2
+                  ? "bold"
+                  : "normal"
+              );
+
+              doc.setFontSize(
+                index === 2
+                  ? 8
+                  : 7
+              );
+
+              doc.setTextColor(
+                ...colors.text
+              );
+
+              lines.forEach(
+                (
+                  line,
+                  lineIndex
+                ) => {
+
+                  doc.text(
+                    line,
+                    centerX,
+                    startY +
+                    lineIndex *
+                    lineHeight,
+                    {
+                      align: "center",
+                    }
+                  );
+                }
+              );
+
+              cellX +=
+                colWidths[index];
+            }
+          );
+
+          y += rowHeight;
+        }
+      );
+
+      // ==========================================================
+      // IMPORTANT INSTRUCTIONS
+      // ==========================================================
+
+      y += 8;
+
+      const instructions = [
+        "Students must report 15 minutes before the examination time.",
+        "Carry the admit card and necessary stationery.",
+        "Follow all school rules and maintain discipline.",
+        "Any change in the routine will be notified by the school authority.",
+      ];
+
+      const instructionHeight =
+        28;
+
+      // Only draw if enough room
+      if (
+        y + instructionHeight <
+        pageHeight - 35
+      ) {
+
+        doc.setFillColor(
+          ...colors.instructionBg
+        );
+
+        doc.setDrawColor(
+          ...colors.lightBorder
+        );
+
+        doc.roundedRect(
+          margin,
+          y,
+          contentWidth,
+          instructionHeight,
+          2,
+          2,
+          "FD"
+        );
+
+        doc.setFont(
+          "helvetica",
+          "bold"
+        );
+
+        doc.setFontSize(8);
+
+        doc.setTextColor(
+          ...colors.dark
+        );
+
+        doc.text(
+          "Important Instructions",
+          margin + 4,
+          y + 6
+        );
+
+        doc.setFont(
+          "helvetica",
+          "normal"
+        );
+
+        doc.setFontSize(7);
+
+        instructions.forEach(
+          (
+            instruction,
+            index
+          ) => {
+
+            doc.text(
+              `${index + 1}.`,
+              margin + 5,
+              y +
+              11 +
+              index * 4
+            );
+
+            doc.text(
+              instruction,
+              margin + 10,
+              y +
+              11 +
+              index * 4
+            );
+          }
+        );
+      }
+
+      // ==========================================================
+      // FOOTER
+      // ==========================================================
+
+      const footerY =
+        pageHeight - 27;
+
+      // ----------------------------------------------------------
+      // Issue Date
+      // ----------------------------------------------------------
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(7.5);
+
+      doc.setTextColor(
+        ...colors.text
+      );
+
+      const generatedDate =
+        new Date().toLocaleDateString(
+          "en-IN",
+          {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          }
+        );
+
+      doc.text(
+        `Issued: ${generatedDate}`,
+        margin,
+        footerY
+      );
+
+      // ----------------------------------------------------------
+      // Principal
+      // ----------------------------------------------------------
+
+      const signatureWidth =
+        48;
+
+      const signatureX =
+        pageWidth -
+        margin -
+        signatureWidth;
+
+      doc.setDrawColor(
+        ...colors.dark
+      );
+
+      doc.setLineWidth(
+        0.25
+      );
+
+      doc.line(
+        signatureX,
+        footerY - 8,
+        pageWidth - margin,
+        footerY - 8
+      );
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(8);
+
+      doc.setTextColor(
+        ...colors.dark
+      );
+
+      // Principal NAME
+      if (principalName) {
+        doc.text(
+          principalName,
+          signatureX +
+          signatureWidth / 2,
+          footerY - 11,
+          {
+            align: "center",
+          }
+        );
+      }
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(8);
+
+      doc.text(
+        "Principal",
+        signatureX +
+        signatureWidth / 2,
+        footerY - 3,
+        {
+          align: "center",
+        }
+      );
+
+      // ----------------------------------------------------------
+      // Page Number
+      // ----------------------------------------------------------
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(7);
+
+      doc.setTextColor(
+        ...colors.muted
+      );
+
+      doc.text(
+        `Page ${pageIndex + 1} of ${totalPages}`,
+        pageWidth / 2,
+        pageHeight - 8,
+        {
+          align: "center",
+        }
+      );
+    };
+
+    // ============================================================
+    // CREATE ONE PAGE PER CLASS / SECTION
+    // batch.groups already comes in ascending class/section order from the
+    // examBatches aggregation (Class 5 before Class 6, etc.).
+    // ============================================================
+
+    batch.groups.forEach(
+      (group, index) => {
+        renderClassPage(
+          group,
+          index
+        );
+      }
+    );
+
+    // ============================================================
+    // DOWNLOAD
+    // ============================================================
+
+    const safeFile =
+      `${title}_all_classes`
+        .replace(
+          /[^\w.-]+/g,
+          "_"
+        )
+        .toLowerCase();
+
+    doc.save(
+      `${safeFile}_schedule.pdf`
+    );
   };
 
   /* ── group handlers ── */
@@ -3289,8 +4471,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                       </button>
                       {moreMenuOpen && (
                         <div className="absolute right-0 mt-2 z-20 w-44 rounded-xl border border-slate-100 bg-white shadow-xl py-1.5">
-                          <button onClick={() => { setMoreMenuOpen(false); generateExamSchedulePdf(selectedBatch.groups[0]); }}
+                          {/* <button onClick={() => { setMoreMenuOpen(false); generateExamSchedulePdf(selectedBatch.groups[0]); }}
                             className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                            <FileText size={14} /> Download Routine
+                          </button> */}
+                          <button
+                            onClick={() => {
+                              setMoreMenuOpen(false);
+                              generateBatchExamSchedulePdf(selectedBatch);
+                            }}
+                            className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                          >
                             <FileText size={14} /> Download Routine
                           </button>
                           <button onClick={() => handleDeleteBatch(selectedBatch)}

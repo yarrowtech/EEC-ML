@@ -277,6 +277,11 @@ studentUserSchema.index(
   { organizationId: 1, studentCode: 1 },
   { unique: true, partialFilterExpression: { studentCode: { $type: 'string' } } }
 );
+// Matches the /get-students directory-list filter exactly (organizationId is
+// auto-added by the tenant plugin, then schoolId + isArchived + status) —
+// without this the query falls back to the schoolId-only index above and
+// filters isArchived/status in memory.
+studentUserSchema.index({ organizationId: 1, schoolId: 1, isArchived: 1, status: 1 });
 
 studentUserSchema.pre('save', async function (next) {
   if (this.isModified('password') && !looksHashed(this.password)) {

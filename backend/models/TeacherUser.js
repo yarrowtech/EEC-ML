@@ -81,6 +81,11 @@ teacherUserSchema.index(
   { organizationId: 1, employeeCode: 1 },
   { unique: true, partialFilterExpression: { employeeCode: { $type: 'string' } } }
 );
+// Matches the /get-teachers directory-list filter exactly (organizationId is
+// auto-added by the tenant plugin, then schoolId + isArchived) — without this
+// the query falls back to the schoolId-only index above and filters isArchived
+// in memory.
+teacherUserSchema.index({ organizationId: 1, schoolId: 1, isArchived: 1 });
 
 teacherUserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

@@ -149,7 +149,28 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       username,
       ...(req.organizationId ? {} : { organizationId: null }),
     });
-    if (!admin || !(await bcrypt.compare(password, admin.password))) {
+    if (!admin) {
+      logAuthEvent(req, {
+        action: 'login',
+        outcome: 'failure',
+        userType: 'admin',
+        identifier: username,
+        reason: 'Invalid credentials',
+        statusCode: 401,
+      });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    // Password verification and the school-status lookup are independent —
+    // run them concurrently instead of paying two round trips serially. The
+    // school read is harmless to fire even on a bad password (read-only
+    // status field); its result is simply unused if credentials fail.
+    const [passwordMatches, school] = await Promise.all([
+      bcrypt.compare(password, admin.password),
+      admin.role === 'admin' && admin.schoolId
+        ? School.findById(admin.schoolId).select('status').lean()
+        : Promise.resolve(null),
+    ]);
+    if (!passwordMatches) {
       logAuthEvent(req, {
         action: 'login',
         outcome: 'failure',
@@ -175,7 +196,6 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       return res.status(403).json({ error: 'Account inactive. Contact EEC admin.' });
     }
     if (admin.role === 'admin') {
-      const school = await School.findById(admin.schoolId).select('status').lean();
       if (!school || school.status === 'inactive') {
         logAuthEvent(req, {
           action: 'login',
