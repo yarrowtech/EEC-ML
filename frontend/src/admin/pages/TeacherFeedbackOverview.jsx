@@ -977,13 +977,13 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               <p className="text-sm font-medium text-slate-500">No results found.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div>
               {paginatedGroups.map((group) => (
                 <button
                   key={group.key}
                   onClick={() => setSelectedKey(group.key)}
-                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${
-                    group.key === selectedKey ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'border-l-4 border-transparent hover:bg-slate-50'
+                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors border-b last:border-b-0 border-b-slate-100 ${
+                    group.key === selectedKey ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
                   }`}
                 >
                   <Avatar name={group.name} />
