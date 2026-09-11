@@ -92,8 +92,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   const [openGroups, setOpenGroups] = useState({});
   const [hoverId, setHoverId]       = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
-  const { profile, classTeacher }   = useStudentDashboard();
+  const { profile, classTeacher, unreadChatCount } = useStudentDashboard();
 
   const collapsed = !isOpen; // desktop icon-only state
 
@@ -150,43 +149,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
     return () => document.removeEventListener('mousedown', handler);
   }, [isOpen, setIsOpen]);
 
-  const fetchUnreadChatCount = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setUnreadChatCount(0);
-      return;
-    }
-    try {
-      const res = await fetch(`${API_URL}/api/chat/threads`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const total = (Array.isArray(data) ? data : []).reduce(
-        (sum, thread) => sum + Math.max(0, Number(thread?.unreadCount || 0)),
-        0
-      );
-      setUnreadChatCount(total);
-    } catch {
-      // ignore polling/network errors
-    }
-  };
-
-  useEffect(() => {
-    fetchUnreadChatCount();
-    const timer = setInterval(fetchUnreadChatCount, 15000);
-    const onFocus = () => fetchUnreadChatCount();
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') fetchUnreadChatCount();
-    };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, []);
+  // Unread chat badge count now comes from StudentDashboardContext, which
+  // owns the single shared poller (see its comment for why).
 
   return (
     <>

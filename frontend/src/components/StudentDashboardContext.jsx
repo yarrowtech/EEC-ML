@@ -10,6 +10,7 @@ const StudentDashboardContext = createContext({
   stats: null,
   course: null,
   recentAttendance: [],
+  unreadChatCount: 0,
   refresh: () => {},
 });
 
@@ -109,6 +110,57 @@ export const StudentDashboardProvider = ({ children }) => {
     };
   }, [fetchDashboard, initialCachedData]);
 
+  // Single source of truth for the unread-chat badge. Sidebar and
+  // MobileBottomNav used to each poll /api/chat/threads independently (every
+  // 15s and 30s, plus their own focus/visibility listeners) — both are always
+  // mounted at once (just CSS-hidden per viewport), so that was 2x the
+  // necessary requests, bursting further whenever focus/visibility fired on
+  // both at once. One poller here, shared via context, fixes that.
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const chatFetchInFlightRef = useRef(false);
+
+  const fetchUnreadChatCount = useCallback(async () => {
+    if (chatFetchInFlightRef.current) return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setUnreadChatCount(0);
+      return;
+    }
+    chatFetchInFlightRef.current = true;
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/chat/threads`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const threads = await res.json().catch(() => []);
+      const total = (Array.isArray(threads) ? threads : []).reduce(
+        (sum, thread) => sum + Math.max(0, Number(thread?.unreadCount || 0)),
+        0
+      );
+      setUnreadChatCount(total);
+    } catch {
+      // keep existing count on transient network errors
+    } finally {
+      chatFetchInFlightRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadChatCount();
+    const intervalId = window.setInterval(fetchUnreadChatCount, 15000);
+    const onFocus = () => fetchUnreadChatCount();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchUnreadChatCount();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [fetchUnreadChatCount]);
+
   const value = useMemo(
     () => ({
       loading,
@@ -118,9 +170,10 @@ export const StudentDashboardProvider = ({ children }) => {
       stats: data.stats,
       course: data.course,
       recentAttendance: data.recentAttendance,
+      unreadChatCount,
       refresh: () => fetchDashboard(),
     }),
-    [loading, error, data.profile, data.classTeacher, data.stats, data.course, data.recentAttendance, fetchDashboard]
+    [loading, error, data.profile, data.classTeacher, data.stats, data.course, data.recentAttendance, unreadChatCount, fetchDashboard]
   );
 
   return (

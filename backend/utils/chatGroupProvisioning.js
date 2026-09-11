@@ -47,6 +47,76 @@ const mapWithConcurrency = async (items, limit, fn) => {
   return results;
 };
 
+// Batch-fetches every piece of reference data the sync loops below need, in a
+// handful of $in queries instead of ~5 queries per allocation/timetable-combo.
+// With hundreds of combos and real network latency to the DB in the
+// hundreds-of-ms range (nothing app code can change), per-combo queries is
+// what turned a sync into a 40-70+ second operation regardless of how much
+// the loop itself is parallelized — cutting query *count* is what actually
+// fixes it.
+const buildProvisioningPrefetch = async ({ schoolId, campusId, combos }) => {
+  // schoolId/campusId are only present for the per-school hot path
+  // (chatRoutes.js self-heal). syncAllocationGroupThreads() is also called
+  // with no args at server boot (config/database.js) to resync every school
+  // at once — schoolId is null there, meaning "no filter", not "match null".
+  const schoolCondition = schoolId ? { schoolId } : {};
+  const campusCondition = buildCampusOr(campusId);
+  const teacherIds = new Set();
+  const classIds = new Set();
+  const sectionIds = new Set();
+  const subjectIds = new Set();
+  combos.forEach((c) => {
+    (c.teacherIds || []).forEach((id) => id && teacherIds.add(String(id)));
+    if (c.classId) classIds.add(String(c.classId));
+    if (c.sectionId) sectionIds.add(String(c.sectionId));
+    if (c.subjectId) subjectIds.add(String(c.subjectId));
+  });
+
+  const [teachers, classes, sections, subjects, students, existingThreads] = await Promise.all([
+    teacherIds.size
+      ? TeacherUser.find({ _id: { $in: [...teacherIds] }, ...schoolCondition, ...(campusCondition ? { $or: campusCondition } : {}) })
+          .select('_id name employeeCode').lean()
+      : [],
+    classIds.size
+      ? ClassModel.find({ _id: { $in: [...classIds] }, ...schoolCondition, ...(campusCondition ? { $or: campusCondition } : {}) })
+          .select('_id name').lean()
+      : [],
+    sectionIds.size
+      ? Section.find({ _id: { $in: [...sectionIds] }, ...schoolCondition, ...(campusCondition ? { $or: campusCondition } : {}) })
+          .select('_id name classId').lean()
+      : [],
+    subjectIds.size
+      ? Subject.find({ _id: { $in: [...subjectIds] }, ...schoolCondition, ...(campusCondition ? { $or: campusCondition } : {}) })
+          .select('_id name code').lean()
+      : [],
+    StudentUser.find({ ...schoolCondition, ...(campusCondition ? { $or: campusCondition } : {}) })
+      .select('_id name username studentCode grade section schoolId').lean(),
+    ChatThread.find({
+      ...schoolCondition,
+      ...(campusId !== null && campusId !== undefined ? { campusId } : {}),
+    }).select('_id groupKey participants unreadCounts').lean(),
+  ]);
+
+  // Keyed by schoolId too — grade/section are free-text values a global
+  // (all-schools) resync could otherwise collide across different schools.
+  const studentsByGradeSection = new Map();
+  students.forEach((s) => {
+    const key = `${String(s.schoolId || '')}::${String(s.grade || '')}::${String(s.section || '')}`;
+    if (!studentsByGradeSection.has(key)) studentsByGradeSection.set(key, []);
+    studentsByGradeSection.get(key).push(s);
+  });
+
+  return {
+    teachersById: new Map(teachers.map((t) => [String(t._id), t])),
+    classesById: new Map(classes.map((c) => [String(c._id), c])),
+    sectionsById: new Map(sections.map((s) => [String(s._id), s])),
+    subjectsById: new Map(subjects.map((s) => [String(s._id), s])),
+    studentsByGradeSection,
+    threadsByGroupKey: new Map(existingThreads.filter((t) => t.groupKey).map((t) => [t.groupKey, t])),
+    existingThreads,
+  };
+};
+
 const buildAllocationGroupKey = ({
   schoolId,
   campusId,
@@ -86,6 +156,14 @@ const ensureAllocationGroupThread = async ({
   classId,
   sectionId,
   isClassTeacher = false,
+  // Optional batch-fetched reference data (see buildProvisioningPrefetch).
+  // When provided, this call makes zero read round trips — only the
+  // create/update write(s) at the end. Used by the sync* functions below,
+  // which call this once per allocation/timetable-combo; per-call reads for
+  // hundreds of combos is what made a full sync take 40-70+ seconds.
+  // Callers that provision a single allocation (teacherAllocationRoutes.js)
+  // omit this and keep the original per-call query behavior.
+  prefetch = null,
 }) => {
   if (!schoolId || !classId || !sectionId) return null;
   if (!isClassTeacher && !subjectId) return null;
@@ -100,33 +178,46 @@ const ensureAllocationGroupThread = async ({
   ];
   if (normalizedTeacherIds.length === 0) return null;
 
-  const queries = [
-    TeacherUser.find({
-      _id: { $in: normalizedTeacherIds },
-      schoolId,
-      ...(campusCondition ? { $or: campusCondition } : {}),
-    }).select('_id name employeeCode').lean(),
-    ClassModel.findOne({
-      _id: classId,
-      schoolId,
-      ...(campusCondition ? { $or: campusCondition } : {}),
-    }).select('_id name').lean(),
-    Section.findOne({
-      _id: sectionId,
-      schoolId,
-      ...(campusCondition ? { $or: campusCondition } : {}),
-    }).select('_id name classId').lean(),
-  ];
-  if (!isClassTeacher && subjectId) {
-    queries.push(
-      Subject.findOne({
-        _id: subjectId,
+  let teacher;
+  let classDoc;
+  let sectionDoc;
+  let subject = null;
+  if (prefetch) {
+    teacher = normalizedTeacherIds
+      .map((id) => prefetch.teachersById.get(id))
+      .filter(Boolean);
+    classDoc = prefetch.classesById.get(String(classId)) || null;
+    sectionDoc = prefetch.sectionsById.get(String(sectionId)) || null;
+    subject = !isClassTeacher && subjectId ? (prefetch.subjectsById.get(String(subjectId)) || null) : null;
+  } else {
+    const queries = [
+      TeacherUser.find({
+        _id: { $in: normalizedTeacherIds },
         schoolId,
         ...(campusCondition ? { $or: campusCondition } : {}),
-      }).select('_id name code').lean()
-    );
+      }).select('_id name employeeCode').lean(),
+      ClassModel.findOne({
+        _id: classId,
+        schoolId,
+        ...(campusCondition ? { $or: campusCondition } : {}),
+      }).select('_id name').lean(),
+      Section.findOne({
+        _id: sectionId,
+        schoolId,
+        ...(campusCondition ? { $or: campusCondition } : {}),
+      }).select('_id name classId').lean(),
+    ];
+    if (!isClassTeacher && subjectId) {
+      queries.push(
+        Subject.findOne({
+          _id: subjectId,
+          schoolId,
+          ...(campusCondition ? { $or: campusCondition } : {}),
+        }).select('_id name code').lean()
+      );
+    }
+    [teacher, classDoc, sectionDoc, subject = null] = await Promise.all(queries);
   }
-  const [teacher, classDoc, sectionDoc, subject = null] = await Promise.all(queries);
 
   if (!teacher || teacher.length === 0 || !classDoc || !sectionDoc) return null;
   if (!isClassTeacher && !subject) return null;
@@ -150,15 +241,20 @@ const ensureAllocationGroupThread = async ({
   });
   if (!groupKey) return null;
 
-  const studentFilter = {
-    schoolId,
-    grade: className,
-    section: sectionName,
-  };
-  if (campusCondition) studentFilter.$or = campusCondition;
-  const students = await StudentUser.find(studentFilter)
-    .select('_id name username studentCode')
-    .lean();
+  let students;
+  if (prefetch) {
+    students = prefetch.studentsByGradeSection.get(`${String(schoolId)}::${className}::${sectionName}`) || [];
+  } else {
+    const studentFilter = {
+      schoolId,
+      grade: className,
+      section: sectionName,
+    };
+    if (campusCondition) studentFilter.$or = campusCondition;
+    students = await StudentUser.find(studentFilter)
+      .select('_id name username studentCode')
+      .lean();
+  }
 
   const participantsMap = new Map();
   const teacherNameById = new Map();
@@ -172,11 +268,13 @@ const ensureAllocationGroupThread = async ({
     addParticipant(participantsMap, student._id, 'student', student.name || student.username || student.studentCode || 'Student');
   });
 
-  let thread = await ChatThread.findOne({
-    schoolId,
-    campusId,
-    groupKey,
-  });
+  let thread = prefetch
+    ? (prefetch.threadsByGroupKey.get(groupKey) || null)
+    : await ChatThread.findOne({
+        schoolId,
+        campusId,
+        groupKey,
+      }).lean();
   const participants = Array.from(participantsMap.values());
   const existingTeacherNameById = new Map(
     (thread?.participants || [])
@@ -325,6 +423,16 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
 
   const validGroupKeys = new Set();
   const classTeacherAllocations = allocations.filter((allocation) => Boolean(allocation.isClassTeacher));
+  const prefetch = await buildProvisioningPrefetch({
+    schoolId,
+    campusId,
+    combos: classTeacherAllocations.map((a) => ({
+      teacherIds: [a.teacherId],
+      classId: a.classId,
+      sectionId: a.sectionId,
+      subjectId: null,
+    })),
+  });
   const threadIds = await mapWithConcurrency(classTeacherAllocations, 8, async (allocation) => {
     const isClassTeacher = true;
     const groupKey = buildAllocationGroupKey({
@@ -346,19 +454,13 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
       classId: allocation.classId,
       sectionId: allocation.sectionId,
       isClassTeacher,
+      prefetch,
     });
   });
   const createdOrUpdated = threadIds.filter(Boolean).length;
 
-  const scopeFilter = {
-    ...(schoolId ? { schoolId } : {}),
-    ...(campusId !== null && campusId !== undefined ? { campusId } : {}),
-    groupKey: {
-      $regex: `^(${GROUP_KEY_CLASS_TEACHER_PREFIX}):`,
-    },
-  };
-  const existingThreads = await ChatThread.find(scopeFilter).select('_id groupKey').lean();
-  const staleThreadIds = existingThreads
+  const staleThreadIds = prefetch.existingThreads
+    .filter((thread) => String(thread.groupKey || '').startsWith(`${GROUP_KEY_CLASS_TEACHER_PREFIX}:`))
     .filter((thread) => !validGroupKeys.has(String(thread.groupKey || '')))
     .map((thread) => thread._id);
 
@@ -417,6 +519,17 @@ const syncTimetableGroupThreads = async ({ schoolId = null, campusId = null } = 
   })).filter(({ groupKey }) => Boolean(groupKey));
   comboList.forEach(({ groupKey }) => validGroupKeys.add(groupKey));
 
+  const prefetch = await buildProvisioningPrefetch({
+    schoolId,
+    campusId,
+    combos: comboList.map(({ combo }) => ({
+      teacherIds: [...combo.teacherIds],
+      classId: combo.classId,
+      sectionId: combo.sectionId,
+      subjectId: combo.subjectId,
+    })),
+  });
+
   const threadIds = await mapWithConcurrency(comboList, 8, async ({ combo }) => {
     const teacherIds = [...combo.teacherIds];
     return ensureAllocationGroupThread({
@@ -428,19 +541,13 @@ const syncTimetableGroupThreads = async ({ schoolId = null, campusId = null } = 
       classId: combo.classId,
       sectionId: combo.sectionId,
       isClassTeacher: false,
+      prefetch,
     });
   });
   const createdOrUpdated = threadIds.filter(Boolean).length;
 
-  const scopeFilter = {
-    ...(schoolId ? { schoolId } : {}),
-    ...(campusId !== null && campusId !== undefined ? { campusId } : {}),
-    groupKey: {
-      $regex: `^(${GROUP_KEY_ROUTINE_PREFIX}):`,
-    },
-  };
-  const existingThreads = await ChatThread.find(scopeFilter).select('_id groupKey').lean();
-  const staleThreadIds = existingThreads
+  const staleThreadIds = prefetch.existingThreads
+    .filter((thread) => String(thread.groupKey || '').startsWith(`${GROUP_KEY_ROUTINE_PREFIX}:`))
     .filter((thread) => !validGroupKeys.has(String(thread.groupKey || '')))
     .map((thread) => thread._id);
 

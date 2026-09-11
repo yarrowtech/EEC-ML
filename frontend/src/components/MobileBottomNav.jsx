@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
@@ -8,6 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { useNotifications } from '../hooks/useNotifications';
+import { useStudentDashboard } from './StudentDashboardContext';
 import ConfirmDialog from './ConfirmDialog';
 
 /* ─── Sub-menu definitions ─────────────────────────────────────────────── */
@@ -84,55 +85,10 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const { unreadCount: notifUnreadCount } = useNotifications();
   const [openMenu, setOpenMenu] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [chatUnreadCount, setChatUnreadCount] = useState(0);
-  const chatFetchInFlight = useRef(false);
+  // Shared with Sidebar via StudentDashboardContext — see its comment for why
+  // this used to be a second independent poller.
+  const { unreadChatCount } = useStudentDashboard();
 
-  const loadChatUnreadCount = useCallback(async () => {
-    if (chatFetchInFlight.current) return;
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setChatUnreadCount(0);
-      return;
-    }
-    chatFetchInFlight.current = true;
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/chat/threads`, {
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${token}`,
-        },
-      });
-      if (!res.ok) return;
-      const data = await res.json().catch(() => []);
-      const totalUnread = (Array.isArray(data) ? data : []).reduce(
-        (sum, thread) => sum + Math.max(0, Number(thread?.unreadCount || 0)),
-        0
-      );
-      setChatUnreadCount(totalUnread);
-    } catch {
-      // Keep existing count on transient network errors.
-    } finally {
-      chatFetchInFlight.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    loadChatUnreadCount();
-    const intervalId = window.setInterval(loadChatUnreadCount, 30000);
-    const onFocus = () => loadChatUnreadCount();
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadChatUnreadCount();
-      }
-    };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [loadChatUnreadCount]);
 
   const handleTabPress = (item) => {
     if (item.subMenu) {
@@ -295,9 +251,9 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                       strokeWidth={isActive ? 2.3 : 1.75}
                       className={`sm:w-6 sm:h-6 transition-colors ${isActive ? 'text-amber-600' : 'text-gray-400'}`}
                     />
-                    {item.id === 'chat' && chatUnreadCount > 0 && (
+                    {item.id === 'chat' && unreadChatCount > 0 && (
                       <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
-                        {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                        {unreadChatCount > 99 ? '99+' : unreadChatCount}
                       </span>
                     )}
                     {item.id === 'more' && notifUnreadCount > 0 && (
