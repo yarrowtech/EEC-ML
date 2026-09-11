@@ -287,6 +287,43 @@ const BelongingCard = () => {
   );
 };
 
+// Help-seeking behaviour — how often the student reaches for Homework Help,
+// the quiz misconception explainer, or signals they're stuck, in their own
+// words ("I don't know" etc). See backend/services/helpSeekingService.js.
+const HelpSeekingCard = () => {
+  const { data: profile, loading, error, reload } = useCardData(
+    `${API_BASE}/api/help-seeking/profile`,
+    (r) => r?.data || null
+  );
+
+  if (error) return <CardError label="Help-Seeking" onRetry={reload} />;
+  if (loading || !profile || !profile.totalEvents) return null;
+
+  return (
+    <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-emerald-50 p-4 shadow-sm">
+      <p className="mb-1 text-sm font-black text-teal-900">Asking For Help</p>
+      <p className="mb-3 text-xs text-teal-600">Last {profile.sinceDays} days — reaching out is a strength, not a weakness</p>
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.homeworkHelpUsed}</p>
+          <p className="text-[10px] text-gray-500">Homework help</p>
+        </div>
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.misconceptionExplainerUsed}</p>
+          <p className="text-[10px] text-gray-500">Mistakes explained</p>
+        </div>
+        <div className="rounded-lg bg-white/70 px-2 py-2">
+          <p className="text-lg font-bold text-gray-800">{profile.stuckSignals}</p>
+          <p className="text-[10px] text-gray-500">Times stuck</p>
+        </div>
+      </div>
+      {profile.topSubjects?.length > 0 && (
+        <p className="mt-2 text-[11px] text-teal-600">Most often in {profile.topSubjects[0].subject}</p>
+      )}
+    </div>
+  );
+};
+
 const computeStreak = (recentAttendance) => {
   if (!Array.isArray(recentAttendance) || recentAttendance.length === 0) return 0;
   const sorted = [...recentAttendance].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -580,6 +617,9 @@ const DashboardHome = () => {
 
           {/* Social / belonging — Alcove peer community participation */}
           <BelongingCard />
+
+          {/* Help-seeking behaviour — the student's own pattern */}
+          <HelpSeekingCard />
 
           {/* Quick Stats */}
           <QuickStats />

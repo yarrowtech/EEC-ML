@@ -10,7 +10,7 @@ const helpSeekingEventSchema = new mongoose.Schema({
   studentId:  { type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser', required: true, index: true },
   subject:    { type: String, default: '' },
   topicTitle: { type: String, default: '' },
-  eventType:  { type: String, enum: ['homework_help_used', 'stuck_signal'], required: true },
+  eventType:  { type: String, enum: ['homework_help_used', 'stuck_signal', 'misconception_explainer_used'], required: true },
   mode:       { type: String, default: '' },
 }, { timestamps: true });
 

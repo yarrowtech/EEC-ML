@@ -122,6 +122,7 @@ const CHIP_MODES = {
   Flashcards:             'flashcards',
   'Homework Help':        'homework_help',
   'Code Help':            'code_help',
+  'Math Solver':          'math_solver',
   'Explain Back':         'explain_back',
   'Real World':           'real_world',
   'Basic Practice':       'practice_basic',
@@ -151,6 +152,7 @@ const GENERATED_MODE_META = {
   explain:                 { label: 'Explanation',             icon: Lightbulb            },
   homework_help:           { label: 'Homework help',           icon: MessageCircleQuestion},
   code_help:               { label: 'Code help',               icon: Code2                },
+  math_solver:             { label: 'Math solver',              icon: Calculator           },
   explain_back:            { label: 'Explain Back',            icon: RotateCw             },
   real_world:              { label: 'Real world',              icon: Globe2               },
   misconception:           { label: 'Misconception explainer', icon: BrainCircuit         },
@@ -1856,8 +1858,31 @@ function parseHomeworkHelp(text) {
   };
 }
 
-function HomeworkHelpUI({ text }) {
+function HomeworkHelpUI({ text, subject, topic, showConfidenceCheckin }) {
   const { content, question, tail } = useMemo(() => parseHomeworkHelp(text), [text]);
+  const [confidenceRating, setConfidenceRating] = useState(null);
+  const [calibration, setCalibration] = useState(null);
+
+  // Learner confidence check-in, available on the latest reply in a Homework
+  // Help session — homework has no single "done" moment like a quiz, so the
+  // student rates whenever they feel ready rather than at a detected end.
+  const submitConfidence = async (rating) => {
+    setConfidenceRating(rating);
+    if (!subject && !topic) return;
+    try {
+      const token = localStorage.getItem('token');
+      const topicId = topic ? topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'general';
+      const res = await fetch(`${API_BASE}/api/confidence/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject, topicId, topicTitle: topic, confidenceRating: rating, source: 'homework_help' }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) setCalibration(data.data.calibrationLabel);
+    } catch {
+      // non-critical — confidence tracking must never block the homework flow
+    }
+  };
 
   if (!question) return <TutorMessageContent text={text} />;
 
@@ -1920,7 +1945,116 @@ function HomeworkHelpUI({ text }) {
           </span>
           {tail || 'Type your answer below to keep going'}
         </Motion.div>
+
+        {showConfidenceCheckin && (subject || topic) && (
+          <div className="border-t border-[#F4E9DE] pt-3">
+            {confidenceRating == null ? (
+              <>
+                <p className="mb-2 text-[11px] font-semibold text-[#C07A4C]">How confident do you feel about this right now?</p>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => submitConfidence(n)}
+                      title={['Not at all', 'A little', 'Somewhat', 'Confident', 'Very confident'][n - 1]}
+                      className="flex size-7 items-center justify-center rounded-full border border-[#eedbc9] bg-white text-[11px] font-bold text-[#C07A4C] transition-colors hover:bg-[#F4E9DE]"
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-[11px] text-[#C07A4C]">
+                Thanks for checking in!{' '}
+                {calibration === 'overconfident' && "This topic might need another look even though it feels easy."}
+                {calibration === 'underconfident' && "You're doing better here than you think."}
+              </p>
+            )}
+          </div>
+        )}
       </div>
+    </Motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Math Solver UI — numbered step-by-step solution cards distinct from the
+// generic tutor renderer. Uses the general tutor model (no dedicated math
+// model wired in — see the "math_solver" MODE_INSTRUCTIONS docstring in
+// ai-service/app/modules/chat/service.py) with KaTeX for every equation.
+// ---------------------------------------------------------------------------
+
+function parseMathSolver(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const steps = [];
+  let finalAnswer = '';
+  let currentStep = null;
+  for (const line of lines) {
+    const finalMatch = line.match(/^\*{0,2}Final\s+Answer\*{0,2}\s*[:.]\s*(.*)$/i);
+    if (finalMatch) {
+      finalAnswer = finalMatch[1].trim();
+      currentStep = null;
+      continue;
+    }
+    const stepMatch = line.match(/^\*{0,2}Step\s+(\d+)\*{0,2}\s*[:.]?\s*(.*)$/i);
+    if (stepMatch) {
+      currentStep = { num: stepMatch[1], lines: [] };
+      if (stepMatch[2]) currentStep.lines.push(stepMatch[2]);
+      steps.push(currentStep);
+      continue;
+    }
+    if (currentStep) currentStep.lines.push(line);
+  }
+  return { steps, finalAnswer };
+}
+
+function MathSolverUI({ text }) {
+  const { steps, finalAnswer } = useMemo(() => parseMathSolver(text), [text]);
+
+  if (!steps.length) return <TutorMessageContent text={text} />;
+
+  return (
+    <Motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="w-full space-y-2 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm"
+    >
+      <div className="mb-1 flex items-center gap-2">
+        <Calculator className="size-4 text-sky-600" />
+        <p className="text-xs font-bold uppercase tracking-wide text-sky-700">Step-by-step solution</p>
+      </div>
+      <div className="space-y-2">
+        {steps.map((s, i) => (
+          <Motion.div
+            key={i}
+            initial={{ opacity: 0, x: -6 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className="rounded-xl border border-sky-100 bg-sky-50/50 px-3 py-2.5"
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white">{s.num}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-600">Step {s.num}</span>
+            </div>
+            <div className="space-y-1 pl-7 text-sm text-slate-700">
+              {s.lines.map((line, li) => <p key={li}>{renderInlineTutorText(line, `math-step-${i}-${li}`)}</p>)}
+            </div>
+          </Motion.div>
+        ))}
+      </div>
+      {finalAnswer && (
+        <Motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: steps.length * 0.06 + 0.1 }}
+          className="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3"
+        >
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Final Answer</p>
+          <p className="text-base font-bold text-emerald-900">{renderInlineTutorText(finalAnswer, 'math-final')}</p>
+        </Motion.div>
+      )}
     </Motion.div>
   );
 }
@@ -2546,14 +2680,15 @@ function VisualExplainUI({ text }) {
   );
 }
 
-function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic }) {
+function TutorResponseRenderer({ text, mode, onMisconception, onQuizComplete, subject, topic, isLatest }) {
   if (['quiz', 'visual_quiz'].includes(mode)) return <QuizUI text={text} onMisconception={onMisconception} onQuizComplete={onQuizComplete} subject={subject} topic={topic} />;
   if (mode === 'flashcards') return <FlashcardUI text={text} subject={subject} topic={topic} />;
   if (mode === 'mind_map') return <MindMapUI text={text} />;
   if (mode === 'notes') return <NotesUI text={text} subject={subject} topic={topic} />;
   if (mode === 'visual_explain') return <VisualExplainUI text={text} />;
   if (mode === 'explain') return <ExplainUI text={text} />;
-  if (mode === 'homework_help') return <HomeworkHelpUI text={text} />;
+  if (mode === 'homework_help') return <HomeworkHelpUI text={text} subject={subject} topic={topic} showConfidenceCheckin={isLatest} />;
+  if (mode === 'math_solver') return <MathSolverUI text={text} />;
   if (mode === 'explain_back') return <ExplainBackUI text={text} />;
   if (mode === 'worksheet') return <WorksheetUI text={text} />;
   if (mode === 'differentiated_plan') return <DifferentiatedUI text={text} />;
@@ -2763,6 +2898,7 @@ const COMPANION_CHIPS = [
   { label: 'Flashcards',            icon: Layers3              },
   { label: 'Homework Help',         icon: MessageCircleQuestion},
   { label: 'Code Help',             icon: Code2                },
+  { label: 'Math Solver',           icon: Calculator           },
   { label: 'Explain Back',          icon: RotateCw             },
   { label: 'Real World',            icon: Globe2               },
   { label: 'Basic Practice',        icon: BookOpen             },
@@ -2802,6 +2938,7 @@ const STARTER_PROMPTS = [
   { mode: 'Flashcards', text: 'Turn this chapter into flashcards', icon: Layers3 },
   { mode: 'Homework Help', text: 'Help me solve this step by step', icon: MessageCircleQuestion },
   { mode: 'Code Help', text: 'Help me fix a bug in my code', icon: Code2 },
+  { mode: 'Math Solver', text: 'Solve this equation step by step', icon: Calculator },
   { mode: 'Explain Back', text: 'Check if my understanding is correct', icon: RotateCw },
 ];
 
@@ -4227,7 +4364,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                           'flex items-end gap-2',
                           msg.role === 'user'
                             ? 'max-w-[85%] flex-row-reverse'
-                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'diagram', 'explain_back'].includes(msg.mode))
+                            : (!msg.streaming && !msg.thinking && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'math_solver', 'diagram', 'explain_back'].includes(msg.mode))
                               ? 'w-full flex-row'
                               : 'max-w-[85%] flex-row'
                         )}>
@@ -4256,7 +4393,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                   ? 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                                   : msg.error
                                   ? 'rounded-2xl rounded-bl-sm border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm text-rose-700'
-                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'diagram', 'explain_back'].includes(msg.mode))
+                                  : (!msg.streaming && ['quiz', 'visual_quiz', 'flashcards', 'mind_map', 'notes', 'explain', 'visual_explain', 'homework_help', 'code_help', 'math_solver', 'diagram', 'explain_back'].includes(msg.mode))
                                     ? 'w-full'
                                     : 'rounded-2xl rounded-bl-sm border border-[#E7E3D9] bg-white px-4 py-3 shadow-sm text-slate-800'
                             )}
@@ -4302,7 +4439,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                           </div>
                                         )
                                         : <TutorMessageContent text={msg.text} />)
-                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} isLatest={i === messages.length - 1} />
                                   }
                                   {!msg.streaming && <TutorGeneratedVisuals visuals={msg.visuals} />}
                                   {!msg.streaming && <TutorVisualSources citations={msg.citations} />}

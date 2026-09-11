@@ -154,6 +154,78 @@ router.get('/bridge', authStudentSoft, async (req, res) => {
 });
 
 /**
+ * POST /api/learning-paths/student/adopt-bridge   (student — own path)
+ * Body: { subject, targetTopic, className }
+ *
+ * Student Agency: lets a student choose their own path to a target topic
+ * instead of only following a teacher-assigned one. Rebuilds the same
+ * gap -> target bridge GET /bridge previews, then publishes it as the
+ * student's own active path for that subject (archiving whatever was
+ * previously active, teacher-published or not).
+ */
+router.post('/student/adopt-bridge', authStudentSoft, async (req, res) => {
+  // #swagger.tags = ['Learning Paths']
+  try {
+    const studentId = req.userId;
+    const schoolId = req.schoolId;
+    if (!studentId) return res.status(401).json({ error: 'Student ID missing from token' });
+
+    const { subject, targetTopic, className } = req.body || {};
+    if (!subject || !targetTopic) return res.status(400).json({ error: 'subject and targetTopic are required' });
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+      .select('name grade section className sectionName').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const { buildBridgePath, toPathNodes } = require('../services/learningPathService');
+    const bridge = await buildBridgePath({
+      studentId, schoolId, subject, targetTopic,
+      className: className || student.className || student.grade || '',
+    });
+    const steps = toPathNodes(bridge);
+    if (!steps.length) {
+      return res.status(422).json({
+        error: bridge.status === 'target_not_in_map'
+          ? 'That topic was not found in the curriculum for this subject'
+          : 'No curriculum map is available yet for this subject/class',
+      });
+    }
+
+    const builtNodes = steps.map((n, i) => ({ ...n, idx: i, status: i === 0 ? 'active' : 'locked', completedAt: null }));
+
+    // A student adopting their own path replaces whatever was active for this
+    // subject, teacher-published or previously self-adopted.
+    await TeacherLearningPath.updateMany(
+      { schoolId, studentId, subject, status: 'published' },
+      { $set: { status: 'archived' } }
+    );
+
+    const path = await TeacherLearningPath.create({
+      schoolId,
+      teacherId: null,
+      teacherName: 'Chosen by you',
+      source: 'student',
+      studentId,
+      studentName: student.name || 'Student',
+      cls: [student.grade || student.className, student.section || student.sectionName].filter(Boolean).join('-'),
+      subject,
+      focus: targetTopic,
+      pace: bridge.totalEstimatedDays ? `${Math.round(bridge.totalEstimatedDays / 7) || 1} week${bridge.totalEstimatedDays > 7 ? 's' : ''}` : '',
+      notes: 'You chose this path to reach a topic you picked yourself.',
+      nodes: builtNodes,
+      progress: 0,
+      status: 'published',
+      publishedAt: new Date(),
+    });
+
+    return res.status(201).json({ success: true, pathId: path._id });
+  } catch (err) {
+    logger.error({ err }, 'Error adopting student bridge path');
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/learning-paths/publish
  * Body: { studentId, subject, focus, pace, notes, nodes[], cls }
  *

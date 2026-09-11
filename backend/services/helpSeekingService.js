@@ -28,7 +28,15 @@ async function logFromTutorTurn({ schoolId, studentId, subject, topicTitle, mode
     if (mode === 'homework_help') {
       await logEvent({ schoolId, studentId, subject, topicTitle, eventType: 'homework_help_used', mode });
     }
-    if (mode === 'homework_help' && detectStuckSignal(question)) {
+    // A student who asks the tutor to explain a quiz mistake (misconception
+    // mode, triggered from the "explain this" affordance under a wrong quiz
+    // answer) is also proactively seeking help, not just getting something wrong.
+    if (mode === 'misconception') {
+      await logEvent({ schoolId, studentId, subject, topicTitle, eventType: 'misconception_explainer_used', mode });
+    }
+    // A "stuck" signal ("I don't know", "idk", ...) is meaningful in any mode,
+    // not just Homework Help — a student can say it mid-explain or mid-custom-chat too.
+    if (detectStuckSignal(question)) {
       await logEvent({ schoolId, studentId, subject, topicTitle, eventType: 'stuck_signal', mode });
     }
   } catch (_) { /* logging must never block the tutor response */ }
@@ -40,7 +48,7 @@ async function getStudentHelpSeekingProfile({ schoolId, studentId, sinceDays = 3
   const events = await HelpSeekingEvent.find({ schoolId, studentId, createdAt: { $gte: since } })
     .sort({ createdAt: -1 }).limit(500).lean();
 
-  const byType = { homework_help_used: 0, stuck_signal: 0 };
+  const byType = { homework_help_used: 0, stuck_signal: 0, misconception_explainer_used: 0 };
   const bySubject = new Map();
   for (const e of events) {
     byType[e.eventType] = (byType[e.eventType] || 0) + 1;
@@ -53,6 +61,7 @@ async function getStudentHelpSeekingProfile({ schoolId, studentId, sinceDays = 3
     totalEvents: events.length,
     homeworkHelpUsed: byType.homework_help_used,
     stuckSignals: byType.stuck_signal,
+    misconceptionExplainerUsed: byType.misconception_explainer_used,
     topSubjects,
     lastEventAt: events[0]?.createdAt || null,
     sinceDays,

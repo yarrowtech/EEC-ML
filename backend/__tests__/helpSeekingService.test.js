@@ -51,7 +51,23 @@ describe('logFromTutorTurn', () => {
     );
   });
 
-  test('does nothing for non-homework_help modes', async () => {
+  test('logs misconception_explainer_used when the student asks the AI to explain a quiz mistake', async () => {
+    mockEvent.create.mockResolvedValue({});
+    await logFromTutorTurn({ schoolId: 'sch1', studentId: 's1', mode: 'misconception', question: 'Why is A wrong?' });
+
+    expect(mockEvent.create).toHaveBeenCalledTimes(1);
+    expect(mockEvent.create).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'misconception_explainer_used' }));
+  });
+
+  test('logs stuck_signal in any mode, not just homework_help', async () => {
+    mockEvent.create.mockResolvedValue({});
+    await logFromTutorTurn({ schoolId: 'sch1', studentId: 's1', mode: 'explain', question: "idk what this means" });
+
+    expect(mockEvent.create).toHaveBeenCalledTimes(1);
+    expect(mockEvent.create).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'stuck_signal', mode: 'explain' }));
+  });
+
+  test('does nothing for an ordinary question in a non-instrumented mode', async () => {
     await logFromTutorTurn({ schoolId: 'sch1', studentId: 's1', mode: 'quiz', question: 'anything' });
     expect(mockEvent.create).not.toHaveBeenCalled();
   });
@@ -69,13 +85,15 @@ describe('getStudentHelpSeekingProfile', () => {
       { eventType: 'homework_help_used', subject: 'Math', createdAt: new Date('2026-02-02') },
       { eventType: 'homework_help_used', subject: 'Math', createdAt: new Date('2026-02-01') },
       { eventType: 'stuck_signal', subject: 'Science', createdAt: new Date('2026-02-01') },
+      { eventType: 'misconception_explainer_used', subject: 'Math', createdAt: new Date('2026-02-01') },
     ]));
 
     const profile = await getStudentHelpSeekingProfile({ schoolId: 'sch1', studentId: 's1' });
-    expect(profile.totalEvents).toBe(3);
+    expect(profile.totalEvents).toBe(4);
     expect(profile.homeworkHelpUsed).toBe(2);
     expect(profile.stuckSignals).toBe(1);
-    expect(profile.topSubjects[0]).toEqual({ subject: 'Math', count: 2 });
+    expect(profile.misconceptionExplainerUsed).toBe(1);
+    expect(profile.topSubjects[0]).toEqual({ subject: 'Math', count: 3 });
     expect(profile.lastEventAt).toEqual(new Date('2026-02-02'));
   });
 

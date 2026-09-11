@@ -15,6 +15,8 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [confidenceRating, setConfidenceRating] = useState(null);
+  const [calibration, setCalibration] = useState(null);
 
   const subjectId = String(subject?.id || subject?._id || '');
   const subjectName = subject?.name || 'Practice activity';
@@ -87,6 +89,28 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
       setError(submitError.message || 'Unable to submit your answers');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Learner confidence check-in after a practice session — self-rating is
+  // compared server-side against the student's actual mastery for this
+  // subject to flag over/under-confidence. See confidenceTrackingService.js.
+  const submitConfidence = async (rating) => {
+    setConfidenceRating(rating);
+    if (!subjectId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/confidence/checkin`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          subject: subjectName, topicId: subjectId, topicTitle: subjectName,
+          confidenceRating: rating, source: 'practice',
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) setCalibration(data.data.calibrationLabel);
+    } catch {
+      // non-critical — confidence tracking must never block the practice flow
     }
   };
 
@@ -185,10 +209,39 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
               );
             })}
 
+            {results && (subjectId || subjectName) && (
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-4 py-3.5 backdrop-blur-xl">
+                {confidenceRating == null ? (
+                  <>
+                    <p className="mb-2 text-xs font-semibold text-indigo-700">How confident do you feel about {subjectName} now?</p>
+                    <div className="flex gap-1.5">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => submitConfidence(n)}
+                          title={['Not at all', 'A little', 'Somewhat', 'Confident', 'Very confident'][n - 1]}
+                          className="flex size-8 items-center justify-center rounded-full border border-indigo-200 bg-white text-xs font-bold text-indigo-600 transition-colors hover:bg-indigo-100"
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-indigo-700">
+                    Thanks for checking in!{' '}
+                    {calibration === 'overconfident' && "This topic might need another look even though it feels easy."}
+                    {calibration === 'underconfident' && "You're doing better here than you think."}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="sticky bottom-3 flex items-center justify-between gap-3 rounded-2xl border border-white/90 bg-white/80 p-3 shadow-[0_16px_50px_-20px_rgba(15,23,42,0.28)] backdrop-blur-xl">
               <p className="hidden text-xs font-medium text-slate-500 sm:block">{results ? `${correctCount} of ${questions.length} correct` : `${questions.length - answeredCount} remaining`}</p>
               {results ? (
-                <button type="button" onClick={() => { setAnswers({}); setResults(null); }} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"><RefreshCw size={15} /> Try again</button>
+                <button type="button" onClick={() => { setAnswers({}); setResults(null); setConfidenceRating(null); setCalibration(null); }} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"><RefreshCw size={15} /> Try again</button>
               ) : (
                 <button type="button" onClick={submitAnswers} disabled={submitting || answeredCount !== questions.length} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0">
                   {submitting ? <Loader2 className="animate-spin" size={15} /> : <Send size={15} />}

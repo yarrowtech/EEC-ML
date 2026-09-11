@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo, forwardRef, u
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Trash2, BookOpen, FlaskConical, Layers, PenLine, GraduationCap,
-  ChevronRight, ChevronLeft, X, Sparkles, Save, Clock,
+  ChevronRight, ChevronLeft, X, Sparkles, Save, Clock, Search, CheckCircle2,
 } from "lucide-react";
 import PointsBadge from "./PointsBadge";
 import Assignment from "./Assignment";
@@ -40,6 +40,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const [journalLoading, setJournalLoading] = useState(false);
   const skipAutosaveRef = useRef(false);
   const [showMobileIndex, setShowMobileIndex] = useState(false);
+  const [journalSearch, setJournalSearch] = useState("");
 
   /* Tour state */
   const [tourStep, setTourStep] = useState(-1);
@@ -183,462 +184,316 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
       counts[k] = (counts[k] || 0) + 1;
     });
     const indices = {};
-    return journalEntries.map((e) => {
+    return journalEntries.map((e, i) => {
       const d = new Date(e.updatedAt || e.createdAt);
       const ok = !Number.isNaN(d.getTime());
       const k = ok ? d.toISOString().slice(0, 10) : "unknown";
       const label = ok ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Unknown";
       const idx = (indices[k] = (indices[k] || 0) + 1);
-      return { ...e, _dateLabel: label, _dateIndex: idx, _dateTotal: counts[k] || 1 };
+      const wordCount = (e.content || "").trim().split(/\s+/).filter(Boolean).length;
+      const entryNumber = String(journalEntries.length - i).padStart(3, "0");
+      return { ...e, _dateLabel: label, _dateIndex: idx, _dateTotal: counts[k] || 1, _wordCount: wordCount, _entryNumber: entryNumber };
     });
   }, [journalEntries]);
+
+  const filteredEntries = useMemo(() => {
+    const q = journalSearch.trim().toLowerCase();
+    if (!q) return entriesWithIndex;
+    return entriesWithIndex.filter((e) =>
+      (e.title || "").toLowerCase().includes(q)
+      || (e.content || "").toLowerCase().includes(q)
+      || (e.tags || []).some((t) => t.toLowerCase().includes(q))
+    );
+  }, [entriesWithIndex, journalSearch]);
 
   /* ═══════════════ RENDER ═══════════════ */
   return (
     <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-white px-4 md:px-6 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
 
-      {/* ═══════════════ JOURNAL - VIBRANT MINIMALIST ═══════════════ */}
+      {/* ═══════════════ JOURNAL — FOLIO (glass / purple) ═══════════════ */}
       {assignmentType === "journal" && (
-        <div data-tour-root className="relative mx-auto max-w-7xl h-full">
+        <div data-tour-root className="relative mx-auto h-full max-w-7xl overflow-y-auto custom-scrollbar px-1 pb-6">
+          {/* Ambient glow */}
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl">
+            <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-[#ede9fe]/70 blur-[100px]" />
+            <div className="absolute top-1/4 -right-20 h-[26rem] w-[26rem] rounded-full bg-[#e0f2fe]/70 blur-[110px]" />
+            <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-[#f3e8ff]/60 blur-[100px]" />
+          </div>
 
-          {/* ── Journal Wrapper ── */}
-          <div
-            className="rounded-2xl overflow-hidden flex flex-col h-full"
-            style={{
-              background: "#fdfcf8",
-              boxShadow: "0 20px 60px -10px rgba(61,90,69,0.15), 0 0 0 1px rgba(61,90,69,0.08)",
-            }}
-          >
-            {/* ── Sticky Header ── */}
-            <div
-              className="shrink-0 border-b flex items-center justify-between px-4 sm:px-6 h-16 z-20 sticky top-0"
-              style={{
-                borderColor: "rgba(61,90,69,0.12)",
-                background: "rgba(253,252,248,0.85)",
-                backdropFilter: "blur(12px)",
-              }}
-            >
-              {/* Left: Brand */}
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
-                  style={{ background: "#f5a627" }}
-                >
-                  <BookOpen className="h-4.5 w-4.5 text-white" />
-                </div>
-                <div>
-                  <h1
-                    className="font-bold text-lg leading-none"
-                    style={{ color: "#3d5a45", fontFamily: "'Merriweather', Georgia, serif" }}
-                  >
-                    My Learning Journal
-                  </h1>
-                  <p className="text-[10px] uppercase tracking-widest font-semibold mt-0.5" style={{ color: "#9ca3af" }}>
-                    Personal Growth Notebook
-                  </p>
-                </div>
+          {/* Sticky header */}
+          <div className="sticky top-0 z-20 -mx-1 mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-xl sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 text-[#8b5cf6]">
+                <BookOpen className="size-4.5" />
               </div>
-
-              {/* Right: Tour + Autosave + Points */}
-              <div className="flex items-center gap-2 sm:gap-3">
-                {tourDismissed && (
-                  <button
-                    onClick={restartTour}
-                    className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-all"
-                    style={{ color: "#6b7280", background: "transparent" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#f3f4f6"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" /> Tour
-                  </button>
-                )}
-                <div
-                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold border ${autosaveLabel === "Saved"
-                    ? "text-white bg-yellow-500/80 border-white"
-                    : autosaveLabel.includes("Saving")
-                      ? "text-amber-700 bg-amber-50 border-amber-100"
-                      : "text-red-600 bg-red-50 border-red-100"
-                    }`}
-                >
-                  {autosaveLabel === "Saved" ? <Save className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                  <span className="hidden sm:inline">{autosaveLabel}</span>
-                </div>
+              <div>
+                <h1 className="text-[17px] font-bold leading-none tracking-tight text-[#0f172a]">My Journal</h1>
+                <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#94a3b8]">Personal growth notebook</p>
               </div>
             </div>
-
-            {/* ── Main Content: Sidebar + Editor ── */}
-            <div className="flex flex-1 min-h-0 flex-col sm:flex-row overflow-hidden">
-
-              {/* ─── Left Sidebar: Index ─── */}
-              <aside
-                data-tour="tour-timeline"
-                className="w-full sm:w-72 lg:w-80 shrink-0 flex flex-col border-r overflow-hidden"
-                style={{ borderColor: "rgba(61,90,69,0.1)", background: "#f9f8f5" }}
-              >
-                {/* Mobile Index Toggle */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {tourDismissed && (
                 <button
-                  className="sm:hidden flex items-center justify-between w-full px-4 py-3 border-b"
-                  style={{ borderColor: "rgba(61,90,69,0.1)" }}
-                  onClick={() => setShowMobileIndex(prev => !prev)}
+                  onClick={restartTour}
+                  className="hidden items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[#64748b] transition-colors hover:bg-[#f5f3ff] sm:flex"
                 >
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" style={{ color: "#3d5a45" }} />
-                    <span className="text-sm font-bold" style={{ color: "#3d5a45" }}>Index</span>
-                    {journalEntries.length > 0 && (
-                      <span
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: "#d1fae5", color: "#065f46" }}
-                      >
-                        {journalEntries.length}
-                      </span>
-                    )}
-                  </div>
-                  <ChevronRight
-                    className={`h-4 w-4 transition-transform duration-200 ${showMobileIndex ? "rotate-90" : ""}`}
-                    style={{ color: "#9ca3af" }}
-                  />
+                  <Sparkles className="size-3.5" /> Tour
                 </button>
-
-                {/* Index Panel */}
-                <div className={`${showMobileIndex ? "flex" : "hidden"} sm:flex flex-col flex-1 p-4 lg:p-5 overflow-hidden`}>
-
-                  {/* Index heading (desktop) */}
-                  <div className="hidden sm:flex items-center justify-between mb-4">
-                    <h2
-                      className="text-xs font-bold uppercase tracking-[0.2em]"
-                      style={{ color: "#9ca3af", fontFamily: "'Merriweather', Georgia, serif" }}
-                    >
-                      Index
-                    </h2>
-                    <span className="text-[10px] font-semibold" style={{ color: "#3d5a45" }}>
-                      {journalEntries.length} {journalEntries.length === 1 ? "page" : "pages"}
-                    </span>
-                  </div>
-
-                  {/* New Entry Button */}
-                  <button
-                    data-tour="tour-new-entry"
-                    onClick={() => { resetJournalForm(); setShowMobileIndex(false); }}
-                    className="group mb-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed text-sm font-medium transition-all"
-                    style={{ borderColor: "#a3c4a8", color: "#3d5a45", background: "rgba(61,90,69,0.03)" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#3d5a45"; e.currentTarget.style.background = "rgba(61,90,69,0.06)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#a3c4a8"; e.currentTarget.style.background = "rgba(61,90,69,0.03)"; }}
-                  >
-                    <Plus className="h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
-                    New Entry
-                  </button>
-
-                  {/* Entry List */}
-                  <div className="flex-1 space-y-2.5 overflow-y-auto pr-1 custom-scrollbar">
-                    {journalLoading && (
-                      <div className="flex flex-col items-center justify-center py-12 gap-3" style={{ color: "#9ca3af" }}>
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-green-200 border-t-green-600" />
-                        <span className="text-xs">Loading entries…</span>
-                      </div>
-                    )}
-
-                    {!journalLoading && entriesWithIndex.map((entry, idx) => {
-                      const isSelected = selectedEntryId === entry.id;
-                      const moodDotColors = {
-                        Happy: "#22c55e",
-                        Excited: "#f59e0b",
-                        Curious: "#6366f1",
-                        Challenged: "#ef4444",
-                        Neutral: "#94a3b8",
-                      };
-                      const entryNumber = String(journalEntries.length - idx).padStart(3, "0");
-                      return (
-                        <div
-                          key={entry.id}
-                          onClick={() => loadEntry(entry)}
-                          className="group relative cursor-pointer rounded-xl transition-all"
-                          style={{
-                            padding: "12px 14px",
-                            background: isSelected ? "#3d5a45" : "#ffffff",
-                            boxShadow: isSelected
-                              ? "0 4px 14px -3px rgba(61,90,69,0.35)"
-                              : "0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)",
-                          }}
-                          onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.boxShadow = "0 4px 12px -2px rgba(0,0,0,0.12)"; e.currentTarget.style.transform = "translateY(-1px)"; } }}
-                          onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)"; e.currentTarget.style.transform = "none"; } }}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div
-                                className="text-[10px] font-bold uppercase tracking-widest mb-1"
-                                style={{ color: isSelected ? "rgba(255,255,255,0.55)" : "#9ca3af" }}
-                              >
-                                Entry #{entryNumber}
-                              </div>
-                              <h3
-                                className="text-sm font-bold leading-snug truncate"
-                                style={{
-                                  color: isSelected ? "#ffffff" : "#1e293b",
-                                  fontFamily: "'Merriweather', Georgia, serif",
-                                }}
-                              >
-                                {entry.title || "Untitled"}
-                              </h3>
-                              <p
-                                className="text-[11px] mt-0.5"
-                                style={{ color: isSelected ? "rgba(255,255,255,0.6)" : "#9ca3af" }}
-                              >
-                                {entry._dateLabel}
-                              </p>
-                            </div>
-                            <button
-                              onClick={ev => { ev.stopPropagation(); handleDeleteEntry(entry.id); }}
-                              className="shrink-0 rounded p-1 transition opacity-0 group-hover:opacity-100"
-                              style={{ color: isSelected ? "rgba(255,255,255,0.5)" : "#ef4444" }}
-                              onMouseEnter={e => e.currentTarget.style.opacity = "1"}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                          {/* Mood dot + category */}
-                          <div className="flex items-center gap-1.5 mt-2">
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ background: moodDotColors[entry.mood] || "#94a3b8" }}
-                            />
-                            {entry.tags?.length > 0 && (
-                              <span
-                                className="text-[9px] font-semibold uppercase tracking-wide"
-                                style={{ color: isSelected ? "rgba(255,255,255,0.5)" : "#9ca3af" }}
-                              >
-                                {entry.tags[0]}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {!journalLoading && journalEntries.length === 0 && (
-                      <div className="flex flex-col items-center py-14 gap-2" style={{ color: "#9ca3af" }}>
-                        <PenLine className="h-9 w-9 opacity-40" />
-                        <p className="text-sm font-medium">No entries yet</p>
-                        <p className="text-xs opacity-70 text-center">Click "New Entry" to write your first page!</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Total Pages footer */}
-                  {journalEntries.length > 0 && (
-                    <div
-                      className="mt-3 pt-3 border-t flex items-center justify-between text-[10px] font-bold uppercase tracking-widest"
-                      style={{ borderColor: "rgba(61,90,69,0.1)", color: "#9ca3af" }}
-                    >
-                      <span>Total Pages</span>
-                      <span style={{ color: "#3d5a45" }}>{journalEntries.length}</span>
-                    </div>
-                  )}
-                </div>
-              </aside>
-
-              {/* ─── Right: Writing Canvas ─── */}
-              <section
-                className="flex-1 flex flex-col min-h-0"
-                style={{ background: "#ffffff" }}
+              )}
+              <div
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-semibold ${
+                  autosaveLabel === "Saved"
+                    ? "border-[#10b981]/30 bg-[#ecfdf5] text-[#10b981]"
+                    : autosaveLabel.includes("Saving")
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-red-200 bg-red-50 text-red-600"
+                }`}
               >
-                {/* Scrollable writing area */}
-                <div className="flex-1 overflow-y-auto px-6 sm:px-10 lg:px-20 py-8 sm:py-12 pb-24 lg:pb-12 custom-scrollbar">
-                  <div className="max-w-3xl mx-auto space-y-6">
+                {autosaveLabel === "Saved" ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />}
+                <span className="hidden sm:inline">{autosaveLabel}</span>
+              </div>
+            </div>
+          </div>
 
-                    {/* Date + decoration dots */}
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="text-xs font-bold uppercase tracking-[0.2em]"
-                        style={{ color: "#94a3b8" }}
-                      >
-                        {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-                      </span>
-                      <div className="flex gap-2">
-                        {[0, 1, 2].map(i => (
-                          <div
-                            key={i}
-                            className="w-3 h-3 rounded-full border-2"
-                            style={{ borderColor: "#e2e8f0" }}
-                          />
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+            {/* ─── LEFT: Ledger ─── */}
+            <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
+              <button
+                data-tour="tour-new-entry"
+                onClick={() => { resetJournalForm(); setShowMobileIndex(false); }}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-2.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90"
+              >
+                <span className="flex size-6 items-center justify-center rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] transition-colors duration-200 group-hover:bg-[#8b5cf6] group-hover:text-white">
+                  <Plus className="size-3.5 transition-transform duration-200 group-hover:rotate-90" />
+                </span>
+                <span className="text-[14px] font-semibold text-[#0f172a]">New Entry</span>
+              </button>
+
+              <div className="flex flex-col gap-2.5 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 p-3 shadow-sm backdrop-blur-xl">
+                <div className="flex items-center justify-between rounded-xl bg-[#f5f3ff]/70 p-1 text-[13px]">
+                  <span className="flex-1 rounded-lg bg-white/90 py-1 text-center font-semibold text-[#8b5cf6] shadow-sm">
+                    All ({journalEntries.length})
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <Search className="pointer-events-none absolute left-3 size-4 text-[#64748b]" />
+                  <input
+                    value={journalSearch}
+                    onChange={(e) => setJournalSearch(e.target.value)}
+                    placeholder="Filter by title, tag, or text..."
+                    className="w-full rounded-xl border border-[#8b5cf6]/25 bg-white/60 py-1.5 pl-9 pr-3 text-[13px] text-[#0f172a] placeholder:text-[#94a3b8] transition-all duration-200 focus:border-[#8b5cf6] focus:bg-white/90 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Mobile index toggle */}
+              <button
+                className="flex w-full items-center justify-between rounded-xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden"
+                onClick={() => setShowMobileIndex((prev) => !prev)}
+              >
+                <span className="text-sm font-bold text-[#0f172a]">Entries ({filteredEntries.length})</span>
+                <ChevronRight className={`size-4 text-[#94a3b8] transition-transform duration-200 ${showMobileIndex ? "rotate-90" : ""}`} />
+              </button>
+
+              <div
+                data-tour="tour-timeline"
+                className={`${showMobileIndex ? "flex" : "hidden"} max-h-[560px] flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar lg:flex`}
+              >
+                {journalLoading && (
+                  <div className="flex flex-col items-center justify-center gap-3 py-12 text-[#94a3b8]">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#ede9fe] border-t-[#8b5cf6]" />
+                    <span className="text-xs">Loading entries…</span>
+                  </div>
+                )}
+
+                {!journalLoading && filteredEntries.map((entry) => {
+                  const isSelected = selectedEntryId === entry.id;
+                  const moodDotColors = {
+                    Happy: "#22c55e",
+                    Excited: "#f59e0b",
+                    Curious: "#6366f1",
+                    Challenged: "#ef4444",
+                    Neutral: "#94a3b8",
+                  };
+                  const snippet = (entry.content || "").trim().slice(0, 110);
+                  return (
+                    <div
+                      key={entry.id}
+                      onClick={() => loadEntry(entry)}
+                      className={`group relative cursor-pointer rounded-2xl border p-4 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out hover:-translate-y-0.5 ${
+                        isSelected
+                          ? "border-[#8b5cf6] bg-white/85 ring-2 ring-[#8b5cf6]/20"
+                          : "border-[#8b5cf6]/20 bg-white/60 hover:bg-white/80"
+                      }`}
+                    >
+                      {isSelected && <div className="absolute bottom-4 left-0 top-4 w-1.5 rounded-r bg-[#8b5cf6]" />}
+                      <div className={`flex items-center justify-between ${isSelected ? "pl-2" : ""}`}>
+                        <span className={`text-[11px] font-semibold uppercase tracking-wider ${isSelected ? "text-[#8b5cf6]" : "text-[#94a3b8]"}`}>
+                          Entry #{entry._entryNumber}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-medium text-[#64748b]">{entry._dateLabel}</span>
+                          <button
+                            onClick={(ev) => { ev.stopPropagation(); handleDeleteEntry(entry.id); }}
+                            className="rounded p-0.5 text-[#94a3b8] opacity-0 transition hover:text-red-500 group-hover:opacity-100"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <h3 className={`mt-1 line-clamp-1 text-[15px] font-bold text-[#0f172a] ${isSelected ? "pl-2" : ""}`}>
+                        {entry.title || "Untitled"}
+                      </h3>
+                      {snippet && (
+                        <p className={`mt-1 line-clamp-2 text-[13px] leading-relaxed text-[#64748b] ${isSelected ? "pl-2" : ""}`}>
+                          {snippet}
+                        </p>
+                      )}
+                      <div className={`mt-3 flex flex-wrap items-center gap-1.5 ${isSelected ? "pl-2" : ""}`}>
+                        <span className="size-2 shrink-0 rounded-full" style={{ background: moodDotColors[entry.mood] || "#94a3b8" }} />
+                        {(entry.tags || []).slice(0, 2).map((tag) => (
+                          <span key={tag} className="rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-2 py-0.5 text-[11px] font-medium text-[#8b5cf6]">
+                            #{tag}
+                          </span>
                         ))}
+                        <span className="ml-auto text-[11px] font-medium text-[#94a3b8]">{entry._wordCount}w</span>
                       </div>
                     </div>
+                  );
+                })}
 
-                    {/* Title input */}
+                {!journalLoading && filteredEntries.length === 0 && journalEntries.length > 0 && (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#8b5cf6]/20 bg-white/50 py-12 text-[#94a3b8]">
+                    <Search className="size-8 opacity-40" />
+                    <p className="text-sm font-medium">No entries match &ldquo;{journalSearch}&rdquo;</p>
+                  </div>
+                )}
+
+                {!journalLoading && journalEntries.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#8b5cf6]/20 bg-white/50 py-14 text-[#94a3b8]">
+                    <PenLine className="size-9 opacity-40" />
+                    <p className="text-sm font-medium">No entries yet</p>
+                    <p className="text-center text-xs opacity-70">Click &ldquo;New Entry&rdquo; to write your first page!</p>
+                  </div>
+                )}
+              </div>
+            </aside>
+
+            {/* ─── RIGHT: Writing canvas ─── */}
+            <section className="w-full flex-1 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 p-6 shadow-sm backdrop-blur-xl md:p-8">
+              {/* Top meta bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#8b5cf6]/20 pb-5">
+                <span className="rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-3 py-1 text-[11px] font-bold uppercase text-[#8b5cf6]">
+                  {selectedEntryId ? `Entry #${entriesWithIndex.find((e) => e.id === selectedEntryId)?._entryNumber ?? "new"}` : "New Entry"}
+                </span>
+                <span className="text-[12px] font-medium text-[#94a3b8]">
+                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                </span>
+              </div>
+
+              {/* Title input */}
+              <div className="pb-4 pt-5">
+                <input
+                  data-tour="tour-title"
+                  type="text"
+                  value={journalTitle}
+                  onChange={(e) => setJournalTitle(e.target.value)}
+                  placeholder="Title this page..."
+                  className="w-full border-none bg-transparent p-0 text-[28px] font-bold leading-tight tracking-tight text-[#0f172a] placeholder:text-slate-200 focus:outline-none focus:ring-0 md:text-[32px]"
+                />
+              </div>
+
+              {/* Body */}
+              <div data-tour="tour-content" className="relative">
+                <textarea
+                  value={journalContent.replace(/<[^>]*>/g, "")}
+                  onChange={(e) => setJournalContent(e.target.value)}
+                  placeholder="Write about what you learned today..."
+                  className="w-full resize-none border-none bg-transparent p-0 text-[15px] leading-relaxed text-[#334155] placeholder:text-slate-200 focus:outline-none focus:ring-0"
+                  style={{ minHeight: "320px" }}
+                />
+              </div>
+
+              {/* Tags & Mood */}
+              <div data-tour="tour-mood-tags" className="mt-4 grid grid-cols-1 gap-6 border-t border-[#8b5cf6]/20 pt-5 md:grid-cols-2">
+                <div className="space-y-3">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">Categories &amp; Tags</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(journalTags || "").split(",").map((t) => t.trim()).filter(Boolean).map((tag) => (
+                      <span
+                        key={tag}
+                        className="flex items-center gap-1 rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-3 py-1 text-xs font-semibold text-[#8b5cf6]"
+                      >
+                        #{tag}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setJournalTags(
+                              (journalTags || "").split(",").map((t) => t.trim()).filter((t) => t && t !== tag).join(", ")
+                            )
+                          }
+                          className="ml-0.5 text-sm leading-none text-[#8b5cf6]/50 hover:text-[#8b5cf6]"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
                     <input
-                      data-tour="tour-title"
                       type="text"
-                      value={journalTitle}
-                      onChange={e => setJournalTitle(e.target.value)}
-                      placeholder="Title this page..."
-                      className="w-full bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder-slate-200"
-                      style={{
-                        fontSize: "clamp(1.75rem, 4vw, 3rem)",
-                        fontWeight: "800",
-                        fontFamily: "'Merriweather', Georgia, serif",
-                        color: "#1e293b",
-                        lineHeight: "1.2",
+                      placeholder="+ Add Tag"
+                      className="w-24 rounded-xl border-2 border-dotted border-[#94a3b8]/40 bg-transparent px-3 py-1 text-xs font-bold text-[#94a3b8] transition focus:border-[#8b5cf6] focus:text-[#8b5cf6] focus:outline-none focus:ring-0"
+                      onKeyDown={(e) => {
+                        if ((e.key === "Enter" || e.key === ",") && e.currentTarget.value.trim()) {
+                          e.preventDefault();
+                          const newTag = e.currentTarget.value.trim().replace(/,$/, "");
+                          const existing = (journalTags || "").split(",").map((t) => t.trim()).filter(Boolean);
+                          if (newTag && !existing.includes(newTag)) {
+                            setJournalTags([...existing, newTag].join(", "));
+                          }
+                          e.currentTarget.value = "";
+                        }
                       }}
                     />
-
-                    {/* Lined writing area */}
-                    <div
-                      data-tour="tour-content"
-                      className="relative"
-                      style={{ minHeight: "360px" }}
-                    >
-                      {/* Horizontal lines */}
-                      <div
-                        className="absolute inset-0 pointer-events-none opacity-40"
-                        style={{
-                          backgroundImage: "linear-gradient(#e2e8f0 1px, transparent 1px)",
-                          backgroundSize: "100% 2.5rem",
-                        }}
-                      />
-                      <textarea
-                        value={journalContent.replace(/<[^>]*>/g, "")}
-                        onChange={e => setJournalContent(e.target.value)}
-                        placeholder="Write about what you learned today..."
-                        className="w-full bg-transparent border-none p-0 focus:ring-0 focus:outline-none resize-none placeholder-slate-200"
-                        style={{
-                          minHeight: "360px",
-                          fontSize: "1.0625rem",
-                          lineHeight: "2.5rem",
-                          color: "#475569",
-                          fontFamily: "'Merriweather', Georgia, serif",
-                          position: "relative",
-                          zIndex: 1,
-                        }}
-                      />
-                    </div>
-
-                    {/* Tags & Mood section */}
-                    <div
-                      data-tour="tour-mood-tags"
-                      className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-6 border-t"
-                      style={{ borderColor: "#f1f5f9" }}
-                    >
-                      {/* Tags */}
-                      <div className="space-y-3">
-                        <label
-                          className="block text-[10px] font-bold uppercase tracking-widest"
-                          style={{ color: "#94a3b8" }}
-                        >
-                          Categories &amp; Tags
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {(journalTags || "").split(",").map(t => t.trim()).filter(Boolean).map(tag => (
-                            <span
-                              key={tag}
-                              className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border"
-                              style={{ background: "#f0fdf4", color: "#16a34a", borderColor: "#bbf7d0" }}
-                            >
-                              #{tag}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setJournalTags(
-                                    (journalTags || "").split(",")
-                                      .map(t => t.trim())
-                                      .filter(t => t && t !== tag)
-                                      .join(", ")
-                                  )
-                                }
-                                className="ml-0.5 text-green-400 hover:text-green-700 leading-none text-sm"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                          <input
-                            type="text"
-                            placeholder="+ Add Tag"
-                            className="px-3 py-1 rounded-full border-2 border-dotted text-xs font-bold transition focus:outline-none focus:ring-0"
-                            style={{ borderColor: "#e2e8f0", color: "#94a3b8", background: "transparent", width: "100px" }}
-                            onKeyDown={e => {
-                              if ((e.key === "Enter" || e.key === ",") && e.currentTarget.value.trim()) {
-                                e.preventDefault();
-                                const newTag = e.currentTarget.value.trim().replace(/,$/, "");
-                                const existing = (journalTags || "").split(",").map(t => t.trim()).filter(Boolean);
-                                if (newTag && !existing.includes(newTag)) {
-                                  setJournalTags([...existing, newTag].join(", "));
-                                }
-                                e.currentTarget.value = "";
-                              }
-                            }}
-                            onFocus={e => { e.currentTarget.style.borderColor = "#3d5a45"; e.currentTarget.style.color = "#3d5a45"; }}
-                            onBlur={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.color = "#94a3b8"; }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Mood */}
-                      <div className="space-y-3">
-                        <label
-                          className="block text-[10px] font-bold uppercase tracking-widest"
-                          style={{ color: "#94a3b8" }}
-                        >
-                          Current Mood
-                        </label>
-                        <div className="flex gap-2">
-                          {moodOptions.map(m => (
-                            <button
-                              key={m}
-                              type="button"
-                              onClick={() => setJournalMood(m)}
-                              title={m}
-                              className="w-11 h-11 flex items-center justify-center rounded-xl text-2xl transition-all border"
-                              style={{
-                                background: journalMood === m ? "#fef3c7" : "#f8fafc",
-                                borderColor: journalMood === m ? "#fbbf24" : "transparent",
-                                filter: journalMood === m ? "none" : "grayscale(1)",
-                                boxShadow: journalMood === m ? "0 0 0 2px #fde68a" : "none",
-                                transform: journalMood === m ? "scale(1.1)" : "scale(1)",
-                              }}
-                              onMouseEnter={e => { if (journalMood !== m) e.currentTarget.style.filter = "none"; }}
-                              onMouseLeave={e => { if (journalMood !== m) e.currentTarget.style.filter = "grayscale(1)"; }}
-                            >
-                              {moodEmojis[m]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
                   </div>
                 </div>
 
-                {/* ── Bottom Save Bar ── */}
-                <div
-                  className="shrink-0 md:flex items-center justify-between px-6 sm:px-10 lg:px-20 py-3 border-t pb-20 md:pb-3 hidden"
-                  style={{ borderColor: "#f1f5f9", background: "#ffffff" }}
-                >
-                  <span className="text-[11px] font-semibold" style={{ color: "#94a3b8" }}>
-                    {autosaveLabel === "Saved" ? "✓ All changes saved" : autosaveLabel.includes("Saving") ? "Saving…" : "Unsaved changes"}
-                  </span>
-                  <button
-                    data-tour="tour-save"
-                    onClick={handleSaveDraft}
-                    className="group flex items-center gap-2 text-white font-bold tracking-wide transition-all active:scale-95"
-                    style={{
-                      paddingLeft: "1.25rem",
-                      paddingRight: "1.5rem",
-                      paddingTop: "0.625rem",
-                      paddingBottom: "0.625rem",
-                      borderRadius: "9999px",
-                      background: "#3d5a45",
-                      boxShadow: "0 4px 14px -3px rgba(61,90,69,0.45)",
-                      fontSize: "0.875rem",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "#2d4535"; e.currentTarget.style.transform = "scale(1.03)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "#3d5a45"; e.currentTarget.style.transform = "scale(1)"; }}
-                  >
-                    <Save className="h-4 w-4" />
-                    Save Entry
-                  </button>
+                <div className="space-y-3">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">Current Mood</label>
+                  <div className="flex gap-2">
+                    {moodOptions.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setJournalMood(m)}
+                        title={m}
+                        className={`flex size-11 items-center justify-center rounded-xl border text-2xl transition-all ${
+                          journalMood === m
+                            ? "scale-110 border-[#8b5cf6] bg-[#f5f3ff] shadow-[0_0_0_2px_rgba(139,92,246,0.25)]"
+                            : "border-transparent bg-[#f8fafc] grayscale hover:grayscale-0"
+                        }`}
+                      >
+                        {moodEmojis[m]}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </section>
-            </div>
+              </div>
+
+              {/* Save bar */}
+              <div className="mt-6 flex items-center justify-between gap-3 border-t border-[#8b5cf6]/20 pt-5">
+                <span className="text-[11px] font-semibold text-[#94a3b8]">
+                  {autosaveLabel === "Saved" ? "✓ All changes saved" : autosaveLabel.includes("Saving") ? "Saving…" : "Unsaved changes"}
+                </span>
+                <button
+                  data-tour="tour-save"
+                  onClick={handleSaveDraft}
+                  className="flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-[#8b5cf6]/30 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-purple-600"
+                >
+                  <Save className="size-4" />
+                  Save Entry
+                </button>
+              </div>
+            </section>
           </div>
 
           {/* ═══════════════ TOUR OVERLAY ═══════════════ */}
@@ -655,13 +510,13 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               <div className="absolute inset-0 z-50 rounded-2xl overflow-hidden">
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={tourSkip} />
                 {targetEl && rect && parentRect && (
-                  <div className="absolute rounded-lg ring-4 ring-green-400/60 shadow-lg shadow-green-300/30"
+                  <div className="absolute rounded-lg ring-4 ring-[#8b5cf6]/60 shadow-lg shadow-[#8b5cf6]/30"
                     style={{ top: relTop - 4, left: relLeft - 4, width: rect.width + 8, height: rect.height + 8, backgroundColor: "rgba(255,255,255,0.15)", pointerEvents: "none" }} />
                 )}
                 <div
                   className={`absolute flex flex-col rounded-xl border bg-white p-5 shadow-2xl ${isCentered ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" : ""}`}
                   style={{
-                    borderColor: "#dcfce7",
+                    borderColor: "#ede9fe",
                     width: "min(340px, 85vw)",
                     zIndex: 60,
                     ...(!isCentered && rect && parentRect ? {
@@ -681,7 +536,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                   <div className="flex items-center justify-between">
                     <div className="flex gap-1.5">
                       {TOUR_STEPS.map((_, i) => (
-                        <div key={i} className={`h-2 rounded-full transition-all ${i === tourStep ? "w-5 bg-green-500" : i < tourStep ? "w-2 bg-green-300" : "w-2 bg-gray-200"}`} />
+                        <div key={i} className={`h-2 rounded-full transition-all ${i === tourStep ? "w-5 bg-[#8b5cf6]" : i < tourStep ? "w-2 bg-[#c4b5fd]" : "w-2 bg-gray-200"}`} />
                       ))}
                     </div>
                     <div className="flex items-center gap-2">
@@ -692,12 +547,12 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                       )}
                       {tourStep < TOUR_STEPS.length - 1 ? (
                         <button onClick={tourNext} className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white shadow transition hover:brightness-110"
-                          style={{ backgroundColor: "#3d5a45" }}>
+                          style={{ backgroundColor: "#8b5cf6" }}>
                           Next <ChevronRight className="h-3 w-3" />
                         </button>
                       ) : (
                         <button onClick={tourFinish} className="flex items-center gap-1 rounded-lg px-4 py-1.5 text-xs font-medium text-white shadow transition hover:brightness-110"
-                          style={{ backgroundColor: "#3d5a45" }}>
+                          style={{ backgroundColor: "#8b5cf6" }}>
                           Start Writing!
                         </button>
                       )}

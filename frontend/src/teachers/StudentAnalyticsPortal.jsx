@@ -7,7 +7,7 @@ import {
   Calendar, Eye, FileText, AlertCircle, Minus, ChevronDown, ChevronRight, Loader2,
   X, RefreshCcw, AlertTriangle, Brain, BookOpen, Clock, Filter,
   Play, CheckCircle, XCircle, ArrowRight, ArrowUp, Lightbulb, Star,
-  UserCheck, Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping
+  UserCheck, Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping, Heart, Sparkle
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -204,6 +204,10 @@ const StudentAnalyticsPortal = () => {
   const [loadingConfidence, setLoadingConfidence] = useState(false);
   const [helpSeekingData, setHelpSeekingData] = useState([]);
   const [loadingHelpSeeking, setLoadingHelpSeeking] = useState(false);
+  const [belongingData, setBelongingData] = useState([]);
+  const [loadingBelonging, setLoadingBelonging] = useState(false);
+  const [learningStyleData, setLearningStyleData] = useState(null);
+  const [loadingLearningStyle, setLoadingLearningStyle] = useState(false);
   const [forecastFilters, setForecastFilters] = useState({});
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -276,6 +280,8 @@ const StudentAnalyticsPortal = () => {
     if (activeTab === 'ml') fetchMlScores();
     if (activeTab === 'confidence') fetchConfidence();
     if (activeTab === 'help-seeking') fetchHelpSeeking();
+    if (activeTab === 'belonging') fetchBelonging();
+    if (activeTab === 'learning-style') fetchLearningStyle();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -501,6 +507,26 @@ const StudentAnalyticsPortal = () => {
     } catch { /* silent */ } finally { setLoadingHelpSeeking(false); }
   }, []);
 
+  // Teacher-facing social/belonging — students least engaged with the Alcove
+  // peer community first. See backend/services/belongingService.js.
+  const fetchBelonging = useCallback(async () => {
+    setLoadingBelonging(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/belonging/class`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setBelongingData(d.data || []); }
+    } catch { /* silent */ } finally { setLoadingBelonging(false); }
+  }, []);
+
+  // Teacher-facing learning-style distribution across the class. See
+  // backend/services/learningStyleService.js.
+  const fetchLearningStyle = useCallback(async () => {
+    setLoadingLearningStyle(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/learning-style/class`, { headers: authHeaders() });
+      if (res.ok) { const d = await res.json(); setLearningStyleData(d.data || null); }
+    } catch { /* silent */ } finally { setLoadingLearningStyle(false); }
+  }, []);
+
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH: MASTERY ALL STUDENTS
   // ─────────────────────────────────────────────────────────────────────────
@@ -618,6 +644,8 @@ const StudentAnalyticsPortal = () => {
                 { key: 'ml',            label: 'ML Insights',     icon: Brain          },
                 { key: 'confidence',    label: 'Confidence',      icon: Gauge          },
                 { key: 'help-seeking',  label: 'Help-Seeking',    icon: HandHelping    },
+                { key: 'belonging',     label: 'Belonging',       icon: Heart          },
+                { key: 'learning-style',label: 'Learning Style',  icon: Sparkle        },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -751,6 +779,12 @@ const StudentAnalyticsPortal = () => {
             )}
             {activeTab === 'help-seeking' && (
               <HelpSeekingTab data={helpSeekingData} loading={loadingHelpSeeking} onFetch={fetchHelpSeeking} />
+            )}
+            {activeTab === 'belonging' && (
+              <BelongingTab data={belongingData} loading={loadingBelonging} onFetch={fetchBelonging} />
+            )}
+            {activeTab === 'learning-style' && (
+              <LearningStyleTab data={learningStyleData} loading={loadingLearningStyle} onFetch={fetchLearningStyle} />
             )}
           </Motion.div>
         </AnimatePresence>
@@ -925,6 +959,181 @@ const HelpSeekingTab = ({ data, loading, onFetch }) => {
               </div>
             </Motion.article>
           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SOCIAL / BELONGING TAB — Alcove peer-community participation, least engaged
+// first, so students who never post/comment/react surface at the top. See
+// backend/services/belongingService.js.
+// ═════════════════════════════════════════════════════════════════════════════
+const BELONGING_BAND_META = {
+  isolated: { label: 'Isolated', cls: 'bg-slate-100 text-slate-600', badge: 'border-slate-200 bg-slate-50' },
+  low: { label: 'Getting involved', cls: 'bg-amber-100 text-amber-700', badge: 'border-amber-200 bg-amber-50' },
+  moderate: { label: 'Active', cls: 'bg-sky-100 text-sky-700', badge: 'border-sky-200 bg-sky-50' },
+  active: { label: 'Community champion', cls: 'bg-emerald-100 text-emerald-700', badge: 'border-emerald-200 bg-emerald-50' },
+};
+
+const BelongingTab = ({ data, loading, onFetch }) => {
+  const isolated = data.filter((s) => s.band === 'isolated').length;
+  const active = data.filter((s) => s.band === 'active' || s.band === 'moderate').length;
+
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-rose-100 text-rose-600"><Heart className="size-4" /></span>
+            Social / Belonging
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Participation in the Alcove peer community — posts, comments, likes. Least engaged first.</p>
+        </div>
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        </button>
+      </header>
+
+      {!loading && data.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3 text-center text-slate-600">
+            <p className="text-2xl font-bold">{isolated}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Isolated</p>
+          </div>
+          <div className="rounded-[1.2rem] border border-emerald-200 bg-emerald-50 p-3 text-center text-emerald-700">
+            <p className="text-2xl font-bold">{active}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Active / champion</p>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading community data…
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <Heart className="mb-2 size-10 text-[#8fa8b8]" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">No community activity yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Nobody in this class has posted, commented, or reacted on Alcove yet.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.map((s, i) => {
+            const meta = BELONGING_BAND_META[s.band] || BELONGING_BAND_META.isolated;
+            return (
+              <Motion.article
+                key={s.studentId || i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.045 }}
+                whileHover={{ y: -2 }}
+                className={`rounded-[1.4rem] border p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5 ${meta.badge}`}
+              >
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
+                    <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
+                  <span>Posts: <strong>{s.postsAuthored}</strong></span>
+                  <span>Comments: <strong>{s.commentsAuthored}</strong></span>
+                  <span>Likes received: <strong>{s.likesReceived}</strong></span>
+                </div>
+              </Motion.article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════════════
+// LEARNING STYLE TAB — class-wide distribution of detected content-format
+// preference. See backend/services/learningStyleService.js.
+// ═════════════════════════════════════════════════════════════════════════════
+const LEARNING_STYLE_TAB_META = {
+  visual: { label: 'Visual', emoji: '🖼️', cls: 'bg-violet-100 text-violet-700' },
+  reading: { label: 'Reading', emoji: '📖', cls: 'bg-sky-100 text-sky-700' },
+  'hands-on': { label: 'Hands-on', emoji: '✍️', cls: 'bg-amber-100 text-amber-700' },
+  listening: { label: 'Guided/Verbal', emoji: '💬', cls: 'bg-emerald-100 text-emerald-700' },
+};
+
+const LearningStyleTab = ({ data, loading, onFetch }) => {
+  const distribution = data?.distribution || {};
+  const students = data?.students || [];
+  const classified = students.filter((s) => s.dataStatus === 'available');
+
+  return (
+    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
+            <span className="flex size-8 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Sparkle className="size-4" /></span>
+            Learning Style
+          </h2>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Detected content-format preference, from which tutor modes each student actually uses most.</p>
+        </div>
+        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        </button>
+      </header>
+
+      {!loading && students.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Object.entries(LEARNING_STYLE_TAB_META).map(([key, meta]) => (
+            <div key={key} className={`rounded-[1.2rem] border border-transparent p-3 text-center ${meta.cls}`}>
+              <p className="text-2xl font-bold">{distribution[key] || 0}</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">{meta.emoji} {meta.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
+          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading learning-style data…
+        </div>
+      ) : classified.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+          <Sparkle className="mb-2 size-10 text-[#8fa8b8]" />
+          <h3 className="text-base font-semibold text-[#1a2e3f]">Not enough data yet</h3>
+          <p className="mt-1 text-sm text-[#5a7a8e]">Students need more tutor sessions before a style can be detected.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {classified.map((s, i) => {
+            const meta = LEARNING_STYLE_TAB_META[s.detectedStyle] || LEARNING_STYLE_TAB_META.visual;
+            return (
+              <Motion.article
+                key={s.studentId || i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.045 }}
+                whileHover={{ y: -2 }}
+                className="rounded-[1.4rem] border border-violet-100 bg-violet-50/40 p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5"
+              >
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
+                    <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.emoji} {meta.label}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
+                  <span>Confidence: <strong>{s.confidence}%</strong></span>
+                  {s.selfReported && (
+                    <span>Self-reported: <strong>{s.selfReported}</strong> {s.agreesWithSelfReport === false ? '(mismatch)' : ''}</span>
+                  )}
+                </div>
+              </Motion.article>
+            );
+          })}
         </div>
       )}
     </div>

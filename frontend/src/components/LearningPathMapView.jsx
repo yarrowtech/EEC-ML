@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Lock, Play, BookOpen, ChevronDown, ChevronUp, Loader2, Map } from 'lucide-react';
+import { CheckCircle2, Lock, Play, BookOpen, ChevronDown, ChevronUp, Loader2, Map, Compass, Sparkles } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 
@@ -140,22 +140,171 @@ const PathCard = ({ path, onComplete, completing }) => {
   );
 };
 
+// Student Agency: lets a student build and adopt their own path to a topic
+// they pick, instead of only following a teacher-assigned one. Previews via
+// GET /bridge, adopts via POST /student/adopt-bridge (replaces whatever path
+// was active for that subject). See backend/routes/learningPathRoutes.js.
+const BuildYourOwnPath = ({ subjects, onAdopted }) => {
+  const [open, setOpen] = useState(false);
+  const [subject, setSubject] = useState('');
+  const [targetTopic, setTargetTopic] = useState('');
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [adopting, setAdopting] = useState(false);
+  const [error, setError] = useState('');
+
+  const reset = () => { setPreview(null); setError(''); };
+
+  const handlePreview = async () => {
+    if (!subject.trim() || !targetTopic.trim()) return;
+    setPreviewing(true);
+    setError('');
+    setPreview(null);
+    const token = localStorage.getItem('token');
+    try {
+      const params = new URLSearchParams({ subject: subject.trim(), targetTopic: targetTopic.trim() });
+      const res = await fetch(`${API_BASE}/api/learning-paths/bridge?${params}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Could not build a preview');
+      if (data.bridge?.status !== 'ok' || !data.bridge?.steps?.length) {
+        throw new Error(
+          data.bridge?.status === 'target_not_in_map'
+            ? "That topic wasn't found — check the spelling or try a broader topic name"
+            : 'No curriculum map is set up yet for this subject'
+        );
+      }
+      setPreview(data.bridge);
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleAdopt = async () => {
+    setAdopting(true);
+    setError('');
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API_BASE}/api/learning-paths/student/adopt-bridge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject: subject.trim(), targetTopic: targetTopic.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Could not adopt this path');
+      setOpen(false);
+      setSubject('');
+      setTargetTopic('');
+      reset();
+      onAdopted?.();
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setAdopting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-4 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
+      >
+        <Compass className="size-4" /> Build your own path to a topic
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <Compass className="size-4 text-indigo-500" />
+        <p className="text-sm font-bold text-slate-800">Build your own path</p>
+        <button type="button" onClick={() => { setOpen(false); reset(); }} className="ml-auto text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">Pick a subject and a topic you want to reach — we&apos;ll map the shortest path from where you are now, using the same prerequisite logic your teacher uses.</p>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          list="byo-path-subjects"
+          value={subject}
+          onChange={(e) => { setSubject(e.target.value); reset(); }}
+          placeholder="Subject (e.g. Mathematics)"
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+        />
+        <datalist id="byo-path-subjects">
+          {subjects.map((s) => <option key={s} value={s} />)}
+        </datalist>
+        <input
+          value={targetTopic}
+          onChange={(e) => { setTargetTopic(e.target.value); reset(); }}
+          placeholder="Target topic (e.g. Quadratic Equations)"
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={handlePreview}
+        disabled={previewing || !subject.trim() || !targetTopic.trim()}
+        className="mt-3 flex items-center gap-1.5 rounded-xl bg-indigo-500 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-600 disabled:opacity-40"
+      >
+        {previewing ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+        {previewing ? 'Mapping your path…' : 'Preview my path'}
+      </button>
+
+      {error && <p className="mt-3 text-xs font-medium text-rose-600">{error}</p>}
+
+      {preview && (
+        <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+          <p className="mb-2 text-xs font-semibold text-indigo-800">
+            {preview.steps.length} step{preview.steps.length === 1 ? '' : 's'} to reach &ldquo;{preview.target}&rdquo; · ~{preview.totalEstimatedDays} days
+          </p>
+          <ol className="mb-3 space-y-1">
+            {preview.steps.map((s) => (
+              <li key={s.idx} className="text-xs text-slate-600">
+                {s.idx + 1}. {s.title} {s.isTarget && <span className="font-semibold text-indigo-600">(target)</span>}
+              </li>
+            ))}
+          </ol>
+          <button
+            type="button"
+            onClick={handleAdopt}
+            disabled={adopting}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+          >
+            {adopting ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+            {adopting ? 'Adopting…' : 'Adopt this path'}
+          </button>
+          <p className="mt-1.5 text-[10px] text-slate-400">This will replace your current active path for this subject.</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LearningPathMapView = () => {
   const [paths, setPaths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(null);
 
-  useEffect(() => {
+  const loadPaths = () => {
     const token = localStorage.getItem('token');
     if (!token) { setLoading(false); return; }
-    fetch(`${API_BASE}/api/learning-paths/student`, {
+    return fetch(`${API_BASE}/api/learning-paths/student`, {
       headers: { authorization: `Bearer ${token}` },
     })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => setPaths(data?.paths || []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadPaths(); }, []);
 
   const handleComplete = async (pathId, nodeIdx) => {
     const token = localStorage.getItem('token');
@@ -217,7 +366,7 @@ const LearningPathMapView = () => {
         <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center shadow-sm">
           <Map className="mx-auto mb-3 size-12 text-slate-200" />
           <p className="font-semibold text-slate-500 text-sm">No learning paths yet</p>
-          <p className="text-xs text-slate-400 mt-1">Your teacher will assign personalised learning paths for your subjects.</p>
+          <p className="text-xs text-slate-400 mt-1">Your teacher will assign personalised learning paths for your subjects, or you can build your own below.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -231,6 +380,11 @@ const LearningPathMapView = () => {
           ))}
         </div>
       )}
+
+      <BuildYourOwnPath
+        subjects={[...new Set(paths.map((p) => p.subject).filter(Boolean))]}
+        onAdopted={loadPaths}
+      />
     </div>
   );
 };

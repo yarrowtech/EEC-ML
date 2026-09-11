@@ -22,12 +22,15 @@ const teacherLearningPathSchema = new mongoose.Schema(
       index: true,
     },
     teacherId: {
+      // null for a student-adopted bridge path (see routes/learningPathRoutes.js
+      // POST /student/adopt-bridge) — every other path is teacher-published.
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TeacherUser',
-      required: true,
+      default: null,
       index: true,
     },
     teacherName: { type: String, default: '' },
+    source: { type: String, enum: ['teacher', 'student'], default: 'teacher', index: true },
     studentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'StudentUser',

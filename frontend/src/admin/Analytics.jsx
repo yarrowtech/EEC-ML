@@ -38,6 +38,7 @@ import {
   Brain,
   Sparkles,
   RefreshCw,
+  Scale,
 } from 'lucide-react';
 
 const renderInlineMarkdown = (content) => String(content || '')
@@ -280,6 +281,8 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [healthLoading, setHealthLoading] = useState(false);
   const [examIntegrity, setExamIntegrity] = useState({ data: [], summary: null });
   const [integrityLoading, setIntegrityLoading] = useState(false);
+  const [equityData, setEquityData] = useState(null);
+  const [equityLoading, setEquityLoading] = useState(false);
   // AI Insights state — one per report type
   const [aiInsights, setAiInsights] = useState({ overview: '', dropout: '', teacher: '', integrity: '' });
   const [aiInsightsLoading, setAiInsightsLoading] = useState({ overview: false, dropout: false, teacher: false, integrity: false });
@@ -609,6 +612,20 @@ const Analytics = ({ setShowAdminHeader }) => {
     finally { setIntegrityLoading(false); }
   }, []);
 
+  // Equity / bias monitoring — checks whether the AI answer evaluator's avg
+  // score and needs-review rate are consistent across gender cohorts. See
+  // backend/services/equityMonitoringService.js for the deliberate scope
+  // decision (gender only; caste/religion/category excluded).
+  const fetchEquityMonitoring = useCallback(async () => {
+    setEquityLoading(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/admin-analytics/equity-monitoring'), { headers: getAuthHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setEquityData(data.data || null);
+    } catch { /* silent */ }
+    finally { setEquityLoading(false); }
+  }, []);
+
   useEffect(() => {
     fetchMasteryMatrix();
     fetchTeacherEffectiveness();
@@ -618,7 +635,8 @@ const Analytics = ({ setShowAdminHeader }) => {
     fetchContentUsage();
     fetchSystemHealth();
     fetchExamIntegrity();
-  }, [fetchMasteryMatrix, fetchTeacherEffectiveness, fetchAiPath, fetchDropoutRisk, fetchCohortTrend, fetchContentUsage, fetchSystemHealth, fetchExamIntegrity]);
+    fetchEquityMonitoring();
+  }, [fetchMasteryMatrix, fetchTeacherEffectiveness, fetchAiPath, fetchDropoutRisk, fetchCohortTrend, fetchContentUsage, fetchSystemHealth, fetchExamIntegrity, fetchEquityMonitoring]);
 
   const attendanceRate = useMemo(() => {
     if (!reportsSummary?.attendance) return 0;
@@ -2259,6 +2277,83 @@ const Analytics = ({ setShowAdminHeader }) => {
                     onGenerate={() => generateInsights('integrity')}
                     accentColor="orange"
                   />
+                )}
+              </div>
+            </div>
+
+            {/* ── Equity / Bias Monitoring ───────────────────────────────── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-fuchsia-50 rounded-xl">
+                    <Scale className="w-4 h-4 text-fuchsia-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Equity / Bias Monitoring</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Whether the AI answer evaluator behaves consistently across gender cohorts — a prompt to look closer, never a verdict
+                    </p>
+                  </div>
+                </div>
+                <button onClick={fetchEquityMonitoring} disabled={equityLoading} className="flex items-center gap-1.5 text-xs font-medium text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 rounded-lg px-3 py-1.5 hover:bg-fuchsia-100 transition disabled:opacity-50">
+                  {equityLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Refresh
+                </button>
+              </div>
+              <div className="p-6">
+                {equityLoading ? (
+                  <div className="flex items-center justify-center py-10 text-gray-400 text-sm"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
+                ) : !equityData || equityData.dataStatus !== 'available' ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+                    <Scale className="w-10 h-10 mb-2" />
+                    <p className="text-sm text-gray-400">
+                      Not enough graded AI evaluations yet to compare cohorts (minimum {equityData?.minCohortSample ?? 10} per gender).
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {equityData.flags.length > 0 ? (
+                      <div className="mb-5 space-y-2">
+                        {equityData.flags.map((flag, i) => (
+                          <div key={i} className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                            <span>
+                              {flag.signal === 'avg_score_gap'
+                                ? `Average AI-evaluated score for "${flag.higher}" students is ${Math.round(flag.gap * 100)} points higher than "${flag.lower}" students — worth a closer look.`
+                                : `AI evaluator flags "${flag.higher}" students for human review ${Math.round(flag.gap * 100)} points more often than "${flag.lower}" students — worth a closer look.`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
+                        <CheckCircle className="w-4 h-4 shrink-0" /> No significant gender gap detected in AI evaluator outcomes.
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="text-xs w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            {['Gender', 'Sample', 'Avg Score', 'Needs-Review Rate'].map((h) => (
+                              <th key={h} className="text-left text-gray-400 font-semibold uppercase tracking-wide px-3 py-2 text-[10px]">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {equityData.cohorts.map((c, i) => (
+                            <tr key={c.gender} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                              <td className="px-3 py-2.5 font-semibold text-gray-800 capitalize">{c.gender}</td>
+                              <td className="px-3 py-2.5 text-gray-500">{c.sampleSize}{!c.meetsMinSample && <span className="ml-1 text-[10px] text-gray-400">(below min)</span>}</td>
+                              <td className="px-3 py-2.5 text-fuchsia-600 font-bold">{c.avgScore != null ? `${Math.round(c.avgScore * 100)}%` : '—'}</td>
+                              <td className="px-3 py-2.5 text-gray-600">{c.needsReviewRate != null ? `${Math.round(c.needsReviewRate * 100)}%` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-3 text-[10px] text-gray-400">
+                      Scoped to gender only — caste, religion, and category are deliberately excluded from automated bias monitoring pending dedicated ethical review.
+                    </p>
+                  </>
                 )}
               </div>
             </div>

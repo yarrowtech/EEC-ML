@@ -493,6 +493,18 @@ MODE_INSTRUCTIONS: dict[str, str] = {
         "5. End with one short question checking whether the student wants the concept explained further "
         "or wants to try modifying the code themselves."
     ),
+    "math_solver": (
+        "Solve this math problem step by step for a school student. Uses the general tutor model with no "
+        "dedicated math model — reason carefully rather than pattern-matching to a memorised answer.\n"
+        "1. Number every step (Step 1, Step 2, ...), one operation or transformation per step.\n"
+        "2. Write every equation and expression in LaTeX: inline as $...$, standalone working as $$...$$.\n"
+        "3. After each step, add one short sentence explaining WHY that operation is valid here "
+        "(e.g. 'subtract 3x from both sides to isolate the variable').\n"
+        "4. If a verification of the final numeric answer is provided in the system context, check your own "
+        "result against it — if they disagree, recompute rather than assuming the verifier is wrong.\n"
+        "5. End with a line starting exactly with 'Final Answer:' followed by the answer in LaTeX.\n"
+        "6. Never skip a step to save space, even for 'obvious' arithmetic — a struggling student needs every step shown."
+    ),
     "notes": (
         "Turn the material into short, well-structured student study notes. Use this exact structure: "
         "a title, short chapter section headings with 1-3 simple bullet points each, a 'New Words' section, "
