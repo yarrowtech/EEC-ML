@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertCircle,
-  ArrowLeft,
   BarChart3,
   BookOpen,
   Calendar,
@@ -13,6 +11,7 @@ import {
   ChevronRight,
   Clock,
   Download,
+  Filter,
   GraduationCap,
   Heart,
   Layers,
@@ -317,8 +316,6 @@ const FeedbackItem = ({ item, showTeacher }) => (
 );
 
 const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
-  const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
@@ -445,6 +442,15 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
     fetchWindowSettings(selectedSessionId);
   }, [selectedSessionId, fetchWindowSettings]);
 
+  // "Active" means enabled AND today falls inside the saved start–end range —
+  // not just that the toggle is on, so the badge reflects what students
+  // actually see right now.
+  const isWindowCurrentlyActive = useMemo(() => {
+    if (!windowSettings.enabled || !windowSettings.startDate || !windowSettings.endDate) return false;
+    const today = toLocalIsoDate(new Date());
+    return today >= windowSettings.startDate && today <= windowSettings.endDate;
+  }, [windowSettings]);
+
   const persistSettings = async (payload) => {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE}/api/admin/feedback/teacher-feedback/settings`, {
@@ -483,6 +489,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         endDate: windowSettings.endDate || null,
       });
       setWindowSettings(next);
+      setWindowPanelOpen(false);
     } catch (err) {
       setError(err.message || 'Unable to save teacher feedback settings');
     } finally {
@@ -657,16 +664,6 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 p-4 sm:p-6 space-y-5">
-      {/* Breadcrumb */}
-      {/* <div className="flex items-center gap-2 text-sm text-slate-500">
-        <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1.5 hover:text-indigo-600 transition-colors">
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Teacher Feedback
-        </button>
-        <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-        <span className="font-semibold text-slate-700">Overview</span>
-      </div> */}
-
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
@@ -702,26 +699,37 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         </div>
       </motion.div>
 
-      {/* Tabs + actions */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <TabButton active={activeTab === 'teacher'} icon={Users} label="Teacher Wise" onClick={() => setActiveTab('teacher')} />
-          <TabButton active={activeTab === 'student'} icon={User} label="Student Wise" onClick={() => setActiveTab('student')} />
+      {/* Feedback window: status + action, kept as its own section */}
+      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-4 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-sm shrink-0">
+            <Clock className="w-4 h-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800">Student Feedback Window</p>
+            <p className="text-xs text-slate-400 truncate">
+              {sessions.find((s) => s._id === selectedSessionId)?.name || 'No session selected'}
+              {windowSettings.startDate && windowSettings.endDate
+                ? ` · ${formatDateChip(windowSettings.startDate)} - ${formatDateChip(windowSettings.endDate)}`
+                : ' · No dates set'}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+              isWindowCurrentlyActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isWindowCurrentlyActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+            Feedback Window {isWindowCurrentlyActive ? 'Active' : 'Inactive'}
+          </span>
           <button
             onClick={() => setWindowPanelOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
           >
             <Plus className="w-4 h-4" />
             Add Feedback Window
-          </button>
-          <button
-            onClick={exportExcel}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
           </button>
         </div>
       </div>
@@ -821,6 +829,141 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         )}
       </AnimatePresence>
 
+      {/* Filter (its own section, shown before the Teacher Wise / Student Wise tabs) */}
+      <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-indigo-500" />
+          <p className="text-sm font-bold text-slate-800">Filter</p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={selectedSessionId}
+            onChange={(e) => setSelectedSessionId(e.target.value)}
+            className={selectClass}
+            disabled={sessions.length === 0}
+          >
+            {sessions.length === 0 && <option value="">No sessions found</option>}
+            {sessions.map((session) => (
+              <option key={session._id} value={session._id}>
+                {session.name}{session.isActive ? ' (active)' : ''}
+              </option>
+            ))}
+          </select>
+          <select
+            value={query.className}
+            onChange={(e) => setQuery((prev) => ({ ...prev, className: e.target.value }))}
+            className={selectClass}
+          >
+            <option value="all">All Classes</option>
+            {filterOptions.classes.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <select
+            value={query.subjectName}
+            onChange={(e) => setQuery((prev) => ({ ...prev, subjectName: e.target.value }))}
+            className={selectClass}
+          >
+            <option value="all">All Subjects</option>
+            {filterOptions.subjects.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <select
+            value={query.sectionName}
+            onChange={(e) => setQuery((prev) => ({ ...prev, sectionName: e.target.value }))}
+            className={selectClass}
+          >
+            <option value="all">All Sections</option>
+            {filterOptions.sections.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+          <div className="relative flex-1 min-w-[220px] max-w-xs">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder={`Search ${activeTab === 'teacher' ? 'teacher' : 'student'} by name...`}
+              className={`w-full pl-9 pr-3 ${selectClass}`}
+            />
+          </div>
+          <div className="relative" ref={dateRangeRef}>
+            <button
+              onClick={() => {
+                setDraftRange({ from: query.from, to: query.to });
+                setDateRangeOpen((v) => !v);
+              }}
+              className={`${selectClass} inline-flex items-center gap-2`}
+            >
+              <Calendar className="w-4 h-4 text-slate-400" />
+              {formatDateRangeChip(query.from, query.to)}
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+            <AnimatePresence>
+              {dateRangeOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="absolute right-0 mt-2 z-20 w-64 rounded-2xl border border-slate-100 bg-white shadow-xl p-4 space-y-3"
+                >
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">From</label>
+                    <input
+                      type="date"
+                      value={draftRange.from}
+                      onChange={(e) => setDraftRange((prev) => ({ ...prev, from: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">To</label>
+                    <input
+                      type="date"
+                      value={draftRange.to}
+                      onChange={(e) => setDraftRange((prev) => ({ ...prev, to: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button onClick={clearDateRange} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Clear</button>
+                    <button
+                      onClick={applyDateRange}
+                      className="text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 rounded-full"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs + Export */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <TabButton active={activeTab === 'teacher'} icon={Users} label="Teacher Wise" onClick={() => setActiveTab('teacher')} />
+          <TabButton active={activeTab === 'student'} icon={User} label="Student Wise" onClick={() => setActiveTab('student')} />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              fetchFeedback();
+              fetchWindowSettings(selectedSessionId);
+            }}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={exportExcel}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        </div>
+      </div>
+
       {/* Stat tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatTile
@@ -858,94 +1001,6 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
           sub={<span className="text-xs text-slate-400">From all students</span>}
           delay={0.14}
         />
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <select
-          value={query.className}
-          onChange={(e) => setQuery((prev) => ({ ...prev, className: e.target.value }))}
-          className={selectClass}
-        >
-          <option value="all">All Classes</option>
-          {filterOptions.classes.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select
-          value={query.subjectName}
-          onChange={(e) => setQuery((prev) => ({ ...prev, subjectName: e.target.value }))}
-          className={selectClass}
-        >
-          <option value="all">All Subjects</option>
-          {filterOptions.subjects.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select
-          value={query.sectionName}
-          onChange={(e) => setQuery((prev) => ({ ...prev, sectionName: e.target.value }))}
-          className={selectClass}
-        >
-          <option value="all">All Sections</option>
-          {filterOptions.sections.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <div className="relative flex-1 min-w-[220px] max-w-xs">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder={`Search ${activeTab === 'teacher' ? 'teacher' : 'student'} by name...`}
-            className={`w-full pl-9 pr-3 ${selectClass}`}
-          />
-        </div>
-        <div className="relative" ref={dateRangeRef}>
-          <button
-            onClick={() => {
-              setDraftRange({ from: query.from, to: query.to });
-              setDateRangeOpen((v) => !v);
-            }}
-            className={`${selectClass} inline-flex items-center gap-2`}
-          >
-            <Calendar className="w-4 h-4 text-slate-400" />
-            {formatDateRangeChip(query.from, query.to)}
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </button>
-          <AnimatePresence>
-            {dateRangeOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                className="absolute right-0 mt-2 z-20 w-64 rounded-2xl border border-slate-100 bg-white shadow-xl p-4 space-y-3"
-              >
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 block mb-1">From</label>
-                  <input
-                    type="date"
-                    value={draftRange.from}
-                    onChange={(e) => setDraftRange((prev) => ({ ...prev, from: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 block mb-1">To</label>
-                  <input
-                    type="date"
-                    value={draftRange.to}
-                    onChange={(e) => setDraftRange((prev) => ({ ...prev, to: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button onClick={clearDateRange} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Clear</button>
-                  <button
-                    onClick={applyDateRange}
-                    className="text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-1.5 rounded-full"
-                  >
-                    Apply
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
       </div>
 
       {error && (

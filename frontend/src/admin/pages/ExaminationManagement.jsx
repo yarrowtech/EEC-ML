@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { jsPDF } from 'jspdf';
 import {
   AlertTriangle, Award, BookOpen, Building2, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight,
-  Clock, CloudCheck, Copy, DoorOpen, Edit2, FileClock, FileText, Filter, Info, Layers,
-  ListChecks, Loader2, MapPin, Plus, RefreshCw, Rocket, RotateCcw, Search, Trash2,
-  User, Users, X, CheckCircle2, XCircle, Zap,
+  Clock, CloudCheck, Copy, DoorOpen, Edit2, FileClock, FileText, Info, Layers,
+  ListChecks, Loader2, MapPin, MoreVertical, Plus, RefreshCw, Rocket, RotateCcw, Search, Settings, Trash2,
+  User, Users, X, CheckCircle2, Zap,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
@@ -26,34 +27,75 @@ const draftTimeAgo = (iso) => {
   return new Date(iso).toLocaleString();
 };
 
-const TERM_OPTIONS   = ['Class Test','Unit Test','Monthly Test','Term 1','Term 2','Term 3','Half Yearly','Annual','Final'];
+const TERM_OPTIONS = ['Class Test', 'Unit Test', 'Monthly Test', 'Term 1', 'Term 2', 'Term 3', 'Half Yearly', 'Annual', 'Final'];
 // 'Published' is intentionally not selectable here — it's only ever set via
 // the dedicated Publish Routine action, which also posts the notice + PDF.
 const GROUP_STATUS_OPTIONS = ['Scheduled', 'Completed'];
-const SUBJECT_STATUS_OPTIONS = ['Scheduled','Ongoing','Completed','Cancelled','Postponed'];
+const SUBJECT_STATUS_OPTIONS = ['Scheduled', 'Ongoing', 'Completed', 'Cancelled', 'Postponed'];
 
 const TERM_COLORS = {
-  'Class Test':  'bg-sky-50 text-sky-700 border-sky-200',
-  'Unit Test':   'bg-violet-50 text-violet-700 border-violet-200',
-  'Monthly Test':'bg-amber-50 text-amber-700 border-amber-200',
-  'Term 1':      'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Term 2':      'bg-blue-50 text-blue-700 border-blue-200',
-  'Term 3':      'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'Class Test': 'bg-sky-50 text-sky-700 border-sky-200',
+  'Unit Test': 'bg-violet-50 text-violet-700 border-violet-200',
+  'Monthly Test': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Term 1': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Term 2': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Term 3': 'bg-indigo-50 text-indigo-700 border-indigo-200',
   'Half Yearly': 'bg-orange-50 text-orange-700 border-orange-200',
-  'Annual':      'bg-rose-50 text-rose-700 border-rose-200',
-  'Final':       'bg-red-50 text-red-700 border-red-200',
+  'Annual': 'bg-rose-50 text-rose-700 border-rose-200',
+  'Final': 'bg-red-50 text-red-700 border-red-200',
 };
 const STATUS_COLORS = {
   Scheduled: 'bg-blue-50 text-blue-700',
-  Ongoing:   'bg-emerald-50 text-emerald-700',
+  Ongoing: 'bg-emerald-50 text-emerald-700',
   Completed: 'bg-slate-100 text-slate-600',
   Cancelled: 'bg-red-50 text-red-600',
   Postponed: 'bg-amber-50 text-amber-700',
   Published: 'bg-emerald-50 text-emerald-700',
+  Draft: 'bg-slate-100 text-slate-500',
+  Upcoming: 'bg-violet-50 text-violet-700',
 };
 
-const EMPTY_GROUP   = { title:'', term:'Term 1', classId:'', sectionId:'', status:'Scheduled', startDate:'', endDate:'' };
-const EMPTY_SUBJECT = { subjectId:'', marks:'100', date:'', time:'', duration:'', buildingId:'', floorId:'', roomId:'', venue:'', primaryInstructor:'', secondaryInstructor:'', status:'Scheduled' };
+// Display-only refinement of the raw "Scheduled" status: an exam with no
+// subjects yet reads as a Draft, one whose window hasn't started yet reads
+// as Upcoming — the underlying stored status is unchanged either way.
+const displayStatusFor = (batch) => {
+  if (batch.status !== 'Scheduled') return batch.status;
+  if (!batch.totalSubjects) return 'Draft';
+  if (batch.startDate && new Date(batch.startDate) > new Date()) return 'Upcoming';
+  return 'Scheduled';
+};
+
+const EXAM_AVATAR_PALETTE = [
+  'bg-emerald-100 text-emerald-600',
+  'bg-violet-100 text-violet-600',
+  'bg-sky-100 text-sky-600',
+  'bg-pink-100 text-pink-600',
+  'bg-rose-100 text-rose-600',
+  'bg-amber-100 text-amber-600',
+];
+
+const TERM_DOT_PALETTE = ['bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-rose-500', 'bg-amber-500'];
+
+const DETAIL_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'routine', label: 'Routine' },
+  { id: 'classes', label: 'Classes & Subjects' },
+  { id: 'settings', label: 'Settings' },
+  // { id: 'results', label: 'Results' },
+];
+
+const naturalCompare = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+
+const formatDateTimeChip = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${formatDateChip(value)}, ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`;
+};
+
+
+const EMPTY_GROUP = { title: '', term: 'Term 1', classId: '', sectionId: '', status: 'Scheduled', startDate: '', endDate: '' };
+const EMPTY_SUBJECT = { subjectId: '', marks: '100', date: '', time: '', duration: '', buildingId: '', floorId: '', roomId: '', venue: '', primaryInstructor: '', secondaryInstructor: '', status: 'Scheduled' };
 
 const inp = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition placeholder:text-slate-400';
 // Compact variant for dense table cells (the Step 4 routine table) — same look, smaller footprint.
@@ -65,12 +107,92 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const timeToMins = (t) => { const [h,m] = String(t||'').split(':').map(Number); return (h||0)*60+(m||0); };
+// Full-screen, non-dismissible progress overlay used for both "creating" and
+// "deleting" — mirrors the bulk-student-upload progress modal (portal to
+// <body>, real percentage from completed requests, no close affordance).
+const PROGRESS_MODAL_ACCENTS = {
+  indigo: { ring: 'bg-indigo-50', spin: 'text-indigo-600', bar: 'bg-indigo-600' },
+  red: { ring: 'bg-red-50', spin: 'text-red-600', bar: 'bg-red-600' },
+};
+const ProgressModal = ({ open, title, statusText, percent = 0, accent = 'indigo' }) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
+  if (!open) return null;
+  const a = PROGRESS_MODAL_ACCENTS[accent] || PROGRESS_MODAL_ACCENTS.indigo;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+        <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${a.ring}`}>
+          <Loader2 className={`h-6 w-6 animate-spin ${a.spin}`} />
+        </div>
+        <h3 className="text-base font-bold text-gray-900">{title}</h3>
+        <p className="mt-1 text-xs text-gray-500">Do not refresh or close this window.</p>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div className={`h-full rounded-full transition-[width] duration-300 ${a.bar}`} style={{ width: `${percent}%` }} />
+        </div>
+        <p className="mt-2 text-sm font-semibold text-gray-800">{percent}%</p>
+        <p className="mt-1 text-xs text-slate-400">{statusText}</p>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const StatusPill = ({ status }) => (
+  <span className={`inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_COLORS[status] || 'bg-slate-100 text-slate-600'}`}>
+    {status}
+  </span>
+);
+
+/* Exam-detail card: icon badge + title + an "Edit"/"View All" link on the right. */
+const InfoCard = ({ icon: Icon, iconColor = 'bg-indigo-600', title, onEdit, editLabel = 'Edit', children }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+    <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center gap-2.5">
+        <span className={`h-8 w-8 rounded-xl ${iconColor} flex items-center justify-center shrink-0`}>
+          <Icon size={14} className="text-white" />
+        </span>
+        <p className="text-sm font-bold text-slate-800">{title}</p>
+      </div>
+      {onEdit && (
+        <button type="button" onClick={onEdit} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 shrink-0">{editLabel}</button>
+      )}
+    </div>
+    <div>{children}</div>
+  </div>
+);
+
+const InfoRow = ({ label, value }) => (
+  <div className="flex items-center justify-between gap-3 py-2.5 border-b border-slate-100 last:border-b-0 text-sm">
+    <span className="text-slate-400 shrink-0">{label}</span>
+    <span className="font-semibold text-slate-800 text-right min-w-0">{value}</span>
+  </div>
+);
+
+const StatMini = ({ icon: Icon, iconBg, iconColor, value, label, className = '' }) => (
+  <div className={`flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white p-3.5 ${className}`}>
+    <span className={`h-9 w-9 rounded-xl ${iconBg} flex items-center justify-center shrink-0`}>
+      <Icon size={16} className={iconColor} />
+    </span>
+    <div className="min-w-0">
+      <p className="text-base font-bold text-slate-800 leading-tight truncate">{value}</p>
+      <p className="text-[11px] text-slate-400">{label}</p>
+    </div>
+  </div>
+);
+
+const timeToMins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 const hasOverlap = (fd, ft, fdur, ex) => {
-  if (!fd||!ft||!fdur||!ex.date||!ex.time||!ex.duration) return false;
-  if (String(fd).slice(0,10) !== String(ex.date).slice(0,10)) return false;
-  const fs = timeToMins(ft), fe = fs+Number(fdur);
-  const es = timeToMins(ex.time), ee = es+Number(ex.duration);
+  if (!fd || !ft || !fdur || !ex.date || !ex.time || !ex.duration) return false;
+  if (String(fd).slice(0, 10) !== String(ex.date).slice(0, 10)) return false;
+  const fs = timeToMins(ft), fe = fs + Number(fdur);
+  const es = timeToMins(ex.time), ee = es + Number(ex.duration);
   return fs < ee && fe > es;
 };
 
@@ -93,7 +215,7 @@ const toDataUrl = async (url) => {
 };
 
 /* ── Modal shell ── */
-const Modal = ({ show, onClose, title, subtitle, icon:Icon, iconColor='bg-indigo-600', children, maxWidth='sm:max-w-2xl' }) => {
+const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-indigo-600', children, maxWidth = 'sm:max-w-2xl' }) => {
   if (!show) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -117,14 +239,14 @@ const Modal = ({ show, onClose, title, subtitle, icon:Icon, iconColor='bg-indigo
 
 /* ── Create-exam wizard: steps, sub-components ── */
 const WIZARD_STEPS = [
-  { title: 'Exam Details',              sub: 'Basic information' },
+  { title: 'Exam Details', sub: 'Basic information' },
   { title: 'Select Classes & Sections', sub: 'Choose participants' },
-  { title: 'Add Subjects',              sub: 'Configure subjects' },
-  { title: 'Exam Routine',              sub: 'Set schedule' },
-  { title: 'Review & Create',           sub: 'Confirm and save' },
+  { title: 'Add Subjects', sub: 'Configure subjects' },
+  { title: 'Exam Routine', sub: 'Set schedule' },
+  { title: 'Review & Create', sub: 'Confirm and save' },
 ];
 
-const EMPTY_WIZARD_SCHEDULE = { marks:'100', date:'', time:'', duration:'60', buildingId:'', floorId:'', roomId:'', primaryInstructor:'', secondaryInstructor:'', status:'Scheduled' };
+const EMPTY_WIZARD_SCHEDULE = { marks: '100', date: '', time: '', duration: '60', buildingId: '', floorId: '', roomId: '', primaryInstructor: '', secondaryInstructor: '', status: 'Scheduled' };
 
 const DURATION_OPTIONS = [30, 45, 60, 90, 120, 150, 180];
 
@@ -192,9 +314,8 @@ const WizardStepper = ({ step }) => (
       return (
         <React.Fragment key={s.title}>
           <div className="flex flex-col items-center text-center px-1 min-w-0">
-            <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${
-              isDone || isActive ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200' : 'bg-slate-100 text-slate-400'
-            }`}>
+            <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 transition-colors ${isDone || isActive ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200' : 'bg-slate-100 text-slate-400'
+              }`}>
               {isDone ? <Check size={15} /> : num}
             </div>
             <p className={`mt-2 text-[11px] sm:text-xs font-semibold whitespace-nowrap ${isActive ? 'text-slate-900' : isDone ? 'text-slate-600' : 'text-slate-400'}`}>{s.title}</p>
@@ -263,75 +384,93 @@ const ReviewRow = ({ label, value }) => (
 const ExaminationManagement = ({ setShowAdminHeader }) => {
   useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
 
-  const authH = () => ({ 'Content-Type':'application/json', Authorization:`Bearer ${localStorage.getItem('token')}` });
+  const authH = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` });
 
   /* ── data ── */
-  const [groups,    setGroups]    = useState([]);
+  const [groups, setGroups] = useState([]);
   const [ungrouped, setUngrouped] = useState([]);   // legacy exams without groupId
-  const [classes,   setClasses]   = useState([]);
-  const [years,     setYears]     = useState([]);
-  const [sections,  setSections]  = useState([]);
-  const [subjects,  setSubjects]  = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [years, setYears] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [buildings, setBuildings] = useState([]);
-  const [floors,    setFloors]    = useState([]);
-  const [rooms,     setRooms]     = useState([]);
-  const [teachers,  setTeachers]  = useState([]);
-  const [students,  setStudents]  = useState([]); // for the Step 5 "Total Students" count
+  const [floors, setFloors] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [students, setStudents] = useState([]); // for the Step 5 "Total Students" count
   const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '' });
-  const [loading,   setLoading]   = useState(true);
-  const [saving,    setSaving]    = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [publishingGroupId, setPublishingGroupId] = useState('');
 
   /* ── UI state ── */
-  const [search,         setSearch]         = useState('');
-  const [termFilter,     setTermFilter]      = useState('all');
-  const [yearFilterId,   setYearFilterId]    = useState('');
+  const [search, setSearch] = useState('');
+  const [yearFilterId, setYearFilterId] = useState('');
   const [expandedGroups, setExpandedGroups] = useState(new Set());
 
+  /* ── new master/detail list ── */
+  const [classPillFilter, setClassPillFilter] = useState('all'); // classId or 'all'
+  const [sortOrder, setSortOrder] = useState('latest'); // 'latest' | 'oldest'
+  const [selectedBatchKey, setSelectedBatchKey] = useState('');
+  const [activeDetailTab, setActiveDetailTab] = useState('overview'); // overview|routine|classes|settings|results
+
   /* ── group modal ── */
-  const [showGroupModal,   setShowGroupModal]   = useState(false);
-  const [editingGroupId,   setEditingGroupId]   = useState(null);
-  const [groupForm,        setGroupForm]        = useState(EMPTY_GROUP);
-  const [groupYearId,      setGroupYearId]      = useState('');
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [groupForm, setGroupForm] = useState(EMPTY_GROUP);
+  const [groupYearId, setGroupYearId] = useState('');
+
+  /* ── batch (shared exam details) edit modal ── */
+  const [showBatchEditModal, setShowBatchEditModal] = useState(false);
+  const [batchEditForm, setBatchEditForm] = useState({ title: '', term: 'Term 1', status: 'Scheduled', startDate: '', endDate: '' });
+  const [savingBatchEdit, setSavingBatchEdit] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef(null);
 
   /* ── subject modal ── */
-  const [showSubjectModal,   setShowSubjectModal]   = useState(false);
-  const [editingSubjectId,   setEditingSubjectId]   = useState(null);
-  const [activeGroup,        setActiveGroup]        = useState(null);  // the parent group
-  const [subjectForm,        setSubjectForm]        = useState(EMPTY_SUBJECT);
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [editingSubjectId, setEditingSubjectId] = useState(null);
+  const [activeGroup, setActiveGroup] = useState(null);  // the parent group
+  const [subjectForm, setSubjectForm] = useState(EMPTY_SUBJECT);
 
   /* ── create-exam wizard ── */
-  const EMPTY_WIZARD_DETAILS = { title:'', term:'Term 1', yearId:'', status:'Scheduled', startDate:'', endDate:'' };
-  const [showWizard,         setShowWizard]         = useState(false);
-  const [wizardStep,         setWizardStep]         = useState(1);
-  const [wizardSaving,       setWizardSaving]       = useState(false);
-  const [wizardDetails,      setWizardDetails]      = useState(EMPTY_WIZARD_DETAILS);
-  const [wizardSelections,   setWizardSelections]   = useState([]); // [{classId, className, sectionId, sectionName}]
+  const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '' };
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardSaving, setWizardSaving] = useState(false);
+  const [wizardCreateProgress, setWizardCreateProgress] = useState(0);
+  const [wizardCreateStatusText, setWizardCreateStatusText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState(0);
+  const [deleteStatusText, setDeleteStatusText] = useState('');
+  const [wizardDetails, setWizardDetails] = useState(EMPTY_WIZARD_DETAILS);
+  const [wizardSelections, setWizardSelections] = useState([]); // [{classId, className, sectionId, sectionName}]
   const [wizardActiveClassId, setWizardActiveClassId] = useState(''); // step 3: which class's subject panel is open
   const [wizardClassSubjects, setWizardClassSubjects] = useState({}); // classId -> subjectId[] (step 3)
-  const [wizardSchedule,     setWizardSchedule]     = useState({}); // `${classId}__${sectionId}__${subjectId}` -> schedule fields (step 4)
-  const [copyFromOpen,       setCopyFromOpen]       = useState(false);
-  const [applyToOpen,        setApplyToOpen]        = useState(false);
-  const [applyToTargets,     setApplyToTargets]     = useState([]); // classId[] picked in the "Apply to Other Classes" panel
+  const [wizardSchedule, setWizardSchedule] = useState({}); // `${classId}__${sectionId}__${subjectId}` -> schedule fields (step 4)
+  const [copyFromOpen, setCopyFromOpen] = useState(false);
+  const [applyToOpen, setApplyToOpen] = useState(false);
+  const [applyToTargets, setApplyToTargets] = useState([]); // classId[] picked in the "Apply to Other Classes" panel
+  const [autoMarksValue, setAutoMarksValue] = useState('100'); // step 3: value used by "Auto-fill Full Marks"
 
   /* ── step 4: exam routine ── */
-  const [scheduleSearch,       setScheduleSearch]       = useState('');
-  const [activeScheduleKey,    setActiveScheduleKey]    = useState(''); // `${classId}__${sectionId}` expanded in the accordion
-  const [scheduleCopyOpenFor,  setScheduleCopyOpenFor]  = useState('');
+  const [scheduleSearch, setScheduleSearch] = useState('');
+  const [activeScheduleKey, setActiveScheduleKey] = useState(''); // `${classId}__${sectionId}` expanded in the accordion
+  const [scheduleCopyOpenFor, setScheduleCopyOpenFor] = useState('');
   const [scheduleApplyOpenFor, setScheduleApplyOpenFor] = useState('');
   const [scheduleApplyTargets, setScheduleApplyTargets] = useState([]); // keys picked in "Apply to Other Classes"
-  const [newRoutineSubjectId,  setNewRoutineSubjectId]  = useState('');
-  const [autoScheduling,       setAutoScheduling]       = useState(false);
-  const [showBulkEditModal,    setShowBulkEditModal]    = useState(false);
-  const [bulkEditDefaults,     setBulkEditDefaults]     = useState({ time: '10:00', duration: '60', buildingId: '', floorId: '', roomId: '' });
+  const [newRoutineSubjectId, setNewRoutineSubjectId] = useState('');
+  const [autoScheduling, setAutoScheduling] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+  const [bulkEditDefaults, setBulkEditDefaults] = useState({ time: '10:00', duration: '60', buildingId: '', floorId: '', roomId: '' });
 
   /* ── create-exam wizard: auto-save drafts to the cloud ── */
-  const [examDrafts,         setExamDrafts]         = useState([]);
-  const [activeDraftId,      setActiveDraftId]      = useState(null);
-  const [showDraftsModal,    setShowDraftsModal]    = useState(false);
-  const [deletingDraftId,    setDeletingDraftId]    = useState(null);
-  const [draftState,         setDraftState]         = useState('idle'); // idle | pending | saving | saved | error
-  const [autoSavedAt,        setAutoSavedAt]        = useState(null);
+  const [examDrafts, setExamDrafts] = useState([]);
+  const [activeDraftId, setActiveDraftId] = useState(null);
+  const [showDraftsModal, setShowDraftsModal] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState(null);
+  const [draftState, setDraftState] = useState('idle'); // idle | pending | saving | saved | error
+  const [autoSavedAt, setAutoSavedAt] = useState(null);
   const draftAutoTimer = useRef(null);
   const draftLastSnapshot = useRef('');
 
@@ -339,7 +478,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API_BASE}/api/exam/groups`, { headers: authH() });
+      const res = await fetch(`${API_BASE}/api/exam/groups`, { headers: authH() });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed');
       const list = Array.isArray(data) ? data : [];
@@ -352,7 +491,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   const loadUngrouped = async () => {
     try {
-      const res  = await fetch(`${API_BASE}/api/exam/fetch`, { headers: authH() });
+      const res = await fetch(`${API_BASE}/api/exam/fetch`, { headers: authH() });
       const data = await res.json().catch(() => []);
       if (res.ok) setUngrouped((Array.isArray(data) ? data : []).filter(e => !e.groupId));
     } catch { /* silent */ }
@@ -361,19 +500,19 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const loadOptions = async () => {
     const h = authH();
     const results = await Promise.allSettled([
-      fetch(`${API_BASE}/api/academic/years`,             { headers: h }),
-      fetch(`${API_BASE}/api/academic/classes`,           { headers: h }),
-      fetch(`${API_BASE}/api/academic/sections`,          { headers: h }),
-      fetch(`${API_BASE}/api/academic/subjects`,          { headers: h }),
-      fetch(`${API_BASE}/api/academic/buildings`,         { headers: h }),
-      fetch(`${API_BASE}/api/academic/floors`,            { headers: h }),
-      fetch(`${API_BASE}/api/academic/rooms`,             { headers: h }),
-      fetch(`${API_BASE}/api/admin/users/get-teachers`,   { headers: h }),
-      fetch(`${API_BASE}/api/admin/users/get-students`,   { headers: h }),
+      fetch(`${API_BASE}/api/academic/years`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/classes`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/sections`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/subjects`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/buildings`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/floors`, { headers: h }),
+      fetch(`${API_BASE}/api/academic/rooms`, { headers: h }),
+      fetch(`${API_BASE}/api/admin/users/get-teachers`, { headers: h }),
+      fetch(`${API_BASE}/api/admin/users/get-students`, { headers: h }),
       fetch(`${API_BASE}/api/reports/report-cards/template`, { headers: h }),
     ]);
     const parse = async (r) => r.status === 'fulfilled' ? (await r.value.json().catch(() => [])) : [];
-    const [y,c,s,sub,b,f,rm,tch,stu,template] = await Promise.all(results.map(parse));
+    const [y, c, s, sub, b, f, rm, tch, stu, template] = await Promise.all(results.map(parse));
     const yearItems = Array.isArray(y) ? y : [];
     setYears(yearItems);
     const activeYear = yearItems.find((item) => item?.isActive);
@@ -401,6 +540,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   useEffect(() => { loadGroups(); loadUngrouped(); loadOptions(); loadExamDrafts(); }, []);
 
+  useEffect(() => {
+    const onClickAway = (e) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) setMoreMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClickAway);
+    return () => document.removeEventListener('mousedown', onClickAway);
+  }, []);
+
   /* ── derived: subject-modal dropdowns ── */
   const groupClassId = activeGroup?.classId?._id || activeGroup?.classId || '';
 
@@ -412,13 +559,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   const modalSubjects = useMemo(() =>
     subjects.filter(s => {
-      if (groupClassId && String(s.classId||'') !== String(groupClassId)) return false;
+      if (groupClassId && String(s.classId || '') !== String(groupClassId)) return false;
       return !usedSubjectIds.has(String(s._id));
     }),
     [subjects, groupClassId, usedSubjectIds]);
 
   const modalFloors = useMemo(() =>
-    floors.filter(f => subjectForm.buildingId ? String(f.buildingId?._id||f.buildingId) === String(subjectForm.buildingId) : true),
+    floors.filter(f => subjectForm.buildingId ? String(f.buildingId?._id || f.buildingId) === String(subjectForm.buildingId) : true),
     [floors, subjectForm.buildingId]);
 
   const allExamsForConflict = useMemo(() => groups.flatMap(g => g.subjects || []), [groups]);
@@ -435,8 +582,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     }
     return rooms.filter(r => {
       if (occupied.has(String(r._id))) return false;
-      if (subjectForm.floorId) return String(r.floorId?._id||r.floorId) === String(subjectForm.floorId);
-      if (subjectForm.buildingId) return String(r.floorId?.buildingId?._id||r.floorId?.buildingId) === String(subjectForm.buildingId);
+      if (subjectForm.floorId) return String(r.floorId?._id || r.floorId) === String(subjectForm.floorId);
+      if (subjectForm.buildingId) return String(r.floorId?.buildingId?._id || r.floorId?.buildingId) === String(subjectForm.buildingId);
       return true;
     });
   }, [rooms, subjectForm.floorId, subjectForm.buildingId, subjectForm.date, subjectForm.time, subjectForm.duration, allExamsForConflict, editingSubjectId]);
@@ -499,37 +646,1371 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   /* ── filtered display ── */
   const filteredGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return groups.filter(g => {
       const classItem = classes.find((item) => String(item._id) === String(g.classId?._id || g.classId || ''));
       const groupYear = String(classItem?.academicYearId || '');
-      const matchTerm = termFilter === 'all' || g.term === termFilter;
-      const matchYear = !yearFilterId || groupYear === String(yearFilterId);
-      const matchQ = !q || [g.title, g.grade, g.section, g.term].some(v => String(v||'').toLowerCase().includes(q));
-      return matchTerm && matchYear && matchQ;
+      return !yearFilterId || groupYear === String(yearFilterId);
     });
-  }, [groups, search, termFilter, yearFilterId, classes]);
+  }, [groups, yearFilterId, classes]);
+
+  /* ── batches: one "exam" per shared title+term+dates, aggregated across every
+     class/section ExamGroup the wizard created for it ── */
+  const examBatches = useMemo(() => {
+    const map = new Map();
+    filteredGroups.forEach((g) => {
+      const key = `${g.title}|${g.term}|${g.startDate || ''}|${g.endDate || ''}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          title: g.title,
+          term: g.term,
+          status: g.status,
+          startDate: g.startDate,
+          endDate: g.endDate,
+          createdAt: g.createdAt,
+          groups: [],
+          classIdSet: new Set(),
+          totalSections: 0,
+          totalSubjects: 0,
+        });
+      }
+      const batch = map.get(key);
+      batch.groups.push(g);
+      const classId = String(g.classId?._id || g.classId || '');
+      if (classId) batch.classIdSet.add(classId);
+      batch.totalSections += 1;
+      batch.totalSubjects += (g.subjects?.length || 0);
+      // A group that's further along (Published > Completed > Scheduled) wins the
+      // batch-level status shown in the list, so one late class doesn't hide it.
+      const rank = { Scheduled: 0, Completed: 1, Published: 2 };
+      if ((rank[g.status] ?? 0) > (rank[batch.status] ?? 0)) batch.status = g.status;
+      if (!batch.startDate && g.startDate) batch.startDate = g.startDate;
+      if (!batch.endDate && g.endDate) batch.endDate = g.endDate;
+    });
+
+    return Array.from(map.values()).map((batch) => {
+      const classItems = Array.from(batch.classIdSet)
+        .map((id) => classes.find((c) => String(c._id) === id))
+        .filter(Boolean)
+        .sort((a, b) => naturalCompare(a.name, b.name));
+      const classNames = classItems.map((c) => c.name);
+      const academicYearId = classItems[0]?.academicYearId || '';
+      return {
+        ...batch,
+        classIds: Array.from(batch.classIdSet),
+        classNames,
+        totalClasses: classItems.length,
+        classRangeLabel: classNames.length > 1 ? `${classNames[0]} - ${classNames[classNames.length - 1]}` : (classNames[0] || '—'),
+        academicYearId,
+      };
+    });
+  }, [filteredGroups, classes]);
+
+  /* ── left-panel class pills: classes in the selected session, in natural order ── */
+  const classPillOptions = useMemo(
+    () => classes
+      .filter((c) => !yearFilterId || String(c.academicYearId || '') === String(yearFilterId))
+      .slice()
+      .sort((a, b) => naturalCompare(a.name, b.name)),
+    [classes, yearFilterId]
+  );
+
+  /* ── batches visible in the left list: class pill + search + sort ── */
+  const visibleBatches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = examBatches.filter((b) => {
+      const matchClass = classPillFilter === 'all' || b.classIds.includes(classPillFilter);
+      const matchQ = !q || [b.title, b.term, ...b.classNames].some((v) => String(v || '').toLowerCase().includes(q));
+      return matchClass && matchQ;
+    });
+    return filtered.sort((a, b) => {
+      const diff = new Date(b.startDate || b.createdAt || 0) - new Date(a.startDate || a.createdAt || 0);
+      return sortOrder === 'latest' ? diff : -diff;
+    });
+  }, [examBatches, classPillFilter, search, sortOrder]);
+
+  /* ── grouped by "Term N (Year)" for the left list's section headers ── */
+  const termGroupedBatches = useMemo(() => {
+    const map = new Map();
+    visibleBatches.forEach((b) => {
+      const yearName = years.find((y) => String(y._id) === String(b.academicYearId))?.name || '';
+      const yearShort = (yearName.match(/\d{4}/) || [])[0] || yearName;
+      const label = `${b.term}${yearShort ? ` (${yearShort})` : ''}`;
+      if (!map.has(label)) map.set(label, { label, batches: [] });
+      map.get(label).batches.push(b);
+    });
+    return Array.from(map.values());
+  }, [visibleBatches, years]);
+
+  const selectedBatch = useMemo(
+    () => examBatches.find((b) => b.key === selectedBatchKey) || null,
+    [examBatches, selectedBatchKey]
+  );
+
+  useEffect(() => {
+    if (!visibleBatches.some((b) => b.key === selectedBatchKey)) {
+      setSelectedBatchKey(visibleBatches[0]?.key || '');
+    }
+  }, [visibleBatches, selectedBatchKey]);
+
+  /* ── detail-panel aggregates for the selected batch ── */
+  const batchAllSubjects = useMemo(
+    () => (selectedBatch ? selectedBatch.groups.flatMap((g) => g.subjects || []) : []),
+    [selectedBatch]
+  );
+
+  const batchDetail = useMemo(() => {
+    if (!selectedBatch) return null;
+    const timeCounts = {};
+    const durationCounts = {};
+    const buildingNames = new Set();
+    const floorNames = new Set();
+    const roomLabels = new Set();
+    batchAllSubjects.forEach((exam) => {
+      if (exam.time) timeCounts[exam.time] = (timeCounts[exam.time] || 0) + 1;
+      if (exam.duration) durationCounts[exam.duration] = (durationCounts[exam.duration] || 0) + 1;
+      const buildingName = exam.roomId?.floorId?.buildingId?.name;
+      const floorName = exam.roomId?.floorId?.name;
+      const roomNumber = exam.roomId?.roomNumber;
+      if (buildingName) buildingNames.add(buildingName);
+      if (floorName) floorNames.add(floorName);
+      if (roomNumber) roomLabels.add(roomNumber);
+    });
+    const mostCommon = (counts) => Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    const defaultTime = mostCommon(timeCounts);
+    const defaultDuration = mostCommon(durationCounts);
+
+    const dates = Array.from(new Set(batchAllSubjects.map((e) => e.date).filter(Boolean))).sort();
+    let avgGapDays = null;
+    if (dates.length > 1) {
+      let total = 0;
+      for (let i = 1; i < dates.length; i += 1) {
+        total += Math.round((new Date(dates[i]) - new Date(dates[i - 1])) / 86400000);
+      }
+      avgGapDays = Math.round(total / (dates.length - 1));
+    }
+
+    const subjectsByClass = selectedBatch.groups.reduce((acc, g) => {
+      const classId = String(g.classId?._id || g.classId || '');
+      if (!acc[classId]) {
+        acc[classId] = {
+          classId,
+          className: g.classId?.name || g.grade || '—',
+          sectionNames: [],
+          subjectNameSet: new Set(),
+        };
+      }
+      acc[classId].sectionNames.push(g.sectionId?.name || g.section || '');
+      (g.subjects || []).forEach((s) => {
+        const name = s.subjectId?.name || s.subject;
+        if (name) acc[classId].subjectNameSet.add(name);
+      });
+      return acc;
+    }, {});
+    const subjectsSummary = Object.values(subjectsByClass)
+      .map((row) => ({
+        classId: row.classId,
+        className: row.className,
+        sectionNames: row.sectionNames.filter(Boolean).sort(naturalCompare),
+        subjectNames: Array.from(row.subjectNameSet).sort(naturalCompare),
+      }))
+      .sort((a, b) => naturalCompare(a.className, b.className));
+
+    return {
+      defaultTime,
+      defaultDuration,
+      avgGapDays,
+      buildingNames: Array.from(buildingNames),
+      floorNames: Array.from(floorNames),
+      roomLabels: Array.from(roomLabels),
+      subjectsSummary,
+    };
+  }, [selectedBatch, batchAllSubjects]);
+
+  // const generateExamSchedulePdf = async (group, { download = true } = {}) => {
+  //   if (!group?._id) return null;
+  //   const className = group.classId?.name || group.grade || '—';
+  //   const sectionName = group.sectionId?.name || group.section || '—';
+  //   const classItem = classes.find((item) => String(item._id) === String(group.classId?._id || group.classId || ''));
+  //   const yearName = years.find((y) => String(y._id) === String(classItem?.academicYearId || ''))?.name || '';
+  //   const title = String(group.title || 'Exam Schedule').trim();
+
+  //   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  //   const pageWidth = doc.internal.pageSize.getWidth();
+  //   const margin = 12;
+  //   let y = 0;
+
+  //   // ── Gradient-style top banner ──────────────────────────────────────────
+  //   doc.setFillColor(15, 23, 42);           // slate-900
+  //   doc.rect(0, 0, pageWidth, 38, 'F');
+  //   doc.setFillColor(30, 58, 138);          // indigo accent strip on left
+  //   doc.rect(0, 0, 5, 38, 'F');
+
+  //   // Logo inside banner
+  //   const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
+  //   if (logoDataUrl) {
+  //     try {
+  //       doc.setFillColor(255, 255, 255);
+  //       doc.roundedRect(margin, 6, 24, 24, 2, 2, 'F');
+  //       doc.addImage(logoDataUrl, 'PNG', margin + 1, 7, 22, 22);
+  //     } catch { /* ignore */ }
+  //   }
+
+  //   // School name & address inside banner
+  //   const textX = logoDataUrl ? margin + 30 : margin + 8;
+  //   doc.setTextColor(255, 255, 255);
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(14);
+  //   doc.text((pdfHeader.schoolName || 'School').toUpperCase(), textX, 18);
+  //   doc.setFont('helvetica', 'normal');
+  //   doc.setFontSize(8.5);
+  //   doc.setTextColor(148, 163, 184);        // slate-400
+  //   if (pdfHeader.schoolAddressLine) {
+  //     doc.text(pdfHeader.schoolAddressLine, textX, 26);
+  //   }
+
+  //   y = 46;
+
+  //   // ── Exam title block ──────────────────────────────────────────────────
+  //   doc.setFillColor(238, 242, 255);        // indigo-50
+  //   doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'F');
+  //   doc.setDrawColor(199, 210, 254);        // indigo-200
+  //   doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'S');
+
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(13);
+  //   doc.setTextColor(30, 27, 75);           // indigo-950
+  //   doc.text(title, pageWidth / 2, y + 4, { align: 'center' });
+
+  //   doc.setFont('helvetica', 'normal');
+  //   doc.setFontSize(8.5);
+  //   doc.setTextColor(99, 102, 241);         // indigo-500
+  //   const meta = [
+  //     yearName ? `Session: ${yearName}` : '',
+  //     `Class: ${className}`,
+  //     `Section: ${sectionName}`,
+  //   ].filter(Boolean).join('   •   ');
+  //   doc.text(meta, pageWidth / 2, y + 11, { align: 'center' });
+
+  //   y += 26;
+
+  //   // ── Table ─────────────────────────────────────────────────────────────
+  //   const headers = ['Date', 'Day', 'Subject', 'Venue'];
+  //   const colWidths = [26, 30, 68, 62];
+  //   const tableW = colWidths.reduce((s, v) => s + v, 0);
+  //   const startX = margin;
+  //   const headerRowH = 9;
+  //   const lineH = 4.3;
+
+  //   // Header row
+  //   doc.setFillColor(30, 41, 59);           // slate-800
+  //   doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
+  //   doc.setTextColor(255, 255, 255);
+  //   doc.setFont('helvetica', 'bold');
+  //   doc.setFontSize(9);
+  //   let x = startX;
+  //   headers.forEach((h, i) => {
+  //     doc.text(h, x + colWidths[i] / 2, y + 6, { align: 'center' });
+  //     x += colWidths[i];
+  //   });
+  //   y += headerRowH;
+
+  //   // Data rows
+  //   const rows = (group.subjects || [])
+  //     .map((exam) => {
+  //       const date = exam?.date ? new Date(exam.date) : null;
+  //       const dateText = date && !Number.isNaN(date.getTime())
+  //         ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  //         : '—';
+  //       const dayText = date && !Number.isNaN(date.getTime())
+  //         ? date.toLocaleDateString('en-US', { weekday: 'long' })
+  //         : '—';
+  //       const subjectName = exam?.subjectId?.name || exam?.subject || 'Subject';
+  //       const buildingName = exam?.roomId?.floorId?.buildingId?.name;
+  //       const floorName = exam?.roomId?.floorId?.name;
+  //       const roomNumber = exam?.roomId?.roomNumber;
+  //       const venueParts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
+  //       const venue = venueParts.length ? venueParts.join(' / ') : (exam?.venue || '—');
+  //       return [dateText, dayText, subjectName, venue];
+  //     })
+  //     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
+  //   if (!rows.length) {
+  //     rows.push(['—', '—', 'No subjects added yet', '—']);
+  //   }
+
+  //   rows.forEach((row, idx) => {
+  //     const wrapped = row.map((cell, i) => doc.splitTextToSize(String(cell || ''), colWidths[i] - 4));
+  //     const lineCount = Math.max(...wrapped.map((lines) => lines.length));
+  //     const rowH = Math.max(9, lineCount * lineH + 4.5);
+
+  //     if (y + rowH > 285) {
+  //       doc.addPage();
+  //       y = 14;
+  //     }
+  //     // Alternating row fill
+  //     const isEven = idx % 2 === 0;
+  //     doc.setFillColor(isEven ? 248 : 255, isEven ? 250 : 255, isEven ? 252 : 255);
+  //     doc.rect(startX, y, tableW, rowH, 'F');
+
+  //     // Row border
+  //     doc.setDrawColor(226, 232, 240);
+  //     doc.rect(startX, y, tableW, rowH, 'S');
+
+  //     // Vertical column separators
+  //     doc.setDrawColor(226, 232, 240);
+  //     let sepX = startX;
+  //     colWidths.forEach((w, i) => {
+  //       sepX += w;
+  //       if (i < colWidths.length - 1) {
+  //         doc.line(sepX, y, sepX, y + rowH);
+  //       }
+  //     });
+
+  //     doc.setTextColor(51, 65, 85);
+  //     doc.setFont('helvetica', 'normal');
+  //     doc.setFontSize(9);
+  //     let cx = startX;
+  //     wrapped.forEach((lines, i) => {
+  //       const align = i >= 2 ? 'left' : 'center';
+  //       const textXPos = align === 'left' ? cx + 2.5 : cx + colWidths[i] / 2;
+  //       lines.forEach((line, li) => {
+  //         doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
+  //       });
+  //       cx += colWidths[i];
+  //     });
+  //     y += rowH;
+  //   });
+
+  //   // ── Footer ────────────────────────────────────────────────────────────
+  //   y += 8;
+  //   doc.setDrawColor(226, 232, 240);
+  //   doc.line(margin, y, pageWidth - margin, y);
+  //   y += 5;
+  //   doc.setFontSize(7.5);
+  //   doc.setTextColor(148, 163, 184);
+  //   doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`, margin, y);
+  //   doc.text(pdfHeader.schoolName || '', pageWidth - margin, y, { align: 'right' });
+
+  //   const safeFile = `${title}_${className}_${sectionName}`.replace(/[^\w.-]+/g, '_').toLowerCase();
+  //   const filename = `${safeFile}_schedule.pdf`;
+  //   if (download) {
+  //     doc.save(filename);
+  //     return null;
+  //   }
+  //   return { blob: doc.output('blob'), filename };
+  // };
+
+  // Same layout as generateExamSchedulePdf, but combines every class/section
+  // group in a batch into one PDF — one row per subject across every class and
+  // section, sorted by date — instead of just the first group's subjects.
 
   const generateExamSchedulePdf = async (group, { download = true } = {}) => {
     if (!group?._id) return null;
-    const className = group.classId?.name || group.grade || '—';
-    const sectionName = group.sectionId?.name || group.section || '—';
-    const classItem = classes.find((item) => String(item._id) === String(group.classId?._id || group.classId || ''));
+
+    // ============================================================
+    // BASIC DATA
+    // ============================================================
+
+    const className =
+      group.classId?.name ||
+      group.grade ||
+      "—";
+
+    const sectionName =
+      group.sectionId?.name ||
+      group.section ||
+      "—";
+
+    const classItem = classes.find(
+      (item) =>
+        String(item._id) ===
+        String(group.classId?._id || group.classId || "")
+    );
+
+    const yearName =
+      years.find(
+        (y) =>
+          String(y._id) ===
+          String(classItem?.academicYearId || "")
+      )?.name || "";
+
+    const title =
+      String(group.title || "Exam Schedule").trim();
+
+    const subjects = Array.isArray(group.subjects)
+      ? group.subjects
+      : [];
+
+    // ============================================================
+    // PDF
+    // ============================================================
+
+    const doc = new jsPDF({
+      orientation: "p",
+      unit: "mm",
+      format: "a4",
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const margin = 12;
+    const contentWidth = pageWidth - margin * 2;
+
+    let y = 12;
+
+    // ============================================================
+    // COLORS
+    // ============================================================
+
+    const colors = {
+      navy: [15, 41, 82],
+      dark: [30, 41, 59],
+      text: [51, 65, 85],
+      muted: [100, 116, 139],
+
+      border: [203, 213, 225],
+      lightBorder: [226, 232, 240],
+
+      headerBg: [241, 243, 255],
+      headerBorder: [199, 210, 254],
+
+      badgeBg: [232, 221, 255],
+
+      instructionBg: [247, 249, 252],
+    };
+
+    // ============================================================
+    // SCHOOL HEADER
+    // ============================================================
+
+    const headerTop = y;
+    const headerHeight = 30;
+
+    // Logo container
+    const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
+
+    if (logoDataUrl) {
+      try {
+        // White logo background
+        doc.setFillColor(255, 255, 255);
+
+        doc.setDrawColor(
+          ...colors.lightBorder
+        );
+
+        doc.roundedRect(
+          margin,
+          headerTop,
+          25,
+          25,
+          3,
+          3,
+          "FD"
+        );
+
+        doc.addImage(
+          logoDataUrl,
+          "PNG",
+          margin + 1.5,
+          headerTop + 1.5,
+          22,
+          22
+        );
+      } catch (error) {
+        console.warn(
+          "Unable to add school logo:",
+          error
+        );
+      }
+    }
+
+    // ------------------------------------------------------------
+    // School information
+    // ------------------------------------------------------------
+
+    const schoolTextX = logoDataUrl
+      ? margin + 31
+      : margin;
+
+    const schoolName =
+      pdfHeader.schoolName ||
+      "School Name";
+
+    const schoolAddress =
+      pdfHeader.schoolAddressLine ||
+      "";
+
+    doc.setTextColor(...colors.navy);
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(16);
+
+    doc.text(
+      schoolName,
+      pageWidth / 2,
+      headerTop + 8,
+      {
+        align: "center",
+      }
+    );
+
+    // Address
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8);
+
+    doc.setTextColor(
+      ...colors.text
+    );
+
+    if (schoolAddress) {
+      const addressLines =
+        doc.splitTextToSize(
+          schoolAddress,
+          contentWidth - 35
+        );
+
+      doc.text(
+        addressLines,
+        pageWidth / 2,
+        headerTop + 14,
+        {
+          align: "center",
+          lineHeightFactor: 1.35,
+        }
+      );
+    }
+
+    // Academic year
+    if (yearName) {
+      doc.setFontSize(7.5);
+
+      doc.setTextColor(
+        ...colors.muted
+      );
+
+      doc.text(
+        "Academic Year",
+        pageWidth - margin,
+        headerTop + 6,
+        {
+          align: "right",
+        }
+      );
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(8.5);
+
+      doc.setTextColor(
+        ...colors.dark
+      );
+
+      doc.text(
+        yearName,
+        pageWidth - margin,
+        headerTop + 12,
+        {
+          align: "right",
+        }
+      );
+    }
+
+    // Header separator
+    doc.setDrawColor(
+      ...colors.dark
+    );
+
+    doc.setLineWidth(0.35);
+
+    doc.line(
+      margin,
+      headerTop + headerHeight,
+      pageWidth - margin,
+      headerTop + headerHeight
+    );
+
+    y = headerTop + headerHeight + 8;
+
+    // ============================================================
+    // EXAM TITLE
+    // ============================================================
+
+    doc.setTextColor(
+      ...colors.navy
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(14);
+
+    doc.text(
+      title,
+      pageWidth / 2,
+      y,
+      {
+        align: "center",
+      }
+    );
+
+    y += 6;
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(11);
+
+    doc.text(
+      "Examination Routine",
+      pageWidth / 2,
+      y,
+      {
+        align: "center",
+      }
+    );
+
+    y += 7;
+
+    // ============================================================
+    // CLASS / SECTION BADGE
+    // ============================================================
+
+    const badgeText =
+      `${className} – Section ${sectionName}`;
+
+    const badgeWidth = 70;
+    const badgeHeight = 10;
+    const badgeX =
+      (pageWidth - badgeWidth) / 2;
+
+    doc.setFillColor(
+      ...colors.badgeBg
+    );
+
+    doc.roundedRect(
+      badgeX,
+      y,
+      badgeWidth,
+      badgeHeight,
+      2.5,
+      2.5,
+      "F"
+    );
+
+    doc.setTextColor(
+      ...colors.dark
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(11);
+
+    doc.text(
+      badgeText,
+      pageWidth / 2,
+      y + 6.7,
+      {
+        align: "center",
+      }
+    );
+
+    y += badgeHeight + 8;
+
+    // ============================================================
+    // TABLE CONFIGURATION
+    // ============================================================
+
+    const headers = [
+      "Date",
+      "Day",
+      "Subject",
+      "Time",
+      "Duration",
+      "Building",
+      "Floor",
+      "Room",
+    ];
+
+    const colWidths = [
+      22, // Date
+      17, // Day
+      36, // Subject
+      22, // Time
+      18, // Duration
+      28, // Building
+      17, // Floor
+      25, // Room
+    ];
+
+    const tableWidth = colWidths.reduce(
+      (sum, width) => sum + width,
+      0
+    );
+
+    const tableX = margin;
+
+    // ============================================================
+    // PREPARE ROW DATA
+    // ============================================================
+
+    const rows = subjects
+      .map((exam) => {
+        const date = exam?.date
+          ? new Date(exam.date)
+          : null;
+
+        const validDate =
+          date &&
+          !Number.isNaN(date.getTime());
+
+        const dateText = validDate
+          ? date.toLocaleDateString(
+            "en-GB",
+            {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            }
+          )
+          : "—";
+
+        const dayText = validDate
+          ? date.toLocaleDateString(
+            "en-US",
+            {
+              weekday: "short",
+            }
+          )
+          : "—";
+
+        const subjectName =
+          exam?.subjectId?.name ||
+          exam?.subject ||
+          "Subject";
+
+        // --------------------------------------------------------
+        // TIME
+        // --------------------------------------------------------
+
+        let timeText = "—";
+
+        if (exam?.startTime && exam?.endTime) {
+          timeText =
+            `${exam.startTime} – ${exam.endTime}`;
+        } else if (exam?.time) {
+          timeText = String(exam.time);
+        } else if (exam?.startTime) {
+          timeText = String(exam.startTime);
+        }
+
+        // --------------------------------------------------------
+        // DURATION
+        // --------------------------------------------------------
+
+        let durationText =
+          exam?.duration || "—";
+
+        if (
+          exam?.durationMinutes &&
+          !exam?.duration
+        ) {
+          durationText =
+            `${exam.durationMinutes} min`;
+        }
+
+        // --------------------------------------------------------
+        // BUILDING
+        // --------------------------------------------------------
+
+        const buildingName =
+          exam?.roomId?.floorId?.buildingId?.name ||
+          exam?.buildingId?.name ||
+          exam?.building ||
+          "";
+
+        // --------------------------------------------------------
+        // FLOOR
+        // --------------------------------------------------------
+
+        const floorName =
+          exam?.roomId?.floorId?.name ||
+          exam?.floorId?.name ||
+          exam?.floor ||
+          "";
+
+        // --------------------------------------------------------
+        // ROOM
+        // --------------------------------------------------------
+
+        const roomNumber =
+          exam?.roomId?.roomNumber ||
+          exam?.roomNumber ||
+          exam?.room ||
+          "";
+
+        return {
+          rawDate: validDate
+            ? date.getTime()
+            : Number.MAX_SAFE_INTEGER,
+
+          date: dateText,
+          day: dayText,
+          subject: subjectName,
+          time: timeText,
+          duration: durationText,
+          building: buildingName || "—",
+          floor: floorName || "—",
+          room: roomNumber
+            ? String(roomNumber)
+            : "—",
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.rawDate - b.rawDate
+      );
+
+    // ============================================================
+    // EMPTY STATE
+    // ============================================================
+
+    if (!rows.length) {
+      rows.push({
+        date: "—",
+        day: "—",
+        subject: "No subjects added yet",
+        time: "—",
+        duration: "—",
+        building: "—",
+        floor: "—",
+        room: "—",
+      });
+    }
+
+    // ============================================================
+    // TABLE HEADER
+    // ============================================================
+
+    // const headerHeight = 9;
+    const tableHeaderHeight = 9;
+
+    doc.setFillColor(
+      ...colors.headerBg
+    );
+
+    doc.setDrawColor(
+      ...colors.headerBorder
+    );
+
+    doc.roundedRect(
+      tableX,
+      y,
+      tableWidth,
+      tableHeaderHeight,
+      2,
+      2,
+      "FD"
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(7.5);
+
+    doc.setTextColor(
+      ...colors.dark
+    );
+
+    let currentX = tableX;
+
+    headers.forEach((header, index) => {
+      doc.text(
+        header,
+        currentX +
+        colWidths[index] / 2,
+        y + 5.8,
+        {
+          align: "center",
+        }
+      );
+
+      currentX += colWidths[index];
+    });
+
+    y += tableHeaderHeight;
+
+    // ============================================================
+    // TABLE ROWS
+    // ============================================================
+
+    const lineHeight = 3.8;
+
+    rows.forEach((row, rowIndex) => {
+
+      const rowData = [
+        row.date,
+        row.day,
+        row.subject,
+        row.time,
+        row.duration,
+        row.building,
+        row.floor,
+        row.room,
+      ];
+
+      // ----------------------------------------------------------
+      // Wrap every cell
+      // ----------------------------------------------------------
+
+      const wrappedCells =
+        rowData.map(
+          (cell, index) =>
+            doc.splitTextToSize(
+              String(cell || "—"),
+              colWidths[index] - 4
+            )
+        );
+
+      const maxLines = Math.max(
+        ...wrappedCells.map(
+          (lines) => lines.length
+        )
+      );
+
+      const rowHeight = Math.max(
+        9,
+        maxLines * lineHeight + 4.5
+      );
+
+      // ----------------------------------------------------------
+      // Alternating background
+      // ----------------------------------------------------------
+
+      if (rowIndex % 2 === 0) {
+        doc.setFillColor(
+          249,
+          250,
+          252
+        );
+      } else {
+        doc.setFillColor(
+          255,
+          255,
+          255
+        );
+      }
+
+      doc.setDrawColor(
+        ...colors.lightBorder
+      );
+
+      doc.rect(
+        tableX,
+        y,
+        tableWidth,
+        rowHeight,
+        "FD"
+      );
+
+      // ----------------------------------------------------------
+      // Vertical separators
+      // ----------------------------------------------------------
+
+      let separatorX = tableX;
+
+      colWidths.forEach(
+        (width, index) => {
+
+          separatorX += width;
+
+          if (
+            index <
+            colWidths.length - 1
+          ) {
+            doc.line(
+              separatorX,
+              y,
+              separatorX,
+              y + rowHeight
+            );
+          }
+        }
+      );
+
+      // ----------------------------------------------------------
+      // Cell text
+      // ----------------------------------------------------------
+
+      currentX = tableX;
+
+      wrappedCells.forEach(
+        (lines, index) => {
+
+          /*
+           * Subject MUST stay centered.
+           *
+           * Date, Day, Time, Duration,
+           * Floor and Room are also centered.
+           *
+           * Building is centered too for
+           * the clean timetable look.
+           */
+
+          const textX =
+            currentX +
+            colWidths[index] / 2;
+
+          doc.setFont(
+            "helvetica",
+            index === 2
+              ? "bold"
+              : "normal"
+          );
+
+          doc.setFontSize(
+            index === 2
+              ? 8
+              : 7.5
+          );
+
+          doc.setTextColor(
+            ...colors.text
+          );
+
+          lines.forEach(
+            (line, lineIndex) => {
+
+              const totalTextHeight =
+                lines.length *
+                lineHeight;
+
+              const startY =
+                y +
+                (rowHeight -
+                  totalTextHeight) /
+                2 +
+                3;
+
+              doc.text(
+                line,
+                textX,
+                startY +
+                lineIndex *
+                lineHeight,
+                {
+                  align: "center",
+                }
+              );
+            }
+          );
+
+          currentX +=
+            colWidths[index];
+        }
+      );
+
+      y += rowHeight;
+    });
+
+    // ============================================================
+    // IMPORTANT INSTRUCTIONS
+    // ============================================================
+
+    y += 8;
+
+    const instructions = [
+      "Students must report 15 minutes before the examination time.",
+      "Carry the admit card and necessary stationery.",
+      "Follow all school rules and maintain discipline.",
+      "Any change in the routine will be notified by the school authority.",
+    ];
+
+    const instructionTitleHeight = 5;
+    const instructionLineHeight = 4;
+
+    const instructionHeight =
+      instructionTitleHeight +
+      instructions.length *
+      instructionLineHeight +
+      7;
+
+    // Prevent overflow
+    if (
+      y + instructionHeight >
+      pageHeight - 35
+    ) {
+      doc.addPage();
+      y = 15;
+    }
+
+    doc.setFillColor(
+      ...colors.instructionBg
+    );
+
+    doc.setDrawColor(
+      ...colors.lightBorder
+    );
+
+    doc.roundedRect(
+      margin,
+      y,
+      contentWidth,
+      instructionHeight,
+      2,
+      2,
+      "FD"
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(8);
+
+    doc.setTextColor(
+      ...colors.dark
+    );
+
+    doc.text(
+      "Important Instructions:",
+      margin + 4,
+      y + 6
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(7.5);
+
+    instructions.forEach(
+      (instruction, index) => {
+
+        doc.text(
+          `${index + 1}.`,
+          margin + 5,
+          y +
+          11 +
+          index *
+          instructionLineHeight
+        );
+
+        const instructionLines =
+          doc.splitTextToSize(
+            instruction,
+            contentWidth - 14
+          );
+
+        doc.text(
+          instructionLines,
+          margin + 10,
+          y +
+          11 +
+          index *
+          instructionLineHeight,
+          {
+            lineHeightFactor: 1.25,
+          }
+        );
+      }
+    );
+
+    y += instructionHeight + 12;
+
+    // ============================================================
+    // FOOTER / SIGNATURE
+    // ============================================================
+
+    const footerY =
+      pageHeight - 27;
+
+    // Issued date
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(8);
+
+    doc.setTextColor(
+      ...colors.text
+    );
+
+    const generatedDate =
+      new Date().toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+    doc.text(
+      `Date: ${generatedDate}`,
+      margin,
+      footerY
+    );
+
+    // Principal signature
+
+    const signatureWidth = 42;
+
+    const signatureX =
+      pageWidth -
+      margin -
+      signatureWidth;
+
+    doc.setDrawColor(
+      ...colors.dark
+    );
+
+    doc.setLineWidth(0.25);
+
+    doc.line(
+      signatureX,
+      footerY - 7,
+      pageWidth - margin,
+      footerY - 7
+    );
+
+    doc.setFont(
+      "helvetica",
+      "bold"
+    );
+
+    doc.setFontSize(8);
+
+    doc.setTextColor(
+      ...colors.dark
+    );
+
+    doc.text(
+      "Principal",
+      signatureX +
+      signatureWidth / 2,
+      footerY - 3,
+      {
+        align: "center",
+      }
+    );
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(6.5);
+
+    doc.text(
+      pdfHeader.schoolName || "",
+      signatureX +
+      signatureWidth / 2,
+      footerY + 1,
+      {
+        align: "center",
+      }
+    );
+
+    // ============================================================
+    // PAGE NUMBER
+    // ============================================================
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(7);
+
+    doc.setTextColor(
+      ...colors.muted
+    );
+
+    doc.text(
+      "Page 1 of 1",
+      pageWidth / 2,
+      pageHeight - 8,
+      {
+        align: "center",
+      }
+    );
+
+    // ============================================================
+    // FILE NAME
+    // ============================================================
+
+    const safeFile = [
+      title,
+      className,
+      sectionName,
+    ]
+      .join("_")
+      .replace(
+        /[^\w.-]+/g,
+        "_"
+      )
+      .toLowerCase();
+
+    const filename =
+      `${safeFile}_schedule.pdf`;
+
+    // ============================================================
+    // OUTPUT
+    // ============================================================
+
+    if (download) {
+      doc.save(filename);
+      return null;
+    }
+
+    return {
+      blob: doc.output("blob"),
+      filename,
+    };
+  };
+
+  const generateBatchExamSchedulePdf = async (batch) => {
+    if (!batch?.groups?.length) return;
+    const title = String(batch.title || 'Exam Schedule').trim();
+    const firstClassId = batch.groups[0]?.classId?._id || batch.groups[0]?.classId || '';
+    const classItem = classes.find((item) => String(item._id) === String(firstClassId));
     const yearName = years.find((y) => String(y._id) === String(classItem?.academicYearId || ''))?.name || '';
-    const title = String(group.title || 'Exam Schedule').trim();
 
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 12;
     let y = 0;
 
-    // ── Gradient-style top banner ──────────────────────────────────────────
-    doc.setFillColor(15, 23, 42);           // slate-900
+    doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, pageWidth, 38, 'F');
-    doc.setFillColor(30, 58, 138);          // indigo accent strip on left
+    doc.setFillColor(30, 58, 138);
     doc.rect(0, 0, 5, 38, 'F');
 
-    // Logo inside banner
     const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
     if (logoDataUrl) {
       try {
@@ -539,7 +2020,6 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       } catch { /* ignore */ }
     }
 
-    // School name & address inside banner
     const textX = logoDataUrl ? margin + 30 : margin + 8;
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
@@ -547,46 +2027,53 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     doc.text((pdfHeader.schoolName || 'School').toUpperCase(), textX, 18);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
-    doc.setTextColor(148, 163, 184);        // slate-400
+    doc.setTextColor(148, 163, 184);
     if (pdfHeader.schoolAddressLine) {
       doc.text(pdfHeader.schoolAddressLine, textX, 26);
     }
 
     y = 46;
 
-    // ── Exam title block ──────────────────────────────────────────────────
-    doc.setFillColor(238, 242, 255);        // indigo-50
+    doc.setFillColor(238, 242, 255);
     doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'F');
-    doc.setDrawColor(199, 210, 254);        // indigo-200
+    doc.setDrawColor(199, 210, 254);
     doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 22, 3, 3, 'S');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
-    doc.setTextColor(30, 27, 75);           // indigo-950
+    doc.setTextColor(30, 27, 75);
     doc.text(title, pageWidth / 2, y + 4, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
-    doc.setTextColor(99, 102, 241);         // indigo-500
+    doc.setTextColor(99, 102, 241);
     const meta = [
       yearName ? `Session: ${yearName}` : '',
-      `Class: ${className}`,
-      `Section: ${sectionName}`,
+      `Classes: ${batch.classRangeLabel || '—'}`,
+      `${batch.groups.length} Section${batch.groups.length !== 1 ? 's' : ''}`,
     ].filter(Boolean).join('   •   ');
     doc.text(meta, pageWidth / 2, y + 11, { align: 'center' });
 
     y += 26;
 
-    // ── Table ─────────────────────────────────────────────────────────────
-    const headers = ['Date', 'Day', 'Subject', 'Venue'];
-    const colWidths = [26, 30, 68, 62];
+    // const headers = ['Date', 'Day', 'Class', 'Subject', 'Venue'];
+    const headers = [
+      "Date",
+      "Day",
+      "Subject",
+      "Time",
+      "Duration",
+      "Building",
+      "Floor",
+      "Room",
+    ];
+    const colWidths = [22, 22, 28, 52, 62];
     const tableW = colWidths.reduce((s, v) => s + v, 0);
     const startX = margin;
     const headerRowH = 9;
     const lineH = 4.3;
 
-    // Header row
-    doc.setFillColor(30, 41, 59);           // slate-800
+    doc.setFillColor(30, 41, 59);
     doc.roundedRect(startX, y, tableW, headerRowH, 2, 2, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
@@ -598,9 +2085,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     });
     y += headerRowH;
 
-    // Data rows
-    const rows = (group.subjects || [])
-      .map((exam) => {
+    // Every subject from every class/section, sorted by actual date (falling
+    // back to class name so undated rows still group predictably).
+    const rows = batch.groups.flatMap((group) => {
+      const className = group.classId?.name || group.grade || '—';
+      const sectionName = group.sectionId?.name || group.section || '—';
+      return (group.subjects || []).map((exam) => {
         const date = exam?.date ? new Date(exam.date) : null;
         const dateText = date && !Number.isNaN(date.getTime())
           ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -614,12 +2104,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         const roomNumber = exam?.roomId?.roomNumber;
         const venueParts = [buildingName, floorName, roomNumber ? `Room ${roomNumber}` : null].filter(Boolean);
         const venue = venueParts.length ? venueParts.join(' / ') : (exam?.venue || '—');
-        return [dateText, dayText, subjectName, venue];
-      })
-      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+        return { sortKey: exam?.date || '', classSection: `${className} - ${sectionName}`, cells: [dateText, dayText, `${className} - ${sectionName}`, subjectName, venue] };
+      });
+    }).sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)) || a.classSection.localeCompare(b.classSection, undefined, { numeric: true }))
+      .map((r) => r.cells);
 
     if (!rows.length) {
-      rows.push(['—', '—', 'No subjects added yet', '—']);
+      rows.push(['—', '—', '—', 'No subjects added yet', '—']);
     }
 
     rows.forEach((row, idx) => {
@@ -631,16 +2122,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         doc.addPage();
         y = 14;
       }
-      // Alternating row fill
       const isEven = idx % 2 === 0;
       doc.setFillColor(isEven ? 248 : 255, isEven ? 250 : 255, isEven ? 252 : 255);
       doc.rect(startX, y, tableW, rowH, 'F');
 
-      // Row border
       doc.setDrawColor(226, 232, 240);
       doc.rect(startX, y, tableW, rowH, 'S');
 
-      // Vertical column separators
       doc.setDrawColor(226, 232, 240);
       let sepX = startX;
       colWidths.forEach((w, i) => {
@@ -655,7 +2143,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       doc.setFontSize(9);
       let cx = startX;
       wrapped.forEach((lines, i) => {
-        const align = i >= 2 ? 'left' : 'center';
+        const align = i >= 3 ? 'left' : 'center';
         const textXPos = align === 'left' ? cx + 2.5 : cx + colWidths[i] / 2;
         lines.forEach((line, li) => {
           doc.text(line, textXPos, y + 5.7 + li * lineH, { align });
@@ -665,7 +2153,6 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       y += rowH;
     });
 
-    // ── Footer ────────────────────────────────────────────────────────────
     y += 8;
     doc.setDrawColor(226, 232, 240);
     doc.line(margin, y, pageWidth - margin, y);
@@ -675,22 +2162,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}`, margin, y);
     doc.text(pdfHeader.schoolName || '', pageWidth - margin, y, { align: 'right' });
 
-    const safeFile = `${title}_${className}_${sectionName}`.replace(/[^\w.-]+/g, '_').toLowerCase();
-    const filename = `${safeFile}_schedule.pdf`;
-    if (download) {
-      doc.save(filename);
-      return null;
-    }
-    return { blob: doc.output('blob'), filename };
+    const safeFile = `${title}_all_classes`.replace(/[^\w.-]+/g, '_').toLowerCase();
+    doc.save(`${safeFile}_schedule.pdf`);
   };
 
   /* ── group handlers ── */
-  const openEditGroup   = (g)  => {
+  const openEditGroup = (g) => {
     setEditingGroupId(g._id);
     const classId = g.classId?._id || g.classId || '';
     const classItem = classes.find((item) => String(item._id) === String(classId));
     setGroupYearId(String(classItem?.academicYearId || ''));
-    setGroupForm({ title: g.title||'', term: g.term||'Term 1', classId, sectionId: g.sectionId?._id||g.sectionId||'', status: g.status||'Scheduled', startDate: g.startDate||'', endDate: g.endDate||'' });
+    setGroupForm({ title: g.title || '', term: g.term || 'Term 1', classId, sectionId: g.sectionId?._id || g.sectionId || '', status: g.status || 'Scheduled', startDate: g.startDate || '', endDate: g.endDate || '' });
     setShowGroupModal(true);
   };
 
@@ -703,14 +2185,54 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       // never re-triggers the publish notice and wipes its attachment.
       const payload = { ...groupForm };
       if (payload.status === 'Published') delete payload.status;
-      const res    = await fetch(`${API_BASE}/api/exam/groups/${editingGroupId}`, { method: 'PUT', headers: authH(), body: JSON.stringify(payload) });
-      const data   = await res.json().catch(() => ({}));
+      const res = await fetch(`${API_BASE}/api/exam/groups/${editingGroupId}`, { method: 'PUT', headers: authH(), body: JSON.stringify(payload) });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed');
       toast.success('Exam updated!');
       setShowGroupModal(false);
       await loadGroups();
     } catch (err) { toast.error(err.message || 'Failed to save'); }
     finally { setSaving(false); }
+  };
+
+  /* Edits the shared fields (title/term/status/dates) across every class+section
+     ExamGroup in a batch at once — the per-class/section fields (classId,
+     sectionId) are left untouched, since those are what tell the batch's
+     groups apart. */
+  const openEditBatch = (batch) => {
+    setBatchEditForm({
+      title: batch.title || '',
+      term: batch.term || 'Term 1',
+      status: batch.status === 'Published' ? 'Published' : (batch.status || 'Scheduled'),
+      startDate: batch.startDate || '',
+      endDate: batch.endDate || '',
+    });
+    setShowBatchEditModal(true);
+  };
+
+  const handleSaveBatchEdit = async (e) => {
+    e.preventDefault();
+    if (!selectedBatch) return;
+    if (!batchEditForm.title.trim()) { toast.error('Exam title is required'); return; }
+    setSavingBatchEdit(true);
+    try {
+      const payload = { ...batchEditForm };
+      if (payload.status === 'Published') delete payload.status; // see handleSaveGroup — same rule
+      await Promise.all(selectedBatch.groups.map((g) =>
+        fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method: 'PUT', headers: authH(), body: JSON.stringify(payload) })
+          .then(async (res) => {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data?.error || `Failed to update ${g.classId?.name || g.grade || 'a class'}`);
+          })
+      ));
+      toast.success('Exam details updated');
+      setShowBatchEditModal(false);
+      await loadGroups();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update exam details');
+    } finally {
+      setSavingBatchEdit(false);
+    }
   };
 
   /* Publish (or republish) the exam routine: generate the schedule PDF,
@@ -777,19 +2299,90 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   const handleDeleteGroup = async (g) => {
     const count = g.subjects?.length || 0;
-    const conf  = await Swal.fire({
+    const conf = await Swal.fire({
       title: 'Delete Exam?',
-      html: `Delete <strong>${g.title}</strong>${count ? ` and its <strong>${count} subject exam${count>1?'s':''}</strong>` : ''}?`,
+      html: `Delete <strong>${g.title}</strong>${count ? ` and its <strong>${count} subject exam${count > 1 ? 's' : ''}</strong>` : ''}?`,
       icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete',
     });
     if (!conf.isConfirmed) return;
+    setDeleteProgress(0);
+    setDeleteStatusText(`Deleting ${g.title}…`);
+    setIsDeleting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method:'DELETE', headers: authH() });
+      const res = await fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method: 'DELETE', headers: authH() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed');
+      setDeleteProgress(100);
       toast.success('Exam deleted');
       await loadGroups();
     } catch (err) { toast.error(err.message || 'Failed to delete'); }
+    finally { setIsDeleting(false); }
+  };
+
+  // Deletes every class/section ExamGroup that makes up a batch (i.e. the whole
+  // "exam" as shown in the list), not just one of its classes.
+  const handleDeleteBatch = async (batch) => {
+    const totalSubjects = batch.groups.reduce((n, g) => n + (g.subjects?.length || 0), 0);
+    const conf = await Swal.fire({
+      title: 'Delete Exam?',
+      html: `Delete <strong>${batch.title}</strong> for all ${batch.groups.length} class${batch.groups.length !== 1 ? 'es' : ''}/section${batch.groups.length !== 1 ? 's' : ''}${totalSubjects ? ` and its <strong>${totalSubjects} subject exam${totalSubjects !== 1 ? 's' : ''}</strong>` : ''}?`,
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete',
+    });
+    if (!conf.isConfirmed) return;
+
+    // Real progress from actual completed deletes, same technique as the create flow.
+    const total = batch.groups.length || 1;
+    let done = 0;
+    const bump = () => { done += 1; setDeleteProgress(Math.min(99, Math.round((done / total) * 100))); };
+
+    setDeleteProgress(0);
+    setDeleteStatusText(`Deleting ${batch.title} for ${batch.groups.length} class${batch.groups.length !== 1 ? 'es' : ''}/section${batch.groups.length !== 1 ? 's' : ''}…`);
+    setIsDeleting(true);
+    try {
+      await Promise.all(batch.groups.map((g) =>
+        fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method: 'DELETE', headers: authH() }).finally(bump)
+      ));
+      setDeleteProgress(100);
+      toast.success('Exam deleted');
+      setMoreMenuOpen(false);
+      await loadGroups();
+    } catch {
+      toast.error('Failed to delete exam');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Duplicates every class/section group in a batch as a fresh Draft (no
+  // subjects copied), so the admin can reuse a title/date pattern for a new run.
+  const handleDuplicateBatch = async (batch) => {
+    const conf = await Swal.fire({
+      title: 'Duplicate Exam?',
+      html: `Create a new draft copy of <strong>${batch.title}</strong> for the same ${batch.groups.length} class${batch.groups.length !== 1 ? 'es' : ''}/section${batch.groups.length !== 1 ? 's' : ''}? Subjects are not copied.`,
+      icon: 'question', showCancelButton: true, confirmButtonColor: '#4f46e5', confirmButtonText: 'Duplicate',
+    });
+    if (!conf.isConfirmed) return;
+    try {
+      const results = await Promise.all(batch.groups.map((g) => fetch(`${API_BASE}/api/exam/groups`, {
+        method: 'POST', headers: authH(),
+        body: JSON.stringify({
+          title: `${batch.title} (Copy)`,
+          term: batch.term,
+          classId: g.classId?._id || g.classId,
+          sectionId: g.sectionId?._id || g.sectionId,
+          status: 'Scheduled',
+          startDate: batch.startDate,
+          endDate: batch.endDate,
+        }),
+      })));
+      const failed = results.some((r) => !r.ok);
+      if (failed) throw new Error('Some classes could not be duplicated');
+      toast.success('Exam duplicated as a new draft');
+      setMoreMenuOpen(false);
+      await loadGroups();
+    } catch (err) {
+      toast.error(err.message || 'Failed to duplicate exam');
+    }
   };
 
   /* ── create-exam wizard handlers ── */
@@ -871,6 +2464,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     }
   };
 
+  // Silent cleanup path — used right after a successful exam creation to drop the
+  // draft it came from. No confirmation, no progress modal: the admin never clicked
+  // delete for this, it's just housekeeping.
   const deleteExamDraft = async (id) => {
     setDeletingDraftId(id);
     try {
@@ -879,6 +2475,23 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     if (activeDraftId === id) setActiveDraftId(null);
     setExamDrafts((prev) => prev.filter((d) => d._id !== id));
     setDeletingDraftId(null);
+  };
+
+  // Explicit "Delete draft" button click — confirm first, then show the same
+  // full-screen progress modal as every other delete on this page.
+  const handleDeleteDraftClick = async (draft) => {
+    const conf = await Swal.fire({
+      title: 'Delete Draft?',
+      html: `Delete the draft <strong>${draft.label || 'Untitled draft'}</strong>?`,
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete',
+    });
+    if (!conf.isConfirmed) return;
+    setDeleteProgress(0);
+    setDeleteStatusText(`Deleting draft ${draft.label || 'Untitled draft'}…`);
+    setIsDeleting(true);
+    await deleteExamDraft(draft._id);
+    setDeleteProgress(100);
+    setIsDeleting(false);
   };
 
   const resumeExamDraft = (draft) => {
@@ -989,6 +2602,28 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const setWizardScheduleField = (classId, sectionId, subjectId, patch) => {
     const key = wizardScheduleKey(classId, sectionId, subjectId);
     setWizardSchedule((prev) => ({ ...prev, [key]: { ...(prev[key] || EMPTY_WIZARD_SCHEDULE), ...patch } }));
+  };
+
+  // Full marks is set once per (class, subject) in Step 3 — shared across every
+  // section of that class — rather than per-section like date/time in Step 4.
+  const getClassSubjectMarks = (classId, subjectId) => {
+    const sel = wizardSelections.find((s) => s.classId === classId);
+    if (!sel) return EMPTY_WIZARD_SCHEDULE.marks;
+    return getWizardSchedule(sel.classId, sel.sectionId, subjectId).marks ?? EMPTY_WIZARD_SCHEDULE.marks;
+  };
+  const setClassSubjectMarks = (classId, subjectId, marks) => {
+    wizardSelections.filter((s) => s.classId === classId).forEach((s) => {
+      setWizardScheduleField(s.classId, s.sectionId, subjectId, { marks });
+    });
+  };
+  // "Auto-fill Full Marks": one click sets the same full marks value across every
+  // subject selected for this class, instead of typing it in one-by-one.
+  const handleAutoFillMarks = (classId) => {
+    const ids = wizardClassSubjects[classId] || [];
+    if (!ids.length) { toast.error('Select subjects first'); return; }
+    const value = autoMarksValue.trim() || EMPTY_WIZARD_SCHEDULE.marks;
+    ids.forEach((subjectId) => setClassSubjectMarks(classId, subjectId, value));
+    toast.success(`Full marks set to ${value} for ${ids.length} subject${ids.length !== 1 ? 's' : ''}`);
   };
 
   // Is this teacher already booked (an existing published exam, or another row in this
@@ -1293,63 +2928,101 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   const handleCreateFromWizard = async () => {
     if (!wizardSelections.length) { toast.error('Select at least one class & section'); setWizardStep(2); return; }
+
+    // Real progress from actual completed requests (not a fake ticking timer) —
+    // every group-create and every subject-create counts as one unit of work.
+    const totalSubjectCount = wizardSelections.reduce((n, sel) => n + (wizardClassSubjects[sel.classId] || []).length, 0);
+    const totalOps = wizardSelections.length + totalSubjectCount || 1;
+    let doneOps = 0;
+    const bumpProgress = (label) => {
+      doneOps += 1;
+      setWizardCreateProgress(Math.min(99, Math.round((doneOps / totalOps) * 100)));
+      if (label) setWizardCreateStatusText(label);
+    };
+
+    setWizardCreateProgress(0);
+    setWizardCreateStatusText(`Creating ${wizardSelections.length} exam group${wizardSelections.length !== 1 ? 's' : ''}…`);
     setWizardSaving(true);
     try {
-      let createdGroups = 0;
-      let createdSubjects = 0;
-      for (const sel of wizardSelections) {
-        const res = await fetch(`${API_BASE}/api/exam/groups`, {
-          method: 'POST',
-          headers: authH(),
-          body: JSON.stringify({
-            title: wizardDetails.title.trim(),
-            term: wizardDetails.term,
-            classId: sel.classId,
-            sectionId: sel.sectionId,
-            status: wizardDetails.status,
-            startDate: wizardDetails.startDate,
-            endDate: wizardDetails.endDate,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || `Failed to create exam for ${sel.className} — ${sel.sectionName}`);
-        const groupId = data?.group?._id || data?._id;
-        createdGroups += 1;
-
-        const subjectIds = wizardClassSubjects[sel.classId] || [];
-        for (const subjectId of subjectIds) {
-          const schedule = getWizardSchedule(sel.classId, sel.sectionId, subjectId);
-          const instructor = [schedule.primaryInstructor, schedule.secondaryInstructor].filter(Boolean).join(', ');
-          const subRes = await fetch(`${API_BASE}/api/exam/add`, {
+      // Every group, then every subject, fires in parallel (Promise.all) instead of
+      // one-at-a-time — with N classes/sections × M subjects that was N×M sequential
+      // round trips; this is just two round-trip batches no matter how many there are.
+      const groupResults = await Promise.all(wizardSelections.map(async (sel) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/exam/groups`, {
             method: 'POST',
             headers: authH(),
             body: JSON.stringify({
-              groupId,
-              classId: sel.classId,
-              sectionId: sel.sectionId,
               title: wizardDetails.title.trim(),
               term: wizardDetails.term,
-              subjectId,
-              marks: schedule.marks === '' ? undefined : Number(schedule.marks),
-              date: schedule.date,
-              time: schedule.time,
-              duration: schedule.duration === '' ? undefined : Number(schedule.duration),
-              roomId: schedule.roomId || undefined,
-              status: schedule.status || 'Scheduled',
-              instructor,
+              classId: sel.classId,
+              sectionId: sel.sectionId,
+              status: wizardDetails.status,
+              startDate: wizardDetails.startDate,
+              endDate: wizardDetails.endDate,
             }),
           });
-          const subData = await subRes.json().catch(() => ({}));
-          if (!subRes.ok) throw new Error(subData?.error || `Failed to add a subject for ${sel.className} — ${sel.sectionName}`);
-          createdSubjects += 1;
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data?.error || `Failed to create exam for ${sel.className} — ${sel.sectionName}`);
+          return { sel, groupId: data?.group?._id || data?._id };
+        } finally {
+          bumpProgress(`Created exam group for ${sel.className} — ${sel.sectionName}`);
         }
-      }
-      toast.success(`Created ${createdGroups} exam${createdGroups !== 1 ? 's' : ''}${createdSubjects ? ` with ${createdSubjects} subject${createdSubjects !== 1 ? 's' : ''}` : ''}`);
+      }));
+
+      setWizardCreateStatusText(`Adding ${totalSubjectCount} subject${totalSubjectCount !== 1 ? 's' : ''}…`);
+      const subjectJobs = [];
+      groupResults.forEach(({ sel, groupId }) => {
+        (wizardClassSubjects[sel.classId] || []).forEach((subjectId) => {
+          const schedule = getWizardSchedule(sel.classId, sel.sectionId, subjectId);
+          const instructor = [schedule.primaryInstructor, schedule.secondaryInstructor].filter(Boolean).join(', ');
+          const subjectName = subjects.find((s) => String(s._id) === String(subjectId))?.name || 'subject';
+          subjectJobs.push(
+            fetch(`${API_BASE}/api/exam/add`, {
+              method: 'POST',
+              headers: authH(),
+              body: JSON.stringify({
+                groupId,
+                classId: sel.classId,
+                sectionId: sel.sectionId,
+                title: wizardDetails.title.trim(),
+                term: wizardDetails.term,
+                subjectId,
+                marks: schedule.marks === '' ? undefined : Number(schedule.marks),
+                date: schedule.date,
+                time: schedule.time,
+                duration: schedule.duration === '' ? undefined : Number(schedule.duration),
+                roomId: schedule.roomId || undefined,
+                status: schedule.status || 'Scheduled',
+                instructor,
+              }),
+            }).then(async (subRes) => {
+              const subData = await subRes.json().catch(() => ({}));
+              if (!subRes.ok) throw new Error(subData?.error || `Failed to add a subject for ${sel.className} — ${sel.sectionName}`);
+              return subData;
+            }).finally(() => bumpProgress(`Added ${subjectName} for ${sel.className} — ${sel.sectionName}`))
+          );
+        });
+      });
+
+      const subjectResults = await Promise.allSettled(subjectJobs);
+      setWizardCreateProgress(100);
+      const failed = subjectResults.filter((r) => r.status === 'rejected');
+      const createdGroups = groupResults.length;
+      const createdSubjects = subjectResults.length - failed.length;
+
+      // Close the modal the instant creation is done — draft cleanup and the
+      // background list refresh must never hold the modal open.
+      setShowWizard(false);
       if (draftAutoTimer.current) clearTimeout(draftAutoTimer.current);
       draftLastSnapshot.current = '';
-      if (activeDraftId) await deleteExamDraft(activeDraftId);
-      setShowWizard(false);
-      await loadGroups();
+      if (activeDraftId) deleteExamDraft(activeDraftId).catch(() => { });
+      loadGroups();
+
+      if (failed.length) {
+        toast.error(`${failed.length} subject${failed.length !== 1 ? 's' : ''} failed to add: ${failed[0].reason?.message || 'Unknown error'}`);
+      }
+      toast.success(`Created ${createdGroups} exam${createdGroups !== 1 ? 's' : ''}${createdSubjects ? ` with ${createdSubjects} subject${createdSubjects !== 1 ? 's' : ''}` : ''}`);
     } catch (err) {
       toast.error(err.message || 'Failed to create exam');
     } finally {
@@ -1368,20 +3041,20 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const openEditSubject = (group, exam) => {
     setActiveGroup(group);
     setEditingSubjectId(exam._id);
-    const instructors = (exam.instructor||'').split(',').map(s=>s.trim());
+    const instructors = (exam.instructor || '').split(',').map(s => s.trim());
     setSubjectForm({
-      subjectId:          exam.subjectId?._id||exam.subjectId||'',
-      marks:              exam.marks??'100',
-      date:               exam.date ? String(exam.date).slice(0,10) : '',
-      time:               exam.time||'',
-      duration:           exam.duration??'',
-      buildingId:         exam.roomId?.floorId?.buildingId?._id||'',
-      floorId:            exam.roomId?.floorId?._id||'',
-      roomId:             exam.roomId?._id||exam.roomId||'',
-      venue:              exam.venue||'',
-      primaryInstructor:  instructors[0]||'',
-      secondaryInstructor:instructors[1]||'',
-      status:             exam.status||'Scheduled',
+      subjectId: exam.subjectId?._id || exam.subjectId || '',
+      marks: exam.marks ?? '100',
+      date: exam.date ? String(exam.date).slice(0, 10) : '',
+      time: exam.time || '',
+      duration: exam.duration ?? '',
+      buildingId: exam.roomId?.floorId?.buildingId?._id || '',
+      floorId: exam.roomId?.floorId?._id || '',
+      roomId: exam.roomId?._id || exam.roomId || '',
+      venue: exam.venue || '',
+      primaryInstructor: instructors[0] || '',
+      secondaryInstructor: instructors[1] || '',
+      status: exam.status || 'Scheduled',
     });
     setShowSubjectModal(true);
   };
@@ -1392,25 +3065,25 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       if (!subjectForm.subjectId) throw new Error('Subject is required');
       const instructor = [subjectForm.primaryInstructor, subjectForm.secondaryInstructor].filter(Boolean).join(', ');
       const payload = {
-        groupId:   activeGroup._id,
-        classId:   activeGroup.classId?._id || activeGroup.classId,
+        groupId: activeGroup._id,
+        classId: activeGroup.classId?._id || activeGroup.classId,
         sectionId: activeGroup.sectionId?._id || activeGroup.sectionId,
-        title:     activeGroup.title,
-        term:      activeGroup.term,
+        title: activeGroup.title,
+        term: activeGroup.term,
         subjectId: subjectForm.subjectId,
-        marks:     subjectForm.marks === '' ? undefined : Number(subjectForm.marks),
-        date:      subjectForm.date,
-        time:      subjectForm.time,
-        duration:  subjectForm.duration === '' ? undefined : Number(subjectForm.duration),
-        roomId:    subjectForm.roomId || undefined,
-        venue:     subjectForm.venue,
-        status:    subjectForm.status,
+        marks: subjectForm.marks === '' ? undefined : Number(subjectForm.marks),
+        date: subjectForm.date,
+        time: subjectForm.time,
+        duration: subjectForm.duration === '' ? undefined : Number(subjectForm.duration),
+        roomId: subjectForm.roomId || undefined,
+        venue: subjectForm.venue,
+        status: subjectForm.status,
         instructor,
       };
-      const url    = editingSubjectId ? `${API_BASE}/api/exam/${editingSubjectId}` : `${API_BASE}/api/exam/add`;
+      const url = editingSubjectId ? `${API_BASE}/api/exam/${editingSubjectId}` : `${API_BASE}/api/exam/add`;
       const method = editingSubjectId ? 'PUT' : 'POST';
-      const res    = await fetch(url, { method, headers: authH(), body: JSON.stringify(payload) });
-      const data   = await res.json().catch(() => ({}));
+      const res = await fetch(url, { method, headers: authH(), body: JSON.stringify(payload) });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed');
       toast.success(editingSubjectId ? 'Subject exam updated!' : 'Subject exam added!');
       setShowSubjectModal(false);
@@ -1420,70 +3093,39 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   };
 
   const handleDeleteSubject = async (exam) => {
-    const conf = await Swal.fire({ title:'Delete Subject Exam?', html:`Delete <strong>${exam.subject || exam.subjectId?.name || 'this subject'}</strong>?`, icon:'warning', showCancelButton:true, confirmButtonColor:'#dc2626', confirmButtonText:'Delete' });
+    const subjectName = exam.subject || exam.subjectId?.name || 'this subject';
+    const conf = await Swal.fire({ title: 'Delete Subject Exam?', html: `Delete <strong>${subjectName}</strong>?`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete' });
     if (!conf.isConfirmed) return;
+    setDeleteProgress(0);
+    setDeleteStatusText(`Deleting ${subjectName}…`);
+    setIsDeleting(true);
     try {
-      const res  = await fetch(`${API_BASE}/api/exam/${exam._id}`, { method:'DELETE', headers: authH() });
+      const res = await fetch(`${API_BASE}/api/exam/${exam._id}`, { method: 'DELETE', headers: authH() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed');
+      setDeleteProgress(100);
       toast.success('Subject exam deleted');
       await loadGroups();
     } catch (err) { toast.error(err.message || 'Failed to delete'); }
+    finally { setIsDeleting(false); }
   };
 
   const toggleGroup = (id) => setExpandedGroups(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  /* ── stats ── */
-  const totalSubjects = groups.reduce((n, g) => n + (g.subjects?.length||0), 0);
-  const totalScheduled = groups.filter(g => g.status === 'Scheduled').length;
-  const totalCompleted = groups.filter(g => g.status === 'Completed').length;
-  const totalPublished = groups.filter(g => g.status === 'Published').length;
-
   /* ════════════ RENDER ════════════ */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/20 to-slate-100 p-4 sm:p-6">
+      <div className="max-w-[1400px] mx-auto space-y-4">
 
-      {/* ── Hero ── */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-4 py-5 sm:px-6 sm:py-6 text-white shadow-xl">
-        <div className="absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10 blur-3xl" />
-        <div className="relative max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Examination Management</h1>
-            <p className="mt-0.5 text-xs sm:text-sm text-slate-400">Create exams, then add subject-wise papers inside each</p>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Examinations</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage all exams by academic session. Click on an exam to view details, edit or manage.</p>
           </div>
-          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar -mx-4 px-4 py-1 sm:mx-0 sm:px-0 sm:py-0 sm:overflow-visible sm:gap-3">
-            {[{label:'Exams', val:groups.length},{label:'Subjects', val:totalSubjects},{label:'Scheduled', val:totalScheduled},{label:'Published', val:totalPublished},{label:'Completed', val:totalCompleted}].map(({label,val}) => (
-              <div key={label} className="flex flex-col items-center rounded-xl bg-white/10 px-4 py-2.5 backdrop-blur-sm shrink-0 min-w-[74px]">
-                <span className="text-lg sm:text-xl font-bold">{val}</span>
-                <span className="text-[10px] text-slate-400">{label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4">
-
-        {/* ── Toolbar ── */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <div className="relative order-1 flex-1 sm:flex-none">
-              <Calendar size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <select
-                value={yearFilterId}
-                onChange={(e) => setYearFilterId(e.target.value)}
-                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none"
-              >
-                <option value="">All Sessions</option>
-                {years.map((year) => (
-                  <option key={year._id} value={year._id}>
-                    {year.name}{year.isActive ? ' (active)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
             <button onClick={() => setShowDraftsModal(true)}
-              className="relative order-2 shrink-0 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+              className="relative flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
               <FileClock size={15} /> Drafts
               {examDrafts.length > 0 && (
                 <span className="inline-flex items-center justify-center rounded-full bg-indigo-100 px-1.5 text-xs font-semibold text-indigo-700">
@@ -1492,306 +3134,487 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               )}
             </button>
             <button onClick={openCreateWizard}
-              className="order-2 sm:order-last shrink-0 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200">
-              <Plus size={15} /> Create Exam
-            </button>
-            <div className="relative order-3 basis-full sm:basis-0 sm:flex-1 sm:min-w-[200px]">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search exam or class…"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
-            </div>
-            <div className="relative order-4 flex-1 sm:flex-none">
-              <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <select value={termFilter} onChange={e => setTermFilter(e.target.value)}
-                className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none">
-                <option value="all">All Terms</option>
-                {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <button onClick={() => { loadGroups(); loadUngrouped(); }} aria-label="Refresh"
-              className="order-5 shrink-0 flex items-center justify-center gap-1.5 h-11 w-11 sm:h-auto sm:w-auto sm:px-3 sm:py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-              <RefreshCw size={13} />
+              className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200">
+              <Plus size={16} /> Create New Exam
             </button>
           </div>
         </div>
 
-        {/* ── Groups ── */}
-        {loading ? (
-          <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-400 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <Loader2 size={18} className="animate-spin text-indigo-400" /> Loading exams…
-          </div>
-        ) : filteredGroups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <div className="h-14 w-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
-              <BookOpen size={22} className="text-indigo-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
+          {/* ══════════ LEFT: exam list ══════════ */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col overflow-hidden">
+            <div className="p-4 space-y-3 border-b border-slate-100">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
+                  <Calendar size={12} /> Select Session
+                </label>
+                <div className="relative">
+                  <select value={yearFilterId} onChange={(e) => setYearFilterId(e.target.value)}
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700 focus:border-indigo-400 focus:outline-none">
+                    <option value="">All Sessions</option>
+                    {years.map((year) => (
+                      <option key={year._id} value={year._id}>{year.name}{year.isActive ? ' (Active)' : ''}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                <button onClick={() => setClassPillFilter('all')}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${classPillFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  All
+                </button>
+                {classPillOptions.map((c) => (
+                  <button key={c._id} onClick={() => setClassPillFilter(c._id)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${classPillFilter === c._id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    Class {c.name}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search exams…"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+                </div>
+                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600 focus:border-indigo-400 focus:outline-none">
+                  <option value="latest">Latest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+                <button onClick={() => { loadGroups(); loadUngrouped(); }} aria-label="Refresh"
+                  className="shrink-0 flex items-center justify-center h-10 w-10 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
+                  <RefreshCw size={14} />
+                </button>
+              </div>
             </div>
-            <p className="text-sm font-medium text-slate-500">No exams yet</p>
-            <button onClick={openCreateWizard} className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
-              <Plus size={12} /> Create your first exam
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredGroups.map(group => {
-              const isOpen   = expandedGroups.has(group._id);
-              const termCls  = TERM_COLORS[group.term] || 'bg-slate-50 text-slate-600 border-slate-200';
-              const statCls  = STATUS_COLORS[group.status] || 'bg-slate-100 text-slate-600';
-              const subCount = group.subjects?.length || 0;
-              return (
-                <div key={group._id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  {/* ── group header ── */}
-                  <div className="px-5 py-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 mt-0.5">
-                          <BookOpen size={16} className="text-indigo-600" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-bold ${termCls}`}>{group.term}</span>
-                            <h3 className="font-bold text-slate-800 text-base leading-tight">{group.title}</h3>
-                          </div>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-400">
-                            {(group.classId?.name || group.grade) && <span>Class {group.classId?.name || group.grade}</span>}
-                            {(group.sectionId?.name || group.section) && <><span>·</span><span>Section {group.sectionId?.name || group.section}</span></>}
-                            {group.startDate && <><span>·</span><span className="flex items-center gap-1"><Calendar size={10}/>{group.startDate}</span></>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 sm:mt-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap sm:gap-2 sm:shrink-0">
-                        {/* status + subject count */}
-                        <div className="flex items-center gap-2 sm:contents">
-                          <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${statCls}`}>{group.status}</span>
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                            <FileText size={11} /> {subCount} Subject{subCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
 
-                        {/* primary step action */}
-                        <button onClick={() => openAddSubject(group)}
-                          className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
-                          <Plus size={12} /> Step 2: Add Subject
-                        </button>
-
-                        {/* routine + publish */}
-                        <div className="grid grid-cols-2 gap-2 sm:contents">
-                          <button
-                            onClick={() => generateExamSchedulePdf(group)}
-                            className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-                          >
-                            <FileText size={12} />
-                            <span className="sm:hidden">Routine</span>
-                            <span className="hidden sm:inline">Download Routine</span>
-                          </button>
-                          <button
-                            onClick={() => handlePublishRoutine(group)}
-                            disabled={!subCount || publishingGroupId === group._id}
-                            title={!subCount ? 'Add at least one subject exam first' : undefined}
-                            className={`flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                              group.status === 'Published'
-                                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+            <div className="flex-1 overflow-y-auto max-h-[70vh]">
+              {loading ? (
+                <div className="flex items-center justify-center gap-3 py-14 text-sm text-slate-400">
+                  <Loader2 size={16} className="animate-spin text-indigo-400" /> Loading exams…
+                </div>
+              ) : termGroupedBatches.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-2 text-slate-400">
+                  <BookOpen size={26} className="text-slate-300" />
+                  <p className="text-sm font-medium text-slate-500">No exams yet</p>
+                  <button onClick={openCreateWizard} className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                    <Plus size={11} /> Create your first exam
+                  </button>
+                </div>
+              ) : (
+                termGroupedBatches.map((termGroup, gi) => (
+                  <div key={termGroup.label}>
+                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50/80">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${TERM_DOT_PALETTE[gi % TERM_DOT_PALETTE.length]}`} />
+                      <p className="text-xs font-bold text-slate-600">{termGroup.label}</p>
+                      <span className="ml-auto text-[11px] font-semibold text-slate-400 shrink-0">{termGroup.batches.length} Exam{termGroup.batches.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    {termGroup.batches.map((batch, bi) => {
+                      const isSelected = batch.key === selectedBatchKey;
+                      const status = displayStatusFor(batch);
+                      const avatarCls = EXAM_AVATAR_PALETTE[(gi + bi) % EXAM_AVATAR_PALETTE.length];
+                      return (
+                        <button key={batch.key}
+                          onClick={() => { setSelectedBatchKey(batch.key); setActiveDetailTab('overview'); }}
+                          className={`w-full text-left px-4 py-3 border-b border-b-slate-100 flex items-start gap-3 transition-colors ${isSelected ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
                             }`}
-                          >
-                            {publishingGroupId === group._id
-                              ? <Loader2 size={12} className="animate-spin" />
-                              : <CheckCircle2 size={12} />}
-                            {publishingGroupId === group._id
-                              ? 'Publishing…'
-                              : group.status === 'Published'
-                                ? <><span className="sm:hidden">Republish</span><span className="hidden sm:inline">Republish Routine</span></>
-                                : <><span className="sm:hidden">Publish</span><span className="hidden sm:inline">Publish Routine</span></>}
-                          </button>
-                        </div>
-
-                        {/* edit / delete / view */}
-                        <div className="flex items-center justify-between border-t border-slate-100 pt-2 sm:contents sm:border-0 sm:pt-0">
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => openEditGroup(group)}
-                              className="h-9 w-9 sm:h-8 sm:w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
-                              <Edit2 size={13} />
-                            </button>
-                            <button onClick={() => handleDeleteGroup(group)}
-                              className="h-9 w-9 sm:h-8 sm:w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                              <Trash2 size={13} />
-                            </button>
+                        >
+                          <span className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${isSelected ? 'bg-indigo-600 text-white' : avatarCls}`}>
+                            {isSelected ? <BookOpen size={15} /> : <Users size={15} />}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-bold text-slate-800 truncate">{batch.title}</p>
+                              <StatusPill status={status} />
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">Classes {batch.classRangeLabel}</p>
+                            {batch.startDate && (
+                              <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                                <Calendar size={10} />{formatDateChip(batch.startDate)} - {formatDateChip(batch.endDate)}
+                              </p>
+                            )}
                           </div>
-                          <button onClick={() => toggleGroup(group._id)}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-500 hover:bg-slate-50 transition-colors">
-                            <ChevronRight size={13} className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
-                            {isOpen ? 'Hide' : 'View'}
-                          </button>
-                        </div>
+                          <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                            <p className="text-[11px] font-semibold text-slate-400">{batch.totalSubjects ? `${batch.totalSubjects} Entries` : '—'}</p>
+                            <ChevronRight size={14} className="text-slate-300" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* ══════════ RIGHT: exam detail ══════════ */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            {!selectedBatch ? (
+              <div className="flex flex-col items-center justify-center py-24 gap-2 text-slate-400">
+                <BookOpen size={30} className="text-slate-300" />
+                <p className="text-sm font-medium text-slate-500">Select an exam to view its details</p>
+              </div>
+            ) : (
+              <>
+                {/* header */}
+                <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <span className="h-11 w-11 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                      <BookOpen size={18} className="text-white" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-lg font-bold text-slate-900">{selectedBatch.title}</h2>
+                        <StatusPill status={displayStatusFor(selectedBatch)} />
                       </div>
+                      <p className="text-xs text-slate-400 mt-0.5">{selectedBatch.term} Examination for Classes {selectedBatch.classRangeLabel}</p>
                     </div>
                   </div>
-
-                  {/* ── subject rows ── */}
-                  {isOpen && (
-                    <div className="border-t border-slate-100">
-                      {subCount === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-slate-400">
-                          <FileText size={20} className="text-slate-300" />
-                          <p className="text-xs font-medium">Step 2 pending: add subjects for this exam</p>
-                          <button onClick={() => openAddSubject(group)}
-                            className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
-                            <Plus size={11} /> Add first subject
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => openEditBatch(selectedBatch)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                      <Edit2 size={13} /> Edit
+                    </button>
+                    <button onClick={() => handleDuplicateBatch(selectedBatch)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                      <Copy size={13} /> Duplicate
+                    </button>
+                    <div className="relative" ref={moreMenuRef}>
+                      <button onClick={() => setMoreMenuOpen((v) => !v)} aria-label="More options"
+                        className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
+                        <MoreVertical size={15} />
+                      </button>
+                      {moreMenuOpen && (
+                        <div className="absolute right-0 mt-2 z-20 w-44 rounded-xl border border-slate-100 bg-white shadow-xl py-1.5">
+                          <button onClick={() => { setMoreMenuOpen(false); generateExamSchedulePdf(selectedBatch.groups[0]); }}
+                            className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                            <FileText size={14} /> Download Routine
+                          </button>
+                          <button onClick={() => handleDeleteBatch(selectedBatch)}
+                            className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-rose-600 hover:bg-rose-50">
+                            <Trash2 size={14} /> Delete Exam
                           </button>
                         </div>
-                      ) : (
-                        <>
-                        {/* ── mobile: stacked subject cards ── */}
-                        <div className="sm:hidden divide-y divide-slate-100 bg-slate-50/40">
-                          {group.subjects.map(exam => {
-                            const venueStr = exam.roomId?.floorId?.buildingId?.name
-                              ? `${exam.roomId.floorId.buildingId.name} / ${exam.roomId.floorId.name} / ${exam.roomId.roomNumber}`
-                              : (exam.venue || null);
-                            const sCls = STATUS_COLORS[exam.status] || 'bg-slate-100 text-slate-600';
-                            const isPast = exam.date && new Date(exam.date) < new Date();
-                            return (
-                              <div key={exam._id} className="px-4 py-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="font-semibold text-slate-800 truncate">{exam.subjectId?.name || exam.subject || '—'}</p>
-                                    {exam.subjectId?.code && <p className="text-[11px] text-slate-400">{exam.subjectId.code}</p>}
-                                  </div>
-                                  <span className={`shrink-0 inline-flex rounded-lg px-2 py-0.5 text-[11px] font-semibold ${sCls}`}>{exam.status || '—'}</span>
-                                </div>
-                                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                                  {exam.date ? (
-                                    <span className={`flex items-center gap-1 ${isPast ? 'text-slate-400' : 'text-slate-600'}`}>
-                                      <Calendar size={11} />
-                                      {new Date(exam.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
-                                      {exam.time ? ` · ${exam.time}` : ''}
-                                    </span>
-                                  ) : <span className="text-slate-300">Date not set</span>}
-                                  <span className="flex items-center gap-1"><Award size={12} className="text-amber-400" />{exam.marks ?? '—'} marks</span>
-                                  {exam.instructor && <span className="flex items-center gap-1"><User size={11} />{exam.instructor}</span>}
-                                </div>
-                                {venueStr && (
-                                  <p className="mt-1 flex items-start gap-1 text-xs text-slate-500">
-                                    <MapPin size={11} className="mt-0.5 shrink-0 text-slate-400" />{venueStr}
-                                  </p>
-                                )}
-                                <div className="mt-2 flex items-center gap-2">
-                                  <button onClick={() => openEditSubject(group, exam)}
-                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 active:bg-slate-50">
-                                    <Edit2 size={12} /> Edit
-                                  </button>
-                                  <button onClick={() => handleDeleteSubject(exam)}
-                                    className="flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-600 active:bg-rose-100">
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-                        {/* ── desktop: subject table ── */}
-                        <div className="hidden sm:block overflow-x-auto">
+                {/* tabs */}
+                <div className="flex items-center gap-1 px-5 border-b border-slate-100 overflow-x-auto no-scrollbar">
+                  {DETAIL_TABS.map((t) => (
+                    <button key={t.id} onClick={() => setActiveDetailTab(t.id)}
+                      className={`shrink-0 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeDetailTab === t.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+                        }`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-5">
+                  {/* ── Overview ── */}
+                  {activeDetailTab === 'overview' && (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <StatMini icon={Users} iconBg="bg-emerald-50" iconColor="text-emerald-600" value={selectedBatch.totalClasses} label="Classes" />
+                        <StatMini icon={Layers} iconBg="bg-blue-50" iconColor="text-blue-600" value={selectedBatch.totalSections} label="Sections" />
+                        {/* <StatMini icon={FileText} iconBg="bg-violet-50" iconColor="text-violet-600" value={selectedBatch.totalSubjects} label="Exam Entries" /> */}
+                        <StatMini className="col-span-full" icon={Calendar} iconBg="bg-amber-50" iconColor="text-amber-600"
+                          value={selectedBatch.startDate ? `${formatDateChip(selectedBatch.startDate)} - ${formatDateChip(selectedBatch.endDate)}` : '—'} label="Exam Period" />
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <InfoCard icon={FileText} iconColor="bg-indigo-600" title="Basic Information" onEdit={() => openEditBatch(selectedBatch)}>
+                          <InfoRow label="Exam Title" value={selectedBatch.title} />
+                          <InfoRow label="Exam Type / Term" value={selectedBatch.term} />
+                          <InfoRow label="Academic Year" value={years.find((y) => String(y._id) === String(selectedBatch.academicYearId))?.name || '—'} />
+                          <InfoRow label="Status" value={<StatusPill status={displayStatusFor(selectedBatch)} />} />
+                          <InfoRow label="Start Date" value={formatDateChip(selectedBatch.startDate) || '—'} />
+                          <InfoRow label="End Date" value={formatDateChip(selectedBatch.endDate) || '—'} />
+                          <InfoRow label="Created By" value={pdfHeader.schoolName || '—'} />
+                          <InfoRow label="Created On" value={formatDateTimeChip(selectedBatch.createdAt) || '—'} />
+                        </InfoCard>
+
+                        <InfoCard icon={Settings} iconColor="bg-slate-500" title="General Settings" onEdit={() => setActiveDetailTab('routine')}>
+                          <InfoRow label="Default Exam Time" value={batchDetail?.defaultTime ? formatTimeLabel(batchDetail.defaultTime) : '—'} />
+                          <InfoRow label="Default Duration" value={batchDetail?.defaultDuration ? formatDuration(batchDetail.defaultDuration) : '—'} />
+                          <InfoRow label="Gap Between Exams" value={batchDetail?.avgGapDays != null ? `${batchDetail.avgGapDays} Day${batchDetail.avgGapDays !== 1 ? 's' : ''}` : '—'} />
+                          <InfoRow label="Buildings Used" value={batchDetail?.buildingNames.length ? batchDetail.buildingNames.join(', ') : '—'} />
+                          <InfoRow label="Floors Used" value={batchDetail?.floorNames.length ? batchDetail.floorNames.join(', ') : '—'} />
+                          <InfoRow label="Rooms Used" value={batchDetail?.roomLabels.length ? batchDetail.roomLabels.join(', ') : '—'} />
+                          <InfoRow label="Created Routine" value="Auto-generated (editable)" />
+                        </InfoCard>
+                      </div>
+
+                      <InfoCard icon={Users} iconColor="bg-blue-500" title="Classes & Sections" onEdit={() => setActiveDetailTab('classes')} editLabel="View All">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
+                          {(batchDetail?.subjectsSummary || []).map((row, i) => (
+                            <div key={row.classId} className="rounded-xl border border-slate-100 p-3 flex items-center gap-2 min-w-0">
+                              <span className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${EXAM_AVATAR_PALETTE[i % EXAM_AVATAR_PALETTE.length]}`}>
+                                <Users size={13} />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-700 truncate">Class {row.className}</p>
+                                <p className="text-[11px] text-slate-400">{row.sectionNames.length} section{row.sectionNames.length !== 1 ? 's' : ''}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </InfoCard>
+
+                      <InfoCard icon={BookOpen} iconColor="bg-emerald-500" title="Subjects Summary" onEdit={() => setActiveDetailTab('classes')} editLabel="View Details">
+                        <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="bg-slate-50">
-                                {['Subject','Date & Time','Venue','Marks','Invigilator','Status',''].map((h,i) => (
-                                  <th key={i} className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                                ))}
+                              <tr className="text-left text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                                <th className="py-2 pr-3">Class</th>
+                                <th className="py-2 pr-3">Sections</th>
+                                <th className="py-2 pr-3">Subjects</th>
+                                <th className="py-2">Total Subjects</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50">
-                              {group.subjects.map(exam => {
-                                const venueStr = exam.roomId?.floorId?.buildingId?.name
-                                  ? `${exam.roomId.floorId.buildingId.name} / ${exam.roomId.floorId.name} / ${exam.roomId.roomNumber}`
-                                  : (exam.venue || null);
-                                const sCls = STATUS_COLORS[exam.status] || 'bg-slate-100 text-slate-600';
-                                const isPast = exam.date && new Date(exam.date) < new Date();
-                                return (
-                                  <tr key={exam._id} className="hover:bg-indigo-50/20 transition-colors group">
-                                    <td className="px-4 py-3">
-                                      <p className="font-semibold text-slate-800">{exam.subjectId?.name || exam.subject || '—'}</p>
-                                      {exam.subjectId?.code && <p className="text-xs text-slate-400">{exam.subjectId.code}</p>}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {exam.date ? (
-                                        <div className="flex flex-col gap-0.5">
-                                          <span className={`flex items-center gap-1.5 text-xs font-medium ${isPast ? 'text-slate-400' : 'text-slate-700'}`}>
-                                            <Calendar size={11} />{new Date(exam.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
-                                          </span>
-                                          {exam.time && <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock size={11}/>{exam.time}</span>}
-                                          {exam.duration && <span className="text-xs text-slate-400">{exam.duration} min</span>}
-                                        </div>
-                                      ) : <span className="text-slate-300 text-xs">Not set</span>}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {venueStr ? (
-                                        <span className="flex items-start gap-1.5 text-xs text-slate-500 max-w-[160px]">
-                                          <MapPin size={11} className="shrink-0 mt-0.5 text-slate-400"/>{venueStr}
-                                        </span>
-                                      ) : <span className="text-slate-300 text-xs">—</span>}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div className="flex items-center gap-1">
-                                        <Award size={12} className="text-amber-400 shrink-0"/>
-                                        <span className="font-semibold text-slate-700">{exam.marks ?? '—'}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {exam.instructor ? (
-                                        <span className="flex items-center gap-1 text-xs text-slate-500"><User size={10}/>{exam.instructor}</span>
-                                      ) : <span className="text-slate-300 text-xs">—</span>}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${sCls}`}>{exam.status||'—'}</span>
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => openEditSubject(group, exam)}
-                                          className="h-7 w-7 flex items-center justify-center rounded-lg text-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
-                                          <Edit2 size={13}/>
-                                        </button>
-                                        <button onClick={() => handleDeleteSubject(exam)}
-                                          className="h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
-                                          <Trash2 size={13}/>
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
+                            <tbody className="divide-y divide-slate-100">
+                              {(batchDetail?.subjectsSummary || []).map((row) => (
+                                <tr key={row.classId}>
+                                  <td className="py-2.5 pr-3 font-semibold text-slate-700 whitespace-nowrap">Class {row.className}</td>
+                                  <td className="py-2.5 pr-3 text-slate-500 whitespace-nowrap">{row.sectionNames.join(', ') || '—'}</td>
+                                  <td className="py-2.5 pr-3 text-slate-500">{row.subjectNames.length ? row.subjectNames.join(', ') : 'No subjects selected'}</td>
+                                  <td className="py-2.5 font-semibold text-slate-700">{row.subjectNames.length}</td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>
-                        </>
-                      )}
+                      </InfoCard>
+                    </div>
+                  )}
+
+                  {/* ── Routine (per class+section group, reuses every existing subject action) ── */}
+                  {activeDetailTab === 'routine' && (
+                    <div className="space-y-4">
+                      {selectedBatch.groups.map((group) => {
+                        const isOpen = expandedGroups.has(group._id);
+                        const subCount = group.subjects?.length || 0;
+                        return (
+                          <div key={group._id} className="rounded-2xl border border-slate-200 overflow-hidden">
+                            <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 bg-slate-50/60">
+                              <button onClick={() => toggleGroup(group._id)} className="flex items-center gap-2 min-w-0">
+                                <ChevronRight size={14} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                                <span className="text-sm font-bold text-slate-800 truncate">
+                                  Class {group.classId?.name || group.grade} — {group.sectionId?.name || group.section || 'All'}
+                                </span>
+                                <span className="text-xs font-semibold text-slate-400 shrink-0">{subCount} subject{subCount !== 1 ? 's' : ''}</span>
+                              </button>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button onClick={() => openAddSubject(group)}
+                                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700">
+                                  <Plus size={12} /> Add Subject
+                                </button>
+                                <button
+                                  onClick={() => handlePublishRoutine(group)}
+                                  disabled={!subCount || publishingGroupId === group._id}
+                                  title={!subCount ? 'Add at least one subject exam first' : undefined}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${group.status === 'Published' ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                    }`}>
+                                  {publishingGroupId === group._id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                                  {publishingGroupId === group._id ? 'Publishing…' : group.status === 'Published' ? 'Republish' : 'Publish'}
+                                </button>
+                                <button onClick={() => openEditGroup(group)}
+                                  className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
+                                  <Edit2 size={13} />
+                                </button>
+                                <button onClick={() => handleDeleteGroup(group)}
+                                  className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50">
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isOpen && (
+                              subCount === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-8 gap-2 text-slate-400">
+                                  <FileText size={20} className="text-slate-300" />
+                                  <p className="text-xs font-medium">No subjects added for this class yet</p>
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="bg-white">
+                                        {['Subject', 'Date & Time', 'Venue', 'Marks', 'Invigilator', 'Status', ''].map((h, i) => (
+                                          <th key={i} className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {group.subjects.map((exam) => {
+                                        const venueStr = exam.roomId?.floorId?.buildingId?.name
+                                          ? `${exam.roomId.floorId.buildingId.name} / ${exam.roomId.floorId.name} / ${exam.roomId.roomNumber}`
+                                          : (exam.venue || null);
+                                        const sCls = STATUS_COLORS[exam.status] || 'bg-slate-100 text-slate-600';
+                                        const isPast = exam.date && new Date(exam.date) < new Date();
+                                        return (
+                                          <tr key={exam._id} className="hover:bg-indigo-50/20 transition-colors group">
+                                            <td className="px-4 py-3">
+                                              <p className="font-semibold text-slate-800">{exam.subjectId?.name || exam.subject || '—'}</p>
+                                              {exam.subjectId?.code && <p className="text-xs text-slate-400">{exam.subjectId.code}</p>}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {exam.date ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                  <span className={`flex items-center gap-1.5 text-xs font-medium ${isPast ? 'text-slate-400' : 'text-slate-700'}`}>
+                                                    <Calendar size={11} />{new Date(exam.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                  </span>
+                                                  {exam.time && <span className="flex items-center gap-1.5 text-xs text-slate-400"><Clock size={11} />{exam.time}</span>}
+                                                  {exam.duration && <span className="text-xs text-slate-400">{exam.duration} min</span>}
+                                                </div>
+                                              ) : <span className="text-slate-300 text-xs">Not set</span>}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {venueStr ? (
+                                                <span className="flex items-start gap-1.5 text-xs text-slate-500 max-w-[160px]">
+                                                  <MapPin size={11} className="shrink-0 mt-0.5 text-slate-400" />{venueStr}
+                                                </span>
+                                              ) : <span className="text-slate-300 text-xs">—</span>}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              <div className="flex items-center gap-1">
+                                                <Award size={12} className="text-amber-400 shrink-0" />
+                                                <span className="font-semibold text-slate-700">{exam.marks ?? '—'}</span>
+                                              </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {exam.instructor ? (
+                                                <span className="flex items-center gap-1 text-xs text-slate-500"><User size={10} />{exam.instructor}</span>
+                                              ) : <span className="text-slate-300 text-xs">—</span>}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${sCls}`}>{exam.status || '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => openEditSubject(group, exam)}
+                                                  className="h-7 w-7 flex items-center justify-center rounded-lg text-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
+                                                  <Edit2 size={13} />
+                                                </button>
+                                                <button onClick={() => handleDeleteSubject(exam)}
+                                                  className="h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
+                                                  <Trash2 size={13} />
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* ── Classes & Subjects ── */}
+                  {activeDetailTab === 'classes' && (
+                    <div className="space-y-4">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-[11px] font-bold text-slate-400 uppercase tracking-wide">
+                              <th className="py-2 pr-3">Class</th>
+                              <th className="py-2 pr-3">Sections</th>
+                              <th className="py-2 pr-3">Subjects</th>
+                              <th className="py-2 pr-3">Total</th>
+                              <th className="py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(batchDetail?.subjectsSummary || []).map((row) => {
+                              const firstGroup = selectedBatch.groups.find((g) => String(g.classId?._id || g.classId) === row.classId);
+                              return (
+                                <tr key={row.classId}>
+                                  <td className="py-2.5 pr-3 font-semibold text-slate-700 whitespace-nowrap">Class {row.className}</td>
+                                  <td className="py-2.5 pr-3 text-slate-500 whitespace-nowrap">{row.sectionNames.join(', ') || '—'}</td>
+                                  <td className="py-2.5 pr-3 text-slate-500">{row.subjectNames.length ? row.subjectNames.join(', ') : 'No subjects selected'}</td>
+                                  <td className="py-2.5 pr-3 font-semibold text-slate-700">{row.subjectNames.length}</td>
+                                  <td className="py-2.5 text-right">
+                                    {firstGroup && (
+                                      <button onClick={() => openAddSubject(firstGroup)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 whitespace-nowrap">
+                                        + Add Subject
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Settings ── */}
+                  {activeDetailTab === 'settings' && (
+                    <div className="space-y-4 max-w-lg">
+                      <InfoCard icon={FileText} iconColor="bg-indigo-600" title="Exam Details" onEdit={() => openEditBatch(selectedBatch)}>
+                        <InfoRow label="Exam Title" value={selectedBatch.title} />
+                        <InfoRow label="Exam Type / Term" value={selectedBatch.term} />
+                        <InfoRow label="Status" value={<StatusPill status={displayStatusFor(selectedBatch)} />} />
+                        <InfoRow label="Start Date" value={formatDateChip(selectedBatch.startDate) || '—'} />
+                        <InfoRow label="End Date" value={formatDateChip(selectedBatch.endDate) || '—'} />
+                      </InfoCard>
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                        <p className="text-sm font-bold text-rose-700">Danger Zone</p>
+                        <p className="text-xs text-rose-600 mt-1">Permanently delete this exam and every subject entry across all {selectedBatch.groups.length} class{selectedBatch.groups.length !== 1 ? 'es' : ''}/section{selectedBatch.groups.length !== 1 ? 's' : ''}.</p>
+                        <button onClick={() => handleDeleteBatch(selectedBatch)}
+                          className="mt-3 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700">
+                          <Trash2 size={13} /> Delete This Exam
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Results ── */}
+                  {activeDetailTab === 'results' && (
+                    <div className="flex flex-col items-center justify-center py-14 gap-2 text-slate-400 text-center">
+                      <Award size={28} className="text-slate-300" />
+                      <p className="text-sm font-medium text-slate-500">Result entry &amp; publishing isn&apos;t available from this page yet.</p>
+                      <p className="text-xs text-slate-400 max-w-sm">Use the dedicated Results module to record marks and publish report cards for this exam.</p>
                     </div>
                   )}
                 </div>
-              );
-            })}
+              </>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ── Ungrouped / Legacy exams ── */}
         {ungrouped.length > 0 && (
           <details className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <summary className="px-5 py-4 cursor-pointer text-sm font-semibold text-slate-500 flex items-center gap-2 select-none">
-              <FileText size={14} /> {ungrouped.length} Legacy Exam{ungrouped.length!==1?'s':''} (without groups)
+              <FileText size={14} /> {ungrouped.length} Legacy Exam{ungrouped.length !== 1 ? 's' : ''} (without groups)
             </summary>
             <div className="border-t border-slate-100 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="bg-slate-50">{['Exam','Subject','Term','Class','Status',''].map((h,i)=><th key={i} className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>)}</tr></thead>
+                <thead><tr className="bg-slate-50">{['Exam', 'Subject', 'Term', 'Class', 'Status', ''].map((h, i) => <th key={i} className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-50">
                   {ungrouped.map(ex => (
                     <tr key={ex._id} className="hover:bg-indigo-50/20 group">
-                      <td className="px-4 py-3 font-semibold text-slate-800">{ex.title||'—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{ex.subjectId?.name||ex.subject||'—'}</td>
-                      <td className="px-4 py-3"><span className={`inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-bold ${TERM_COLORS[ex.term]||'bg-slate-50 text-slate-600 border-slate-200'}`}>{ex.term||'—'}</span></td>
-                      <td className="px-4 py-3 text-slate-600">{ex.classId?.name||ex.grade||'—'} {ex.sectionId?.name||ex.section||''}</td>
-                      <td className="px-4 py-3"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${STATUS_COLORS[ex.status]||'bg-slate-100 text-slate-600'}`}>{ex.status||'—'}</span></td>
+                      <td className="px-4 py-3 font-semibold text-slate-800">{ex.title || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{ex.subjectId?.name || ex.subject || '—'}</td>
+                      <td className="px-4 py-3"><span className={`inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-bold ${TERM_COLORS[ex.term] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>{ex.term || '—'}</span></td>
+                      <td className="px-4 py-3 text-slate-600">{ex.classId?.name || ex.grade || '—'} {ex.sectionId?.name || ex.section || ''}</td>
+                      <td className="px-4 py-3"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-semibold ${STATUS_COLORS[ex.status] || 'bg-slate-100 text-slate-600'}`}>{ex.status || '—'}</span></td>
                       <td className="px-4 py-3">
-                        <button onClick={async () => { const c=await Swal.fire({title:'Delete?',html:`Delete <strong>${ex.title||'this exam'}</strong>?`,icon:'warning',showCancelButton:true,confirmButtonColor:'#dc2626',confirmButtonText:'Delete'}); if(!c.isConfirmed)return; const r=await fetch(`${API_BASE}/api/exam/${ex._id}`,{method:'DELETE',headers:authH()}); if(r.ok){toast.success('Deleted');loadUngrouped();}else{toast.error('Failed');} }}
+                        <button onClick={async () => { const c = await Swal.fire({ title: 'Delete?', html: `Delete <strong>${ex.title || 'this exam'}</strong>?`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete' }); if (!c.isConfirmed) return; const r = await fetch(`${API_BASE}/api/exam/${ex._id}`, { method: 'DELETE', headers: authH() }); if (r.ok) { toast.success('Deleted'); loadUngrouped(); } else { toast.error('Failed'); } }}
                           className="h-7 w-7 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Trash2 size={13}/>
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>
@@ -1809,12 +3632,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         icon={BookOpen} iconColor="bg-indigo-600" maxWidth="sm:max-w-lg">
         <form onSubmit={handleSaveGroup} className="space-y-4">
           <Field label="Exam Title">
-            <input value={groupForm.title} onChange={e => setGroupForm(p=>({...p,title:e.target.value}))} className={inp} placeholder="e.g. First Term 2024-25" required />
+            <input value={groupForm.title} onChange={e => setGroupForm(p => ({ ...p, title: e.target.value }))} className={inp} placeholder="e.g. First Term 2024-25" required />
           </Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Exam Type / Term">
-              <select value={groupForm.term} onChange={e => setGroupForm(p=>({...p,term:e.target.value}))} className={inp}>
-                {TERM_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+              <select value={groupForm.term} onChange={e => setGroupForm(p => ({ ...p, term: e.target.value }))} className={inp}>
+                {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
             <Field label="Status">
@@ -1823,8 +3646,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   <CheckCircle2 size={14} /> Published — use Republish Routine to update
                 </div>
               ) : (
-                <select value={groupForm.status} onChange={e => setGroupForm(p=>({...p,status:e.target.value}))} className={inp}>
-                  {GROUP_STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+                <select value={groupForm.status} onChange={e => setGroupForm(p => ({ ...p, status: e.target.value }))} className={inp}>
+                  {GROUP_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               )}
             </Field>
@@ -1850,36 +3673,76 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             <Field label="Class">
               <select
                 value={groupForm.classId}
-                onChange={e => setGroupForm(p=>({...p,classId:e.target.value,sectionId:''}))}
+                onChange={e => setGroupForm(p => ({ ...p, classId: e.target.value, sectionId: '' }))}
                 className={inp}
                 disabled={!groupYearId}
                 required
               >
                 <option value="">{groupYearId ? 'Select class' : 'Select active year first'}</option>
-                {modalClasses.map(c=><option key={c._id} value={c._id}>{c.name}</option>)}
+                {modalClasses.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
               </select>
             </Field>
             <Field label="Section">
               <select
                 value={groupForm.sectionId}
-                onChange={e => setGroupForm(p=>({...p,sectionId:e.target.value}))}
+                onChange={e => setGroupForm(p => ({ ...p, sectionId: e.target.value }))}
                 className={inp}
                 disabled={!groupForm.classId}
               >
                 <option value="">Select section</option>
-                {groupFormSections.map(s=><option key={s._id} value={s._id}>{s.name}</option>)}
+                {groupFormSections.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
               </select>
             </Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Start Date"><input type="date" value={groupForm.startDate} onChange={e => setGroupForm(p=>({...p,startDate:e.target.value}))} className={inp}/></Field>
-            <Field label="End Date"><input type="date" value={groupForm.endDate} onChange={e => setGroupForm(p=>({...p,endDate:e.target.value}))} className={inp}/></Field>
+            <Field label="Start Date"><input type="date" value={groupForm.startDate} onChange={e => setGroupForm(p => ({ ...p, startDate: e.target.value }))} className={inp} /></Field>
+            <Field label="End Date"><input type="date" value={groupForm.endDate} onChange={e => setGroupForm(p => ({ ...p, endDate: e.target.value }))} className={inp} /></Field>
           </div>
           <div className="flex justify-end gap-2.5 pt-2">
             <button type="button" onClick={() => setShowGroupModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={saving} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 shadow-md shadow-indigo-200">
-              {saving ? <Loader2 size={14} className="animate-spin"/> : <BookOpen size={14}/>}
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />}
               {saving ? 'Saving…' : 'Update Exam'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ══════════ EDIT BATCH (SHARED EXAM DETAILS) MODAL ══════════ */}
+      <Modal show={showBatchEditModal} onClose={() => setShowBatchEditModal(false)}
+        title="Edit Exam Details" subtitle="Applies to every class & section in this exam"
+        icon={Edit2} iconColor="bg-indigo-600" maxWidth="sm:max-w-lg">
+        <form onSubmit={handleSaveBatchEdit} className="space-y-4">
+          <Field label="Exam Title">
+            <input value={batchEditForm.title} onChange={e => setBatchEditForm(p => ({ ...p, title: e.target.value }))} className={inp} required />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Exam Type / Term">
+              <select value={batchEditForm.term} onChange={e => setBatchEditForm(p => ({ ...p, term: e.target.value }))} className={inp}>
+                {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Status">
+              {batchEditForm.status === 'Published' ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
+                  <CheckCircle2 size={14} /> Published — use Republish Routine to update
+                </div>
+              ) : (
+                <select value={batchEditForm.status} onChange={e => setBatchEditForm(p => ({ ...p, status: e.target.value }))} className={inp}>
+                  {GROUP_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Start Date"><input type="date" value={batchEditForm.startDate} onChange={e => setBatchEditForm(p => ({ ...p, startDate: e.target.value }))} className={inp} /></Field>
+            <Field label="End Date"><input type="date" value={batchEditForm.endDate} onChange={e => setBatchEditForm(p => ({ ...p, endDate: e.target.value }))} className={inp} /></Field>
+          </div>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button type="button" onClick={() => setShowBatchEditModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={savingBatchEdit} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 shadow-md shadow-indigo-200">
+              {savingBatchEdit ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              {savingBatchEdit ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -2019,14 +3882,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                         const avatarCls = CLASS_AVATAR_PALETTE[idx % CLASS_AVATAR_PALETTE.length];
                         return (
                           <div key={cls._id}
-                            className={`relative rounded-2xl border p-4 transition-colors ${
-                              allSelected ? 'border-indigo-200 bg-indigo-50/60' : 'border-slate-200 bg-white'
-                            }`}>
+                            className={`relative rounded-2xl border p-4 transition-colors ${allSelected ? 'border-indigo-200 bg-indigo-50/60' : 'border-slate-200 bg-white'
+                              }`}>
                             <button type="button" onClick={() => toggleWizardAllSections(cls)} disabled={classSections.length === 0}
                               aria-label={`Select all sections of ${cls.name}`}
-                              className={`absolute top-3 left-3 h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
-                                allSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
-                              } ${classSections.length === 0 ? 'cursor-not-allowed opacity-50' : ''}`}>
+                              className={`absolute top-3 left-3 h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${allSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
+                                } ${classSections.length === 0 ? 'cursor-not-allowed opacity-50' : ''}`}>
                               {allSelected && <Check size={12} className="text-white" />}
                             </button>
 
@@ -2053,9 +3914,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                   const isSelected = wizardSelections.some((p) => p.classId === cls._id && p.sectionId === sec._id);
                                   return (
                                     <button key={sec._id} type="button" onClick={() => toggleWizardSection(cls, sec)} disabled={allSelected}
-                                      className={`flex items-center gap-1 px-1.5 py-1 rounded-md border text-xs font-semibold transition-colors ${
-                                        isSelected && !allSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-slate-200 bg-white text-slate-400'
-                                      } ${allSelected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
+                                      className={`flex items-center gap-1 px-1.5 py-1 rounded-md border text-xs font-semibold transition-colors ${isSelected && !allSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-slate-200 bg-white text-slate-400'
+                                        } ${allSelected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
                                       <span className={`h-3.5 w-3.5 rounded-sm border flex items-center justify-center ${isSelected && !allSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
                                         {isSelected && !allSelected && <Check size={9} className="text-white" />}
                                       </span>
@@ -2102,9 +3962,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                           const configured = (wizardClassSubjects[c.classId] || []).length > 0;
                           return (
                             <button key={c.classId} type="button" onClick={() => setWizardActiveClassId(c.classId)}
-                              className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left border-b border-b-slate-100 last:border-b-0 transition-colors ${
-                                isActive ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
-                              }`}>
+                              className={`w-full flex items-center gap-2.5 px-3.5 py-3 text-left border-b border-b-slate-100 last:border-b-0 transition-colors ${isActive ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
+                                }`}>
                               <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${wizardClassAvatar(c.classId)}`}>
                                 <Users size={14} />
                               </div>
@@ -2112,9 +3971,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                 <p className="text-sm font-bold text-slate-800 truncate">{c.className}</p>
                                 <p className="text-xs text-slate-400">{c.sectionCount} section{c.sectionCount !== 1 ? 's' : ''}</p>
                               </div>
-                              <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${
-                                configured ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'
-                              }`}>
+                              <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${configured ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                }`}>
                                 {configured && <Check size={9} />}
                                 {configured ? 'Configured' : 'Not configured'}
                               </span>
@@ -2157,9 +4015,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                     const isChecked = selectedIds.includes(s._id);
                                     return (
                                       <button key={s._id} type="button" onClick={() => toggleWizardClassSubject(activeClass.classId, s._id)}
-                                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
-                                          isChecked ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'
-                                        }`}>
+                                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${isChecked ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'
+                                          }`}>
                                         <span className={`h-4 w-4 rounded-md border flex items-center justify-center shrink-0 ${isChecked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
                                           {isChecked && <Check size={10} className="text-white" />}
                                         </span>
@@ -2167,6 +4024,39 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                       </button>
                                     );
                                   })}
+                                </div>
+                              )}
+
+                              {selectedIds.length > 0 && (
+                                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                                  <div className="flex items-center justify-between gap-3 flex-wrap px-3.5 py-2.5 bg-slate-50 border-b border-slate-100">
+                                    <p className="text-xs font-bold text-slate-600">Full Marks per Subject</p>
+                                    <div className="flex items-center gap-2">
+                                      <input type="number" min="1" value={autoMarksValue} onChange={(e) => setAutoMarksValue(e.target.value)}
+                                        className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-xs text-center focus:border-indigo-400 focus:outline-none" />
+                                      <button type="button" onClick={() => handleAutoFillMarks(activeClass.classId)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors">
+                                        <Zap size={12} /> Auto-fill Full Marks
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                                    {selectedIds.map((subjectId) => {
+                                      const subj = subjectsForClass.find((s) => String(s._id) === String(subjectId));
+                                      const marksValue = getClassSubjectMarks(activeClass.classId, subjectId);
+                                      return (
+                                        <div key={subjectId} className="flex items-center justify-between gap-3 px-3.5 py-2">
+                                          <span className="text-sm text-slate-700 truncate">{subj?.name || 'Subject'}</span>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <input type="number" min="1" value={marksValue}
+                                              onChange={(e) => setClassSubjectMarks(activeClass.classId, subjectId, e.target.value)}
+                                              className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-xs text-right focus:border-indigo-400 focus:outline-none" />
+                                            <span className="text-[11px] text-slate-400 shrink-0">marks</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               )}
 
@@ -2214,7 +4104,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row gap-4">
                     {/* sidebar */}
-                    <div className="w-40 shrink-0 rounded-2xl border border-slate-200 overflow-hidden self-start">
+                    <div className="w-50 shrink-0 rounded-2xl border border-slate-200 overflow-hidden self-start">
                       <div className="p-2.5 border-b border-slate-100">
                         <div className="relative">
                           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -2232,9 +4122,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                             const isActive = key === activeScheduleKey;
                             return (
                               <button key={key} type="button" onClick={() => setActiveScheduleKey(key)}
-                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-b-slate-100 last:border-b-0 transition-colors ${
-                                  isActive ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
-                                }`}>
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-b-slate-100 last:border-b-0 transition-colors ${isActive ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
+                                  }`}>
                                 <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${wizardClassAvatar(sel.classId)}`}>
                                   <Users size={12} />
                                 </div>
@@ -2333,10 +4222,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                             <tr key={subjectId}>
                                               <td className="px-2 py-1.5 text-slate-400">{idx + 1}</td>
                                               <td className="px-2 py-1.5 font-semibold text-slate-700 truncate max-w-[90px]" title={subject?.name}>{subject?.name || 'Subject'}</td>
-                                              <td className="px-1 py-1.5 w-20">
+                                              <td className="px-1 py-1.5">
                                                 <WizardDateInput dense value={schedule.date} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { date: e.target.value })} />
                                               </td>
-                                              <td className="px-1 py-1.5 w-16">
+                                              <td className="px-1 py-1.5">
                                                 <div className="relative">
                                                   <Clock size={10} className="pointer-events-none absolute left-1 top-1/2 -translate-y-1/2 text-slate-400" />
                                                   <input type="time" value={schedule.time} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { time: e.target.value })} className={`${inpDense} pl-5 pr-0.5`} />
@@ -2621,6 +4510,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         </div>
       )}
 
+      <ProgressModal open={wizardSaving} title="Please wait, exam is creating…" percent={wizardCreateProgress} statusText={wizardCreateStatusText} />
+      <ProgressModal open={isDeleting} title="Please wait, deleting…" accent="red" percent={deleteProgress} statusText={deleteStatusText} />
+
       {/* ══════════ BULK EDIT ROUTINE DEFAULTS MODAL ══════════ */}
       <Modal show={showBulkEditModal} onClose={() => setShowBulkEditModal(false)}
         title="Bulk Edit Routine" subtitle="Apply shared defaults to every subject that doesn't have a room or date yet."
@@ -2690,7 +4582,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                     className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700">
                     <RotateCcw size={13} /> Resume
                   </button>
-                  <button onClick={() => deleteExamDraft(d._id)} disabled={deletingDraftId === d._id} title="Delete draft"
+                  <button onClick={() => handleDeleteDraftClick(d)} disabled={deletingDraftId === d._id} title="Delete draft"
                     className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
                     {deletingDraftId === d._id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                   </button>
@@ -2710,25 +4602,25 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Subject">
-              <select value={subjectForm.subjectId} onChange={e => setSubjectForm(p=>({...p,subjectId:e.target.value}))} className={inp} required>
+              <select value={subjectForm.subjectId} onChange={e => setSubjectForm(p => ({ ...p, subjectId: e.target.value }))} className={inp} required>
                 <option value="">Select subject</option>
-                {modalSubjects.map(s=><option key={s._id} value={s._id}>{s.name}</option>)}
+                {modalSubjects.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
               </select>
             </Field>
             <Field label="Total Marks">
-              <input type="number" min="1" value={subjectForm.marks} onChange={e => setSubjectForm(p=>({...p,marks:e.target.value}))} className={inp} placeholder="100"/>
+              <input type="number" min="1" value={subjectForm.marks} onChange={e => setSubjectForm(p => ({ ...p, marks: e.target.value }))} className={inp} placeholder="100" />
             </Field>
           </div>
 
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Schedule</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <Field label="Date"><input type="date" value={subjectForm.date} onChange={e => setSubjectForm(p=>({...p,date:e.target.value}))} className={inp}/></Field>
-              <Field label="Time"><input type="time" value={subjectForm.time} onChange={e => setSubjectForm(p=>({...p,time:e.target.value}))} className={inp}/></Field>
-              <Field label="Duration (min)"><input type="number" min="0" value={subjectForm.duration} onChange={e => setSubjectForm(p=>({...p,duration:e.target.value}))} className={inp} placeholder="90"/></Field>
+              <Field label="Date"><input type="date" value={subjectForm.date} onChange={e => setSubjectForm(p => ({ ...p, date: e.target.value }))} className={inp} /></Field>
+              <Field label="Time"><input type="time" value={subjectForm.time} onChange={e => setSubjectForm(p => ({ ...p, time: e.target.value }))} className={inp} /></Field>
+              <Field label="Duration (min)"><input type="number" min="0" value={subjectForm.duration} onChange={e => setSubjectForm(p => ({ ...p, duration: e.target.value }))} className={inp} placeholder="90" /></Field>
               <Field label="Status">
-                <select value={subjectForm.status} onChange={e => setSubjectForm(p=>({...p,status:e.target.value}))} className={inp}>
-                  {SUBJECT_STATUS_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+                <select value={subjectForm.status} onChange={e => setSubjectForm(p => ({ ...p, status: e.target.value }))} className={inp}>
+                  {SUBJECT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
             </div>
@@ -2740,37 +4632,37 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Field label="Building">
                   <div className="relative">
-                    <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                    <select value={subjectForm.buildingId} onChange={e => setSubjectForm(p=>({...p,buildingId:e.target.value,floorId:'',roomId:''}))} className={`${inp} pl-8`}>
+                    <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <select value={subjectForm.buildingId} onChange={e => setSubjectForm(p => ({ ...p, buildingId: e.target.value, floorId: '', roomId: '' }))} className={`${inp} pl-8`}>
                       <option value="">Select building</option>
-                      {buildings.map(b=><option key={b._id} value={b._id}>{b.name}</option>)}
+                      {buildings.map(b => <option key={b._id} value={b._id}>{b.name}</option>)}
                     </select>
                   </div>
                 </Field>
                 <Field label="Floor">
                   <div className="relative">
-                    <Layers size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                    <select value={subjectForm.floorId} onChange={e => setSubjectForm(p=>({...p,floorId:e.target.value,roomId:''}))} className={`${inp} pl-8`}>
+                    <Layers size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <select value={subjectForm.floorId} onChange={e => setSubjectForm(p => ({ ...p, floorId: e.target.value, roomId: '' }))} className={`${inp} pl-8`}>
                       <option value="">Select floor</option>
-                      {modalFloors.map(f=><option key={f._id} value={f._id}>{f.name}</option>)}
+                      {modalFloors.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
                     </select>
                   </div>
                 </Field>
                 <Field label="Room">
                   <div className="relative">
-                    <DoorOpen size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    <DoorOpen size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     <select value={subjectForm.roomId} onChange={e => {
-                      const rid=e.target.value; const room=rooms.find(r=>String(r._id)===String(rid));
-                      setSubjectForm(p=>({...p,roomId:rid,buildingId:room?String(room.floorId?.buildingId?._id||room.floorId?.buildingId||p.buildingId):p.buildingId,floorId:room?String(room.floorId?._id||room.floorId||''):p.floorId,venue:room?`${room.floorId?.buildingId?.name||'Building'} / ${room.floorId?.name||'Floor'} / ${room.roomNumber}`:p.venue}));
+                      const rid = e.target.value; const room = rooms.find(r => String(r._id) === String(rid));
+                      setSubjectForm(p => ({ ...p, roomId: rid, buildingId: room ? String(room.floorId?.buildingId?._id || room.floorId?.buildingId || p.buildingId) : p.buildingId, floorId: room ? String(room.floorId?._id || room.floorId || '') : p.floorId, venue: room ? `${room.floorId?.buildingId?.name || 'Building'} / ${room.floorId?.name || 'Floor'} / ${room.roomNumber}` : p.venue }));
                     }} className={`${inp} pl-8`}>
                       <option value="">Select room</option>
-                      {modalRooms.map(r=><option key={r._id} value={r._id}>{r.floorId?.buildingId?.name||'Bldg'} / {r.floorId?.name||'Floor'} / {r.roomNumber}</option>)}
+                      {modalRooms.map(r => <option key={r._id} value={r._id}>{r.floorId?.buildingId?.name || 'Bldg'} / {r.floorId?.name || 'Floor'} / {r.roomNumber}</option>)}
                     </select>
                   </div>
                 </Field>
               </div>
               <Field label="Venue Note (optional)">
-                <input value={subjectForm.venue} onChange={e => setSubjectForm(p=>({...p,venue:e.target.value}))} className={inp} placeholder="Custom venue or extra detail"/>
+                <input value={subjectForm.venue} onChange={e => setSubjectForm(p => ({ ...p, venue: e.target.value }))} className={inp} placeholder="Custom venue or extra detail" />
               </Field>
             </div>
           </div>
@@ -2778,19 +4670,19 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Primary Invigilator">
               <div className="relative">
-                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                <select value={subjectForm.primaryInstructor} onChange={e => setSubjectForm(p=>({...p,primaryInstructor:e.target.value}))} className={`${inp} pl-8`}>
+                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <select value={subjectForm.primaryInstructor} onChange={e => setSubjectForm(p => ({ ...p, primaryInstructor: e.target.value }))} className={`${inp} pl-8`}>
                   <option value="">Select</option>
-                  {modalTeachers.map(t=><option key={t._id} value={t.name} disabled={t.name===subjectForm.secondaryInstructor}>{t.name}</option>)}
+                  {modalTeachers.map(t => <option key={t._id} value={t.name} disabled={t.name === subjectForm.secondaryInstructor}>{t.name}</option>)}
                 </select>
               </div>
             </Field>
             <Field label="Secondary Invigilator">
               <div className="relative">
-                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                <select value={subjectForm.secondaryInstructor} onChange={e => setSubjectForm(p=>({...p,secondaryInstructor:e.target.value}))} className={`${inp} pl-8`}>
+                <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <select value={subjectForm.secondaryInstructor} onChange={e => setSubjectForm(p => ({ ...p, secondaryInstructor: e.target.value }))} className={`${inp} pl-8`}>
                   <option value="">Select</option>
-                  {modalTeachers.map(t=><option key={t._id} value={t.name} disabled={t.name===subjectForm.primaryInstructor}>{t.name}</option>)}
+                  {modalTeachers.map(t => <option key={t._id} value={t.name} disabled={t.name === subjectForm.primaryInstructor}>{t.name}</option>)}
                 </select>
               </div>
             </Field>
@@ -2799,7 +4691,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           <div className="flex justify-end gap-2.5 pt-1">
             <button type="button" onClick={() => setShowSubjectModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="submit" disabled={saving} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60 shadow-md shadow-violet-200">
-              {saving ? <Loader2 size={14} className="animate-spin"/> : <FileText size={14}/>}
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
               {saving ? 'Saving…' : editingSubjectId ? 'Update Subject' : 'Add Subject'}
             </button>
           </div>

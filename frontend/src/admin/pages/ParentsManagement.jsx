@@ -893,7 +893,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                               <div className="flex items-center gap-1 justify-center flex-wrap">
                                 <button
                                   onClick={() => openCredentials(parent)}
-                                  className="inline-flex items-center px-1.5 py-1 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs transition"
+                                  className="inline-flex items-center px-1.5 py-1 text-yellow-600 hover:bg-yellow-50 rounded-md text-xs transition"
                                   title="View Credentials"
                                 >
                                   <KeyRound size={14} />
