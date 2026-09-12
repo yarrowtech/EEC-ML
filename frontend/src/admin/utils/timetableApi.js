@@ -360,6 +360,21 @@ export const academicApi = {
     }
   },
 
+  // Update room (e.g. seating capacity)
+  updateRoom: async (roomId, payload) => {
+    try {
+      const res = await fetch(`${API_BASE}/academic/rooms/${roomId}`, {
+        method: 'PUT',
+        headers: createHeaders(true),
+        body: JSON.stringify(payload || {})
+      });
+      return handleResponse(res);
+    } catch (error) {
+      console.error('Error updating room:', error);
+      throw error;
+    }
+  },
+
   // Delete room
   deleteRoom: async (roomId) => {
     try {

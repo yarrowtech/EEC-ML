@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2, DoorOpen, Layers, Plus, RefreshCcw, Trash2,
-  ChevronRight, ChevronDown, Home, Hash
+  ChevronRight, ChevronDown, Home, Hash, Users, Pencil, Check, X,
 } from 'lucide-react';
 import { academicApi } from '../utils/timetableApi';
 import Swal from 'sweetalert2';
@@ -91,6 +91,9 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
   const [newFloorCode, setNewFloorCode]       = useState('');
   const [newRoomFloorId, setNewRoomFloorId]   = useState('');
   const [newRoomNumber, setNewRoomNumber]     = useState('');
+  const [newRoomCapacity, setNewRoomCapacity] = useState('');
+  const [editingCapacityId, setEditingCapacityId] = useState(null);
+  const [editingCapacityValue, setEditingCapacityValue] = useState('');
 
   /* accordion open state */
   const [openBuildings, toggleBuilding] = useSet([]);
@@ -214,9 +217,23 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
     if (!fid) return flash('error', 'Select a floor');
     if (!rn)  return flash('error', 'Enter room number');
     try {
-      await academicApi.createRoom({ floorId: fid, roomNumber: rn });
+      await academicApi.createRoom({ floorId: fid, roomNumber: rn, capacity: newRoomCapacity });
       setNewRoomNumber('');
+      setNewRoomCapacity('');
       flash('ok', 'Room created');
+      await loadData();
+    } catch (e) { flash('error', e.message || 'Failed'); }
+  };
+
+  const handleSaveRoomCapacity = async (roomId) => {
+    const value = editingCapacityValue.trim();
+    if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return flash('error', 'Capacity must be a non-negative number');
+    }
+    try {
+      await academicApi.updateRoom(roomId, { capacity: value === '' ? 0 : Number(value) });
+      setEditingCapacityId(null);
+      flash('ok', 'Seating capacity updated');
       await loadData();
     } catch (e) { flash('error', e.message || 'Failed'); }
   };
@@ -308,6 +325,7 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
             ))}
           </Select>
           <Field value={newRoomNumber} onChange={(e) => setNewRoomNumber(e.target.value)} placeholder="Room Number (e.g. 101)" />
+          <Field type="number" min="0" value={newRoomCapacity} onChange={(e) => setNewRoomCapacity(e.target.value)} placeholder="Seating Capacity (e.g. 40)" />
           <button type="button" onClick={handleCreateRoom}
             className="inline-flex items-center gap-1.5 rounded-xl bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-colors shadow-sm">
             <Plus size={14} /> Add Room
@@ -416,18 +434,39 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
                                     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 pt-1.5 pl-10">
                                       {fRooms.map((room) => (
                                         <div key={room._id}
-                                          className="group flex items-center justify-between gap-1 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2 hover:border-teal-200 hover:bg-teal-50/40 transition-colors">
-                                          <div className="flex items-center gap-1.5 min-w-0">
-                                            <DoorOpen size={11} className="shrink-0 text-teal-500" />
-                                            <span className="truncate text-xs font-medium text-gray-700">{room.roomNumber}</span>
+                                          className="group flex flex-col gap-1 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2 hover:border-teal-200 hover:bg-teal-50/40 transition-colors">
+                                          <div className="flex items-center justify-between gap-1">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <DoorOpen size={11} className="shrink-0 text-teal-500" />
+                                              <span className="truncate text-xs font-medium text-gray-700">{room.roomNumber}</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteRoom(room._id)}
+                                              className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                                            >
+                                              <Trash2 size={11} />
+                                            </button>
                                           </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteRoom(room._id)}
-                                            className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-                                          >
-                                            <Trash2 size={11} />
-                                          </button>
+                                          {editingCapacityId === room._id ? (
+                                            <div className="flex items-center gap-1">
+                                              <Users size={10} className="shrink-0 text-gray-400" />
+                                              <input type="number" min="0" autoFocus value={editingCapacityValue}
+                                                onChange={(e) => setEditingCapacityValue(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRoomCapacity(room._id); if (e.key === 'Escape') setEditingCapacityId(null); }}
+                                                className="w-12 rounded border border-teal-200 bg-white px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                                              <button type="button" onClick={() => handleSaveRoomCapacity(room._id)} className="text-emerald-500 hover:text-emerald-700"><Check size={11} /></button>
+                                              <button type="button" onClick={() => setEditingCapacityId(null)} className="text-gray-400 hover:text-gray-600"><X size={11} /></button>
+                                            </div>
+                                          ) : (
+                                            <button type="button"
+                                              onClick={() => { setEditingCapacityId(room._id); setEditingCapacityValue(room.capacity ? String(room.capacity) : ''); }}
+                                              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-teal-600 transition-colors">
+                                              <Users size={10} className="shrink-0" />
+                                              {room.capacity ? `${room.capacity} seats` : 'Set capacity'}
+                                              <Pencil size={9} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </button>
+                                          )}
                                         </div>
                                       ))}
                                     </div>

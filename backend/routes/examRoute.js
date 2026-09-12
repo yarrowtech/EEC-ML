@@ -17,6 +17,8 @@ const Subject = require('../models/Subject');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const Timetable = require('../models/Timetable');
 const Room = require('../models/Room');
+const ExamAutoScheduleSettings = require('../models/ExamAutoScheduleSettings');
+const ExamSeatingPlan = require('../models/ExamSeatingPlan');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
 const NotificationService = require('../utils/notificationService');
@@ -779,6 +781,101 @@ router.delete('/groups/:groupId', adminAuth, async (req, res) => {
     await Exam.deleteMany({ groupId, schoolId });
     clearExamGroupsCache();
     res.json({ message: 'Exam group and all its subject exams deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ───────────────────────── Auto-Schedule settings (admin) ───────────────────────── */
+// Per-subject gap (in days) Auto-Schedule keeps between two exams of the same
+// subject for the same class — e.g. Mathematics needing 2 clear days before
+// its next paper, applied the same way to every class taking that subject.
+
+router.get('/auto-schedule-settings', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const settings = await ExamAutoScheduleSettings.findOne({ schoolId, campusId: campusId || null }).lean();
+    res.json({ subjectGaps: settings?.subjectGaps || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/auto-schedule-settings', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const rawGaps = Array.isArray(req.body?.subjectGaps) ? req.body.subjectGaps : [];
+    const subjectGaps = rawGaps
+      .filter((g) => g && mongoose.isValidObjectId(g.subjectId))
+      .map((g) => ({ subjectId: g.subjectId, gapDays: Math.max(0, Number(g.gapDays) || 0) }));
+
+    const settings = await ExamAutoScheduleSettings.findOneAndUpdate(
+      { schoolId, campusId: campusId || null },
+      { schoolId, campusId: campusId || null, subjectGaps },
+      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    ).lean();
+    res.json({ message: 'Auto-Schedule settings saved', subjectGaps: settings.subjectGaps || [] });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/* ───────────────────────── Exam seating plans (admin) ───────────────────────── */
+// A saved seating chart — persisted once at exam creation so it never
+// silently reshuffles if student/room data changes afterward.
+
+router.post('/seating-plans', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const { title, term, startDate, endDate, groupIds, roomAllocations } = req.body || {};
+    if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+    if (!Array.isArray(roomAllocations) || !roomAllocations.length) {
+      return res.status(400).json({ error: 'At least one room allocation is required' });
+    }
+    const validGroupIds = Array.isArray(groupIds) ? groupIds.filter((id) => mongoose.isValidObjectId(id)) : [];
+
+    const plan = await ExamSeatingPlan.create({
+      schoolId,
+      campusId: campusId || null,
+      title: title.trim(),
+      term: term || '',
+      startDate: startDate || '',
+      endDate: endDate || '',
+      groupIds: validGroupIds,
+      roomAllocations,
+    });
+    res.status(201).json({ message: 'Seating plan saved', plan });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Look up the saved seating plan for a batch by any one of its ExamGroup ids.
+router.get('/seating-plans', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Exams']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const { groupId } = req.query || {};
+    if (!groupId || !mongoose.isValidObjectId(groupId)) {
+      return res.status(400).json({ error: 'Valid groupId is required' });
+    }
+    const plan = await ExamSeatingPlan.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      groupIds: groupId,
+    }).sort({ createdAt: -1 }).lean();
+    res.json({ plan: plan || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

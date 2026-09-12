@@ -138,6 +138,7 @@ const DETAIL_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'routine', label: 'Routine' },
   { id: 'classes', label: 'Classes & Subjects' },
+  { id: 'seating', label: 'Seating' },
   { id: 'settings', label: 'Settings' },
   // { id: 'results', label: 'Results' },
 ];
@@ -529,6 +530,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [bulkEditDefaults, setBulkEditDefaults] = useState({ time: '10:00', duration: '60', buildingId: '', floorId: '', roomId: '' });
 
+  /* ── Auto-Schedule settings: per-subject gap (days) + the room-capacity-aware
+     seating plan Auto-Schedule produces ── */
+  const [subjectGapDays, setSubjectGapDays] = useState({}); // subjectId -> gapDays
+  const [showAutoScheduleSettings, setShowAutoScheduleSettings] = useState(false);
+  const [savingAutoScheduleSettings, setSavingAutoScheduleSettings] = useState(false);
+  const [bulkGapValue, setBulkGapValue] = useState('1'); // "Gap between two subjects" bulk-apply value
+  const [wizardSeatingRooms, setWizardSeatingRooms] = useState([]); // room allocations from the last Auto-Schedule run
+
   /* ── create-exam wizard: auto-save drafts to the cloud ── */
   const [examDrafts, setExamDrafts] = useState([]);
   const [activeDraftId, setActiveDraftId] = useState(null);
@@ -633,7 +642,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     });
   };
 
-  useEffect(() => { loadGroups(); loadUngrouped(); loadOptions(); loadExamDrafts(); }, []);
+  useEffect(() => { loadGroups(); loadUngrouped(); loadOptions(); loadExamDrafts(); loadAutoScheduleSettings(); }, []);
 
   useEffect(() => {
     const onClickAway = (e) => {
@@ -819,6 +828,26 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     [classes, yearFilterId]
   );
 
+  /* ── Auto-Schedule Settings modal: subjects grouped by class, so the same
+     subject name repeated across classes ("Mathematics", "Mathematics", …)
+     reads as "Class 5 > Mathematics", "Class 6 > Mathematics" instead of a
+     long flat list of duplicates ── */
+  const subjectsByClassForSettings = useMemo(() => {
+    const byClass = new Map();
+    subjects.forEach((s) => {
+      const classId = String(s.classId?._id || s.classId || '');
+      if (!byClass.has(classId)) byClass.set(classId, []);
+      byClass.get(classId).push(s);
+    });
+    return Array.from(byClass.entries())
+      .map(([classId, classSubjects]) => ({
+        classId,
+        className: classes.find((c) => String(c._id) === classId)?.name || 'Unassigned',
+        subjects: classSubjects.slice().sort((a, b) => naturalCompare(a.name, b.name)),
+      }))
+      .sort((a, b) => naturalCompare(a.className, b.className));
+  }, [subjects, classes]);
+
   /* ── batches visible in the left list: class pill + search + sort ── */
   const visibleBatches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -856,6 +885,22 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       setSelectedBatchKey(visibleBatches[0]?.key || '');
     }
   }, [visibleBatches, selectedBatchKey]);
+
+  /* ── Seating tab: the seating plan saved when this exam was created ── */
+  const [seatingPlan, setSeatingPlan] = useState(null);
+  const [seatingPlanLoading, setSeatingPlanLoading] = useState(false);
+  useEffect(() => {
+    if (activeDetailTab !== 'seating' || !selectedBatch?.groups?.length) return;
+    let cancelled = false;
+    setSeatingPlanLoading(true);
+    const firstGroupId = selectedBatch.groups[0]._id;
+    fetch(`${API_BASE}/api/exam/seating-plans?groupId=${firstGroupId}`, { headers: authH() })
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => { if (!cancelled) setSeatingPlan(data?.plan || null); })
+      .catch(() => { if (!cancelled) setSeatingPlan(null); })
+      .finally(() => { if (!cancelled) setSeatingPlanLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeDetailTab, selectedBatch]);
 
   /* ── detail-panel aggregates for the selected batch ── */
   const batchAllSubjects = useMemo(
@@ -3675,6 +3720,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     setCopyFromOpen(false);
     setApplyToOpen(false);
     setApplyToTargets([]);
+    setWizardSeatingRooms([]);
     setWizardStep(1);
     setActiveDraftId(null);
     setDraftState('idle');
@@ -3704,6 +3750,40 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       setActiveScheduleKey(first ? wizardKey(first.classId, first.sectionId) : '');
     }
   }, [wizardSelections, activeScheduleKey]);
+
+  /* ── Auto-Schedule settings: per-subject gap days ── */
+  const loadAutoScheduleSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/exam/auto-schedule-settings`, { headers: authH() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const map = {};
+      (Array.isArray(data?.subjectGaps) ? data.subjectGaps : []).forEach((g) => {
+        map[String(g.subjectId)] = Number(g.gapDays) || 0;
+      });
+      setSubjectGapDays(map);
+    } catch { /* silent — falls back to no gap (0) for every subject */ }
+  };
+
+  const saveAutoScheduleSettings = async () => {
+    setSavingAutoScheduleSettings(true);
+    try {
+      const subjectGaps = Object.entries(subjectGapDays)
+        .filter(([, gapDays]) => Number(gapDays) > 0)
+        .map(([subjectId, gapDays]) => ({ subjectId, gapDays: Number(gapDays) }));
+      const res = await fetch(`${API_BASE}/api/exam/auto-schedule-settings`, {
+        method: 'PUT', headers: authH(), body: JSON.stringify({ subjectGaps }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to save settings');
+      toast.success('Auto-Schedule settings saved');
+      setShowAutoScheduleSettings(false);
+    } catch (err) {
+      toast.error(err.message || 'Failed to save settings');
+    } finally {
+      setSavingAutoScheduleSettings(false);
+    }
+  };
 
   /* ── cloud drafts: list / save / delete / resume ── */
   const draftAuthHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -4089,6 +4169,15 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   // Uses the same hasOverlap() conflict check as the single-exam Add Subject
   // modal, seeded with every already-published exam plus everything this run
   // itself assigns, so two classes/sections never land in the same room at once.
+  // Room-capacity-aware, gap-respecting Auto-Schedule: instead of giving every
+  // class/section its own room, classes needing a room on the same day are
+  // packed (biggest first) into however many seats each room actually has —
+  // so e.g. two 30-student sections can share one 60-seat room — and whatever
+  // doesn't fit today simply waits for the next available day, extending the
+  // exam's date range instead of over-booking a room. Each subject's own gap
+  // (set in Auto-Schedule Settings) delays that class's next paper by that
+  // many extra rest days. Produces a seating plan (wizardSeatingRooms) of
+  // exactly who sits where, for the Seating tab.
   const handleAutoSchedule = async () => {
     const totalSubjects = wizardSelections.reduce((n, sel) => n + (wizardClassSubjects[sel.classId] || []).length, 0);
     if (!totalSubjects) {
@@ -4097,7 +4186,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     }
     const confirm = await Swal.fire({
       title: 'Auto-schedule the routine?',
-      html: 'This fills in the date, time, building, floor, room and a free teacher for every subject that doesn’t already have a date set. Rows you’ve already filled in manually are left untouched.',
+      html: 'This fills in the date, time, room and a free teacher for every subject that doesn’t already have a date set — packing multiple classes into a shared room by seating capacity, and spreading exams across extra days if rooms run out. Rows you’ve already filled in manually are left untouched.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#4f46e5',
@@ -4117,6 +4206,15 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         (ex.instructor || '').split(',').map((t) => t.trim()).filter(Boolean)
           .forEach((name) => teacherBookings.push({ date: dateStr, time: ex.time, duration: ex.duration, name }));
       });
+      // Rows already set manually elsewhere in this wizard also occupy a room/teacher.
+      Object.values(wizardSchedule).forEach((s) => {
+        if (!s.date || !s.time || !s.duration) return;
+        const dateStr = String(s.date).slice(0, 10);
+        if (s.roomId) roomBookings.push({ date: dateStr, time: s.time, duration: s.duration, roomId: String(s.roomId) });
+        [s.primaryInstructor, s.secondaryInstructor].filter(Boolean).forEach((name) =>
+          teacherBookings.push({ date: dateStr, time: s.time, duration: s.duration, name })
+        );
+      });
       const isRoomFree = (dateStr, time, duration, roomId) =>
         !roomBookings.some((b) => b.roomId === String(roomId) && hasOverlap(dateStr, time, duration, b));
       const isTeacherFree = (dateStr, time, duration, name) =>
@@ -4129,81 +4227,178 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         return free[Math.floor(Math.random() * free.length)];
       };
 
-      const startDate = wizardDetails.startDate ? new Date(wizardDetails.startDate) : new Date();
-      let filled = 0;
-      let unresolvedRooms = 0;
-      let unresolvedTeachers = 0;
-      let unresolvedAssociates = 0;
+      const defaultTime = '10:00';
+      const defaultDuration = '60';
+      const capacityRooms = rooms.filter((r) => Number(r.capacity) > 0);
 
+      const selKey = (sel) => `${sel.classId}__${sel.sectionId}`;
+      const headcountFor = (sel) => students.filter((st) =>
+        String(st.grade) === String(sel.className) && String(st.section) === String(sel.sectionName)
+      ).length;
+
+      // One queue per class/section — only the subjects that don't already have a date.
+      const queues = new Map();
       wizardSelections.forEach((sel) => {
-        const subjectIds = wizardClassSubjects[sel.classId] || [];
-        let cursor = isWeekend(startDate) ? nextWeekday(startDate) : new Date(startDate);
-
-        subjectIds.forEach((subjectId) => {
-          const existing = getWizardSchedule(sel.classId, sel.sectionId, subjectId);
-          const patch = {};
-          let dateStr = existing.date;
-          if (!dateStr) {
-            dateStr = toIsoDate(cursor);
-            cursor = nextWeekday(cursor);
-            patch.date = dateStr;
-          }
-          const time = existing.time || '10:00';
-          const duration = existing.duration || '60';
-          if (!existing.time) patch.time = time;
-          if (!existing.duration) patch.duration = duration;
-
-          if (!existing.roomId) {
-            const room = rooms.find((r) => isRoomFree(dateStr, time, duration, r._id));
-            if (room) {
-              roomBookings.push({ date: dateStr, time, duration, roomId: String(room._id) });
-              patch.roomId = room._id;
-              patch.floorId = room.floorId?._id || room.floorId || '';
-              patch.buildingId = room.floorId?.buildingId?._id || room.floorId?.buildingId || '';
-            } else {
-              unresolvedRooms += 1;
-            }
-          }
-
-          const primaryName = existing.primaryInstructor || null;
-          if (!primaryName) {
-            const teacher = pickRandomFreeTeacher(dateStr, time, duration);
-            if (teacher) {
-              teacherBookings.push({ date: dateStr, time, duration, name: teacher.name });
-              patch.primaryInstructor = teacher.name;
-            } else {
-              unresolvedTeachers += 1;
-            }
-          }
-
-          if (!existing.secondaryInstructor) {
-            const excludeName = patch.primaryInstructor || primaryName;
-            const associate = pickRandomFreeTeacher(dateStr, time, duration, excludeName);
-            if (associate) {
-              teacherBookings.push({ date: dateStr, time, duration, name: associate.name });
-              patch.secondaryInstructor = associate.name;
-            } else {
-              unresolvedAssociates += 1;
-            }
-          }
-
-          if (Object.keys(patch).length) {
-            setWizardScheduleField(sel.classId, sel.sectionId, subjectId, patch);
-            filled += 1;
-          }
-        });
+        const pending = (wizardClassSubjects[sel.classId] || [])
+          .map((subjectId) => ({ subjectId, existing: getWizardSchedule(sel.classId, sel.sectionId, subjectId) }))
+          .filter((row) => !row.existing.date);
+        queues.set(selKey(sel), pending);
       });
 
-      if (!filled) {
+      if (![...queues.values()].some((q) => q.length)) {
         await Swal.fire({
           title: 'Nothing to schedule',
           text: 'Every subject already has a date set. Clear a date first if you want Auto-Schedule to redo it.',
           icon: 'info',
           confirmButtonColor: '#4f46e5',
         });
+        return;
+      }
+
+      const startDate = wizardDetails.startDate ? new Date(wizardDetails.startDate) : new Date();
+      const initialCursor = isWeekend(startDate) ? nextWeekday(startDate) : new Date(startDate);
+      // Each class/section's own "no exam before this day" cursor — pushed
+      // forward by 1 + that subject's configured gap once it sits its paper.
+      const earliestDay = new Map();
+      wizardSelections.forEach((sel) => earliestDay.set(selKey(sel), new Date(initialCursor)));
+
+      let filled = 0;
+      let unresolvedTeachers = 0;
+      let unresolvedAssociates = 0;
+      const seatingRooms = [];
+
+      let day = new Date(initialCursor);
+      let guard = 0;
+      while (guard < 120 && [...queues.values()].some((q) => q.length)) {
+        guard += 1;
+        const dateStr = toIsoDate(day);
+
+        const candidates = [];
+        wizardSelections.forEach((sel) => {
+          const key = selKey(sel);
+          const queue = queues.get(key);
+          if (!queue.length) return;
+          if (day < earliestDay.get(key)) return; // still resting after a previous subject's gap
+          candidates.push({ sel, key, ...queue[0], headcount: headcountFor(sel) });
+        });
+
+        if (candidates.length) {
+          // Biggest classes claim a room first (first-fit decreasing) so two
+          // smaller sections are more likely to end up sharing one room.
+          const sorted = [...candidates].sort((a, b) => b.headcount - a.headcount);
+          const roomRemaining = new Map(); // roomId -> seats left today
+          const roomSeating = new Map();   // roomId -> today's seating-room entry
+
+          sorted.forEach((cand) => {
+            const time = cand.existing.time || defaultTime;
+            const duration = cand.existing.duration || defaultDuration;
+
+            let chosenRoom = null;
+            for (const room of capacityRooms) {
+              const key = String(room._id);
+              const claimedToday = roomRemaining.has(key);
+              const remaining = claimedToday ? roomRemaining.get(key) : Number(room.capacity);
+              if (cand.headcount <= 0 || remaining < cand.headcount) continue;
+              if (!claimedToday && !isRoomFree(dateStr, time, duration, room._id)) continue;
+              chosenRoom = room;
+              if (!claimedToday) roomBookings.push({ date: dateStr, time, duration, roomId: key });
+              roomRemaining.set(key, remaining - cand.headcount);
+              break;
+            }
+            // No roster loaded for this class — fall back to "first entirely free room".
+            if (!chosenRoom && !cand.headcount) {
+              chosenRoom = rooms.find((r) => !roomRemaining.has(String(r._id)) && isRoomFree(dateStr, time, duration, r._id));
+              if (chosenRoom) {
+                roomRemaining.set(String(chosenRoom._id), 0);
+                roomBookings.push({ date: dateStr, time, duration, roomId: String(chosenRoom._id) });
+              }
+            }
+            if (!chosenRoom) return; // doesn't fit today — stays queued, retried on a later day
+
+            const patch = { date: dateStr };
+            if (!cand.existing.time) patch.time = time;
+            if (!cand.existing.duration) patch.duration = duration;
+            patch.roomId = chosenRoom._id;
+            patch.floorId = chosenRoom.floorId?._id || chosenRoom.floorId || '';
+            patch.buildingId = chosenRoom.floorId?.buildingId?._id || chosenRoom.floorId?.buildingId || '';
+
+            const primaryName = cand.existing.primaryInstructor || null;
+            if (!primaryName) {
+              const teacher = pickRandomFreeTeacher(dateStr, time, duration);
+              if (teacher) {
+                teacherBookings.push({ date: dateStr, time, duration, name: teacher.name });
+                patch.primaryInstructor = teacher.name;
+              } else {
+                unresolvedTeachers += 1;
+              }
+            }
+            if (!cand.existing.secondaryInstructor) {
+              const excludeName = patch.primaryInstructor || primaryName;
+              const associate = pickRandomFreeTeacher(dateStr, time, duration, excludeName);
+              if (associate) {
+                teacherBookings.push({ date: dateStr, time, duration, name: associate.name });
+                patch.secondaryInstructor = associate.name;
+              } else {
+                unresolvedAssociates += 1;
+              }
+            }
+
+            setWizardScheduleField(cand.sel.classId, cand.sel.sectionId, cand.subjectId, patch);
+            filled += 1;
+
+            queues.get(cand.key).shift();
+            const gapDays = Number(subjectGapDays[cand.subjectId]) || 0;
+            const nextEarliest = new Date(day);
+            nextEarliest.setDate(nextEarliest.getDate() + 1 + gapDays);
+            while (isWeekend(nextEarliest)) nextEarliest.setDate(nextEarliest.getDate() + 1);
+            earliestDay.set(cand.key, nextEarliest);
+
+            const roomKey = String(chosenRoom._id);
+            if (!roomSeating.has(roomKey)) {
+              roomSeating.set(roomKey, {
+                date: dateStr, time, roomId: chosenRoom._id,
+                roomNumber: chosenRoom.roomNumber || '',
+                floorName: chosenRoom.floorId?.name || '',
+                buildingName: chosenRoom.floorId?.buildingId?.name || '',
+                seats: [],
+              });
+            }
+            const classRoster = students
+              .filter((st) => String(st.grade) === String(cand.sel.className) && String(st.section) === String(cand.sel.sectionName))
+              .slice()
+              .sort((a, b) => (Number(a.roll) || 0) - (Number(b.roll) || 0))
+              .map((st) => ({
+                studentId: st._id, name: st.name || '', roll: Number(st.roll) || null,
+                classId: cand.sel.classId, className: cand.sel.className,
+                sectionId: cand.sel.sectionId, sectionName: cand.sel.sectionName,
+              }));
+            roomSeating.get(roomKey).seats.push(...classRoster);
+          });
+
+          seatingRooms.push(...roomSeating.values());
+        }
+
+        day = nextWeekday(new Date(day.getTime() + 86400000));
+      }
+
+      // Anything left in a queue after the guard rail ran out never found room capacity.
+      let unresolvedRooms = 0;
+      queues.forEach((queue) => { unresolvedRooms += queue.length; });
+
+      setWizardSeatingRooms(seatingRooms);
+
+      if (!filled) {
+        await Swal.fire({
+          title: 'Nothing to schedule',
+          text: capacityRooms.length
+            ? 'Could not fit any subject into a room. Check that your rooms have enough seating capacity for these classes.'
+            : 'No room has a seating capacity set yet — set one in Buildings & Rooms so Auto-Schedule knows how many students each room can hold.',
+          icon: 'warning',
+          confirmButtonColor: '#4f46e5',
+        });
       } else {
-        const lines = [`<li>Filled in <strong>${filled}</strong> subject row${filled !== 1 ? 's' : ''} — date, time, duration, building, floor, room, teacher and associated teacher.</li>`];
-        if (unresolvedRooms) lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} couldn't find a free room — assign one manually.</li>`);
+        const lines = [`<li>Filled in <strong>${filled}</strong> subject row${filled !== 1 ? 's' : ''} — date, time, room and a free teacher, packing classes into shared rooms by seating capacity.</li>`];
+        if (unresolvedRooms) lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} couldn't find room capacity — add more rooms with a seating capacity set, or assign one manually.</li>`);
         if (unresolvedTeachers) lines.push(`<li class="text-rose-600"><strong>${unresolvedTeachers}</strong> row${unresolvedTeachers !== 1 ? 's' : ''} couldn't find a free teacher — assign one manually.</li>`);
         if (unresolvedAssociates) lines.push(`<li class="text-rose-600"><strong>${unresolvedAssociates}</strong> row${unresolvedAssociates !== 1 ? 's' : ''} couldn't find a free associated teacher — assign one manually.</li>`);
         await Swal.fire({
@@ -4284,6 +4479,24 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           bumpProgress(`Created exam group for ${sel.className} — ${sel.sectionName}`);
         }
       }));
+
+      // Persist the seating plan Auto-Schedule built (if any) — fire-and-forget,
+      // it's independent of subject creation and shouldn't slow the modal down.
+      if (wizardSeatingRooms.length) {
+        const seatingGroupIds = groupResults.map((g) => g.groupId).filter(Boolean);
+        fetch(`${API_BASE}/api/exam/seating-plans`, {
+          method: 'POST',
+          headers: authH(),
+          body: JSON.stringify({
+            title: wizardDetails.title.trim(),
+            term: wizardDetails.term,
+            startDate: wizardDetails.startDate,
+            endDate: wizardDetails.endDate,
+            groupIds: seatingGroupIds,
+            roomAllocations: wizardSeatingRooms,
+          }),
+        }).catch((err) => console.error('Failed to save seating plan:', err));
+      }
 
       setWizardCreateStatusText(`Adding ${totalSubjectCount} subject${totalSubjectCount !== 1 ? 's' : ''}…`);
       const subjectJobs = [];
@@ -4883,6 +5096,61 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                     </div>
                   )}
 
+                  {/* ── Seating ── */}
+                  {activeDetailTab === 'seating' && (
+                    <div className="space-y-4">
+                      {seatingPlanLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-14 text-sm text-slate-400">
+                          <Loader2 size={16} className="animate-spin text-indigo-400" /> Loading seating plan…
+                        </div>
+                      ) : !seatingPlan || !seatingPlan.roomAllocations?.length ? (
+                        <div className="flex flex-col items-center justify-center py-14 gap-2 text-slate-400 text-center">
+                          <Users size={28} className="text-slate-300" />
+                          <p className="text-sm font-medium text-slate-500">No seating plan saved for this exam.</p>
+                          <p className="text-xs text-slate-400 max-w-sm">Seating plans are generated by Auto-Schedule (Step 4 of the create-exam wizard) when the exam is created.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {seatingPlan.roomAllocations.map((room, idx) => {
+                            const byClass = new Map();
+                            (room.seats || []).forEach((seat) => {
+                              const key = `${seat.className}-${seat.sectionName}`;
+                              if (!byClass.has(key)) byClass.set(key, { className: seat.className, sectionName: seat.sectionName, seats: [] });
+                              byClass.get(key).seats.push(seat);
+                            });
+                            return (
+                              <div key={idx} className="rounded-2xl border border-slate-200 overflow-hidden">
+                                <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
+                                  <p className="text-sm font-bold text-slate-800">Room {room.roomNumber || '—'}</p>
+                                  <p className="text-xs text-slate-400">{[room.buildingName, room.floorName].filter(Boolean).join(' · ') || 'Building / Floor not set'}</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                                    <Calendar size={10} /> {formatDateChip(room.date) || room.date} {room.time ? `· ${formatTimeLabel(room.time)}` : ''}
+                                    <span className="ml-auto font-semibold text-slate-500">{room.seats?.length || 0} seats</span>
+                                  </p>
+                                </div>
+                                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                                  {Array.from(byClass.values()).map((group) => (
+                                    <div key={`${group.className}-${group.sectionName}`}>
+                                      <p className="px-4 py-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50/60">
+                                        Class {group.className} — {group.sectionName} ({group.seats.length})
+                                      </p>
+                                      {group.seats.map((seat, si) => (
+                                        <div key={seat.studentId || si} className="flex items-center justify-between gap-2 px-4 py-1.5 text-xs">
+                                          <span className="font-semibold text-slate-600 shrink-0">Roll {seat.roll ?? '—'}</span>
+                                          <span className="text-slate-500 truncate">{seat.name || 'Student'}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* ── Settings ── */}
                   {activeDetailTab === 'settings' && (
                     <div className="space-y-4 max-w-lg">
@@ -5152,6 +5420,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-indigo-200 text-indigo-600 text-sm font-semibold hover:bg-indigo-50 disabled:opacity-60 transition-colors">
                       {autoScheduling ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
                       {autoScheduling ? 'Scheduling…' : 'Auto Schedule'}
+                    </button>
+                    <button type="button" onClick={() => setShowAutoScheduleSettings(true)} title="Auto-Schedule Settings"
+                      className="flex items-center justify-center h-9 w-9 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
+                      <Settings size={14} />
                     </button>
                   </div>
                 )}
@@ -5926,6 +6198,82 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             <button type="button" onClick={() => setShowBulkEditModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
             <button type="button" onClick={applyBulkEdit} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200">
               <ListChecks size={14} /> Apply Defaults
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ══════════ AUTO-SCHEDULE SETTINGS MODAL ══════════ */}
+      <Modal show={showAutoScheduleSettings} onClose={() => setShowAutoScheduleSettings(false)}
+        title="Auto-Schedule Settings" subtitle="Minimum gap (in days) Auto-Schedule keeps before a class's next paper in this subject."
+        icon={Settings} iconColor="bg-slate-600" maxWidth="sm:max-w-lg">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3.5 py-2.5">
+            <span className="text-sm text-indigo-700 shrink-0">Gap between two subjects</span>
+            <input type="number" min="0" value={bulkGapValue}
+              onChange={(e) => setBulkGapValue(e.target.value)}
+              className="w-16 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-sm text-center focus:border-indigo-400 focus:outline-none" />
+            <span className="text-xs text-indigo-500 shrink-0">days</span>
+            <button type="button"
+              onClick={() => {
+                const value = Math.max(0, Number(bulkGapValue) || 0);
+                setSubjectGapDays((prev) => {
+                  const next = { ...prev };
+                  subjects.forEach((s) => { next[s._id] = value; });
+                  return next;
+                });
+              }}
+              className="ml-auto shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors">
+              Apply to All
+            </button>
+          </div>
+
+          {subjects.length === 0 ? (
+            <p className="text-sm text-slate-400">No subjects set up for this school yet.</p>
+          ) : (
+            <div className="max-h-80 overflow-y-auto space-y-3">
+              {subjectsByClassForSettings.map(({ classId, className, subjects: classSubjects }) => (
+                <div key={classId} className="rounded-xl border border-slate-200 overflow-hidden">
+                  <p className="px-3.5 py-1.5 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100">
+                    Class {className}
+                  </p>
+                  <div className="divide-y divide-slate-100">
+                    {classSubjects.map((s) => {
+                      const gap = Number(subjectGapDays[s._id]) || 0;
+                      return (
+                        <div key={s._id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                          <span className="text-sm text-slate-700 truncate">{s.name}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button type="button"
+                              onClick={() => setSubjectGapDays((p) => ({ ...p, [s._id]: Math.max(0, gap - 1) }))}
+                              disabled={gap <= 0}
+                              className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                              −
+                            </button>
+                            <span className="w-16 text-center text-sm font-semibold text-slate-700">{gap} day{gap !== 1 ? 's' : ''}</span>
+                            <button type="button"
+                              onClick={() => setSubjectGapDays((p) => ({ ...p, [s._id]: gap + 1 }))}
+                              className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-400">
+            E.g. Mathematics set to 2 days means Auto-Schedule leaves at least 2 clear days after a class sits Mathematics before that same class&apos;s next paper — same rule for every class.
+          </p>
+          <div className="flex justify-end gap-2.5 pt-1">
+            <button type="button" onClick={() => setShowAutoScheduleSettings(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="button" onClick={saveAutoScheduleSettings} disabled={savingAutoScheduleSettings}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60">
+              {savingAutoScheduleSettings ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
+              {savingAutoScheduleSettings ? 'Saving…' : 'Save Settings'}
             </button>
           </div>
         </div>

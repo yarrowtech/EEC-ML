@@ -1577,12 +1577,15 @@ router.post('/rooms', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { floorId, roomNumber, label } = req.body || {};
+    const { floorId, roomNumber, label, capacity } = req.body || {};
     if (!floorId || !mongoose.isValidObjectId(floorId)) {
       return res.status(400).json({ error: 'Valid floorId is required' });
     }
     if (!roomNumber || !String(roomNumber).trim()) {
       return res.status(400).json({ error: 'Room number is required' });
+    }
+    if (capacity !== undefined && capacity !== '' && (!Number.isFinite(Number(capacity)) || Number(capacity) < 0)) {
+      return res.status(400).json({ error: 'Capacity must be a non-negative number' });
     }
 
     const floor = await Floor.findOne(buildCampusFilter(schoolId, campusId))
@@ -1600,6 +1603,7 @@ router.post('/rooms', adminAuth, async (req, res) => {
       roomNumber: String(roomNumber).trim(),
       roomKey: normalizeKey(roomNumber),
       label: label ? String(label).trim() : '',
+      capacity: capacity === undefined || capacity === '' ? 0 : Number(capacity),
     });
 
     const payload = await Room.findById(created._id)
@@ -1660,7 +1664,7 @@ router.put('/rooms/:id', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { floorId, roomNumber, label, isActive } = req.body || {};
+    const { floorId, roomNumber, label, isActive, capacity } = req.body || {};
 
     const existing = await Room.findOne(buildCampusFilter(schoolId, campusId))
       .where({ _id: id })
@@ -1672,6 +1676,9 @@ router.put('/rooms/:id', adminAuth, async (req, res) => {
     const nextFloorId = floorId || existing.floorId;
     if (!mongoose.isValidObjectId(nextFloorId)) {
       return res.status(400).json({ error: 'Valid floorId is required' });
+    }
+    if (capacity !== undefined && capacity !== '' && (!Number.isFinite(Number(capacity)) || Number(capacity) < 0)) {
+      return res.status(400).json({ error: 'Capacity must be a non-negative number' });
     }
     const floor = await Floor.findOne(buildCampusFilter(schoolId, campusId))
       .where({ _id: nextFloorId })
@@ -1694,6 +1701,7 @@ router.put('/rooms/:id', adminAuth, async (req, res) => {
         roomKey: normalizeKey(nextRoomNumber),
         ...(label === undefined ? {} : { label: String(label || '').trim() }),
         ...(isActive === undefined ? {} : { isActive: Boolean(isActive) }),
+        ...(capacity === undefined || capacity === '' ? {} : { capacity: Number(capacity) }),
       },
       { new: true, runValidators: true }
     )
