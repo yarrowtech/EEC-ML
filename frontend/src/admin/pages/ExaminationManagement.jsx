@@ -246,6 +246,61 @@ const StatMini = ({ icon: Icon, iconBg, iconColor, value, label, className = '' 
   </div>
 );
 
+// Horizontally-scrolling pill row with left/right arrow buttons that only
+// appear when there's actually more to scroll to in that direction, and hide
+// once you've scrolled all the way to that end.
+const ScrollablePillRow = ({ children, className = '' }) => {
+  const scrollRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateArrows = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  };
+
+  useEffect(() => {
+    updateArrows();
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    const onScroll = () => updateArrows();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    // Content can change size after mount (data loads in) without a scroll/resize event.
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      ro.disconnect();
+    };
+  }, [children]);
+
+  const scrollByAmount = (dir) => scrollRef.current?.scrollBy({ left: dir * 180, behavior: 'smooth' });
+
+  return (
+    <div className="relative min-w-0">
+      {canScrollLeft && (
+        <button type="button" onClick={() => scrollByAmount(-1)} aria-label="Scroll left"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-500 hover:bg-slate-50">
+          <ChevronLeft size={13} />
+        </button>
+      )}
+      <div ref={scrollRef} className={`flex items-center overflow-x-auto no-scrollbar scroll-smooth ${className}`}>
+        {children}
+      </div>
+      {canScrollRight && (
+        <button type="button" onClick={() => scrollByAmount(1)} aria-label="Scroll right"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-6 w-6 flex items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-500 hover:bg-slate-50">
+          <ChevronRight size={13} />
+        </button>
+      )}
+    </div>
+  );
+};
+
 const timeToMins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 const hasOverlap = (fd, ft, fdur, ex) => {
   if (!fd || !ft || !fdur || !ex.date || !ex.time || !ex.duration) return false;
@@ -889,6 +944,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   /* ── Seating tab: the seating plan saved when this exam was created ── */
   const [seatingPlan, setSeatingPlan] = useState(null);
   const [seatingPlanLoading, setSeatingPlanLoading] = useState(false);
+  const [activeSeatingRoomIdx, setActiveSeatingRoomIdx] = useState(0); // which room's card grid is showing
   useEffect(() => {
     if (activeDetailTab !== 'seating' || !selectedBatch?.groups?.length) return;
     let cancelled = false;
@@ -896,11 +952,30 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     const firstGroupId = selectedBatch.groups[0]._id;
     fetch(`${API_BASE}/api/exam/seating-plans?groupId=${firstGroupId}`, { headers: authH() })
       .then((res) => res.json().catch(() => ({})))
-      .then((data) => { if (!cancelled) setSeatingPlan(data?.plan || null); })
+      .then((data) => { if (!cancelled) { setSeatingPlan(data?.plan || null); setActiveSeatingRoomIdx(0); } })
       .catch(() => { if (!cancelled) setSeatingPlan(null); })
       .finally(() => { if (!cancelled) setSeatingPlanLoading(false); });
     return () => { cancelled = true; };
   }, [activeDetailTab, selectedBatch]);
+
+  // Backfill login id (username) for seats saved before that field existed on
+  // the seating plan, or where it just came back blank — looked up fresh from
+  // the already-loaded student roster by studentId, without touching the
+  // saved plan itself.
+  const seatingPlanDisplay = useMemo(() => {
+    if (!seatingPlan) return null;
+    return {
+      ...seatingPlan,
+      roomAllocations: (seatingPlan.roomAllocations || []).map((room) => ({
+        ...room,
+        seats: (room.seats || []).map((seat) => {
+          if (seat.username) return seat;
+          const student = students.find((st) => String(st._id) === String(seat.studentId));
+          return student ? { ...seat, username: student.username || '' } : seat;
+        }),
+      })),
+    };
+  }, [seatingPlan, students]);
 
   /* ── detail-panel aggregates for the selected batch ── */
   const batchAllSubjects = useMemo(
@@ -3490,6 +3565,95 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     );
   };
 
+  // Printable seating cards — one small card per seat (Name + Roll Number),
+  // laid out in a grid, one room per page (or more pages if a room has more
+  // seats than fit on one). Meant to be printed and cut out, one card taped
+  // to each desk in the exam hall.
+  const generateSeatingPlanPdf = (plan, batch) => {
+    if (!plan?.roomAllocations?.length) {
+      toast.error('No seating plan to download yet.');
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 10;
+    const headerH = 22;
+    const cols = 3;
+    const gap = 4;
+    const cardW = (pageWidth - margin * 2 - gap * (cols - 1)) / cols;
+    const cardH = 30;
+    const gridTop = headerH + 6;
+    const rowsPerPage = Math.max(1, Math.floor((pageHeight - gridTop - margin + gap) / (cardH + gap)));
+    const perPage = cols * rowsPerPage;
+
+    const drawPageHeader = (room) => {
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, headerH, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`Room ${room.roomNumber || '—'}`, margin, 10);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225);
+      doc.text([room.buildingName, room.floorName].filter(Boolean).join(' · ') || 'Building / Floor not set', margin, 16);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(batch?.title || 'Exam', pageWidth - margin, 10, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225);
+      const dateLabel = [formatDateChip(room.date) || room.date, room.time ? formatTimeLabel(room.time) : ''].filter(Boolean).join(' · ');
+      doc.text(dateLabel, pageWidth - margin, 16, { align: 'right' });
+    };
+
+    let firstPage = true;
+    plan.roomAllocations.forEach((room) => {
+      const seats = room.seats || [];
+      const pageCount = Math.max(1, Math.ceil(seats.length / perPage));
+      for (let p = 0; p < pageCount; p += 1) {
+        if (!firstPage) doc.addPage();
+        firstPage = false;
+        drawPageHeader(room);
+
+        seats.slice(p * perPage, (p + 1) * perPage).forEach((seat, i) => {
+          const col = i % cols;
+          const rowIdx = Math.floor(i / cols);
+          const x = margin + col * (cardW + gap);
+          const y = gridTop + rowIdx * (cardH + gap);
+
+          doc.setDrawColor(203, 213, 225);
+          doc.roundedRect(x, y, cardW, cardH, 2, 2, 'S');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+          const nameLines = doc.splitTextToSize(seat.name || 'Student', cardW - 6);
+          doc.text(nameLines, x + cardW / 2, y + 8, { align: 'center' });
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          doc.setTextColor(71, 85, 105);
+          doc.text(`Roll No. ${seat.roll ?? '—'}`, x + cardW / 2, y + cardH / 2 + 3, { align: 'center' });
+
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(seat.username || '—', x + cardW / 2, y + cardH / 2 + 9, { align: 'center' });
+
+          doc.setFontSize(7);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Class ${seat.className} - ${seat.sectionName}`, x + cardW / 2, y + cardH - 3, { align: 'center' });
+        });
+      }
+    });
+
+    const safeName = `${batch?.title || 'exam'}_seating_cards`.replace(/[^\w.-]+/g, '_').toLowerCase();
+    doc.save(`${safeName}.pdf`);
+  };
+
   /* ── group handlers ── */
   const openEditGroup = (g) => {
     setEditingGroupId(g._id);
@@ -3958,6 +4122,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   /* ── step 4: per (class, section, subject) schedule ── */
   const wizardScheduleKey = (classId, sectionId, subjectId) => `${classId}__${sectionId}__${subjectId}`;
   const getWizardSchedule = (classId, sectionId, subjectId) => wizardSchedule[wizardScheduleKey(classId, sectionId, subjectId)] || EMPTY_WIZARD_SCHEDULE;
+  // Headcount for whichever class/section a wizardSchedule row belongs to —
+  // shared by the manual-edit conflict check below and by Auto-Schedule's own
+  // room-capacity packing, so the two agree on what "fits" means.
+  const headcountForClassSection = (className, sectionName) => students.filter((st) =>
+    String(st.grade) === String(className) && String(st.section) === String(sectionName)
+  ).length;
+
   const setWizardScheduleField = (classId, sectionId, subjectId, patch) => {
     const key = wizardScheduleKey(classId, sectionId, subjectId);
     const currentRow = wizardSchedule[key] || EMPTY_WIZARD_SCHEDULE;
@@ -3966,21 +4137,43 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     // A manual edit (date, time, duration, room, or teacher) can silently create
     // a double-booking that Auto-Schedule would never have produced on its own —
     // reject the edit outright (row stays exactly as it was) instead of letting
-    // it through with just a warning.
+    // it through with just a warning. A room with a seating capacity set is only
+    // a real clash once the combined headcount would exceed that capacity —
+    // otherwise two classes are meant to share it, exactly like Auto-Schedule
+    // already packs them.
     const touchesConflictFields = ['date', 'time', 'duration', 'roomId', 'primaryInstructor', 'secondaryInstructor']
       .some((f) => f in patch);
     if (touchesConflictFields && nextRow.date && nextRow.time && nextRow.duration) {
-      const roomClash = Boolean(nextRow.roomId) && (
-        allExamsForConflict.some((ex) =>
-          String(ex.roomId?._id || ex.roomId || '') === String(nextRow.roomId) && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, ex)
-        ) ||
-        Object.entries(wizardSchedule).some(([otherKey, s]) =>
-          otherKey !== key && String(s.roomId || '') === String(nextRow.roomId) && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, s)
-        )
-      );
+      let roomClash = false;
+      if (nextRow.roomId) {
+        const room = rooms.find((r) => String(r._id) === String(nextRow.roomId));
+        const capacity = Number(room?.capacity) || 0;
+        const overlapsHere = (b) => String(b.roomId || '') === String(nextRow.roomId) && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, b);
+
+        if (capacity > 0) {
+          const sel = wizardSelections.find((s) => s.classId === classId && s.sectionId === sectionId);
+          let occupied = sel ? headcountForClassSection(sel.className, sel.sectionName) : 0;
+          allExamsForConflict.forEach((ex) => {
+            if (!overlapsHere({ roomId: ex.roomId?._id || ex.roomId, date: ex.date, time: ex.time, duration: ex.duration })) return;
+            occupied += headcountForClassSection(ex.classId?.name || ex.grade, ex.sectionId?.name || ex.section);
+          });
+          Object.entries(wizardSchedule).forEach(([otherKey, s]) => {
+            if (otherKey === key || !overlapsHere(s)) return;
+            const other = parseScheduleKey(otherKey);
+            const otherSel = wizardSelections.find((sl) => sl.classId === other.classId && sl.sectionId === other.sectionId);
+            if (otherSel) occupied += headcountForClassSection(otherSel.className, otherSel.sectionName);
+          });
+          roomClash = occupied > capacity;
+        } else {
+          // No capacity on record for this room — can't safely assume anyone
+          // fits, so fall back to the old one-booking-at-a-time rule.
+          roomClash = allExamsForConflict.some((ex) => overlapsHere({ roomId: ex.roomId?._id || ex.roomId, date: ex.date, time: ex.time, duration: ex.duration }))
+            || Object.entries(wizardSchedule).some(([otherKey, s]) => otherKey !== key && overlapsHere(s));
+        }
+      }
       const teacherClash = [nextRow.primaryInstructor, nextRow.secondaryInstructor]
         .filter(Boolean)
-        .some((name) => isTeacherBusyElsewhere(name, nextRow.date, nextRow.time, nextRow.duration, key));
+        .some((name) => isTeacherBusyElsewhere(name, nextRow.date, nextRow.time, nextRow.duration, key, nextRow.roomId));
 
       if (roomClash && teacherClash) {
         toast.error('Both the room and the teacher are already booked at this date & time — change rejected.');
@@ -4024,17 +4217,24 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   // Is this teacher already booked (an existing published exam, or another row in this
   // wizard) at the same date/time? Used to keep both the Teacher and Associated Teacher
   // pickers clash-free — for a manual pick, not just Auto-Schedule.
-  const isTeacherBusyElsewhere = (name, dateStr, time, duration, excludeKey) => {
+  // `roomId`, when given, lets the same teacher be "busy" twice at once in the
+  // one place that's actually fine: guarding a room they're already assigned
+  // to (two classes sharing a room by design share the same invigilators).
+  // Only a booking in a DIFFERENT room (or no room at all) counts as a clash.
+  const isTeacherBusyElsewhere = (name, dateStr, time, duration, excludeKey, roomId) => {
     if (!name || !dateStr || !time || !duration) return false;
+    const sameRoom = (otherRoomId) => roomId && otherRoomId && String(otherRoomId) === String(roomId);
     const committedClash = allExamsForConflict.some((ex) => {
       if (!ex.instructor) return false;
       if (!ex.instructor.split(',').map((t) => t.trim()).includes(name)) return false;
+      if (sameRoom(ex.roomId?._id || ex.roomId)) return false;
       return hasOverlap(dateStr, time, duration, ex);
     });
     if (committedClash) return true;
     return Object.entries(wizardSchedule).some(([key, s]) => {
       if (key === excludeKey) return false;
       if (s.primaryInstructor !== name && s.secondaryInstructor !== name) return false;
+      if (sameRoom(s.roomId)) return false;
       return hasOverlap(dateStr, time, duration, s);
     });
   };
@@ -4288,6 +4488,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           const sorted = [...candidates].sort((a, b) => b.headcount - a.headcount);
           const roomRemaining = new Map(); // roomId -> seats left today
           const roomSeating = new Map();   // roomId -> today's seating-room entry
+          const roomTeachers = new Map();  // roomId -> { primary, secondary } guarding that room today
 
           sorted.forEach((cand) => {
             const time = cand.existing.time || defaultTime;
@@ -4322,26 +4523,37 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             patch.floorId = chosenRoom.floorId?._id || chosenRoom.floorId || '';
             patch.buildingId = chosenRoom.floorId?.buildingId?._id || chosenRoom.floorId?.buildingId || '';
 
-            const primaryName = cand.existing.primaryInstructor || null;
-            if (!primaryName) {
-              const teacher = pickRandomFreeTeacher(dateStr, time, duration);
-              if (teacher) {
-                teacherBookings.push({ date: dateStr, time, duration, name: teacher.name });
-                patch.primaryInstructor = teacher.name;
-              } else {
-                unresolvedTeachers += 1;
+            // One teacher pair guards the whole room for this slot — every class
+            // sharing the room today reuses the same two names instead of each
+            // class getting its own pair (which would put 4+ teachers in one
+            // room when two classes are mixed in together).
+            const roomTeacherKey = String(chosenRoom._id);
+            if (!roomTeachers.has(roomTeacherKey)) {
+              let primary = cand.existing.primaryInstructor || null;
+              let secondary = cand.existing.secondaryInstructor || null;
+              if (!primary) {
+                const teacher = pickRandomFreeTeacher(dateStr, time, duration);
+                if (teacher) {
+                  primary = teacher.name;
+                  teacherBookings.push({ date: dateStr, time, duration, name: teacher.name });
+                } else {
+                  unresolvedTeachers += 1;
+                }
               }
-            }
-            if (!cand.existing.secondaryInstructor) {
-              const excludeName = patch.primaryInstructor || primaryName;
-              const associate = pickRandomFreeTeacher(dateStr, time, duration, excludeName);
-              if (associate) {
-                teacherBookings.push({ date: dateStr, time, duration, name: associate.name });
-                patch.secondaryInstructor = associate.name;
-              } else {
-                unresolvedAssociates += 1;
+              if (!secondary) {
+                const associate = pickRandomFreeTeacher(dateStr, time, duration, primary);
+                if (associate) {
+                  secondary = associate.name;
+                  teacherBookings.push({ date: dateStr, time, duration, name: associate.name });
+                } else {
+                  unresolvedAssociates += 1;
+                }
               }
+              roomTeachers.set(roomTeacherKey, { primary, secondary });
             }
+            const teacherPair = roomTeachers.get(roomTeacherKey);
+            if (!cand.existing.primaryInstructor && teacherPair.primary) patch.primaryInstructor = teacherPair.primary;
+            if (!cand.existing.secondaryInstructor && teacherPair.secondary) patch.secondaryInstructor = teacherPair.secondary;
 
             setWizardScheduleField(cand.sel.classId, cand.sel.sectionId, cand.subjectId, patch);
             filled += 1;
@@ -4368,7 +4580,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               .slice()
               .sort((a, b) => (Number(a.roll) || 0) - (Number(b.roll) || 0))
               .map((st) => ({
-                studentId: st._id, name: st.name || '', roll: Number(st.roll) || null,
+                studentId: st._id, name: st.name || '', username: st.username || '', roll: Number(st.roll) || null,
                 classId: cand.sel.classId, className: cand.sel.className,
                 sectionId: cand.sel.sectionId, sectionName: cand.sel.sectionName,
               }));
@@ -4688,7 +4900,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+              <ScrollablePillRow className="gap-1.5 pb-0.5">
                 <button onClick={() => setClassPillFilter('all')}
                   className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${classPillFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                   All
@@ -4699,7 +4911,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                     Class {c.name}
                   </button>
                 ))}
-              </div>
+              </ScrollablePillRow>
 
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -5103,51 +5315,76 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                         <div className="flex items-center justify-center gap-2 py-14 text-sm text-slate-400">
                           <Loader2 size={16} className="animate-spin text-indigo-400" /> Loading seating plan…
                         </div>
-                      ) : !seatingPlan || !seatingPlan.roomAllocations?.length ? (
+                      ) : !seatingPlanDisplay || !seatingPlanDisplay.roomAllocations?.length ? (
                         <div className="flex flex-col items-center justify-center py-14 gap-2 text-slate-400 text-center">
                           <Users size={28} className="text-slate-300" />
                           <p className="text-sm font-medium text-slate-500">No seating plan saved for this exam.</p>
                           <p className="text-xs text-slate-400 max-w-sm">Seating plans are generated by Auto-Schedule (Step 4 of the create-exam wizard) when the exam is created.</p>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {seatingPlan.roomAllocations.map((room, idx) => {
-                            const byClass = new Map();
-                            (room.seats || []).forEach((seat) => {
-                              const key = `${seat.className}-${seat.sectionName}`;
-                              if (!byClass.has(key)) byClass.set(key, { className: seat.className, sectionName: seat.sectionName, seats: [] });
-                              byClass.get(key).seats.push(seat);
-                            });
-                            return (
-                              <div key={idx} className="rounded-2xl border border-slate-200 overflow-hidden">
-                                <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-                                  <p className="text-sm font-bold text-slate-800">Room {room.roomNumber || '—'}</p>
-                                  <p className="text-xs text-slate-400">{[room.buildingName, room.floorName].filter(Boolean).join(' · ') || 'Building / Floor not set'}</p>
-                                  <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                                    <Calendar size={10} /> {formatDateChip(room.date) || room.date} {room.time ? `· ${formatTimeLabel(room.time)}` : ''}
-                                    <span className="ml-auto font-semibold text-slate-500">{room.seats?.length || 0} seats</span>
+                      ) : (() => {
+                        const rooms_ = seatingPlanDisplay.roomAllocations;
+                        const activeRoom = rooms_[Math.min(activeSeatingRoomIdx, rooms_.length - 1)];
+                        const byClass = new Map();
+                        (activeRoom?.seats || []).forEach((seat) => {
+                          const groupKey = `${seat.className}-${seat.sectionName}`;
+                          if (!byClass.has(groupKey)) byClass.set(groupKey, { className: seat.className, sectionName: seat.sectionName, seats: [] });
+                          byClass.get(groupKey).seats.push(seat);
+                        });
+                        return (
+                          <div className="space-y-4">
+                            {/* room switcher — one room visible at a time instead of one long scrolling page */}
+                            <div className="flex items-center justify-between gap-3">
+                              <ScrollablePillRow className="gap-1.5 pb-1 flex-1 min-w-0">
+                                {rooms_.map((room, idx) => (
+                                  <button key={idx} type="button" onClick={() => setActiveSeatingRoomIdx(idx)}
+                                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                                      idx === activeSeatingRoomIdx ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}>
+                                    Room {room.roomNumber || '—'} <span className="opacity-70">({room.seats?.length || 0})</span>
+                                  </button>
+                                ))}
+                              </ScrollablePillRow>
+                              <button type="button" onClick={() => generateSeatingPlanPdf(seatingPlanDisplay, selectedBatch)}
+                                className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
+                                <FileText size={13} /> Download Seating Cards (PDF)
+                              </button>
+                            </div>
+
+                            {activeRoom && (
+                              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                                <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center flex-wrap gap-x-4 gap-y-1">
+                                  <p className="text-sm font-bold text-slate-800">Room {activeRoom.roomNumber || '—'}</p>
+                                  <p className="text-xs text-slate-400">{[activeRoom.buildingName, activeRoom.floorName].filter(Boolean).join(' · ') || 'Building / Floor not set'}</p>
+                                  <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                                    <Calendar size={10} /> {formatDateChip(activeRoom.date) || activeRoom.date} {activeRoom.time ? `· ${formatTimeLabel(activeRoom.time)}` : ''}
                                   </p>
+                                  <span className="ml-auto text-[11px] font-semibold text-slate-500">{activeRoom.seats?.length || 0} seats</span>
                                 </div>
-                                <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                                <div className="p-4 space-y-4">
                                   {Array.from(byClass.values()).map((group) => (
                                     <div key={`${group.className}-${group.sectionName}`}>
-                                      <p className="px-4 py-1.5 text-[11px] font-bold text-indigo-600 bg-indigo-50/60">
+                                      <p className="text-[11px] font-bold text-indigo-600 mb-2">
                                         Class {group.className} — {group.sectionName} ({group.seats.length})
                                       </p>
-                                      {group.seats.map((seat, si) => (
-                                        <div key={seat.studentId || si} className="flex items-center justify-between gap-2 px-4 py-1.5 text-xs">
-                                          <span className="font-semibold text-slate-600 shrink-0">Roll {seat.roll ?? '—'}</span>
-                                          <span className="text-slate-500 truncate">{seat.name || 'Student'}</span>
-                                        </div>
-                                      ))}
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                                        {group.seats.map((seat, si) => (
+                                          <div key={seat.studentId || si} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 text-center">
+                                            <span className="inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 mb-1.5">
+                                              Roll {seat.roll ?? '—'}
+                                            </span>
+                                            <p className="text-xs font-semibold text-slate-700 truncate" title={seat.name}>{seat.name || 'Student'}</p>
+                                            <p className="text-[11px] text-slate-400 truncate" title={seat.username}>{seat.username || '—'}</p>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -5822,7 +6059,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                           const scheduleRowKey = wizardScheduleKey(sel.classId, sel.sectionId, subjectId);
                                           const teacherOptions = (excludeName) => teachers.filter((t) =>
                                             t.name === excludeName ||
-                                            !isTeacherBusyElsewhere(t.name, schedule.date, schedule.time, schedule.duration, scheduleRowKey)
+                                            !isTeacherBusyElsewhere(t.name, schedule.date, schedule.time, schedule.duration, scheduleRowKey, schedule.roomId)
                                           );
                                           const primaryOptions = teacherOptions(schedule.primaryInstructor).filter((t) => t.name !== schedule.secondaryInstructor);
                                           const secondaryOptions = teacherOptions(schedule.secondaryInstructor).filter((t) => t.name !== schedule.primaryInstructor);

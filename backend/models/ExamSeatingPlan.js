@@ -7,6 +7,7 @@ const seatSchema = new mongoose.Schema(
   {
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser' },
     name: { type: String, default: '' },
+    username: { type: String, default: '' },
     roll: { type: Number, default: null },
     classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
     className: { type: String, default: '' },
