@@ -24,6 +24,12 @@ import {
   X,
   Paperclip,
   Upload,
+  ChevronRight,
+  CalendarDays,
+  Calendar,
+  ListChecks,
+  Lightbulb,
+  MessageCircle,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
@@ -36,6 +42,13 @@ const FEEDBACK_CONTEXT_ENDPOINT = `${API_BASE}/api/student/auth/teacher-feedback
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials`;
 
+
+// Shared "glass" card recipe used across the Smart Learning pages: frosted
+// backdrop blur, soft purple border, gentle shadow. GLASS_INNER is the same
+// idea at a smaller radius for nested rows/tiles.
+const GLASS_CARD = 'rounded-3xl border border-violet-500/35 bg-white/60 backdrop-blur-[20px] backdrop-saturate-[1.8] shadow-[0_8px_32px_rgba(15,23,42,0.06)]';
+const GLASS_INNER = 'rounded-xl border border-violet-500/35 bg-white/50 backdrop-blur-[20px]';
+const GLASS_HOVER = 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_40px_rgba(139,92,246,0.14)]';
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const normalizeLabel = (value) => String(value || '').trim();
@@ -74,7 +87,7 @@ const MaterialQuickActions = ({ material, onRead }) => {
           type="button"
           onClick={() => onRead(material)}
           title="Read"
-          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
+          className="inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100"
         >
           <FileText size={12} />
           Read
@@ -82,11 +95,11 @@ const MaterialQuickActions = ({ material, onRead }) => {
       )}
       {material.url && (
         <>
-          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100">
+          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100">
             <ExternalLink size={12} />
             Open
           </a>
-          <a href={material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-700">
+          <a href={material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-bold text-white hover:bg-violet-600">
             <Download size={12} />
             Download
           </a>
@@ -612,6 +625,7 @@ const AILearningCoursesReference = () => {
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
+  const [readerFontScale, setReaderFontScale] = useState(1);
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
 
@@ -813,7 +827,7 @@ const AILearningCoursesReference = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f7f6] p-6">
         <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <h1 className="text-xl font-black text-slate-900">Topic not found</h1>
+          <h1 className="text-xl font-bold text-slate-900">Topic not found</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
             No published learning data was found for “{topicSlug}” in “{subjectSlug}”.
           </p>
@@ -832,406 +846,325 @@ const AILearningCoursesReference = () => {
   if (isDetailsView) {
     const sectionIdx = Math.max(1, detailSections.findIndex((s) => s.id === activeDetailSection) + 1);
     const practiceResources = [...assessmentItems, ...chapterWorksheets.downloadLinks];
+    const totalWords = detailSections.reduce((sum, s) => sum + String(s?.text || '').trim().split(/\s+/).filter(Boolean).length, 0);
+    const readMinutes = detailSections.length > 0 ? Math.max(1, Math.round(totalWords / 200)) : 0;
 
     return (
       <>
         <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
-          .rdr-playfair { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-          .rdr-inter { font-family: 'Inter', system-ui, sans-serif; }
-          .rdr-scroll::-webkit-scrollbar { width: 3px; }
-          .rdr-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 10px; }
-          .rdr-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
-          .rdr-outer-wrap, .rdr-outer-wrap * { box-sizing: border-box; }
-          .rdr-reader-grid, .rdr-reader-grid > *, .rdr-book-page { min-width: 0; max-width: 100%; }
-          .rdr-book-page p, .rdr-book-page span, .rdr-practice-panel p, .rdr-practice-panel span { overflow-wrap: anywhere; }
+          .rdr-scroll::-webkit-scrollbar { width: 4px; }
+          .rdr-scroll::-webkit-scrollbar-track { background: transparent; }
+          .rdr-scroll::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.25); border-radius: 10px; }
           @keyframes rdr-pulse-dot { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
-          .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#4ade80; }
-          @media (max-width: 860px) {
-            .rdr-reader-grid { grid-template-columns: 1fr !important; }
-          }
-          @media (max-width: 640px) {
-            .rdr-practice-panel { padding: 20px 18px 22px !important; }
-            .rdr-outer-wrap { padding: 12px 10px 24px !important; }
-            .rdr-nav-row { gap: 8px !important; }
-            .rdr-chapter-meta, .rdr-practice-header { align-items: flex-start !important; flex-wrap: wrap; gap: 10px; }
-          }
-          @media (max-width: 520px) {
-            .rdr-book-title { font-size: 26px !important; }
-            .rdr-book-page { padding: 20px 18px 24px !important; }
-            .rdr-outer-wrap { padding: 8px 8px 20px !important; }
-          }
+          .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981; }
         `}</style>
 
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className="rdr-outer-wrap"
-          style={{ width: '100%', minHeight: '100vh', overflowX: 'hidden', overflowY: 'auto', background: '#f5f4f1', padding: 20 }}
+          className="w-full min-h-screen overflow-x-hidden overflow-y-auto bg-[#f1f5f9] p-3 sm:p-5"
         >
           {/* Nav row */}
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
-            className="rdr-nav-row"
-          style={{ maxWidth: 1100, margin: '0 auto 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}
-          >
+          <div className="mx-auto mb-4 flex max-w-[1100px] flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={closeDetailsPage}
-              className="rdr-inter"
-              style={{ display:'inline-flex', alignItems:'center', gap:8, borderRadius:40, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(255,255,255,0.85)', backdropFilter:'blur(12px)', padding:'8px 18px', fontSize:13, fontWeight:600, color:'#2d2d2d', cursor:'pointer' }}
+              className={`inline-flex items-center gap-2 rounded-full ${GLASS_INNER} px-4 py-2 text-sm font-semibold text-slate-700 ${GLASS_HOVER}`}
             >
               <ArrowLeft size={14} /> Back
             </button>
+            <div className={`flex items-center gap-1 rounded-full ${GLASS_INNER} p-1`}>
+              <button
+                type="button"
+                onClick={() => setReaderFontScale(1)}
+                aria-label="Normal text size"
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${readerFontScale === 1 ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+              >
+                A
+              </button>
+              <button
+                type="button"
+                onClick={() => setReaderFontScale(1.15)}
+                aria-label="Larger text size"
+                className={`rounded-full px-3 py-1.5 text-sm font-bold transition-colors ${readerFontScale === 1.15 ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+              >
+                A+
+              </button>
+            </div>
             <button
               type="button"
               onClick={toggleDetailsFullscreen}
-              className="rdr-inter"
-              style={{ display:'inline-flex', alignItems:'center', gap:8, borderRadius:40, border:'1px solid rgba(0,0,0,0.09)', background:'rgba(255,255,255,0.85)', backdropFilter:'blur(12px)', padding:'8px 18px', fontSize:13, fontWeight:600, color:'#2d2d2d', cursor:'pointer' }}
+              className={`rounded-full ${GLASS_INNER} p-2.5 text-slate-500 ${GLASS_HOVER}`}
             >
-              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-              {isFullscreen ? 'Exit' : 'Full Screen'}
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
-          </motion.div>
+            {!isPracticeMode && (
+              <button
+                type="button"
+                onClick={() => setIsPracticeMode(true)}
+                className="ml-auto inline-flex items-center gap-2 rounded-full bg-violet-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-violet-600"
+              >
+                Next: Practice <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
 
           {/* Reader grid */}
-          <div
-            className="rdr-reader-grid"
-            style={{ maxWidth:1100, margin:'0 auto', display:'grid', gridTemplateColumns:'1fr 340px', gap:28, alignItems:'start' }}
-          >
+          <div className="mx-auto grid max-w-[1100px] grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
             {/* ── Book page ── */}
-            <AnimatePresence>
-              {!isPracticeMode && (
-                <motion.div
-                  key="book-page"
-                  initial={{ opacity:0, y:20 }}
-                  animate={{ opacity:1, y:0 }}
-                  exit={{ opacity:0, y:-16, transition:{ duration:0.22 } }}
-                  transition={{ duration:0.42, ease:[0.25,0.46,0.45,0.94] }}
-                  className="rdr-book-page"
-                  style={{
-                    background:'rgba(255,255,255,0.72)',
-                    backdropFilter:'blur(22px) saturate(180%)',
-                    WebkitBackdropFilter:'blur(22px) saturate(180%)',
-                    borderRadius:'clamp(20px, 3vw, 32px)',
-                    border:'1px solid rgba(0,0,0,0.06)',
-                    padding:'clamp(20px, 4vw, 40px) clamp(18px, 4vw, 44px) clamp(24px, 3vw, 36px)',
-                    boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07), 0 4px 20px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.8)',
-                    position:'relative',
-                    overflow:'hidden',
-                  }}
-                >
-                  {/* Radial light sheen */}
-                  <div style={{ position:'absolute', top:'-50%', left:'-50%', width:'200%', height:'200%', background:'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.42) 0%, transparent 60%)', pointerEvents:'none' }} />
+            {!isPracticeMode && (
+              <div className={`${GLASS_CARD} p-5 sm:p-8`}>
+                {/* Chapter meta */}
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-violet-500/15 pb-5">
+                  <span className="rounded-full bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">
+                    {mapScope.chapterTitle || subjectSlug}
+                  </span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-[#8e9aaf]">
+                    <span className="rdr-dot" />
+                    {readMinutes > 0 ? `${readMinutes} min read` : 'Reading'}
+                  </span>
+                </div>
 
-                  {/* Chapter meta */}
-                  <div className="rdr-chapter-meta" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:28, paddingBottom:20, borderBottom:'1px solid rgba(0,0,0,0.04)', position:'relative', zIndex:1, minWidth:0 }}>
-                    <span className="rdr-playfair" style={{ fontSize:12, fontWeight:600, letterSpacing:'4px', textTransform:'uppercase', color:'rgba(0,0,0,0.25)', background:'rgba(0,0,0,0.025)', padding:'6px 18px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
-                      {mapScope.chapterTitle || subjectSlug}
-                    </span>
-                    <span className="rdr-inter" style={{ display:'flex', alignItems:'center', gap:12, fontSize:13, color:'rgba(0,0,0,0.25)', fontWeight:400 }}>
-                      <span className="rdr-dot" />
-                      Reading
-                    </span>
-                  </div>
+                {/* Title */}
+                <h1 className="text-2xl font-bold tracking-tight text-[#0f172a] sm:text-4xl">{topicSlug}</h1>
+                <p className="mb-7 mt-2 text-sm italic text-[#8e9aaf] sm:text-base">
+                  {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Reading`}
+                </p>
 
-                  {/* Title */}
-                  <h1 className="rdr-playfair rdr-book-title" style={{ fontSize:'clamp(24px, 5vw, 38px)', fontWeight:700, lineHeight:1.2, marginBottom:8, color:'#1a1a1a', letterSpacing:'-0.5px', position:'relative', zIndex:1 }}>
-                    {topicSlug}
-                  </h1>
-                  <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.3)', fontWeight:300, marginBottom:28, letterSpacing:'0.3px', fontStyle:'italic', position:'relative', zIndex:1 }}>
-                    {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Immersive Reader`}
-                  </p>
-
-                  {/* Theory sections */}
-                  <div className="rdr-scroll" style={{ display:'flex', flexDirection:'column', gap:24, maxHeight:'min(420px, 55vh)', overflowY:'auto', paddingRight:8, position:'relative', zIndex:1 }}>
-                    {detailSections.length > 0 ? (
-                      detailSections.map((section, idx) => (
-                        <motion.div
-                          key={section.id}
-                          id={section.id}
-                          ref={(node) => { detailSectionRefs.current[section.id] = node; }}
-                          initial={{ opacity:0, x:-10 }}
-                          animate={{ opacity:1, x:0 }}
-                          transition={{ delay: idx * 0.07, duration:0.38 }}
-                          style={{
-                            paddingLeft:20,
-                            borderLeft:`2px solid ${activeDetailSection === section.id ? 'rgba(139,92,246,0.22)' : 'rgba(0,0,0,0.04)'}`,
-                            transition:'border-left-color 0.3s',
-                          }}
-                        >
-                          <p className="rdr-inter" style={{ fontSize:16, lineHeight:1.85, color:'rgba(0,0,0,0.68)', fontWeight:300, letterSpacing:'0.2px' }}>
-                            {section.text}
-                          </p>
-                          <span className="rdr-inter" style={{ display:'inline-block', marginTop:9, fontSize:11, fontWeight:500, textTransform:'uppercase', letterSpacing:1, color:'rgba(0,0,0,0.15)', background:'rgba(0,0,0,0.025)', padding:'2px 12px', borderRadius:20 }}>
-                            {section.title}
-                          </span>
-                        </motion.div>
-                      ))
-                    ) : (
-                      <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.28)', fontStyle:'italic', textAlign:'center', padding:'32px 0' }}>
-                        No reading content published for this topic yet.
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                {/* Theory sections */}
+                <div className="rdr-scroll flex max-h-[min(460px,58vh)] flex-col gap-4 overflow-y-auto pr-2">
+                  {detailSections.length > 0 ? (
+                    detailSections.map((section) => (
+                      <div
+                        key={section.id}
+                        id={section.id}
+                        ref={(node) => { detailSectionRefs.current[section.id] = node; }}
+                        className={`rounded-xl border p-4 transition-colors sm:p-5 ${activeDetailSection === section.id ? 'border-violet-500/45 bg-violet-500/[0.04]' : 'border-violet-500/20 bg-white/40'}`}
+                      >
+                        <span className="mb-2 inline-block rounded-full bg-slate-100 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          {section.title}
+                        </span>
+                        <p className="leading-[1.85] text-slate-700" style={{ fontSize: `${15 * readerFontScale}px` }}>
+                          {section.text}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="py-8 text-center text-sm italic text-[#8e9aaf]">
+                      No reading content published for this topic yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Sidebar ── */}
-            <AnimatePresence>
-              {!isPracticeMode && (
-                <motion.div
-                  key="sidebar"
-                  initial={{ opacity:0, x:20 }}
-                  animate={{ opacity:1, x:0 }}
-                  exit={{ opacity:0, x:20, transition:{ duration:0.22 } }}
-                  transition={{ duration:0.4, delay:0.1 }}
-                  style={{ display:'flex', flexDirection:'column', gap:20 }}
-                >
-                  {/* Progress ring widget */}
-                  <motion.div
-                    initial={{ opacity:0, scale:0.95 }}
-                    animate={{ opacity:1, scale:1 }}
-                    transition={{ delay:0.18, duration:0.4 }}
-                    style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px) saturate(180%)', WebkitBackdropFilter:'blur(16px) saturate(180%)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'24px 26px 28px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
-                  >
-                    <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.15)', marginBottom:14 }}>Progress</p>
-                    <div style={{ display:'flex', alignItems:'center', gap:18 }}>
-                      {/* Conic ring */}
-                      <motion.div
-                        animate={{ background: `conic-gradient(#7c3aed ${detailProgress}%, rgba(0,0,0,0.04) ${detailProgress}%)` }}
-                        transition={{ duration:0.5 }}
-                        style={{ width:62, height:62, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', position:'relative', flexShrink:0 }}
-                      >
-                        <div style={{ position:'absolute', width:50, height:50, borderRadius:'50%', background:'rgba(255,255,255,0.88)' }} />
-                        <span className="rdr-playfair" style={{ position:'relative', zIndex:2, fontSize:15, fontWeight:600, color:'#1a1a1a' }}>
-                          {detailProgress}%
-                        </span>
-                      </motion.div>
-                      <div className="rdr-inter" style={{ fontSize:14, color:'rgba(0,0,0,0.35)', fontWeight:300, lineHeight:1.5 }}>
-                        <strong style={{ color:'rgba(0,0,0,0.7)', fontWeight:500 }}>{detailProgress}%</strong> read<br />
-                        <span style={{ fontSize:12, color:'rgba(0,0,0,0.18)' }}>
-                          {sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
+            {!isPracticeMode && (
+              <div className="flex flex-col gap-5">
+                {/* Progress ring widget */}
+                <div className={`${GLASS_CARD} p-5`}>
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Progress</p>
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center">
+                      <svg className="h-[62px] w-[62px] -rotate-90" viewBox="0 0 36 36">
+                        <path className="text-white/70" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
+                        <path
+                          className="text-violet-500 transition-all duration-500"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeDasharray={`${detailProgress}, 100`}
+                        />
+                      </svg>
+                      <span className="absolute text-sm font-bold text-violet-600">{detailProgress}%</span>
                     </div>
-                  </motion.div>
+                    <div className="text-sm text-slate-500">
+                      <strong className="text-slate-800">{detailProgress}%</strong> read
+                      <div className="text-xs text-[#8e9aaf]">{sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
+                </div>
 
-                  {/* Launch Practice button */}
-                  <motion.div
-                    initial={{ opacity:0, y:10 }}
-                    animate={{ opacity:1, y:0 }}
-                    transition={{ delay:0.24, duration:0.38 }}
-                    style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'20px 24px 22px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
+                {/* Launch Practice button */}
+                <div className={`${GLASS_CARD} p-5`}>
+                  <p className="mb-3 text-xs text-[#8e9aaf]">Ready to test your understanding?</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsPracticeMode(true)}
+                    className="flex w-full items-center justify-between rounded-full bg-violet-500/10 px-5 py-3 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-500/15"
                   >
-                    <p className="rdr-inter" style={{ fontSize:12, color:'rgba(0,0,0,0.2)', fontWeight:400, letterSpacing:'0.5px', marginBottom:12 }}>
-                      Ready to test your understanding?
-                    </p>
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale:1.01, boxShadow:'0 8px 30px rgba(124,58,237,0.07)', borderColor:'rgba(124,58,237,0.16)' }}
-                      whileTap={{ scale:0.97 }}
-                      onClick={() => setIsPracticeMode(true)}
-                      className="rdr-inter"
-                      style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', background:'linear-gradient(135deg, rgba(124,58,237,0.045), rgba(124,58,237,0.01))', border:'1px solid rgba(124,58,237,0.09)', borderRadius:60, padding:'14px 20px 14px 26px', fontSize:15, fontWeight:500, color:'#1a1a1a', cursor:'pointer' }}
-                    >
-                      <span>Launch Practice</span>
-                      <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:36, height:36, borderRadius:'50%', background:'rgba(124,58,237,0.05)', fontSize:18, color:'#7c3aed' }}>✧</span>
-                    </motion.button>
-                  </motion.div>
+                    Launch Practice
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
 
-                  {/* Section navigator */}
-                  {detailSections.length > 1 && (
-                    <motion.div
-                      initial={{ opacity:0, y:10 }}
-                      animate={{ opacity:1, y:0 }}
-                      transition={{ delay:0.3, duration:0.38 }}
-                      style={{ background:'rgba(255,255,255,0.72)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:32, border:'1px solid rgba(0,0,0,0.04)', padding:'20px 24px', boxShadow:'0 20px 40px -12px rgba(0,0,0,0.04)' }}
-                    >
-                      <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.15)', marginBottom:12 }}>Sections</p>
-                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                        {detailSections.map((section) => (
-                          <motion.button
+                {/* Section navigator */}
+                {detailSections.length > 1 && (
+                  <div className={`${GLASS_CARD} p-5`}>
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Sections</p>
+                    <div className="flex flex-col gap-1">
+                      {detailSections.map((section, idx) => {
+                        const isPast = idx < sectionIdx - 1;
+                        const isCurrent = activeDetailSection === section.id;
+                        return (
+                          <button
                             key={section.id}
                             type="button"
-                            whileHover={{ color:'#7c3aed' }}
                             onClick={() => jumpToDetailSection(section.id)}
-                            className="rdr-inter"
-                            style={{ background:'none', border:'none', cursor:'pointer', textAlign:'left', padding:'4px 0', fontSize:13, fontWeight: activeDetailSection === section.id ? 600 : 400, color: activeDetailSection === section.id ? '#7c3aed' : 'rgba(0,0,0,0.35)', transition:'color 0.2s', display:'block', width:'100%' }}
+                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${isCurrent ? 'font-semibold text-violet-600' : 'text-slate-500 hover:text-violet-600'}`}
                           >
-                            {section.title}
-                          </motion.button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* ── Practice panel (full-span) ── */}
-            <AnimatePresence>
-              {isPracticeMode && (
-                <motion.div
-                  key="practice-panel"
-                  initial={{ opacity:0, y:32, scale:0.98 }}
-                  animate={{ opacity:1, y:0, scale:1 }}
-                  exit={{ opacity:0, y:24, scale:0.98 }}
-                  transition={{ duration:0.5, ease:[0.16,1,0.3,1] }}
-                  className="rdr-practice-panel"
-                  style={{ gridColumn:'1 / -1', background:'rgba(255,255,255,0.82)', backdropFilter:'blur(22px) saturate(180%)', WebkitBackdropFilter:'blur(22px) saturate(180%)', borderRadius:32, border:'1px solid rgba(0,0,0,0.05)', padding:'32px 34px 34px', boxShadow:'0 20px 60px -12px rgba(0,0,0,0.07)' }}
-                >
-                  {/* Panel header */}
-                  <div className="rdr-practice-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24, paddingBottom:16, borderBottom:'1px solid rgba(0,0,0,0.04)' }}>
-                    <h3 className="rdr-playfair" style={{ fontSize:28, fontWeight:600, color:'#1a1a1a', letterSpacing:'-0.3px' }}>✦ Practice Paper</h3>
-                    <span className="rdr-inter" style={{ fontSize:12, fontWeight:500, color:'rgba(0,0,0,0.22)', background:'rgba(0,0,0,0.025)', padding:'4px 16px', borderRadius:40, border:'1px solid rgba(0,0,0,0.04)' }}>
-                      {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-
-                  {/* Resource list */}
-                  <div style={{ display:'grid', gap:14, marginBottom:24 }}>
-                    {practiceResources.length === 0 ? (
-                      <div style={{ textAlign:'center', padding:'40px 20px' }}>
-                        <p className="rdr-inter" style={{ fontSize:15, color:'rgba(0,0,0,0.28)', fontStyle:'italic', marginBottom:8 }}>
-                          No practice materials uploaded for this topic yet.
-                        </p>
-                        <p className="rdr-inter" style={{ fontSize:13, color:'rgba(0,0,0,0.18)' }}>
-                          Try the interactive Tryout Section below!
-                        </p>
-                      </div>
-                    ) : (
-                      practiceResources.map((item, idx) => (
-                        <motion.div
-                          key={item.id || idx}
-                          initial={{ opacity:0, x:-10 }}
-                          animate={{ opacity:1, x:0 }}
-                          transition={{ delay: idx * 0.055 }}
-                          style={{ background:'rgba(255,255,255,0.5)', borderRadius:20, padding:'18px 22px', border:'1px solid rgba(0,0,0,0.035)' }}
-                        >
-                          <p className="rdr-inter" style={{ fontSize:15, fontWeight:400, color:'rgba(0,0,0,0.75)', marginBottom:12 }}>
-                            <span style={{ color:'rgba(124,58,237,0.4)', fontWeight:600, marginRight:8 }}>
-                              {String(idx + 1).padStart(2, '0')}.
-                            </span>
-                            {item.title}
-                          </p>
-                          <div style={{ display:'flex', flexWrap:'wrap', gap:'8px 12px' }}>
-                            {item.url && (
-                              <>
-                                <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
-                                  Open
-                                </a>
-                                <a href={item.url} download className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
-                                  Download
-                                </a>
-                              </>
+                            {isPast ? (
+                              <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                            ) : (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
                             )}
-                            {item.content && (
-                              <button
-                                type="button"
-                                onClick={() => setActiveMaterial(item)}
-                                className="rdr-inter"
-                                style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'4px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', fontWeight:500, cursor:'pointer' }}
-                              >
-                                Read
-                              </button>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Worksheet assignments in practice panel */}
-                  {chapterWorksheets.submittableAssignments.length > 0 && (
-                    <div style={{ marginBottom:24, display:'flex', flexDirection:'column', gap:12 }}>
-                      <p className="rdr-inter" style={{ fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:2, color:'rgba(0,0,0,0.18)' }}>Worksheet Assignments</p>
-                      {chapterWorksheets.submittableAssignments.map((assignment) => {
-                        const isSubmitted = submittedWorksheets.has(assignment._id);
-                        const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
-                        return (
-                          <div key={assignment._id} style={{ background:'rgba(255,255,255,0.5)', borderRadius:20, padding:'16px 20px', border:'1px solid rgba(0,0,0,0.035)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-                            <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0, flex:1 }}>
-                              <FileText size={15} style={{ color:'#7c3aed', flexShrink:0 }} />
-                              <p className="rdr-inter" style={{ fontSize:14, fontWeight:500, color:'rgba(0,0,0,0.75)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{assignment.title}</p>
-                              {isSubmitted && (
-                                <span className="rdr-inter" style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:4, borderRadius:40, background:'rgba(16,185,129,0.1)', padding:'2px 10px', fontSize:10, fontWeight:700, color:'#059669' }}>
-                                  <CheckCircle2 size={10} /> Submitted
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display:'flex', gap:8 }}>
-                              {attachmentUrl && (
-                                <a href={attachmentUrl} target="_blank" rel="noreferrer" className="rdr-inter" style={{ fontSize:13, color:'#7c3aed', background:'rgba(124,58,237,0.06)', padding:'5px 14px', borderRadius:40, border:'1px solid rgba(124,58,237,0.1)', textDecoration:'none', fontWeight:500 }}>
-                                  <Download size={11} style={{ display:'inline', marginRight:4, verticalAlign:'middle' }} />Download
-                                </a>
-                              )}
-                              {!isSubmitted ? (
-                                <button type="button" onClick={() => setWorksheetModal(assignment)} className="rdr-inter" style={{ fontSize:13, color:'white', background:'#7c3aed', padding:'5px 14px', borderRadius:40, border:'none', fontWeight:500, cursor:'pointer' }}>
-                                  Submit
-                                </button>
-                              ) : (
-                                <span className="rdr-inter" style={{ fontSize:12, color:'#059669', fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
-                                  <CheckCircle2 size={12} /> Done
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                            <span className="truncate">{section.title}</span>
+                          </button>
                         );
                       })}
                     </div>
-                  )}
-
-                  {/* Panel footer */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:16, borderTop:'1px solid rgba(0,0,0,0.04)', flexWrap:'wrap', gap:12 }}>
-                    <motion.button
-                      type="button"
-                      whileHover={{ color:'rgba(0,0,0,0.55)' }}
-                      onClick={() => setIsPracticeMode(false)}
-                      className="rdr-inter"
-                      style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontSize:14, color:'rgba(0,0,0,0.22)' }}
-                    >
-                      ← Return to theory
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      whileHover={{ scale:1.025, boxShadow:'0 12px 32px rgba(124,58,237,0.26)' }}
-                      whileTap={{ scale:0.97 }}
-                      onClick={goToTryoutSection}
-                      className="rdr-inter"
-                      style={{ background:'linear-gradient(135deg, #7c3aed, #a855f7)', color:'white', border:'none', borderRadius:60, padding:'14px 32px', fontSize:15, fontWeight:600, cursor:'pointer', boxShadow:'0 8px 24px rgba(124,58,237,0.22)' }}
-                    >
-                      Try Full Tryout →
-                    </motion.button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                )}
+              </div>
+            )}
+
+            {/* ── Practice panel (full-span) ── */}
+            {isPracticeMode && (
+              <div className={`col-span-full ${GLASS_CARD} p-5 sm:p-8`}>
+                {/* Panel header */}
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-violet-500/15 pb-4">
+                  <h3 className="text-xl font-bold text-[#0f172a] sm:text-2xl">Practice Paper</h3>
+                  <span className={`rounded-full ${GLASS_INNER} px-3.5 py-1 text-xs font-semibold text-slate-500`}>
+                    {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {/* Resource list */}
+                <div className="mb-6 grid gap-3">
+                  {practiceResources.length === 0 ? (
+                    <div className="py-8 text-center">
+                      <p className="mb-1 text-sm italic text-[#8e9aaf]">
+                        No practice materials uploaded for this topic yet.
+                      </p>
+                      <p className="text-xs text-[#8e9aaf]">
+                        Try the interactive Tryout Section below!
+                      </p>
+                    </div>
+                  ) : (
+                    practiceResources.map((item, idx) => (
+                      <div key={item.id || idx} className={`${GLASS_INNER} p-4`}>
+                        <p className="mb-2.5 text-sm text-slate-700">
+                          <span className="mr-2 font-bold text-violet-400">
+                            {String(idx + 1).padStart(2, '0')}.
+                          </span>
+                          {item.title}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {item.url && (
+                            <>
+                              <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                                Open
+                              </a>
+                              <a href={item.url} download className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                                Download
+                              </a>
+                            </>
+                          )}
+                          {item.content && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveMaterial(item)}
+                              className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                            >
+                              Read
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Worksheet assignments in practice panel */}
+                {chapterWorksheets.submittableAssignments.length > 0 && (
+                  <div className="mb-6 flex flex-col gap-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Worksheet Assignments</p>
+                    {chapterWorksheets.submittableAssignments.map((assignment) => {
+                      const isSubmitted = submittedWorksheets.has(assignment._id);
+                      const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                      return (
+                        <div key={assignment._id} className={`flex flex-wrap items-center justify-between gap-3 ${GLASS_INNER} p-3.5`}>
+                          <div className="flex min-w-0 flex-1 basis-40 items-center gap-2.5">
+                            <FileText size={15} className="shrink-0 text-violet-500" />
+                            <p className="truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
+                            {isSubmitted && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                <CheckCircle2 size={10} /> Submitted
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            {attachmentUrl && (
+                              <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                                <Download size={11} /> Download
+                              </a>
+                            )}
+                            {!isSubmitted ? (
+                              <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">
+                                Submit
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                                <CheckCircle2 size={12} /> Done
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Panel footer */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-violet-500/15 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsPracticeMode(false)}
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-700"
+                  >
+                    <ArrowLeft size={14} /> Return to theory
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToTryoutSection}
+                    className="inline-flex items-center gap-2 rounded-full bg-violet-500 px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-violet-600"
+                  >
+                    Try Full Tryout <ArrowRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Worksheets strip (theory view only) */}
           {!isPracticeMode && (chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-            <motion.section
-              initial={{ opacity:0, y:12 }}
-              animate={{ opacity:1, y:0 }}
-              transition={{ delay:0.35 }}
-              style={{ maxWidth:1100, margin:'28px auto 0', background:'rgba(238,240,255,0.7)', backdropFilter:'blur(16px)', WebkitBackdropFilter:'blur(16px)', borderRadius:28, border:'1px solid rgba(99,102,241,0.12)', padding:'20px 24px' }}
-            >
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
-                <ClipboardList size={18} style={{ color:'#6366f1' }} />
-                <h2 className="rdr-inter" style={{ fontSize:15, fontWeight:800, color:'#1e1b4b' }}>Worksheets</h2>
+            <section className={`mx-auto mt-6 max-w-[1100px] ${GLASS_CARD} p-5`}>
+              <div className="mb-4 flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                  <ClipboardList size={18} />
+                </div>
+                <h2 className="text-base font-bold text-[#0f172a]">Worksheets</h2>
               </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {chapterWorksheets.downloadLinks.map((link) => (
-                  <div key={link.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, background:'white', borderRadius:16, padding:'12px 16px', border:'1px solid rgba(99,102,241,0.1)' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-                      <FileText size={14} style={{ color:'#6366f1', flexShrink:0 }} />
-                      <p className="rdr-inter" style={{ fontSize:13, fontWeight:600, color:'#1e1b4b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{link.title}</p>
+                  <div key={link.id} className={`flex items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText size={14} className="shrink-0 text-violet-500" />
+                      <p className="truncate text-sm font-semibold text-slate-700">{link.title}</p>
                     </div>
-                    <a href={link.url} target="_blank" rel="noreferrer" style={{ flexShrink:0, display:'inline-flex', alignItems:'center', gap:5, borderRadius:40, background:'#6366f1', padding:'6px 14px', fontSize:12, fontWeight:700, color:'white', textDecoration:'none' }}>
+                    <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-600">
                       <Download size={11} /> Download
                     </a>
                   </div>
@@ -1240,40 +1173,30 @@ const AILearningCoursesReference = () => {
                   const isSubmitted = submittedWorksheets.has(assignment._id);
                   const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                   return (
-                    <div key={assignment._id} style={{ background:'white', borderRadius:16, padding:'12px 16px', border:'1px solid rgba(99,102,241,0.1)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0, flex:1 }}>
-                        <FileText size={14} style={{ color:'#6366f1', flexShrink:0 }} />
-                        <p className="rdr-inter" style={{ fontSize:13, fontWeight:600, color:'#1e1b4b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{assignment.title}</p>
-                        {isSubmitted && (
-                          <span className="rdr-inter" style={{ flexShrink:0, borderRadius:40, background:'rgba(16,185,129,0.1)', padding:'2px 10px', fontSize:10, fontWeight:700, color:'#059669' }}>
-                            Submitted
-                          </span>
-                        )}
+                    <div key={assignment._id} className={`flex flex-wrap items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
+                        <FileText size={14} className="shrink-0 text-violet-500" />
+                        <p className="truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
+                        {isSubmitted && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Submitted</span>}
                       </div>
-                      <div style={{ display:'flex', gap:8 }}>
+                      <div className="flex gap-2">
                         {attachmentUrl && (
-                          <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:4, borderRadius:40, border:'1px solid rgba(99,102,241,0.2)', background:'rgba(99,102,241,0.06)', padding:'5px 12px', fontSize:12, fontWeight:600, color:'#6366f1', textDecoration:'none' }}>
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
                             <Download size={11} /> Download
                           </a>
                         )}
                         {!isSubmitted ? (
-                          <button type="button" onClick={() => setWorksheetModal(assignment)} style={{ borderRadius:40, background:'#6366f1', padding:'5px 14px', fontSize:12, fontWeight:700, color:'white', border:'none', cursor:'pointer' }}>
-                            Submit
-                          </button>
+                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">Submit</button>
                         ) : (
-                          <span className="rdr-inter" style={{ fontSize:12, color:'#059669', fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
-                            <CheckCircle2 size={12} /> Done
-                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={12} /> Done</span>
                         )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </motion.section>
+            </section>
           )}
-
-          <div style={{ maxWidth:1100, margin:'0 auto', paddingBottom:32 }} />
         </div>
 
         {worksheetModal && (
@@ -1288,28 +1211,22 @@ const AILearningCoursesReference = () => {
         )}
 
         {activeMaterial && (
-          <motion.div
-            initial={{ opacity:0 }}
-            animate={{ opacity:1 }}
-            exit={{ opacity:0 }}
-            style={{ position:'fixed', inset:0, zIndex:80, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)', padding:16 }}
-          >
-            <motion.div
-              initial={{ scale:0.94, y:20 }}
-              animate={{ scale:1, y:0 }}
-              style={{ width:'100%', maxWidth:680, maxHeight:'85vh', overflow:'hidden', borderRadius:24, background:'white', boxShadow:'0 40px 80px rgba(0,0,0,0.18)' }}
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
+            <div
+              className="w-full max-w-2xl overflow-hidden rounded-3xl border border-violet-500/35 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.2)] backdrop-blur-[20px] backdrop-saturate-[1.8]"
+              style={{ maxHeight: '85vh' }}
             >
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, padding:'18px 22px', borderBottom:'1px solid rgba(0,0,0,0.06)' }}>
-                <h3 className="rdr-inter" style={{ fontSize:16, fontWeight:800, color:'#1a1a1a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{activeMaterial.title}</h3>
-                <button type="button" onClick={() => setActiveMaterial(null)} style={{ flexShrink:0, background:'none', border:'none', cursor:'pointer', color:'#666', padding:6, borderRadius:8, display:'flex' }}>
+              <div className="flex items-center justify-between gap-4 border-b border-violet-500/15 bg-white/40 px-5 py-4">
+                <h3 className="truncate text-base font-bold text-[#0f172a]">{activeMaterial.title}</h3>
+                <button type="button" onClick={() => setActiveMaterial(null)} className="shrink-0 rounded-lg p-1.5 text-[#8e9aaf] hover:bg-white/60 hover:text-slate-700">
                   <X size={18} />
                 </button>
               </div>
-              <div style={{ maxHeight:'65vh', overflowY:'auto', padding:22 }}>
-                <p className="rdr-inter" style={{ whiteSpace:'pre-wrap', fontSize:14, lineHeight:1.8, color:'#374151' }}>{stripHtml(activeMaterial.content)}</p>
+              <div className="overflow-y-auto p-5" style={{ maxHeight: '65vh' }}>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{stripHtml(activeMaterial.content)}</p>
               </div>
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         )}
       </>
     );
@@ -1326,416 +1243,265 @@ const AILearningCoursesReference = () => {
     });
   };
 
-  const containerVariants = {
-    hidden: {},
-    visible: { transition: { staggerChildren: 0.07 } },
-  };
-  const pillVariants = {
-    hidden: { opacity: 0, y: 14 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] } },
-  };
-  const flowVariants = {
-    hidden: { opacity: 0, x: 14 },
-    visible: (i) => ({ opacity: 1, x: 0, transition: { delay: i * 0.08, duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] } }),
-  };
+  const stepsDoneLabel = `${completedSteps.length}/${chapterInstructionalFlow.length || 0} (${overallProgress}%)`;
+  const progressStatusLabel = overallProgress === 0 ? 'Ready to begin!' : overallProgress === 100 ? 'Topic complete!' : `${overallProgress}% complete`;
+  const heroDescription = chapterIntroduction || 'Explore this topic step by step, then try the practice questions when you’re ready.';
+  const classChip = profile?.grade ? `Class ${profile.grade}${profile.section ? ` • ${profile.section}` : ''} curriculum` : '';
 
   return (
-    <div
-      ref={moduleRef}
-      style={{
-        minHeight: '100vh',
-        background: '#f2f0f5',
-        backgroundImage: 'radial-gradient(ellipse at 10% 20%, rgba(180,160,220,0.09) 0%, transparent 60%), radial-gradient(ellipse at 90% 80%, rgba(120,100,200,0.07) 0%, transparent 50%)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        fontFamily: "'Inter', -apple-system, sans-serif",
-        padding: 'clamp(14px, 3vw, 28px) clamp(10px, 3vw, 20px) 48px',
-        color: '#1a142b',
-        width: '100%',
-        maxWidth: '100%',
-        overflowX: 'hidden',
-      }}
-    >
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap');
-        .tr-playfair { font-family: 'Playfair Display', Georgia, serif; }
-        .tr-inter { font-family: 'Inter', -apple-system, sans-serif; }
-        .tr-scroll::-webkit-scrollbar { width: 3px; }
-        .tr-scroll::-webkit-scrollbar-thumb { background: rgba(120,100,200,0.15); border-radius: 10px; }
-        .tr-card, .tr-card * { box-sizing: border-box; }
-        .tr-card, .tr-grid-two, .tr-grid-two > *, .tr-top-bar, .tr-top-bar > *, .tr-top-bar-right { min-width: 0; max-width: 100%; }
-        .tr-card p, .tr-card li, .tr-card h1, .tr-card h2, .tr-card h3, .tr-card span { overflow-wrap: anywhere; }
-        .tr-glow-panel {
-          border-color: rgba(107,92,173,0.20) !important;
-          box-shadow: 0 0 22px rgba(107,92,173,0.14), inset 0 0 0 1px rgba(255,255,255,0.45) !important;
-        }
-        @keyframes tr-badge-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
-        @keyframes tr-glow-dot { 0%,100%{box-shadow:0 0 12px rgba(107,92,173,0.12)} 50%{box-shadow:0 0 22px rgba(107,92,173,0.28)} }
-        @keyframes tr-float-icon { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
-        @keyframes tr-hint-pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
-        .tr-badge-pulse { animation: tr-badge-pulse 3s ease-in-out infinite; }
-        .tr-glow-dot { animation: tr-glow-dot 2s ease-in-out infinite; }
-        .tr-float-icon { animation: tr-float-icon 4s ease-in-out infinite; }
-        .tr-hint-pulse { animation: tr-hint-pulse 3s ease-in-out infinite; }
-        @media (max-width: 820px) { .tr-grid-two { grid-template-columns: minmax(0, 1fr) !important; gap: 24px !important; } .tr-exp-grid { grid-template-columns: minmax(0, 1fr) !important; } }
-        @media (max-width: 640px) {
-          .tr-card { padding: 28px 20px 32px !important; }
-          .tr-top-bar-right { width: 100%; flex-direction: column; align-items: stretch !important; gap: 6px !important; }
-          .tr-chapter-title { font-size: 17px !important; }
-          .tr-flow-row, .tr-resource-row, .tr-assessment-row { align-items: flex-start !important; flex-wrap: wrap; }
-          .tr-flow-title { flex-basis: calc(100% - 46px) !important; margin-left: 46px; }
-          .tr-resource-name, .tr-assessment-name { flex-basis: calc(100% - 34px) !important; white-space: normal !important; }
-        }
-        @media (max-width: 480px) { .tr-meta-grid { grid-template-columns: 1fr !important; } .tr-top-bar { flex-direction: column; align-items: flex-start !important; } .tr-card { padding: 18px 14px 22px !important; border-radius: 28px !important; } }
-      `}</style>
-
-      <motion.div
-        initial={{ opacity: 0, y: 22, scale: 0.985 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-        className="tr-card tr-glow-panel"
-        style={{
-          maxWidth: 1020,
-          width: '100%',
-          background: 'rgba(255,255,255,0.72)',
-          backdropFilter: 'blur(22px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(22px) saturate(180%)',
-          borderRadius: 'clamp(24px, 4vw, 36px)',
-          boxShadow: '0 8px 48px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.6)',
-          padding: 'clamp(20px, 4vw, 40px) clamp(16px, 4vw, 44px) clamp(24px, 4vw, 44px)',
-          border: '1px solid rgba(107,92,173,0.18)',
-          minWidth: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {/* ── Top bar ── */}
-        <div
-          className="tr-top-bar"
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 14 }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <motion.button
-              type="button"
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={goBackToSubjectTopics}
-              className="tr-inter"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer' }}
-            >
-              <ArrowLeft size={14} /> Back
-            </motion.button>
-            <motion.button
-              type="button"
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={handleDownloadPdf}
-              disabled={downloadingPdf}
-              className="tr-inter"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer', opacity: downloadingPdf ? 0.6 : 1 }}
-            >
-              <Download size={13} />
-              <span>{downloadingPdf ? 'Preparing…' : 'PDF'}</span>
-            </motion.button>
-            <motion.button
-              type="button"
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={toggleFullscreen}
-              className="tr-inter"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 40, border: '1px solid rgba(120,100,200,0.14)', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)', padding: '7px 16px', fontSize: 13, fontWeight: 500, color: '#4a3a5c', cursor: 'pointer' }}
-            >
-              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            </motion.button>
+    <div ref={moduleRef} className="min-h-screen w-full bg-[#f1f5f9]">
+      <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
+        {/* Top bar */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={goBackToSubjectTopics} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-violet-600 ${GLASS_HOVER}`}>
+              <ArrowLeft size={16} /> Back to Chapters
+            </button>
+            <div className="flex flex-wrap items-center gap-1.5 text-sm text-[#8e9aaf]">
+              <ChevronRight size={14} className="text-slate-300" />
+              <span>{subjectSlug}</span>
+              {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug && (
+                <>
+                  <ChevronRight size={14} className="text-slate-300" />
+                  <span>{mapScope.chapterTitle}</span>
+                </>
+              )}
+              <ChevronRight size={14} className="text-slate-300" />
+              <span className="font-bold text-violet-600">{topicSlug}</span>
+            </div>
           </div>
-
-          <div className="tr-top-bar-right" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 6, flexWrap: 'wrap', minWidth: 0, flex: '1 1 280px' }}>
-            <span
-              className="tr-badge-pulse tr-inter"
-              style={{ fontSize: 11, fontWeight: 600, letterSpacing: '2.5px', textTransform: 'uppercase', color: '#7a6a8f', background: 'rgba(160,140,200,0.10)', padding: '7px 20px', borderRadius: 40, border: '1px solid rgba(160,140,200,0.08)', flexShrink: 0 }}
-            >
-              ✦ Topic Reader
-            </span>
-            <span className="tr-playfair tr-chapter-title" style={{ fontSize: 22, fontWeight: 600, color: '#1a142b', letterSpacing: '-0.3px', marginLeft: 8, minWidth: 0, flex: '1 1 160px', overflowWrap: 'anywhere' }}>
-              {mapScope.chapterTitle || subjectSlug}
-            </span>
-            <span className="tr-inter" style={{ fontSize: 14, fontWeight: 400, color: '#9a8aaa', fontStyle: 'normal', background: 'rgba(160,140,200,0.06)', padding: '2px 14px', borderRadius: 30, border: '1px solid rgba(160,140,200,0.06)', marginLeft: 4, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
-              {topicSlug}
-            </span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-600 ${GLASS_HOVER} disabled:opacity-60`}>
+              <Download size={16} className="text-violet-500" /> {downloadingPdf ? 'Preparing…' : 'Download PDF'}
+            </button>
+            <button type="button" onClick={toggleFullscreen} className={`rounded-xl ${GLASS_INNER} p-2.5 text-slate-500 ${GLASS_HOVER}`}>
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button type="button" onClick={openDetailsPage} className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-600">
+              Start Reading <ArrowRight size={16} />
+            </button>
           </div>
         </div>
 
-        {/* ── Two-column grid ── */}
-        <div
-          className="tr-grid-two"
-          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '36px 44px', marginTop: 4 }}
-        >
-
-          {/* ═══ LEFT COLUMN ═══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28, minWidth: 0 }}>
-
-            {/* Meta pills 2×2 */}
-            <motion.div
-              variants={containerVariants}
-              initial="hidden"
-              animate="visible"
-              className="tr-meta-grid"
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}
-            >
-              {[
-                { label: 'Date', value: chapterDateLabel || 'Not set', light: false },
-                { label: 'Day', value: chapterDayLabel || '—', light: false },
-                { label: 'Duration', value: chapterDurationLabel || '—', light: false },
-                { label: 'Step by Step', value: `${completedSteps.length} / ${chapterInstructionalFlow.length}`, light: true },
-              ].map((pill) => (
-                <motion.div
-                  key={pill.label}
-                  variants={pillVariants}
-                  whileHover={{ y: -2, background: 'rgba(255,255,255,0.82)', boxShadow: '0 4px 16px rgba(120,100,200,0.07)' }}
-                  className="tr-glow-panel"
-                  style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 18, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.4)', cursor: 'default' }}
-                >
-                  <div className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.2px', color: '#9a8aaa', marginBottom: 4 }}>{pill.label}</div>
-                  <div className="tr-inter" style={{ fontSize: 15, fontWeight: pill.light ? 400 : 600, color: pill.light ? '#4a3a5c' : '#1a142b' }}>{pill.value}</div>
-                </motion.div>
-              ))}
-            </motion.div>
-
-            {/* Progress block */}
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25, duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="tr-glow-panel"
-              style={{ background: 'rgba(255,255,255,0.52)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 26px 24px', border: '1px solid rgba(107,92,173,0.2)', boxShadow: '0 0 22px rgba(107,92,173,0.14), inset 0 0 0 1px rgba(255,255,255,0.45)' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span className="tr-inter" style={{ fontSize: 13, fontWeight: 500, color: '#4a3a5c' }}>Reading Progress</span>
-                <span className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', background: 'rgba(120,100,200,0.06)', padding: '2px 12px', borderRadius: 30 }}>
-                  {overallProgress}%
-                </span>
+        {/* Hero */}
+        <section className={`relative mb-6 overflow-hidden ${GLASS_CARD} p-5 sm:p-8`}>
+          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-violet-300/25 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-20 right-1/3 h-48 w-48 rounded-full bg-amber-100/50 blur-2xl" />
+          <div className="relative z-10 flex flex-col items-start gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">Topic</span>
+                {mapScope.chapterTitle && <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">{mapScope.chapterTitle}</span>}
+                {classChip && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8e9aaf]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-400" /> {classChip}
+                  </span>
+                )}
               </div>
-              <div style={{ width: '100%', height: 4, background: 'rgba(120,100,200,0.08)', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${overallProgress}%` }}
-                  transition={{ duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
-                  style={{ height: '100%', background: 'linear-gradient(90deg,#8b7ac8,#6b5cad)', borderRadius: 10 }}
-                />
-              </div>
-              <div className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontWeight: 400 }}>
-                <strong style={{ color: '#1a142b', fontWeight: 600 }}>{completedSteps.length}</strong> of {chapterInstructionalFlow.length} learning steps completed
-              </div>
-              <motion.button
-                type="button"
-                whileHover={{ gap: 12, borderBottomColor: '#6b5cad', color: '#4a3a7a', boxShadow: '0 0 22px rgba(107,92,173,0.24)' }}
-                onClick={openDetailsPage}
-                className="tr-inter"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 14, fontSize: 14, fontWeight: 500, color: '#6b5cad', background: 'rgba(255,255,255,0.34)', border: '1px solid rgba(107,92,173,0.12)', borderRadius: 30, padding: '8px 14px', boxShadow: '0 0 14px rgba(107,92,173,0.14)', cursor: 'pointer', transition: 'all 0.3s ease' }}
-              >
-                Read Full Article <motion.span whileHover={{ x: 6 }} style={{ display: 'inline-block', transition: '0.3s' }}>→</motion.span>
-              </motion.button>
-            </motion.div>
+              <h1 className="text-2xl font-bold tracking-tight text-[#0f172a] sm:text-4xl">{topicSlug}</h1>
+              <p className="mt-2 text-sm text-[#64748b] sm:text-base">{heroDescription}</p>
+            </div>
 
-            {/* Learning Objectives */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.32, duration: 0.42 }}
-            >
-              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
-                Learning Objectives
-              </p>
-              {chapterLearningObjectives.length === 0 ? (
-                <p className="tr-inter" style={{ fontSize: 13, color: '#b0a0c0', fontStyle: 'italic' }}>No objectives published for this topic.</p>
-              ) : (
-                <motion.ul
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                  style={{ listStyle: 'none', padding: 0 }}
-                >
-                  {chapterLearningObjectives.map((obj, idx) => (
-                    <motion.li
-                      key={idx}
-                      variants={pillVariants}
-                      className="tr-inter"
-                      style={{ fontSize: 14, fontWeight: 400, color: '#1a142b', padding: '8px 0', borderBottom: '1px solid rgba(120,100,200,0.04)', display: 'flex', alignItems: 'flex-start', gap: 12 }}
-                    >
-                      <span style={{ width: 5, height: 5, marginTop: 7, background: 'linear-gradient(135deg,#8b7ac8,#6b5cad)', borderRadius: '50%', flexShrink: 0, opacity: 0.45 }} />
-                      {obj}
-                    </motion.li>
-                  ))}
-                </motion.ul>
-              )}
-            </motion.div>
+            <div className={`flex w-full shrink-0 items-center gap-4 ${GLASS_INNER} p-4 lg:w-auto`}>
+              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+                <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                  <path className="text-white/70" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
+                  <path
+                    className="text-violet-500 transition-all duration-700 ease-out"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${overallProgress}, 100`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-base font-bold text-violet-600">{overallProgress}%</span>
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Lesson Progress</span>
+                <span className="text-sm font-bold text-slate-800">{progressStatusLabel}</span>
+                <button type="button" onClick={openDetailsPage} className="mt-0.5 inline-flex items-center gap-1 text-left text-xs font-bold text-violet-600 hover:underline">
+                  Read Full Article <ArrowRight size={12} />
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* ═══ RIGHT COLUMN ═══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28, minWidth: 0 }}>
+          {/* Quick stats */}
+          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2.5 border-t border-violet-500/15 pt-5 sm:grid-cols-4">
+            {[
+              { icon: CalendarDays, color: 'text-violet-600', label: 'Target Date', value: chapterDateLabel || 'Not set' },
+              { icon: Calendar, color: 'text-violet-600', label: 'School Day', value: chapterDayLabel || '—' },
+              { icon: Clock, color: 'text-amber-600', label: 'Total Duration', value: chapterDurationLabel || '—' },
+              { icon: ListChecks, color: 'text-emerald-600', label: 'Completed Steps', value: stepsDoneLabel },
+            ].map((stat) => (
+              <div key={stat.label} className={`flex items-center gap-3 ${GLASS_INNER} p-2.5`}>
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/70 shadow-sm ${stat.color}`}>
+                  <stat.icon size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-[#8e9aaf]">{stat.label}</p>
+                  <p className="truncate text-sm font-bold text-slate-800">{stat.value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
-            {/* Instructional Flow */}
-            <div>
-              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
-                Instructional Flow
-              </p>
-              {chapterInstructionalFlow.length === 0 ? (
-                <p className="tr-inter" style={{ fontSize: 13, color: '#b0a0c0', fontStyle: 'italic' }}>No instructional flow provided yet.</p>
+        {/* Two column workspace */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+          {/* LEFT: objectives + materials + assessment */}
+          <div className="flex flex-col gap-5 lg:col-span-5">
+            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+              <div className="mb-4 flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                  <Lightbulb size={18} />
+                </div>
+                <h2 className="text-lg font-bold text-[#0f172a]">What You Will Learn</h2>
+              </div>
+              {chapterLearningObjectives.length === 0 ? (
+                <p className="text-sm italic text-[#8e9aaf]">No objectives published for this topic.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {chapterInstructionalFlow.map((step, idx) => {
-                    const isActive = resolvedActiveFlowStepId === step.id;
-                    const isDone = completedSteps.includes(step.id);
-                    return (
-                      <motion.div
-                        key={step.id}
-                        custom={idx}
-                        variants={flowVariants}
-                        initial="hidden"
-                        animate="visible"
-                        whileHover={{ x: 4, background: isActive ? 'rgba(107,92,173,0.07)' : 'rgba(255,255,255,0.58)' }}
-                        onClick={() => handleFlowStepClick(step.id)}
-                        className="tr-inter tr-flow-row tr-glow-panel"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12,
-                          padding: '12px 16px',
-                          borderRadius: 16,
-                          background: isActive ? 'rgba(107,92,173,0.06)' : 'rgba(255,255,255,0.32)',
-                          border: `1px solid ${isActive ? 'rgba(107,92,173,0.09)' : 'rgba(255,255,255,0.32)'}`,
-                          cursor: 'pointer',
-                          transition: 'background 0.3s, border-color 0.3s',
-                          backdropFilter: 'blur(4px)',
-                          WebkitBackdropFilter: 'blur(4px)',
-                          position: 'relative',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {/* Step indicator dot */}
-                        <motion.span
-                          animate={isActive ? { scale: [1, 1.2, 1] } : { scale: 1 }}
-                          transition={isActive ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : {}}
-                          className={isActive ? 'tr-glow-dot' : ''}
-                          style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: isActive ? '#6b5cad' : isDone ? '#6b5cad' : 'rgba(107,92,173,0.10)', transition: 'background 0.3s' }}
-                        />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#6b5cad' : '#9a8aaa', width: 28, flexShrink: 0, fontFeatureSettings: '"tnum"', transition: 'color 0.3s' }}>
-                          {String(idx + 1).padStart(2, '0')}
-                        </span>
-                        <span className="tr-flow-type" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', minWidth: 0, flex: '1 1 90px', overflowWrap: 'anywhere' }}>{step.type || step.phase}</span>
-                        <span className="tr-flow-title" style={{ fontSize: 12, fontWeight: 400, color: '#9a8aaa', letterSpacing: '0.2px', flex: '2 1 120px', minWidth: 0, overflowWrap: 'anywhere' }}>{step.title}</span>
-                        {step.duration > 0 && (
-                          <motion.span
-                            whileHover={{ scale: 1.06 }}
-                            style={{ fontSize: 11, fontWeight: 500, color: isActive ? '#6b5cad' : '#b0a0c0', background: isActive ? 'rgba(107,92,173,0.06)' : 'rgba(120,100,200,0.04)', padding: '2px 12px', borderRadius: 30, border: `1px solid ${isActive ? 'rgba(107,92,173,0.08)' : 'rgba(120,100,200,0.04)'}`, whiteSpace: 'nowrap', transition: 'all 0.3s' }}
-                          >
-                            ⏱ {step.duration} min
-                          </motion.span>
-                        )}
-                        {isDone && (
-                          <CheckCircle2 size={14} style={{ color: '#6b5cad', opacity: 0.6, flexShrink: 0 }} />
-                        )}
-                      </motion.div>
-                    );
-                  })}
+                <div className="flex flex-col gap-2">
+                  {chapterLearningObjectives.map((objective, idx) => (
+                    <div key={idx} className={`flex items-start gap-3 ${GLASS_INNER} p-3`}>
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-xs font-bold text-white">{idx + 1}</div>
+                      <p className="text-sm font-medium text-slate-700">{objective}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
 
-            {/* Materials */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.42 }}
-            >
-              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
-                Materials
-              </p>
-              {learningMaterials.length === 0 ? (
-                <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', borderRadius: 16, padding: '14px 18px', border: '1px solid rgba(255,255,255,0.3)' }}>
-                  <p className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontStyle: 'italic' }}>No chapter material uploaded yet.</p>
+            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+              <div className="mb-3 flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                  <BookOpen size={18} />
                 </div>
+                <h2 className="text-lg font-bold text-[#0f172a]">Lesson Materials</h2>
+              </div>
+              {learningMaterials.length === 0 ? (
+                <p className="text-sm italic text-[#8e9aaf]">No chapter material uploaded yet.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="flex flex-col gap-2">
                   {learningMaterials.map((material, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 + idx * 0.06 }}
-                      whileHover={{ y: -2, background: 'rgba(255,255,255,0.58)', boxShadow: '0 4px 16px rgba(120,100,200,0.05)' }}
-                      className="tr-resource-row tr-glow-panel"
-                      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.3)', transition: 'background 0.3s, box-shadow 0.3s', minWidth: 0 }}
-                    >
-                      <span style={{ fontSize: 18, opacity: 0.5, flexShrink: 0 }}>📄</span>
-                      <span className="tr-inter tr-resource-name" style={{ fontSize: 14, fontWeight: 500, color: '#1a142b', flex: '1 1 120px', minWidth: 0, overflowWrap: 'anywhere' }}>{material.title}</span>
-                      <span className="tr-inter" style={{ fontSize: 11, color: '#9a8aaa', fontWeight: 400, letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>
-                        {normalizeLabel(material.formatLabel || material.description || 'File')}
-                      </span>
+                    <div key={idx} className={`flex flex-wrap items-center gap-3 ${GLASS_INNER} p-3`}>
+                      <FileText size={16} className="shrink-0 text-[#8e9aaf]" />
+                      <span className="min-w-0 flex-1 basis-40 truncate text-sm font-semibold text-slate-700">{material.title}</span>
                       <MaterialQuickActions material={material} onRead={setActiveMaterial} />
-                    </motion.div>
+                    </div>
                   ))}
                 </div>
               )}
-            </motion.div>
+            </div>
 
-            {/* Assessment */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.36, duration: 0.42 }}
-            >
-              <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 10 }}>
-                Assessment
-              </p>
-              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.32)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', borderRadius: 22, padding: '20px 24px', border: '1px solid rgba(255,255,255,0.3)' }}>
-                {assessmentItems.length === 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0' }}>
-                    <div className="tr-float-icon" style={{ fontSize: 32, opacity: 0.15, marginBottom: 10 }}>📋</div>
-                    <p className="tr-inter" style={{ fontSize: 15, fontWeight: 500, color: '#1a142b' }}>No assessment uploaded yet.</p>
-                    <p className="tr-inter" style={{ fontSize: 13, color: '#9a8aaa', fontWeight: 400, marginTop: 4 }}>Teacher assessment files will appear here.</p>
-                    <span className="tr-hint-pulse tr-inter" style={{ marginTop: 12, fontSize: 12, color: '#b0a0c0', background: 'rgba(120,100,200,0.04)', padding: '4px 16px', borderRadius: 30, border: '1px dashed rgba(120,100,200,0.1)' }}>
-                      awaiting upload
-                    </span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {assessmentItems.map((item, idx) => (
-                      <div key={idx} className="tr-assessment-row tr-glow-panel" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, padding: '10px 12px', borderRadius: 14, border: '1px solid transparent' }}>
-                        <span className="tr-inter" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: '#7a6a8f', background: 'rgba(120,100,200,0.07)', padding: '3px 10px', borderRadius: 20 }}>
-                          {normalizeLabel(item.formatLabel || 'Assessment')}
-                        </span>
-                        <span className="tr-inter tr-assessment-name" style={{ flex: '1 1 120px', minWidth: 0, fontSize: 14, fontWeight: 500, color: '#1a142b', overflowWrap: 'anywhere' }}>{item.title}</span>
-                        <MaterialQuickActions material={item} onRead={setActiveMaterial} />
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+              <div className="mb-3 flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                  <ClipboardList size={18} />
+                </div>
+                <h2 className="text-lg font-bold text-[#0f172a]">Assessment</h2>
               </div>
-            </motion.div>
+              {assessmentItems.length === 0 ? (
+                <p className="text-sm italic text-[#8e9aaf]">No assessment uploaded yet. Teacher assessment files will appear here.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {assessmentItems.map((item, idx) => (
+                    <div key={idx} className={`flex flex-wrap items-center gap-3 ${GLASS_INNER} p-3`}>
+                      <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">{normalizeLabel(item.formatLabel || 'Assessment')}</span>
+                      <span className="min-w-0 flex-1 basis-40 truncate text-sm font-semibold text-slate-700">{item.title}</span>
+                      <MaterialQuickActions material={item} onRead={setActiveMaterial} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
-          </div>{/* /right col */}
-        </div>{/* /grid */}
+          {/* RIGHT: step-by-step roadmap */}
+          <div className="flex flex-col gap-4 lg:col-span-7">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h2 className="text-lg font-bold text-[#0f172a]">Step-by-Step Learning Journey</h2>
+                <p className="text-sm text-[#64748b]">Work through each step in order to finish this topic.</p>
+              </div>
+              <span className={`rounded-full ${GLASS_INNER} px-3 py-1 text-xs font-bold text-slate-500`}>Guided Flow</span>
+            </div>
 
-        {/* ── Worksheets (below grid) ── */}
+            {chapterInstructionalFlow.length === 0 ? (
+              <div className={`${GLASS_CARD} p-6 text-center`}>
+                <p className="text-sm italic text-[#8e9aaf]">No instructional flow provided yet.</p>
+              </div>
+            ) : (
+              <div className="relative flex flex-col gap-4 pl-4 before:absolute before:bottom-6 before:left-[19px] before:top-6 before:w-0.5 before:bg-violet-500/20 sm:pl-5 sm:before:left-[23px]">
+                {chapterInstructionalFlow.map((step, idx) => {
+                  const isActive = resolvedActiveFlowStepId === step.id;
+                  const isDone = completedSteps.includes(step.id);
+                  return (
+                    <div key={step.id} className="relative flex items-start gap-3 sm:gap-4">
+                      <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold shadow ring-4 ring-[#f1f5f9] sm:h-9 sm:w-9 ${
+                        isDone ? 'bg-emerald-500 text-white' : isActive ? 'bg-violet-500 text-white' : 'bg-white/70 text-slate-500'
+                      }`}>
+                        {isDone ? <CheckCircle2 size={16} /> : idx + 1}
+                      </div>
+                      <div className={`flex-1 ${GLASS_CARD} ${GLASS_HOVER} p-4 sm:p-5 ${isActive ? 'ring-2 ring-violet-300' : ''}`}>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${isActive ? 'bg-violet-500/10 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>{step.type}</span>
+                            {step.duration > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                <Clock size={12} /> {step.duration} min
+                              </span>
+                            )}
+                          </div>
+                          {isDone ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={14} /> Done</span>
+                          ) : isActive ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-600">
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-violet-500" /> In Progress
+                            </span>
+                          ) : null}
+                        </div>
+                        <h3 className="text-base font-bold text-[#0f172a] sm:text-lg">{step.title}</h3>
+                        <div className="mt-3 flex items-center justify-end border-t border-violet-500/15 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => handleFlowStepClick(step.id)}
+                            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold shadow-sm transition-colors ${
+                              isDone ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-violet-500 text-white hover:bg-violet-600'
+                            }`}
+                          >
+                            {isDone ? 'Revisit Step' : 'Explore Step'} <ArrowRight size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Worksheets */}
         {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.42, duration: 0.45 }}
-            className="tr-glow-panel"
-            style={{ marginTop: 32, background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderRadius: 24, padding: '22px 26px', border: '1px solid rgba(255,255,255,0.4)' }}
-          >
-            <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 14 }}>Worksheets</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12, minWidth: 0 }}>
+          <section className={`mt-6 ${GLASS_CARD} p-5 sm:p-6`}>
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><ClipboardList size={18} /></div>
+              <h2 className="text-lg font-bold text-[#0f172a]">Worksheets</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {chapterWorksheets.downloadLinks.map((link) => (
-                <div key={link.id} className="tr-glow-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '12px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
-                    <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.title}</p>
+                <div key={link.id} className={`flex items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText size={16} className="shrink-0 text-violet-500" />
+                    <p className="truncate text-sm font-semibold text-slate-700">{link.title}</p>
                   </div>
-                  <a href={link.url} target="_blank" rel="noreferrer" style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 30, background: '#6b5cad', padding: '5px 14px', fontSize: 12, fontWeight: 600, color: 'white', textDecoration: 'none' }}>
-                    <Download size={11} /> Download
+                  <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-600">
+                    <Download size={12} /> Download
                   </a>
                 </div>
               ))}
@@ -1743,63 +1509,63 @@ const AILearningCoursesReference = () => {
                 const isSubmitted = submittedWorksheets.has(assignment._id);
                 const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                 return (
-                  <div key={assignment._id} className="tr-glow-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(255,255,255,0.55)', borderRadius: 16, padding: '14px 16px', border: '1px solid rgba(255,255,255,0.4)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <FileText size={14} style={{ color: '#6b5cad', flexShrink: 0 }} />
-                      <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#1a142b', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignment.title}</p>
-                      {isSubmitted && (
-                        <span className="tr-inter" style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#059669', background: 'rgba(16,185,129,0.1)', padding: '2px 10px', borderRadius: 30 }}>Submitted</span>
-                      )}
+                  <div key={assignment._id} className={`flex flex-col gap-2 ${GLASS_INNER} p-3`}>
+                    <div className="flex items-center gap-2">
+                      <FileText size={16} className="shrink-0 text-violet-500" />
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
+                      {isSubmitted && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Submitted</span>}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className="flex gap-2">
                       {attachmentUrl && (
-                        <a href={attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, borderRadius: 30, border: '1px solid rgba(107,92,173,0.2)', background: 'rgba(107,92,173,0.05)', padding: '4px 12px', fontSize: 12, fontWeight: 600, color: '#6b5cad', textDecoration: 'none' }}>
-                          <Download size={10} /> Download
+                        <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700 hover:bg-violet-100">
+                          <Download size={11} /> Download
                         </a>
                       )}
                       {!isSubmitted ? (
-                        <button type="button" onClick={() => setWorksheetModal(assignment)} style={{ borderRadius: 30, background: '#6b5cad', padding: '4px 14px', fontSize: 12, fontWeight: 700, color: 'white', border: 'none', cursor: 'pointer' }}>
-                          Submit
-                        </button>
+                        <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">Submit</button>
                       ) : (
-                        <span className="tr-inter" style={{ fontSize: 12, color: '#059669', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <CheckCircle2 size={12} /> Done
-                        </span>
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={12} /> Done</span>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
-          </motion.div>
+          </section>
         )}
 
-        {/* ── Explanation + Recap ── */}
+        {/* Explanation + Recap */}
         {(chapterExplanation || chapterRecap) && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.48, duration: 0.45 }}
-            className="tr-exp-grid"
-            style={{ marginTop: 28, display: 'grid', gridTemplateColumns: chapterExplanation && chapterRecap ? '1fr 1fr' : '1fr', gap: 20 }}
-          >
+          <section className={`mt-6 grid grid-cols-1 gap-5 ${chapterExplanation && chapterRecap ? 'lg:grid-cols-2' : ''}`}>
             {chapterExplanation && (
-              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
-                <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Step-by-Step Explanation</p>
-                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterExplanation}</p>
+              <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Step-by-Step Explanation</p>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{chapterExplanation}</p>
               </div>
             )}
             {chapterRecap && (
-              <div className="tr-glow-panel" style={{ background: 'rgba(255,255,255,0.42)', backdropFilter: 'blur(8px)', borderRadius: 22, padding: '22px 24px', border: '1px solid rgba(255,255,255,0.4)' }}>
-                <p className="tr-inter" style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '2px', color: '#9a8aaa', marginBottom: 12 }}>Quick Recap</p>
-                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.75, color: '#1a142b' }}>{chapterRecap}</p>
+              <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Quick Recap</p>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{chapterRecap}</p>
               </div>
             )}
-          </motion.div>
+          </section>
         )}
 
-        <UploadedResourcesPanel resources={[...learningMaterials, ...assessmentItems]} />
-      </motion.div>
+        {/* Need help footer */}
+        <section className={`mt-6 flex flex-col items-start gap-4 ${GLASS_CARD} p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6`}>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><MessageCircle size={20} /></div>
+            <div>
+              <span className="block text-sm font-bold text-[#0f172a]">Need help with this topic?</span>
+              <span className="text-sm text-[#64748b]">Ask your teacher directly in the Class Wall.</span>
+            </div>
+          </div>
+          <button type="button" onClick={() => navigate('/student/assignments-academic-alcove')} className={`w-full shrink-0 rounded-xl ${GLASS_INNER} px-4 py-2 text-sm font-bold text-slate-700 ${GLASS_HOVER} sm:w-auto`}>
+            Open Class Wall
+          </button>
+        </section>
+      </div>
 
       {/* ── Modals ── */}
       {worksheetModal && (
@@ -1819,23 +1585,24 @@ const AILearningCoursesReference = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(26,20,43,0.55)', padding: 16 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4"
           >
             <motion.div
               initial={{ scale: 0.93, y: 18 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.93, y: 18 }}
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              style={{ width: '100%', maxWidth: 680, maxHeight: '85vh', overflow: 'hidden', borderRadius: 28, background: 'white', boxShadow: '0 40px 80px rgba(26,20,43,0.18)' }}
+              className="w-full max-w-2xl overflow-hidden rounded-3xl border border-violet-500/35 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.2)] backdrop-blur-[20px] backdrop-saturate-[1.8]"
+              style={{ maxHeight: '85vh' }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '18px 22px', borderBottom: '1px solid rgba(120,100,200,0.08)', background: 'rgba(160,140,200,0.04)' }}>
-                <h3 className="tr-playfair" style={{ fontSize: 17, fontWeight: 600, color: '#1a142b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeMaterial.title}</h3>
-                <button type="button" onClick={() => setActiveMaterial(null)} style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#7a6a8f', padding: 6, display: 'flex', borderRadius: 8 }}>
+              <div className="flex items-center justify-between gap-4 border-b border-violet-500/15 bg-white/40 px-5 py-4">
+                <h3 className="truncate text-base font-bold text-[#0f172a]">{activeMaterial.title}</h3>
+                <button type="button" onClick={() => setActiveMaterial(null)} className="shrink-0 rounded-lg p-1.5 text-[#8e9aaf] hover:bg-white/60 hover:text-slate-700">
                   <X size={18} />
                 </button>
               </div>
-              <div className="tr-scroll" style={{ maxHeight: '65vh', overflowY: 'auto', padding: 22 }}>
-                <p className="tr-inter" style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.8, color: '#1a142b' }}>{stripHtml(activeMaterial.content)}</p>
+              <div className="overflow-y-auto p-5" style={{ maxHeight: '65vh' }}>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{stripHtml(activeMaterial.content)}</p>
               </div>
             </motion.div>
           </motion.div>
@@ -1846,9 +1613,9 @@ const AILearningCoursesReference = () => {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          style={{ position: 'fixed', bottom: 20, right: 20, maxWidth: 380, borderRadius: 16, background: 'rgba(255,245,245,0.95)', backdropFilter: 'blur(12px)', border: '1px solid rgba(200,100,100,0.15)', padding: '12px 18px', boxShadow: '0 8px 32px rgba(200,100,100,0.1)' }}
+          className="fixed bottom-5 right-5 max-w-sm rounded-2xl border border-red-200 bg-red-50/95 px-4 py-3 shadow-[0_8px_32px_rgba(200,100,100,0.1)] backdrop-blur-[12px]"
         >
-          <p className="tr-inter" style={{ fontSize: 13, fontWeight: 600, color: '#c53030' }}>{error}</p>
+          <p className="text-sm font-semibold text-red-700">{error}</p>
         </motion.div>
       )}
     </div>

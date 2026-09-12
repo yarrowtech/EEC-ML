@@ -45,7 +45,7 @@ describe('AILearningCoursesReference loading', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText('✦ Topic Reader')).toBeInTheDocument();
+    expect(await screen.findByText('Back to Chapters')).toBeInTheDocument();
     expect(screen.queryByText('Loading published learning data…')).not.toBeInTheDocument();
     expect(fetchCachedJson).toHaveBeenCalledWith(
       expect.stringContaining('subject=english+%28second+language%29'),

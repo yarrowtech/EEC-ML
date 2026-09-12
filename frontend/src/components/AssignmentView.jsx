@@ -21,12 +21,15 @@ const TOUR_STEPS = [
 ];
 const TOUR_STORAGE_KEY = "journal_tour_completed";
 
+/* Solid-surface primitives shared across the non-journal views (matches the app's real sidebar/header chrome — white cards, soft shadow, violet accent, no blur). */
+const SURFACE_CARD = 'rounded-3xl border border-violet-100 bg-white shadow-[0_2px_16px_rgba(79,70,229,0.06)]';
+const SURFACE_INNER = 'rounded-xl border border-violet-100 bg-violet-50/50';
+
 const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
   const JOURNAL_ENDPOINT = `${API_BASE}/api/student/auth/journal`;
   const JOURNAL_CACHE_TTL_MS = 2 * 60 * 1000;
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all");
   const [assignmentType, setAssignmentType] = useState(defaultType);
 
   /* Journal state */
@@ -208,7 +211,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
 
   /* ═══════════════ RENDER ═══════════════ */
   return (
-    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-white px-4 md:px-6 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
+    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-[#f8f9ff] px-4 md:px-6 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
 
       {/* ═══════════════ JOURNAL — FOLIO (glass / purple) ═══════════════ */}
       {assignmentType === "journal" && (
@@ -566,47 +569,43 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
         </div>
       )}
 
-      {/* ═══════════════ NON-JOURNAL VIEW — REDESIGNED ═══════════════ */}
+      {/* ═══════════════ NON-JOURNAL VIEW ═══════════════ */}
       {assignmentType !== "journal" && (
-        <>
-          {/* ─── Floating Card with Centered Header & Tabs ─── */}
-          <div className="bg-white rounded-3xl border border-purple-200 shadow-lg p-6 md:p-8">
-            {/* Centered Header */}
-            <div className="text-center">
-              <h1 className="text-3xl md:text-4xl font-bold text-slate-800 tracking-tight">
+        <div className="relative mx-auto max-w-7xl">
+          {/* ─── Tab Bar (switches between School / Practice / Lab / FlashCard) ─── */}
+          <div className={`page-fade-in ${SURFACE_CARD} flex flex-wrap items-center justify-between gap-4 p-4 sm:px-6`}>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-[#0b1c30] sm:text-2xl">
                 Assignments
               </h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-0.5 text-xs text-[#464555] sm:text-sm">
                 Manage your assignments and submissions
               </p>
             </div>
 
-            {/* Tab Bar */}
-            <div className="flex flex-wrap justify-center gap-3 mt-6 pt-6 border-t border-slate-100">
+            <div className={`flex items-center gap-1 rounded-xl ${SURFACE_INNER} p-1`}>
               {typeTabs.map((t) => (
                 <button
                   key={t.key}
                   onClick={() => setAssignmentType(t.key)}
-                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all border-2 ${
+                  className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ease-out sm:px-4 ${
                     assignmentType === t.key
-                      ? 'border-purple-600 bg-purple-50 text-purple-700'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-purple-300 hover:text-purple-600'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'text-[#464555] hover:bg-white hover:text-violet-700'
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <t.icon className="h-4 w-4" />
-                    {t.label}
-                  </span>
+                  <t.icon className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* ─── Assignment Content ─── */}
-          <div className="mt-6">
-            <Assignment assignmentType={assignmentType} filter={filter} setFilter={setFilter} />
+          <div className="relative mt-6">
+            <Assignment assignmentType={assignmentType} />
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,23 +1,41 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
-  Calendar,
   Clock,
   CheckCircle,
-  AlertCircle,
+  CheckCircle2,
+  AlertTriangle,
   Book,
   BookOpen,
   FileText,
   Download,
   Search as SearchIcon,
-  X,
   ChevronRight,
-  User,
   Star,
   SendHorizonal,
   Paperclip,
   Award,
   Upload,
-  FlaskConical
+  FlaskConical,
+  GraduationCap,
+  Target,
+  Lightbulb,
+  EyeOff,
+  Inbox,
+  Loader2,
+  Layers,
+  Terminal,
+  Calculator,
+  Globe,
+  Paintbrush,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
+  ArrowRight,
+  ImagePlus,
+  Eye,
+  Trash2,
+  LifeBuoy,
+  CalendarClock
 } from "lucide-react";
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -28,27 +46,32 @@ import axios from 'axios';
 import { useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
-import WorksheetSubmitModal from './WorksheetSubmitModal';
-import { labModelUrl } from './assignmentLabModelUrl';
 
 const LAB_EXPERIMENTS = [
   // ... (your LAB_EXPERIMENTS array here - unchanged)
 ];
 
-const Assignment = ({ assignmentType, filter, setFilter }) => {
+/* Solid-surface primitives (white cards, soft shadow, violet accent — no blur, matches the app's real sidebar/header chrome). */
+const SURFACE_CARD = 'rounded-3xl border border-violet-100 bg-white shadow-[0_2px_16px_rgba(79,70,229,0.06)]';
+const SURFACE_INNER = 'rounded-xl border border-violet-100 bg-violet-50/50';
+const SURFACE_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(139,92,246,0.12)]';
+
+const Assignment = ({ assignmentType }) => {
   const location = useLocation();
   const [schoolSearch, setSchoolSearch] = useState("");
-  const [schoolSort, setSchoolSort] = useState("due_asc");
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [expandedChapter, setExpandedChapter] = useState(null);
+  const [detailBackLabel, setDetailBackLabel] = useState('');
   const [submissionText, setSubmissionText] = useState('');
   const [submissionFileUrl, setSubmissionFileUrl] = useState('');
   const [submissionFileName, setSubmissionFileName] = useState('');
+  const [submissionFileSize, setSubmissionFileSize] = useState(0);
   const [uploadingSubmissionFile, setUploadingSubmissionFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [worksheetModalAssignment, setWorksheetModalAssignment] = useState(null);
 
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
@@ -184,48 +207,6 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
     return { bucket: 'pending', label: 'Pending', rawStatus };
   };
 
-  const getAssignmentPresentation = (assignment) => {
-    const rawStatus = String(assignment?.submissionStatus || '').toLowerCase();
-    if (rawStatus === 'graded' || assignment?.status === 'completed') {
-      return {
-        badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-        cardAccentClass: 'border-l-emerald-500',
-        iconClass: 'text-emerald-600',
-        summaryBucket: 'completed',
-      };
-    }
-    if (rawStatus === 'late') {
-      return {
-        badgeClass: 'border-amber-200 bg-amber-50 text-amber-700',
-        cardAccentClass: 'border-l-amber-500',
-        iconClass: 'text-amber-600',
-        summaryBucket: 'submittedLate',
-      };
-    }
-    if (rawStatus === 'submitted') {
-      return {
-        badgeClass: 'border-sky-200 bg-sky-50 text-sky-700',
-        cardAccentClass: 'border-l-sky-500',
-        iconClass: 'text-sky-600',
-        summaryBucket: 'submitted',
-      };
-    }
-    if (assignment?.status === 'overdue') {
-      return {
-        badgeClass: 'border-red-200 bg-red-50 text-red-700',
-        cardAccentClass: 'border-l-red-500',
-        iconClass: 'text-red-600',
-        summaryBucket: 'overdue',
-      };
-    }
-    return {
-      badgeClass: 'border-slate-200 bg-slate-50 text-slate-700',
-      cardAccentClass: 'border-l-slate-400',
-      iconClass: 'text-slate-600',
-      summaryBucket: 'toSubmit',
-    };
-  };
-
   const getFileNameFromUrl = (url) => {
     if (!url) return '';
     try {
@@ -234,14 +215,6 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
     } catch {
       const normalized = String(url).split('?')[0];
       return decodeURIComponent(normalized.split('/').filter(Boolean).pop() || '');
-    }
-  };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'completed': return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case 'overdue': return <AlertCircle className="w-5 h-5 text-red-600" />;
-      default: return <Clock className="w-5 h-5 text-yellow-600" />;
     }
   };
 
@@ -259,6 +232,92 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
     const diffTime = due - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
+  };
+
+  const getSubjectIcon = (name = '') => {
+    const n = name.toLowerCase();
+    if (/(computer|coding|ict|programming)/.test(n)) return Terminal;
+    if (/(math|numerac)/.test(n)) return Calculator;
+    if (/(science|biology|chemistry|physics|environment)/.test(n)) return FlaskConical;
+    if (/(english|language|literature|reading|writing)/.test(n)) return BookOpen;
+    if (/(social|history|geograph|civic)/.test(n)) return Globe;
+    if (/(art|draw|craft)/.test(n)) return Paintbrush;
+    return GraduationCap;
+  };
+
+  // ─── School hub: subject → chapter grouping ────────────────────
+  const isTaskDone = (a) => a.status === 'completed' || ['submitted', 'late'].includes(a.submissionStatus);
+
+  const searchedAssignments = useMemo(() => {
+    const needle = schoolSearch.trim().toLowerCase();
+    if (!needle) return assignments;
+    return assignments.filter((a) =>
+      String(a.title || '').toLowerCase().includes(needle) ||
+      String(a.course || '').toLowerCase().includes(needle) ||
+      String(a.chapterTitle || '').toLowerCase().includes(needle) ||
+      String(a.description || '').toLowerCase().includes(needle)
+    );
+  }, [assignments, schoolSearch]);
+
+  const subjects = useMemo(() => {
+    const map = new Map();
+    searchedAssignments.forEach((a) => {
+      const key = a.course || 'General';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(a);
+    });
+    return Array.from(map.entries()).map(([name, items]) => {
+      const pending = items.filter((i) => !isTaskDone(i));
+      const nextDue = pending
+        .filter((i) => i.dueDate)
+        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+      return { name, items, pendingCount: pending.length, nextDue, icon: getSubjectIcon(name) };
+    });
+  }, [searchedAssignments]);
+
+  useEffect(() => {
+    if (!subjects.length) { setSelectedSubject(null); return; }
+    if (selectedSubject && subjects.some((s) => s.name === selectedSubject)) return;
+    const withDueTask = [...subjects].sort((a, b) => b.pendingCount - a.pendingCount)[0];
+    setSelectedSubject(withDueTask.name);
+    // Only re-pick a default subject when the available subject list actually changes.
+  }, [subjects]);
+
+  const activeSubject = subjects.find((s) => s.name === selectedSubject) || subjects[0] || null;
+
+  const chapters = useMemo(() => {
+    if (!activeSubject) return [];
+    const map = new Map();
+    activeSubject.items.forEach((a) => {
+      const key = a.chapterTitle || a.topic || 'General';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(a);
+    });
+    return Array.from(map.entries()).map(([title, items]) => {
+      const done = items.filter(isTaskDone).length;
+      const heroTasks = items
+        .filter((i) => !isTaskDone(i))
+        .sort((a, b) => new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+      const doneTasks = items.filter(isTaskDone);
+      return { title, items, total: items.length, done, heroTasks, doneTasks };
+    });
+  }, [activeSubject]);
+
+  useEffect(() => {
+    if (!chapters.length) { setExpandedChapter(null); return; }
+    if (expandedChapter && chapters.some((c) => c.title === expandedChapter)) return;
+    const firstIncomplete = chapters.find((c) => c.done < c.total) || chapters[0];
+    setExpandedChapter(firstIncomplete.title);
+  }, [chapters]);
+
+  const openAssignmentDetail = (assignment, chapterTitle) => {
+    setSelectedAssignment(assignment);
+    setSubmissionText(assignment.submissionText || '');
+    setSubmissionFileUrl(assignment.submissionAttachmentUrl || '');
+    setSubmissionFileName('');
+    setSubmissionFileSize(0);
+    setSubmitSuccess(false);
+    setDetailBackLabel(chapterTitle);
   };
 
   // ─── Submission handlers ──────────────────────────────────────
@@ -349,11 +408,13 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
       }
       setSubmissionFileUrl(uploaded.secure_url);
       setSubmissionFileName(uploaded.originalName || file.name);
+      setSubmissionFileSize(file.size);
     } catch (error) {
       console.error('Assignment submission upload failed:', error);
       toast.error('Upload failed: Failed to upload PDF. Please try again.');
       setSubmissionFileUrl('');
       setSubmissionFileName('');
+      setSubmissionFileSize(0);
     } finally {
       input.value = '';
       setUploadingSubmissionFile(false);
@@ -363,58 +424,15 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
   const removeSubmissionFile = () => {
     setSubmissionFileUrl('');
     setSubmissionFileName('');
+    setSubmissionFileSize(0);
   };
 
-  // ─── Filtered assignments ──────────────────────────────────────
-  const filteredAssignments = assignments
-    .filter((assignment) => {
-      const title = String(assignment.title || '');
-      const course = String(assignment.course || '');
-      const description = String(assignment.description || '');
-      const needle = schoolSearch.toLowerCase();
-      const matchesSearch = title.toLowerCase().includes(needle) ||
-        course.toLowerCase().includes(needle) ||
-        description.toLowerCase().includes(needle);
-      
-      if (!matchesSearch) return false;
-      
-      if (filter === 'all') return true;
-      if (filter === 'pending') return assignment.status === 'pending' && !['submitted', 'late'].includes(assignment.submissionStatus);
-      if (filter === 'submitted') return ['submitted', 'late'].includes(assignment.submissionStatus);
-      if (filter === 'completed') return assignment.status === 'completed';
-      if (filter === 'overdue') return assignment.status === 'overdue';
-      
-      return true;
-    })
-    .sort((a, b) => {
-      const weight = { high: 3, medium: 2, low: 1 };
-      const order = { overdue: 3, pending: 2, completed: 1 };
-      
-      if (schoolSort === 'due_asc') {
-        return new Date(a.dueDate) - new Date(b.dueDate);
-      } else if (schoolSort === 'due_desc') {
-        return new Date(b.dueDate) - new Date(a.dueDate);
-      } else if (schoolSort === 'priority') {
-        return (weight[b.priority] || 0) - (weight[a.priority] || 0);
-      } else if (schoolSort === 'status') {
-        return (order[b.status] || 0) - (order[a.status] || 0);
-      }
-      return 0;
-    });
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '';
+    const mb = bytes / (1024 * 1024);
+    return mb >= 0.1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  };
 
-  const assignmentSummary = assignments.reduce((acc, assignment) => {
-    const presentation = getAssignmentPresentation(assignment);
-    acc.total += 1;
-    acc[presentation.summaryBucket] += 1;
-    return acc;
-  }, {
-    total: 0,
-    toSubmit: 0,
-    submitted: 0,
-    submittedLate: 0,
-    completed: 0,
-    overdue: 0,
-  });
 
   // ─── Lab effects ──────────────────────────────────────────────
   useEffect(() => {
@@ -725,13 +743,13 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           const result = practiceResults?.[String(q.id)] || null;
           return (
           <div key={q.id || idx} className="mb-5">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3 sm:px-6">
+            <div className={`overflow-hidden ${SURFACE_CARD} ${SURFACE_HOVER}`}>
+              <div className="flex items-center justify-between border-b border-violet-500/15 px-4 py-3 sm:px-6">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-violet-700 text-xs font-bold">
                     {idx + 1}
                   </div>
-                  <p className="text-sm font-semibold text-slate-800">Question {idx + 1}</p>
+                  <p className="text-sm font-semibold text-[#334155]">Question {idx + 1}</p>
                 </div>
                 {result && (
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${result.isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
@@ -740,7 +758,7 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                 )}
               </div>
               <div className="p-4 sm:p-6">
-                <div className="text-slate-900 font-medium">{q.question}</div>
+                <div className="text-[#0f172a] font-medium">{q.question}</div>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {(q.options || []).map((option, oidx) => {
                     const selected = answer === option;
@@ -751,14 +769,14 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                         ? 'border-emerald-400 bg-emerald-50'
                         : selected
                         ? 'border-rose-300 bg-rose-50'
-                        : 'border-slate-200'
+                        : 'border-violet-500/20 bg-white/40'
                       : selected
-                      ? 'border-indigo-400 bg-indigo-50'
-                      : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50';
+                      ? 'border-violet-400 bg-violet-50'
+                      : 'border-violet-500/20 bg-white/40 hover:border-violet-300 hover:bg-violet-50/50';
                     return (
                       <label
                         key={oidx}
-                        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${borderColor}`}
+                        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition-all duration-200 ${borderColor}`}
                       >
                         <input
                           type="radio"
@@ -766,9 +784,9 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                           value={option}
                           checked={selected}
                           onChange={(e) => handlePracticeAnswer(q.id, e.target.value)}
-                          className="text-indigo-600 focus:ring-indigo-500"
+                          className="text-violet-600 focus:ring-violet-500"
                         />
-                        <span className="text-slate-700">{option}</span>
+                        <span className="text-[#334155]">{option}</span>
                       </label>
                     );
                   })}
@@ -784,7 +802,7 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                       </div>
                     )}
                     {result.explanation && (
-                      <div className="mt-2 text-slate-700">
+                      <div className="mt-2 text-[#334155]">
                         <span className="font-semibold">Explanation:</span> {result.explanation}
                       </div>
                     )}
@@ -807,32 +825,32 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           const result = practiceResults?.[String(q.id)] || null;
           return (
           <div key={q.id || idx} className="mb-5">
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+            <div className={`overflow-hidden ${SURFACE_CARD} ${SURFACE_HOVER}`}>
               <div className="p-4 sm:p-6">
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-semibold">{idx + 1}</div>
                   <div className="flex-1">
-                    <div className="text-gray-900 font-medium">{q.question}</div>
+                    <div className="text-[#0f172a] font-medium">{q.question}</div>
                     <div className="mt-3">
                       <input
                         type="text"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full border border-violet-500/25 bg-white/60 rounded-lg px-3 py-2 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/60 outline-none text-[#0f172a] placeholder:text-[#8e9aaf]"
                         placeholder="Type your answer here..."
                         value={answer}
                         onChange={(e) => handlePracticeAnswer(q.id, e.target.value)}
                       />
                     </div>
                     {showAnswers && result && (
-                      <div className={`mt-3 rounded-lg border p-3 text-sm ${result.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                        <div className={result.isCorrect ? 'text-green-800' : 'text-red-800'}>
+                      <div className={`mt-3 rounded-lg border p-3 text-sm ${result.isCorrect ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                        <div className={result.isCorrect ? 'text-emerald-800' : 'text-red-800'}>
                           <span className="font-semibold">Your answer:</span> {answer || '-'} {result.isCorrect ? '✓' : '✗'}
                         </div>
                         {!result.isCorrect && (
-                          <div className="text-green-800 mt-1">
+                          <div className="text-emerald-800 mt-1">
                             <span className="font-semibold">Correct answer:</span> {result.correctAnswer}
                           </div>
                         )}
-                        {result.explanation && <div className="text-gray-700 mt-1"><span className="font-semibold">Explanation:</span> {result.explanation}</div>}
+                        {result.explanation && <div className="text-[#334155] mt-1"><span className="font-semibold">Explanation:</span> {result.explanation}</div>}
                       </div>
                     )}
                   </div>
@@ -847,471 +865,481 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
   };
 
   // ─────────────────── RENDER ────────────────────────────────────────────
+  const correctCount = practiceResults ? Object.values(practiceResults).filter((r) => r?.isCorrect).length : 0;
+  const scorePercent = practiceResults && practiceQuestions.length ? Math.round((correctCount / practiceQuestions.length) * 100) : 0;
 
   return (
     <div className="w-full">
-      {assignmentType === 'school' && (
-        <>
-          {/* ─── SCHOOL TAB CONTENT ─── */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-            {/* Controls */}
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap gap-3">
-                <div className="relative flex-1 min-w-[200px]">
-                  <SearchIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    value={schoolSearch}
-                    onChange={(e) => setSchoolSearch(e.target.value)}
-                    placeholder="Search assignments..."
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 outline-none text-sm transition-all"
-                  />
-                </div>
-                <select
-                  value={schoolSort}
-                  onChange={(e) => setSchoolSort(e.target.value)}
-                  className="shrink-0 px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 outline-none text-sm"
-                >
-                  <option value="due_asc">Due ↑</option>
-                  <option value="due_desc">Due ↓</option>
-                  <option value="priority">Priority</option>
-                  <option value="status">Status</option>
-                </select>
+      {assignmentType === 'school' && !selectedAssignment && (
+        <div className="flex flex-col gap-6">
+          {/* ─── Subject Selector ─── */}
+          <div className={`page-fade-in ${SURFACE_CARD} p-5 sm:p-6`}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#464555]">Choose a Subject</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
               </div>
-              {/* Filter chips */}
-              <div className="flex overflow-x-auto gap-2 pb-0.5 scrollbar-hide">
-                {[
-                  { key: 'all', label: 'All', activeClass: 'bg-indigo-600 border-indigo-600' },
-                  { key: 'pending', label: 'To Submit', activeClass: 'bg-amber-500 border-amber-500' },
-                  { key: 'submitted', label: 'Submitted', activeClass: 'bg-sky-500 border-sky-500' },
-                  { key: 'completed', label: 'Completed', activeClass: 'bg-emerald-500 border-emerald-500' },
-                  { key: 'overdue', label: 'Overdue', activeClass: 'bg-rose-500 border-rose-500' },
-                ].map(({ key, label, activeClass }) => (
-                  <button
-                    key={key}
-                    onClick={() => setFilter(key)}
-                    className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-bold border transition-all ${
-                      filter === key
-                        ? `${activeClass} text-white shadow-md`
-                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="relative w-full max-w-[220px]">
+                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8e9aaf]" />
+                <input
+                  value={schoolSearch}
+                  onChange={(e) => setSchoolSearch(e.target.value)}
+                  placeholder="Search assignments..."
+                  className={`w-full pl-8 pr-3 py-1.5 ${SURFACE_INNER} text-xs text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300`}
+                />
               </div>
             </div>
 
-            {/* Stats Tiles */}
-            <div className="mt-6 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-              {[
-                { label: 'Total', value: assignmentSummary.total, icon: FileText, accent: 'text-indigo-600' },
-                { label: 'To Submit', value: assignmentSummary.toSubmit, icon: Clock, accent: 'text-amber-600' },
-                { label: 'Submitted', value: assignmentSummary.submitted + assignmentSummary.submittedLate, icon: Upload, accent: 'text-sky-600', sub: assignmentSummary.submittedLate > 0 ? `${assignmentSummary.submittedLate} late` : '' },
-                { label: 'Completed', value: assignmentSummary.completed, icon: CheckCircle, accent: 'text-emerald-600' },
-                { label: 'Overdue', value: assignmentSummary.overdue, icon: AlertCircle, accent: 'text-rose-600' },
-              ].map((stat) => {
-                const StatIcon = stat.icon;
-                return (
-                  <div
-                    key={stat.label}
-                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
-                  >
-                    <div className="flex items-start justify-between">
-                      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">{stat.label}</p>
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 border border-slate-100">
-                        <StatIcon className="h-4 w-4 text-slate-500" />
-                      </div>
-                    </div>
-                    <p className={`mt-1.5 text-xl font-bold ${stat.accent}`}>{stat.value}</p>
-                    {stat.sub && <p className="mt-1 text-xs text-slate-400">{stat.sub}</p>}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Assignments Grid */}
             {loading ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3">
-                <Clock className="w-10 h-10 text-indigo-400 animate-spin" />
-                <p className="text-slate-400 text-sm">Loading assignments...</p>
+              <div className="flex flex-col items-center justify-center gap-3 py-14">
+                <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+                <p className="text-sm text-[#8e9aaf]">Loading assignments...</p>
+              </div>
+            ) : subjects.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-violet-200 py-14 text-center">
+                <Inbox className="h-9 w-9 text-violet-300" />
+                <p className="text-sm font-bold text-[#0b1c30]">No assignments yet</p>
+                <p className="text-xs text-[#8e9aaf]">Your teachers haven&rsquo;t posted anything here yet.</p>
               </div>
             ) : (
-              <>
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {filteredAssignments.map((assignment) => {
-                    const days = getDaysRemaining(assignment.dueDate);
-                    const daysText = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`;
-                    const daysColor = days < 0 ? 'text-red-600 bg-red-50 border-red-200' : days <= 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-green-700 bg-green-50 border-green-200';
-                    const requiresPdf = assignment.submissionFormat === 'pdf';
-                    const presentation = getAssignmentPresentation(assignment);
-                    const isGraded = assignment.submissionStatus === 'graded';
-                    const hasScore = isGraded && assignment.score !== undefined && assignment.score !== null;
-                    return (
-                      <div
-                        key={assignment.id}
-                        onClick={() => setSelectedAssignment(assignment)}
-                        className={`group bg-white rounded-2xl border border-slate-200 border-l-4 ${presentation.cardAccentClass} shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden`}
-                      >
-                        <div className="p-4">
-                          <div className="flex items-start justify-between gap-2 mb-2.5">
-                            <h3 className="text-sm font-bold text-slate-900 line-clamp-2 leading-snug flex-1">{assignment.title}</h3>
-                            <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold border ${presentation.badgeClass}`}>
-                              {assignment.statusLabel || assignment.status}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mb-2.5">
-                            {assignment.course && (
-                              <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                                <Book className="w-3 h-3" />{assignment.course}
-                              </span>
-                            )}
-                            {assignment.type && assignment.type !== 'Assignment' && (
-                              <span className="inline-flex items-center gap-1 text-xs text-violet-700 font-semibold bg-violet-50 px-2 py-0.5 rounded-full border border-violet-100">
-                                {assignment.type}
-                              </span>
-                            )}
-                            {assignment.teacherName && (
-                              <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-                                <User className="w-3 h-3" />{assignment.teacherName}
-                              </span>
-                            )}
-                          </div>
-                          {assignment.description && (
-                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">{assignment.description}</p>
-                          )}
-                          <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-50">
-                            <div className="flex items-center gap-2">
-                              {isGraded ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold text-emerald-700 bg-emerald-50 border-emerald-200">
-                                  <Award className="w-3 h-3" />Graded
-                                </span>
-                              ) : assignment.dueDate && (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold ${daysColor}`}>
-                                  <Calendar className="w-3 h-3" />{daysText}
-                                </span>
-                              )}
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${requiresPdf ? 'border-purple-200 bg-purple-50 text-purple-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                                {requiresPdf ? <Paperclip className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
-                                {requiresPdf ? 'PDF' : 'Text'}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              {hasScore ? (
-                                <span className="text-[11px] text-emerald-700 font-bold">{assignment.score}/{assignment.maxMarks}</span>
-                              ) : assignment.maxMarks ? (
-                                <span className="text-[11px] text-slate-400 font-semibold">{assignment.maxMarks}mk</span>
-                              ) : null}
-                              {assignment.attachments?.length > 0 && (
-                                <span className="text-[11px] text-indigo-500 flex items-center gap-0.5">
-                                  <Paperclip className="w-3 h-3" />{assignment.attachments.length}
-                                </span>
-                              )}
-                              <ChevronRight className="w-4 h-4 text-slate-300 transition-transform group-hover:translate-x-0.5" />
-                            </div>
-                          </div>
-                          {requiresPdf && !['submitted', 'late', 'graded'].includes(assignment.submissionStatus) && (
-                            <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => setWorksheetModalAssignment(assignment)}
-                                className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 py-2 text-xs font-bold text-purple-700 hover:bg-purple-100 transition-colors"
-                              >
-                                <Upload className="w-3.5 h-3.5" /> Upload Worksheet
-                              </button>
-                            </div>
-                          )}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                {subjects.map((s, i) => {
+                  const Icon = s.icon;
+                  const active = s.name === selectedSubject;
+                  return (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => setSelectedSubject(s.name)}
+                      style={{ animationDelay: `${i * 40}ms` }}
+                      className={`page-fade-in group relative flex flex-col justify-between rounded-xl p-4 text-left transition-all duration-200 ease-out ${
+                        active
+                          ? 'scale-[1.01] bg-violet-600 text-white shadow-md shadow-violet-600/25'
+                          : `${SURFACE_INNER} text-[#0b1c30] hover:-translate-y-0.5 hover:shadow-sm`
+                      }`}
+                    >
+                      {s.pendingCount > 0 && (
+                        <span className={`absolute -top-2 -right-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm ${
+                          active ? 'bg-sky-300 text-[#001e2f]' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          <Clock className="h-2.5 w-2.5" /> {s.pendingCount} Due
+                        </span>
+                      )}
+                      <div className="mb-3 flex items-center gap-2.5">
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-white/15 text-white' : 'bg-violet-100 text-violet-600'}`}>
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className={`block truncate text-sm font-bold ${active ? 'text-white' : 'text-[#0b1c30]'}`}>{s.name}</span>
+                          <span className={`block text-[11px] font-medium ${active ? 'text-white/70' : 'text-[#8e9aaf]'}`}>{s.items.length} task{s.items.length === 1 ? '' : 's'}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-
-                {filteredAssignments.length === 0 && (
-                  <div className="flex flex-col items-center py-16 gap-3 text-center">
-                    <div className="p-4 bg-indigo-50 rounded-2xl">
-                      <FileText className="w-10 h-10 text-indigo-300" />
-                    </div>
-                    <p className="font-bold text-slate-600">No assignments found</p>
-                    <p className="text-sm text-slate-400">
-                      {filter === 'submitted'
-                        ? 'No submitted assignments match this search right now.'
-                        : filter === 'completed'
-                          ? 'No completed assignments match this search right now.'
-                          : filter === 'overdue'
-                            ? 'No overdue assignments match this search right now.'
-                            : filter === 'pending'
-                              ? 'No unsubmitted assignments match this search right now.'
-                              : 'Try changing the filter or search term.'}
-                    </p>
-                  </div>
-                )}
-              </>
+                      <div className={`flex items-center justify-between text-xs font-medium ${active ? 'text-white/80' : 'text-[#464555]'}`}>
+                        <span>{s.pendingCount === 0 ? 'Caught up' : `${s.pendingCount} to do`}</span>
+                        <ChevronRight className={`h-4 w-4 transition-transform group-hover:translate-x-0.5 ${active ? 'text-white' : 'text-[#8e9aaf]'}`} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
 
-          {/* ── Detail Modal ── */}
-          {selectedAssignment && (() => {
-            const a = selectedAssignment;
-            const presentation = getAssignmentPresentation(a);
-            const days = getDaysRemaining(a.dueDate);
-            const daysText = days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : `${days} days remaining`;
-            const daysColor = days < 0 ? 'text-red-600 bg-red-50 border-red-200' : days <= 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-green-700 bg-green-50 border-green-200';
-            const isGraded = a.submissionStatus === 'graded';
-            const isSubmitted = ['submitted', 'late', 'graded'].includes(a.submissionStatus);
-            const isLateSubmission = a.submissionStatus === 'late';
-            const isOverdue = a.status === 'overdue';
-            const requiresPdfUpload = a.submissionFormat === 'pdf';
-            const uploadInputId = `assignment-upload-${a.id}`;
-            const canSubmitAssignment = requiresPdfUpload ? Boolean(submissionFileUrl) : Boolean(submissionText.trim());
-
-            return (
-              <div
-                className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4"
-                style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
-                onClick={() => setSelectedAssignment(null)}
-              >
-                <div
-                  className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-3xl shadow-2xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto overscroll-contain"
-                  style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                    <div className="w-10 h-1 rounded-full bg-gray-200" />
+          {/* ─── Chapter Roadmap + Accordion ─── */}
+          {activeSubject && chapters.length > 0 && (
+            <>
+              <div className={`page-fade-in flex flex-col gap-3 ${SURFACE_CARD} p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5`}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                    <activeSubject.icon className="h-5 w-5" />
                   </div>
-                  <div className={`px-4 sm:px-6 pt-3 sm:pt-6 pb-4 border-b border-gray-100 ${
-                    presentation.summaryBucket === 'completed'
-                      ? 'bg-emerald-50'
-                      : presentation.summaryBucket === 'submittedLate'
-                        ? 'bg-amber-50'
-                        : presentation.summaryBucket === 'submitted'
-                          ? 'bg-sky-50'
-                          : presentation.summaryBucket === 'overdue'
-                            ? 'bg-red-50'
-                            : 'bg-slate-50'
-                  }`}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className={`shrink-0 p-2 rounded-lg ${
-                          presentation.summaryBucket === 'completed'
-                            ? 'bg-emerald-100'
-                            : presentation.summaryBucket === 'submittedLate'
-                              ? 'bg-amber-100'
-                              : presentation.summaryBucket === 'submitted'
-                                ? 'bg-sky-100'
-                                : presentation.summaryBucket === 'overdue'
-                                  ? 'bg-red-100'
-                                  : 'bg-slate-100'
-                        }`}>
-                          {getStatusIcon(a.status)}
-                        </div>
-                        <div className="min-w-0">
-                          <h2 className="text-xl font-bold text-gray-900 leading-tight">{a.title}</h2>
-                          {a.course && (
-                            <p className="mt-1 text-sm text-gray-500 flex items-center gap-1">
-                              <Book className="w-3.5 h-3.5" />{a.course}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setSelectedAssignment(null)}
-                        className="shrink-0 p-1.5 rounded-lg hover:bg-white/60 transition-colors text-gray-500"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${presentation.badgeClass}`}>
-                        {getStatusIcon(a.status)}
-                        <span className="ml-0.5">{a.statusLabel || a.status}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-bold text-[#0b1c30]">{activeSubject.name}</span>
+                      <span className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">
+                        {chapters.length} chapter{chapters.length === 1 ? '' : 's'}
                       </span>
-                      {isGraded && a.score !== undefined && a.score !== null ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <Award className="w-3 h-3" />Scored {a.score}/{a.maxMarks}
-                        </span>
-                      ) : (
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${daysColor}`}>
-                          <Clock className="w-3 h-3 mr-1" />{daysText}
-                        </span>
-                      )}
-                      {!isGraded && a.maxMarks && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                          <Star className="w-3 h-3" />{a.maxMarks} marks
-                        </span>
-                      )}
-                      {a.type && a.type !== 'Assignment' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {a.type}
-                        </span>
-                      )}
-                      {a.difficulty && (
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                          a.difficulty === 'Hard' ? 'bg-red-50 text-red-700 border-red-200' :
-                          a.difficulty === 'Easy' ? 'bg-green-50 text-green-700 border-green-200' :
-                          'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
-                          {a.difficulty}
-                        </span>
-                      )}
                     </div>
+                    <span className="block truncate text-xs text-[#8e9aaf]">Chapter-wise breakdown of your assigned work</span>
                   </div>
+                </div>
+                <div className={`flex shrink-0 items-center gap-1 overflow-x-auto rounded-xl ${SURFACE_INNER} p-1`}>
+                  {chapters.map((c) => (
+                    <button
+                      key={c.title}
+                      type="button"
+                      onClick={() => setExpandedChapter(c.title)}
+                      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
+                        expandedChapter === c.title ? 'bg-violet-600 text-white shadow-sm' : 'text-[#464555] hover:bg-white'
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${c.done === c.total ? 'bg-emerald-400' : expandedChapter === c.title ? 'bg-sky-300' : 'bg-[#c7c4d8]'}`} />
+                      {c.title}
+                      <span className={`rounded px-1 text-[10px] ${expandedChapter === c.title ? 'bg-white/20' : 'bg-white text-[#464555]'}`}>{c.done}/{c.total}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                  <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-5">
-                    {/* Info grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {a.teacherName && (
-                        <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
-                          <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                            <User className="w-4 h-4 text-indigo-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Teacher</p>
-                            <p className="text-sm font-semibold text-gray-800 truncate">{a.teacherName}</p>
-                          </div>
-                        </div>
-                      )}
-                      {a.dueDate && (
-                        <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
-                          <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-                            <Calendar className="w-4 h-4 text-orange-600" />
+              <div className="flex flex-col gap-4">
+                {chapters.map((chapter, ci) => {
+                  const isOpen = expandedChapter === chapter.title;
+                  return (
+                    <section key={chapter.title} className={`overflow-hidden ${SURFACE_CARD} ${isOpen ? 'border-violet-300' : ''}`}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedChapter(isOpen ? null : chapter.title)}
+                        className="flex w-full flex-col gap-3 p-4 text-left sm:flex-row sm:items-center sm:justify-between sm:p-5"
+                      >
+                        <div className="flex items-start gap-3 sm:items-center">
+                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${isOpen ? 'bg-violet-600 text-white' : 'bg-violet-50 text-violet-600'}`}>
+                            {String(ci + 1).padStart(2, '0')}
                           </div>
                           <div>
-                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Due Date</p>
-                            <p className="text-sm font-semibold text-gray-800">{formatDate(a.dueDate)}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isOpen && (
+                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700">Current Chapter</span>
+                              )}
+                              {chapter.done === chapter.total && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />Complete
+                                </span>
+                              )}
+                            </div>
+                            <h3 className="mt-0.5 text-sm font-bold text-[#0b1c30] sm:text-base">{chapter.title}</h3>
                           </div>
                         </div>
+                        <div className="flex items-center gap-3 self-end sm:self-center">
+                          <div className="flex w-28 flex-col gap-1 sm:w-36">
+                            <div className="flex items-center justify-between text-[10px] font-semibold text-[#8e9aaf]">
+                              <span>Progress</span><span className="text-violet-600">{chapter.done}/{chapter.total}</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-violet-50">
+                              <div className="h-full rounded-full bg-violet-500" style={{ width: `${chapter.total ? (chapter.done / chapter.total) * 100 : 0}%` }} />
+                            </div>
+                          </div>
+                          {isOpen ? <ChevronUp className="h-5 w-5 text-[#8e9aaf]" /> : <ChevronDown className="h-5 w-5 text-[#8e9aaf]" />}
+                        </div>
+                      </button>
+
+                      {isOpen && (
+                        <div className="flex flex-col gap-4 border-t border-violet-50 p-4 sm:p-5">
+                          {chapter.heroTasks.map((task) => {
+                            const days = getDaysRemaining(task.dueDate);
+                            const isOverdueTask = task.status === 'overdue';
+                            const daysText = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`;
+                            const requiresPdf = task.submissionFormat === 'pdf';
+                            return (
+                              <div
+                                key={task.id}
+                                className={`relative overflow-hidden rounded-xl border p-4 sm:p-5 ${isOverdueTask ? 'border-red-200 bg-red-50/40' : 'border-violet-200 bg-violet-50/30'}`}
+                              >
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+                                  {requiresPdf && (
+                                    <div className="flex w-full shrink-0 flex-col justify-between rounded-xl border border-violet-100 bg-white p-4 lg:w-56">
+                                      <div className="mb-2 flex items-center justify-between">
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                                          <Paperclip className="h-2.5 w-2.5" />PDF / Photo
+                                        </span>
+                                        {task.maxMarks ? <span className="text-[11px] font-semibold text-[#8e9aaf]">{task.maxMarks} Marks</span> : null}
+                                      </div>
+                                      <div className="flex h-24 items-center justify-center rounded-lg bg-violet-50">
+                                        <ImagePlus className="h-8 w-8 text-violet-300" />
+                                      </div>
+                                      <div className="mt-2 text-[11px] font-medium text-[#8e9aaf]">Individual Work</div>
+                                    </div>
+                                  )}
+                                  <div className="flex flex-1 flex-col justify-between gap-3">
+                                    <div>
+                                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                                        {task.dueDate && (
+                                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${isOverdueTask ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            <CalendarClock className="h-3 w-3" />{isOverdueTask ? daysText : `Due: ${formatDate(task.dueDate)}`}
+                                          </span>
+                                        )}
+                                        {task.maxMarks ? (
+                                          <span className="rounded-full border border-violet-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555]">{task.maxMarks} marks</span>
+                                        ) : null}
+                                      </div>
+                                      <h4 className="text-base font-bold text-[#0b1c30] sm:text-lg">{task.title}</h4>
+                                      {task.description && (
+                                        <p className="mt-1 text-xs leading-relaxed text-[#464555] line-clamp-2 sm:text-sm">{task.description}</p>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => openAssignmentDetail(task, chapter.title)}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-violet-700 sm:w-auto"
+                                    >
+                                      Open Assignment &amp; Upload <ArrowRight className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {chapter.doneTasks.length > 0 && (
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              {chapter.doneTasks.map((task) => {
+                                const isGraded = task.submissionStatus === 'graded';
+                                const hasScore = isGraded && task.score !== undefined && task.score !== null;
+                                return (
+                                  <div key={task.id} className={`flex flex-col justify-between gap-2 rounded-xl border border-violet-100 bg-violet-50/40 p-4`}>
+                                    <div>
+                                      <div className="mb-2 flex items-center justify-between gap-2">
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-white px-2 py-0.5 text-[10px] font-bold text-[#464555]">
+                                          {task.type || 'Assignment'}
+                                        </span>
+                                        {hasScore && (
+                                          <span className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-white px-2 py-0.5 text-[10px] font-bold text-violet-600">
+                                            <Star className="h-2.5 w-2.5" />{task.score}/{task.maxMarks}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h5 className="text-sm font-bold text-[#0b1c30]">{task.title}</h5>
+                                      {task.submittedAt && (
+                                        <p className="mt-1 text-xs text-[#8e9aaf]">
+                                          Submitted {formatDate(task.submittedAt)}{task.submissionStatus === 'late' ? ' • Late' : ''}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center justify-between border-t border-violet-100 pt-2">
+                                      <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                        {isGraded ? 'Graded' : task.submissionStatus === 'late' ? 'Submitted Late' : 'Submitted'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => openAssignmentDetail(task, chapter.title)}
+                                        className="rounded-lg px-2.5 py-1 text-xs font-bold text-violet-600 transition-colors duration-200 hover:bg-white"
+                                      >
+                                        {isGraded ? 'Review' : 'View'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ─── Help Desk ─── */}
+          {activeSubject && (
+            <div className={`page-fade-in flex flex-col items-center gap-4 text-center ${SURFACE_CARD} p-5 sm:flex-row sm:justify-between sm:p-6 sm:text-left`}>
+              <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                  <LifeBuoy className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-[#0b1c30]">Need a hand with your homework or chapter deadlines?</h4>
+                  <p className="mt-0.5 text-xs text-[#8e9aaf]">Ask your teacher directly from Class Wall or Messages.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Assignment Detail (full page, not a modal) ─── */}
+      {assignmentType === 'school' && selectedAssignment && (() => {
+        const a = selectedAssignment;
+        const days = getDaysRemaining(a.dueDate);
+        const daysText = days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : `${days} days remaining`;
+        const daysColor = days < 0 ? 'text-red-700 bg-red-50 border-red-200' : days <= 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+        const isGraded = a.submissionStatus === 'graded';
+        const isSubmitted = ['submitted', 'late', 'graded'].includes(a.submissionStatus);
+        const isLateSubmission = a.submissionStatus === 'late';
+        const requiresPdfUpload = a.submissionFormat === 'pdf';
+        const uploadInputId = `assignment-upload-${a.id}`;
+        const canSubmitAssignment = requiresPdfUpload ? Boolean(submissionFileUrl) : Boolean(submissionText.trim());
+        let stepNumber = 1;
+        const instructionsStep = stepNumber++;
+        const attachmentsStep = a.attachments?.length > 0 ? stepNumber++ : null;
+        const submitStep = stepNumber;
+
+        return (
+          <div className="page-fade-in flex flex-col gap-6">
+            {/* Breadcrumb / Back */}
+            <button
+              type="button"
+              onClick={() => setSelectedAssignment(null)}
+              className="group flex items-center gap-2 self-start text-sm font-semibold text-[#464555] transition-colors duration-200 hover:text-violet-700"
+            >
+              <span className={`flex h-7 w-7 items-center justify-center rounded-lg border border-violet-100 bg-white transition-all duration-200 group-hover:border-violet-300 group-hover:bg-violet-50`}>
+                <ArrowLeft className="h-4 w-4" />
+              </span>
+              {detailBackLabel ? `Back to ${detailBackLabel}` : 'Back to Assignments'}
+            </button>
+
+            {/* Hero */}
+            <div className={`${SURFACE_CARD} p-5 sm:p-7`}>
+              <div className="flex flex-wrap items-center gap-2">
+                {a.course && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-violet-700">
+                    <Book className="h-3 w-3" />{a.course}
+                  </span>
+                )}
+                {a.type && a.type !== 'Assignment' && (
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-600">{a.type}</span>
+                )}
+              </div>
+              <h1 className="mt-3 text-xl font-extrabold tracking-tight text-[#0b1c30] sm:text-2xl">{a.title}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#464555]">
+                {a.dueDate && (
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <CalendarClock className="h-4 w-4 text-violet-500" />
+                    Due: <strong>{formatDate(a.dueDate)}</strong>
+                  </span>
+                )}
+                {isGraded && a.score !== undefined && a.score !== null ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                    <Award className="h-3 w-3" />Scored {a.score}/{a.maxMarks}
+                  </span>
+                ) : (
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold ${daysColor}`}>
+                    <Clock className="h-3 w-3" />{daysText}
+                  </span>
+                )}
+                {!isGraded && a.maxMarks ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700">
+                    <Star className="h-3 w-3" />{a.maxMarks} marks
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+              {/* LEFT: instructions + attachments + help */}
+              <div className="flex flex-col gap-5 lg:col-span-7">
+                <div className={`${SURFACE_CARD} flex flex-col gap-4 p-5 sm:p-6`}>
+                  <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{instructionsStep}</span>
+                    <div>
+                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">Assignment Instructions</h2>
+                      {(a.chapterTitle || a.topic) && (
+                        <p className="text-xs text-[#8e9aaf]">{[a.chapterTitle, a.topic].filter(Boolean).join(' • ')}</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
-                      <div className={`w-9 h-9 rounded-full ${requiresPdfUpload ? 'bg-purple-100' : 'bg-green-100'} flex items-center justify-center shrink-0`}>
-                        {requiresPdfUpload ? (
-                          <Upload className="w-4 h-4 text-purple-600" />
-                        ) : (
-                          <FileText className="w-4 h-4 text-green-600" />
-                        )}
+                  </div>
+                  {a.description ? (
+                    <p className={`whitespace-pre-line rounded-xl bg-violet-50/50 p-4 text-sm leading-relaxed text-[#334155]`}>{a.description}</p>
+                  ) : (
+                    <p className="text-sm text-[#8e9aaf]">No additional instructions were provided for this task.</p>
+                  )}
+                  {a.isEssay && a.rubric && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-amber-800">
+                        <Star className="h-4 w-4" /> Essay Grading Rubric
+                      </h3>
+                      <ul className="space-y-1">
+                        {a.rubric.split('\n').filter(Boolean).map((line, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
+                            <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-200 text-[10px] font-bold text-amber-800">{i + 1}</span>
+                            {line.trim()}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {attachmentsStep && (
+                  <div className={`${SURFACE_CARD} flex flex-col gap-3 p-5 sm:p-6`}>
+                    <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{attachmentsStep}</span>
+                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">Teacher&rsquo;s Worksheet</h2>
+                    </div>
+                    <div className="space-y-2">
+                      {a.attachments.map((att, i) => (
+                        <a
+                          key={i}
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3 transition-colors duration-200 hover:bg-violet-50"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
+                            <FileText className="h-4 w-4 text-violet-600" />
+                          </div>
+                          <span className="flex-1 truncate text-sm font-medium text-violet-700">{att.name || `Attachment ${i + 1}`}</span>
+                          <Download className="h-4 w-4 shrink-0 text-violet-500" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {a.teacherName && (
+                  <div className={`flex items-center justify-between gap-3 ${SURFACE_INNER} p-4`}>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600">
+                        <LifeBuoy className="h-4.5 w-4.5" />
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Submission Format</p>
-                        <p className="text-sm font-semibold text-gray-800">
-                          {requiresPdfUpload ? 'Upload PDF file' : 'Write directly in portal'}
-                        </p>
-                        <p className="text-xs text-gray-500">{requiresPdfUpload ? 'Attach a single PDF up to 20MB.' : 'Type your response and submit online.'}</p>
+                        <p className="text-xs font-bold text-[#0b1c30]">Need help or have a question?</p>
+                        <p className="text-[11px] text-[#8e9aaf]">Send a quick message to {a.teacherName}</p>
                       </div>
                     </div>
+                  </div>
+                )}
+              </div>
 
-                    {/* Topic / Chapter */}
-                    {(a.chapterTitle || a.topic) && (
-                      <div className="flex flex-wrap gap-2">
-                        {a.chapterTitle && (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                            <BookOpen className="w-3 h-3" /> Chapter: {a.chapterTitle}
-                          </span>
-                        )}
-                        {a.topic && (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
-                            Topic: {a.topic}
-                          </span>
-                        )}
-                      </div>
-                    )}
+              {/* RIGHT: submit panel (sticky) */}
+              <div className="flex flex-col gap-5 lg:sticky lg:top-4 lg:col-span-5">
+                <div className={`${SURFACE_CARD} border-2 border-violet-200 p-5 sm:p-6`}>
+                  <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{submitStep}</span>
+                    <div>
+                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">
+                        {isGraded ? 'Result' : isSubmitted ? 'Your Submission' : 'Submit Assignment'}
+                      </h2>
+                      <p className="text-xs text-[#8e9aaf]">{requiresPdfUpload ? 'Photo or PDF of your work' : 'Type your answer online'}</p>
+                    </div>
+                  </div>
 
-                    {/* Description */}
-                    {a.description && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Instructions</h3>
-                        <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line bg-gray-50 rounded-xl p-4">
-                          {a.description}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Essay rubric */}
-                    {a.isEssay && a.rubric && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                        <h3 className="text-sm font-bold text-amber-800 mb-2 flex items-center gap-1.5">
-                          <Star className="w-4 h-4" /> Essay Grading Rubric
-                        </h3>
-                        <p className="text-xs text-amber-700 mb-2">Your submission will be evaluated against these criteria:</p>
-                        <ul className="space-y-1">
-                          {a.rubric.split('\n').filter(Boolean).map((line, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
-                              <span className="mt-0.5 shrink-0 w-4 h-4 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
-                              {line.trim()}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Attachments */}
-                    {a.attachments?.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Attachments</h3>
-                        <div className="space-y-2">
-                          {a.attachments.map((att, i) => (
-                            <a
-                              key={i}
-                              href={att.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
-                            >
-                              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                                <FileText className="w-4 h-4 text-blue-600" />
-                              </div>
-                              <span className="text-sm text-blue-700 font-medium truncate flex-1">{att.name || `Attachment ${i + 1}`}</span>
-                              <Download className="w-4 h-4 text-blue-500 shrink-0" />
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Grade / Feedback */}
+                  <div className="mt-4 flex flex-col gap-4">
                     {isGraded && a.score !== undefined && a.score !== null && (
-                      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Award className="w-5 h-5 text-green-600" />
-                          <h3 className="text-sm font-semibold text-green-800">Result</h3>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                        <div className="mb-1 flex items-center gap-2">
+                          <Award className="h-5 w-5 text-emerald-600" />
+                          <h3 className="text-sm font-semibold text-emerald-800">Result</h3>
                         </div>
-                        <p className="text-2xl font-bold text-green-700">{a.score} <span className="text-base font-normal text-green-600">/ {a.maxMarks}</span></p>
+                        <p className="text-2xl font-bold text-emerald-700">{a.score} <span className="text-base font-normal text-emerald-600">/ {a.maxMarks}</span></p>
                         {a.feedback && (
-                          <p className="mt-2 text-sm text-green-700 bg-white/60 rounded-lg p-3">
+                          <p className="mt-2 rounded-lg bg-white/70 p-3 text-sm text-emerald-700">
                             <span className="font-medium">Feedback: </span>{a.feedback}
                           </p>
                         )}
                       </div>
                     )}
 
-                    {/* Submitted (no score yet) */}
                     {isSubmitted && !isGraded && (
-                      <div className={`rounded-xl border p-4 flex items-center gap-3 ${isLateSubmission ? 'border-amber-200 bg-amber-50' : 'border-blue-200 bg-blue-50'}`}>
-                        <CheckCircle className={`w-5 h-5 shrink-0 ${isLateSubmission ? 'text-amber-600' : 'text-blue-600'}`} />
+                      <div className={`flex items-center gap-3 rounded-xl border p-4 ${isLateSubmission ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50'}`}>
+                        <CheckCircle className={`h-5 w-5 shrink-0 ${isLateSubmission ? 'text-amber-600' : 'text-sky-600'}`} />
                         <div>
-                          <p className={`text-sm font-semibold ${isLateSubmission ? 'text-amber-800' : 'text-blue-800'}`}>
+                          <p className={`text-sm font-semibold ${isLateSubmission ? 'text-amber-800' : 'text-sky-800'}`}>
                             {isLateSubmission ? 'Submitted Late' : 'Submitted'}
                           </p>
                           {a.submittedAt && (
-                            <p className={`text-xs ${isLateSubmission ? 'text-amber-700' : 'text-blue-700'}`}>on {formatDate(a.submittedAt)}</p>
+                            <p className={`text-xs ${isLateSubmission ? 'text-amber-700' : 'text-sky-700'}`}>on {formatDate(a.submittedAt)} • Waiting for teacher review</p>
                           )}
-                          <p className={`text-xs mt-1 ${isLateSubmission ? 'text-amber-700' : 'text-blue-700'}`}>
-                            Waiting for teacher review.
-                          </p>
-                          <p className={`text-xs mt-1 ${isLateSubmission ? 'text-amber-700' : 'text-blue-700'}`}>
-                            Submitted work is locked and cannot be edited or deleted.
-                          </p>
                         </div>
                       </div>
                     )}
 
-                    {/* Submitted answer */}
-                    {isSubmitted && (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Your Submission</h3>
+                    {isSubmitted && (a.submissionText || a.submissionAttachmentUrl) && (
+                      <div className="space-y-2">
                         {a.submissionText && (
-                          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                            <p className="text-sm text-gray-700 whitespace-pre-line">{a.submissionText}</p>
+                          <div className={`${SURFACE_INNER} p-4`}>
+                            <p className="whitespace-pre-line text-sm text-[#334155]">{a.submissionText}</p>
                           </div>
                         )}
                         {a.submissionAttachmentUrl && (
@@ -1319,137 +1347,150 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                             href={a.submissionAttachmentUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-xl hover:bg-purple-100 transition-colors"
+                            className="flex items-center gap-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3 transition-colors duration-200 hover:bg-violet-50"
                           >
-                            <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
-                              <FileText className="w-4 h-4 text-purple-600" />
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
+                              <FileText className="h-4 w-4 text-violet-600" />
                             </div>
-                            <span className="text-sm text-purple-700 font-medium truncate flex-1">
-                              {getFileNameFromUrl(a.submissionAttachmentUrl) || 'Submitted PDF'}
+                            <span className="flex-1 truncate text-sm font-medium text-violet-700">
+                              {getFileNameFromUrl(a.submissionAttachmentUrl) || 'Submitted file'}
                             </span>
-                            <Download className="w-4 h-4 text-purple-500 shrink-0" />
+                            <Eye className="h-4 w-4 shrink-0 text-violet-500" />
                           </a>
                         )}
                       </div>
                     )}
 
-                    {/* Submit section */}
                     {!isSubmitted && !isGraded && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                          {isOverdue ? 'Submit (Late)' : requiresPdfUpload ? 'Upload Your PDF' : 'Your Answer'}
-                        </h3>
-                        {submitSuccess ? (
-                          <div className="rounded-xl border border-green-200 bg-green-50 p-4 flex items-center gap-3">
-                            <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
-                            <p className="text-sm font-semibold text-green-800">Submitted successfully!</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            {requiresPdfUpload ? (
-                              <>
-                                <div className="border-2 border-dashed border-purple-200 rounded-xl p-6 text-center bg-purple-50/40">
-                                  {uploadingSubmissionFile ? (
-                                    <p className="text-sm text-purple-600">Uploading your file...</p>
-                                  ) : (
-                                    <>
-                                      <Upload className="w-10 h-10 text-purple-400 mx-auto mb-3" />
-                                      <p className="text-sm text-purple-800 mb-3">Drop your PDF here or use the button below.</p>
-                                      <input
-                                        type="file"
-                                        accept="application/pdf"
-                                        id={uploadInputId}
-                                        className="hidden"
-                                        onChange={handleSubmissionFileUpload}
-                                      />
-                                      <label
-                                        htmlFor={uploadInputId}
-                                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium text-sm cursor-pointer hover:bg-purple-700 transition-colors"
-                                      >
-                                        <Upload className="w-4 h-4" />
-                                        Select PDF
-                                      </label>
-                                      <p className="text-xs text-purple-500 mt-2">Maximum file size: 20MB</p>
-                                    </>
-                                  )}
-                                </div>
-                                {submissionFileUrl && (
-                                  <div className="flex items-center justify-between bg-white border border-purple-200 rounded-xl p-3">
-                                    <div className="flex items-center gap-3">
-                                      <FileText className="w-5 h-5 text-purple-600" />
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-800">{submissionFileName || 'Uploaded PDF'}</p>
-                                        <a
-                                          href={submissionFileUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-xs text-purple-600 hover:underline"
-                                        >
-                                          Preview file
-                                        </a>
+                      submitSuccess ? (
+                        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                          <p className="text-sm font-semibold text-emerald-800">Turned in successfully!</p>
+                        </div>
+                      ) : (
+                        <>
+                          {requiresPdfUpload ? (
+                            <>
+                              <label
+                                htmlFor={uploadInputId}
+                                className="group relative flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-6 text-center transition-all duration-200 hover:border-violet-400 hover:bg-violet-50"
+                              >
+                                <input
+                                  type="file"
+                                  accept="application/pdf"
+                                  id={uploadInputId}
+                                  aria-label="Upload PDF"
+                                  className="hidden"
+                                  onChange={handleSubmissionFileUpload}
+                                />
+                                {uploadingSubmissionFile ? (
+                                  <>
+                                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                                    <span className="mt-2 text-sm font-medium text-violet-700">Uploading your file...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-violet-600 shadow-sm transition-transform group-hover:scale-105">
+                                      <ImagePlus className="h-7 w-7" />
+                                    </span>
+                                    <span className="text-sm font-bold text-[#0b1c30]">Take a photo or upload your work</span>
+                                    <span className="mt-1 max-w-[220px] text-xs text-[#8e9aaf]">Tap here, take a picture with your phone/tablet, or drag files</span>
+                                    <div className="mt-3 flex items-center gap-2">
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555] shadow-sm">
+                                        <Camera className="h-3.5 w-3.5 text-violet-600" /> Camera
+                                      </span>
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555] shadow-sm">
+                                        <Upload className="h-3.5 w-3.5 text-violet-600" /> Files / PDF
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                              </label>
+                              {submissionFileUrl && (
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center justify-between px-1 text-xs font-bold text-[#8e9aaf]">
+                                    <span>Attached File (1)</span>
+                                  </div>
+                                  <div className={`flex items-center justify-between gap-3 ${SURFACE_INNER} p-3.5`}>
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                                        <FileText className="h-5 w-5" />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-bold text-[#0b1c30]">{submissionFileName || 'Uploaded file'}</p>
+                                        <p className="mt-0.5 text-[11px] font-medium text-[#8e9aaf]">
+                                          {[formatFileSize(submissionFileSize), 'Added just now'].filter(Boolean).join(' • ')}
+                                        </p>
                                       </div>
                                     </div>
-                                    <button
-                                      type="button"
-                                      onClick={removeSubmissionFile}
-                                      className="text-xs text-red-600 hover:text-red-700"
-                                    >
-                                      Remove
-                                    </button>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <a
+                                        href={submissionFileUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Preview"
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg text-violet-600 transition-colors duration-200 hover:bg-violet-100"
+                                      >
+                                        <Eye className="h-4 w-4" />
+                                      </a>
+                                      <button
+                                        type="button"
+                                        onClick={removeSubmissionFile}
+                                        title="Remove file"
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors duration-200 hover:bg-red-50"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
                                   </div>
-                                )}
-                                <textarea
-                                  value={submissionText}
-                                  onChange={e => setSubmissionText(e.target.value)}
-                                  rows={3}
-                                  placeholder="Add any notes for your teacher (optional)..."
-                                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none text-sm"
-                                />
-                              </>
-                            ) : (
+                                </div>
+                              )}
                               <textarea
                                 value={submissionText}
-                                onChange={e => setSubmissionText(e.target.value)}
-                                rows={5}
-                                placeholder="Write your answer or submission notes here..."
-                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                                onChange={(e) => setSubmissionText(e.target.value)}
+                                rows={2}
+                                placeholder="Add a note for your teacher (optional)..."
+                                className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
                               />
-                            )}
-                            <button
-                              onClick={handleSubmit}
-                              disabled={submitting || !canSubmitAssignment}
-                              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
-                                isOverdue
-                                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                                  : requiresPdfUpload
-                                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                              } disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                              <SendHorizonal className="w-4 h-4" />
-                              {submitting ? 'Submitting…' : isOverdue ? 'Submit Late' : 'Submit Assignment'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                            </>
+                          ) : (
+                            <textarea
+                              value={submissionText}
+                              onChange={(e) => setSubmissionText(e.target.value)}
+                              rows={6}
+                              placeholder="Write your answer here..."
+                              className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleSubmit}
+                            disabled={submitting || !canSubmitAssignment}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3.5 text-sm font-bold text-white shadow-md shadow-violet-600/25 transition-all duration-200 hover:bg-violet-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <SendHorizonal className="h-4.5 w-4.5" />
+                            {submitting ? 'Submitting…' : 'Turn In Assignment'}
+                          </button>
+                        </>
+                      )
                     )}
                   </div>
                 </div>
               </div>
-            );
-          })()}
-        </>
-      )}
+            </div>
+          </div>
+        );
+      })()}
 
       {assignmentType === 'flashcard' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className={`page-fade-in ${SURFACE_CARD} p-6`}>
           <div className="flex flex-wrap items-center gap-3 mb-6">
-            <label htmlFor="fcClass" className="font-medium text-gray-700">Class:</label>
+            <label htmlFor="fcClass" className="font-medium text-[#334155]">Class:</label>
             <select
               id="fcClass"
               value={selectedClass}
               onChange={e => setSelectedClass(e.target.value)}
-              className="border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 outline-none text-sm bg-white"
+              className={`${SURFACE_INNER} px-3 py-2 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/60 outline-none text-sm text-[#0f172a]`}
             >
               <option value="6">Class 6</option>
               <option value="7">Class 7</option>
@@ -1458,29 +1499,30 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
               <option value="10">Class 10</option>
             </select>
           </div>
-          <div className="text-center py-12">
-            <p className="text-slate-500 text-sm">Flashcard functionality coming soon!</p>
+          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-violet-500/30 py-14 text-center">
+            <Layers className="h-9 w-9 text-violet-300" />
+            <p className="text-[#64748b] text-sm font-medium">Flashcard functionality coming soon!</p>
           </div>
         </div>
       )}
 
       {assignmentType === 'eec' && (
-        <div className="bg-white rounded-2xl border border-purple-200 shadow-sm overflow-hidden">
+        <div className={`page-fade-in ${SURFACE_CARD} overflow-hidden`}>
           {/* EEC Content - No Header */}
-          <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
+          <div className="border-b border-violet-500/15 px-4 py-4 sm:px-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full bg-purple-50 border border-purple-200 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">
-                  <span>📚</span>
+                <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full bg-violet-50 border border-violet-200 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                  <GraduationCap className="h-3 w-3" />
                   <span>EEC Practice</span>
                 </div>
-                <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Practice Paper</h2>
-                <p className="mt-0.5 text-xs text-slate-500">Challenge yourself with curated questions</p>
+                <h2 className="text-xl font-bold text-[#0f172a] sm:text-2xl">Practice Paper</h2>
+                <p className="mt-0.5 text-xs text-[#64748b]">Challenge yourself with curated questions</p>
               </div>
               {practiceMeta && (
-                <div className="shrink-0 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-center">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Class</p>
-                  <p className="text-sm font-bold text-slate-700">
+                <div className={`shrink-0 ${SURFACE_INNER} px-3 py-2 text-center`}>
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-[#8e9aaf]">Class</p>
+                  <p className="text-sm font-bold text-[#334155]">
                     {practiceMeta.className}{practiceMeta.sectionName ? ` · ${practiceMeta.sectionName}` : ''}
                   </p>
                 </div>
@@ -1489,14 +1531,14 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           </div>
 
           {/* Selectors */}
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 sm:px-6">
+          <div className="border-b border-violet-500/15 bg-violet-50/30 px-4 py-3 sm:px-6">
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Subject</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8e9aaf]">Subject</label>
                 <select
                   value={practiceSubjectId}
                   onChange={(e) => setPracticeSubjectId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className={`w-full ${SURFACE_INNER} px-3 py-2.5 text-sm font-medium text-[#334155] focus:border-violet-500/60 focus:outline-none focus:ring-2 focus:ring-violet-500/20`}
                 >
                   {(practiceMeta?.subjects || []).map((subject) => (
                     <option key={subject.id} value={subject.id}>
@@ -1506,11 +1548,11 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Question Type</label>
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-[#8e9aaf]">Question Type</label>
                 <select
                   value={practiceType}
                   onChange={(e) => setPracticeType(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  className={`w-full ${SURFACE_INNER} px-3 py-2.5 text-sm font-medium text-[#334155] focus:border-violet-500/60 focus:outline-none focus:ring-2 focus:ring-violet-500/20`}
                 >
                   <option value="mcq">Multiple Choice</option>
                   <option value="blank">Fill in the Blank</option>
@@ -1520,47 +1562,44 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           </div>
 
           {/* Stats Bar */}
-          <div className="flex items-center gap-3 border-b border-slate-100 bg-white px-4 py-3 sm:px-6">
-            <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
-              <span className="text-base">📝</span>
+          <div className="flex items-center gap-3 border-b border-violet-500/15 px-4 py-3 sm:px-6">
+            <div className={`flex items-center gap-2 ${SURFACE_INNER} px-3 py-2`}>
+              <FileText className="h-4 w-4 text-violet-500" />
               <div>
-                <p className="text-[10px] font-medium text-slate-400">Questions</p>
-                <p className="text-sm font-bold text-slate-800">{practiceQuestions.length}</p>
+                <p className="text-[10px] font-medium text-[#8e9aaf]">Questions</p>
+                <p className="text-sm font-bold text-[#334155]">{practiceQuestions.length}</p>
               </div>
             </div>
             {practiceResults && (
-              <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${scorePercent >= 70 ? 'bg-emerald-50' : scorePercent >= 40 ? 'bg-amber-50' : 'bg-red-50'}`}>
-                <span className="text-base">🎯</span>
+              <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${scorePercent >= 70 ? 'border-emerald-200 bg-emerald-50/70' : scorePercent >= 40 ? 'border-amber-200 bg-amber-50/70' : 'border-red-200 bg-red-50/70'}`}>
+                <Target className={`h-4 w-4 ${scorePercent >= 70 ? 'text-emerald-500' : scorePercent >= 40 ? 'text-amber-500' : 'text-red-500'}`} />
                 <div>
                   <p className={`text-[10px] font-medium ${scorePercent >= 70 ? 'text-emerald-500' : scorePercent >= 40 ? 'text-amber-500' : 'text-red-500'}`}>Score</p>
                   <p className={`text-sm font-bold ${scorePercent >= 70 ? 'text-emerald-700' : scorePercent >= 40 ? 'text-amber-700' : 'text-red-700'}`}>{correctCount}/{practiceQuestions.length} · {scorePercent}%</p>
                 </div>
               </div>
             )}
-            <p className="ml-auto hidden text-xs text-slate-400 sm:block">Read carefully before answering</p>
+            <p className="ml-auto hidden text-xs text-[#8e9aaf] sm:block">Read carefully before answering</p>
           </div>
 
           {/* Content */}
           <div className="p-4 sm:p-6">
             {practiceError && (
               <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                <span className="mt-0.5 shrink-0 text-base">⚠️</span>
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{practiceError}</span>
               </div>
             )}
             {practiceLoading && (
-              <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-500">
-                <svg className="h-5 w-5 animate-spin text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+              <div className="flex items-center justify-center gap-3 py-12 text-sm text-[#64748b]">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
                 <span>Loading questions...</span>
               </div>
             )}
             {!practiceLoading && practiceQuestions.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-2 py-12">
-                <span className="text-4xl">📭</span>
-                <p className="text-sm font-medium text-slate-500">No questions available for this subject.</p>
+              <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-violet-500/30 py-12">
+                <Inbox className="h-9 w-9 text-violet-300" />
+                <p className="text-sm font-medium text-[#64748b]">No questions available for this subject.</p>
               </div>
             )}
             {!practiceLoading && practiceQuestions.length > 0 && (
@@ -1571,38 +1610,35 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-6">
+          <div className="border-t border-violet-500/15 bg-violet-50/30 px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
               <button
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all active:scale-[0.98] hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 ease-out active:scale-[0.98] hover:bg-violet-600 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={handlePracticeSubmit}
                 disabled={practiceSubmitting || practiceQuestions.length === 0}
               >
                 {practiceSubmitting ? (
                   <>
-                    <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Submitting...</span>
                   </>
                 ) : (
                   <>
-                    <span>✅</span>
+                    <CheckCircle2 className="h-4 w-4" />
                     <span>Submit Answers</span>
                   </>
                 )}
               </button>
               <button
-                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto ${
+                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all duration-200 ease-out active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto ${
                   showAnswers
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                    : `${SURFACE_INNER} text-[#334155] hover:bg-white/70`
                 }`}
                 onClick={() => setShowAnswers(!showAnswers)}
                 disabled={!practiceResults}
               >
-                <span>{showAnswers ? '🙈' : '💡'}</span>
+                {showAnswers ? <EyeOff className="h-4 w-4" /> : <Lightbulb className="h-4 w-4" />}
                 <span>{showAnswers ? 'Hide Explanations' : 'Show Explanations'}</span>
               </button>
             </div>
@@ -1611,21 +1647,21 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
       )}
 
       {assignmentType === 'lab' && (
-        <div className="space-y-6">
+        <div className="space-y-6 page-fade-in">
           {/* Lab Content */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <div className={`${SURFACE_CARD} p-6`}>
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#8e9aaf]">
                   <FlaskConical className="h-4 w-4" />
                   Virtual Lab
                 </div>
-                <h2 className="mt-2 text-2xl font-bold text-slate-900">Interactive Molecule Explorer</h2>
-                <p className="text-sm text-slate-600">Load high fidelity GLB assets directly from the lab library and inspect them with real time controls.</p>
+                <h2 className="mt-2 text-2xl font-bold text-[#0f172a]">Interactive Molecule Explorer</h2>
+                <p className="text-sm text-[#64748b]">Load high fidelity GLB assets directly from the lab library and inspect them with real time controls.</p>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1">{LAB_EXPERIMENTS.length}+ curated models</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1">Three.js powered viewer</span>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold text-[#64748b]">
+                <span className="rounded-full border border-violet-500/35 bg-white/50 backdrop-blur-[20px] px-4 py-1">{LAB_EXPERIMENTS.length}+ curated models</span>
+                <span className="rounded-full border border-violet-500/35 bg-white/50 backdrop-blur-[20px] px-4 py-1">Three.js powered viewer</span>
               </div>
             </div>
           </div>
@@ -1670,41 +1706,41 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
               </div>
             </div>
             <div className="space-y-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-900">Model Details</h3>
-                <p className="mt-1 text-sm text-slate-600">{selectedExperiment?.summary}</p>
+              <div className={`${SURFACE_CARD} p-5`}>
+                <h3 className="text-lg font-semibold text-[#0f172a]">Model Details</h3>
+                <p className="mt-1 text-sm text-[#64748b]">{selectedExperiment?.summary}</p>
                 <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <dt className="text-xs uppercase tracking-wide text-slate-400">Field</dt>
-                    <dd className="font-semibold text-slate-800">{selectedExperiment?.field}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-[#8e9aaf]">Field</dt>
+                    <dd className="font-semibold text-[#334155]">{selectedExperiment?.field}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase tracking-wide text-slate-400">Difficulty</dt>
-                    <dd className="font-semibold text-slate-800">{selectedExperiment?.difficulty}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-[#8e9aaf]">Difficulty</dt>
+                    <dd className="font-semibold text-[#334155]">{selectedExperiment?.difficulty}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase tracking-wide text-slate-400">Formula</dt>
-                    <dd className="font-mono text-base text-slate-900">{selectedExperiment?.formula}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-[#8e9aaf]">Formula</dt>
+                    <dd className="font-mono text-base text-[#0f172a]">{selectedExperiment?.formula}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase tracking-wide text-slate-400">Focus</dt>
-                    <dd className="text-slate-700">{selectedExperiment?.focus?.[0] || 'Key concept'}</dd>
+                    <dt className="text-xs uppercase tracking-wide text-[#8e9aaf]">Focus</dt>
+                    <dd className="text-[#334155]">{selectedExperiment?.focus?.[0] || 'Key concept'}</dd>
                   </div>
                 </dl>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {(selectedExperiment?.focus || []).map((concept) => (
-                    <span key={concept} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                    <span key={concept} className={`rounded-full ${SURFACE_INNER} px-3 py-1 text-xs font-semibold text-[#64748b]`}>
                       {concept}
                     </span>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-lg font-semibold text-slate-900">Lab Controls</h3>
+              <div className={`${SURFACE_CARD} p-5`}>
+                <h3 className="text-lg font-semibold text-[#0f172a]">Lab Controls</h3>
                 <div className="mt-4 space-y-5">
                   <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">
                       Model Rotation ({Math.round(labControls.rotation)}°)
                     </label>
                     <input
@@ -1713,11 +1749,11 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                       max="360"
                       value={labControls.rotation}
                       onChange={(e) => setLabControls((prev) => ({ ...prev, rotation: parseInt(e.target.value, 10) }))}
-                      className="h-2 w-full cursor-pointer rounded-full bg-slate-200"
+                      className="h-2 w-full cursor-pointer rounded-full bg-violet-100 accent-violet-500"
                     />
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">
                       Zoom ({labControls.zoom.toFixed(1)}x)
                     </label>
                     <input
@@ -1727,11 +1763,11 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                       step="0.1"
                       value={labControls.zoom}
                       onChange={(e) => setLabControls((prev) => ({ ...prev, zoom: parseFloat(e.target.value) }))}
-                      className="h-2 w-full cursor-pointer rounded-full bg-slate-200"
+                      className="h-2 w-full cursor-pointer rounded-full bg-violet-100 accent-violet-500"
                     />
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">
                       Light Intensity ({labControls.lightIntensity.toFixed(1)})
                     </label>
                     <input
@@ -1741,13 +1777,13 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                       step="0.1"
                       value={labControls.lightIntensity}
                       onChange={(e) => setLabControls((prev) => ({ ...prev, lightIntensity: parseFloat(e.target.value) }))}
-                      className="h-2 w-full cursor-pointer rounded-full bg-slate-200"
+                      className="h-2 w-full cursor-pointer rounded-full bg-violet-100 accent-violet-500"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-amber-50 rounded-2xl border border-amber-100 p-5 shadow-sm">
+              <div className="rounded-3xl border border-amber-300/50 bg-[#fffbeb]/70 backdrop-blur-[20px] backdrop-saturate-[1.8] p-5 shadow-[0_8px_32px_rgba(15,23,42,0.06)]">
                 <h3 className="text-lg font-semibold text-amber-900">Investigation Steps</h3>
                 <ol className="mt-3 space-y-2 text-sm text-amber-900">
                   {(selectedExperiment?.steps || []).map((step, idx) => (
@@ -1765,15 +1801,15 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
           </div>
 
           {/* Experiment Library */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className={`${SURFACE_CARD} p-6`}>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 className="text-xl font-semibold text-slate-900">Experiment Library</h3>
-                <p className="text-sm text-slate-600">Pick any molecule to load it in the viewer instantly.</p>
+                <h3 className="text-xl font-semibold text-[#0f172a]">Experiment Library</h3>
+                <p className="text-sm text-[#64748b]">Pick any molecule to load it in the viewer instantly.</p>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1">Chemistry & Biology</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1">Interactive GLB files</span>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold text-[#64748b]">
+                <span className="rounded-full border border-violet-500/35 bg-white/50 backdrop-blur-[20px] px-4 py-1">Chemistry & Biology</span>
+                <span className="rounded-full border border-violet-500/35 bg-white/50 backdrop-blur-[20px] px-4 py-1">Interactive GLB files</span>
               </div>
             </div>
             <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1795,23 +1831,23 @@ const Assignment = ({ assignmentType, filter, setFilter }) => {
                         lightIntensity: 1
                       });
                     }}
-                    className={`rounded-2xl border-2 p-4 text-left transition-all ${
+                    className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ease-out ${
                       isActive
-                        ? 'border-indigo-600 bg-indigo-50 shadow-lg shadow-indigo-100'
-                        : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow'
+                        ? 'border-violet-500 bg-violet-50/60 shadow-lg shadow-violet-500/10 -translate-y-0.5'
+                        : 'border-violet-500/20 bg-white/50 backdrop-blur-[20px] hover:-translate-y-0.5 hover:border-violet-400/50 hover:shadow-md'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-base font-semibold text-slate-900">{experiment.title}</p>
-                      <span className={`text-xs font-semibold uppercase ${isActive ? 'text-indigo-700' : 'text-slate-500'}`}>
+                      <p className="text-base font-semibold text-[#0f172a]">{experiment.title}</p>
+                      <span className={`text-xs font-semibold uppercase ${isActive ? 'text-violet-700' : 'text-[#8e9aaf]'}`}>
                         {experiment.difficulty}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm text-slate-600">{experiment.summary}</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-mono text-slate-700">{experiment.formula}</span>
+                    <p className="mt-1 text-sm text-[#64748b]">{experiment.summary}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#64748b]">
+                      <span className="rounded-full border border-violet-500/25 bg-white/70 px-3 py-1 font-mono text-[#334155]">{experiment.formula}</span>
                       {experiment.tags.slice(0, 2).map((tag) => (
-                        <span key={tag} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                        <span key={tag} className="rounded-full border border-violet-500/20 bg-violet-50/50 px-3 py-1">
                           {tag}
                         </span>
                       ))}

@@ -34,7 +34,7 @@ const baseAssignment = {
 
 const renderAssignment = () => render(
   <MemoryRouter initialEntries={['/student/assignments']}>
-    <Assignment assignmentType="school" filter="all" setFilter={jest.fn()} />
+    <Assignment assignmentType="school" />
   </MemoryRouter>
 );
 
@@ -63,10 +63,11 @@ describe('student school assignment workflow', () => {
 
     renderAssignment();
 
-    await user.click(await screen.findByText('Fractions homework'));
+    await screen.findByText('Fractions homework');
+    await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const answer = screen.getByPlaceholderText(/write your answer/i);
     await user.type(answer, 'Equivalent fractions have the same value.');
-    await user.click(screen.getByRole('button', { name: /submit assignment/i }));
+    await user.click(screen.getByRole('button', { name: /turn in assignment/i }));
 
     await waitFor(() => {
       expect(axios.post).toHaveBeenCalledWith(
@@ -107,11 +108,12 @@ describe('student school assignment workflow', () => {
 
     renderAssignment();
 
-    await user.click(await screen.findByText('PDF worksheet'));
+    await screen.findByText('PDF worksheet');
+    await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const file = new File(['pdf-data'], 'answer.pdf', { type: 'application/pdf' });
-    await user.upload(screen.getByLabelText(/select pdf/i), file);
+    await user.upload(screen.getByLabelText(/upload pdf/i), file);
     await screen.findByText('answer.pdf');
-    await user.click(screen.getByRole('button', { name: /submit assignment/i }));
+    await user.click(screen.getByRole('button', { name: /turn in assignment/i }));
 
     await waitFor(() => {
       expect(axios.post).toHaveBeenLastCalledWith(

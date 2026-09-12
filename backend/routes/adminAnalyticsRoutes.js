@@ -56,7 +56,7 @@ router.get('/mastery-matrix', adminAuth, async (req, res) => {
           as: 'student',
         },
       },
-      { $unwind: { path: '$student', preserveNullAndEmpty: false } },
+      { $unwind: { path: '$student', preserveNullAndEmptyArrays: false } },
       ...(req.campusId ? [{ $match: { 'student.campusId': req.campusId } }] : []),
       {
         $group: {
@@ -291,7 +291,7 @@ router.get('/cohort-trend', adminAuth, async (req, res) => {
           as: 'student',
         },
       },
-      { $unwind: { path: '$student', preserveNullAndEmpty: false } },
+      { $unwind: { path: '$student', preserveNullAndEmptyArrays: false } },
       {
         $group: {
           _id: {

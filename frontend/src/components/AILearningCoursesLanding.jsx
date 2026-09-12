@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, CheckCircle2, Play,
+  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronRight, CheckCircle2,
   FlaskConical, Globe, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
+  Search, Flag, Smile, List, Clock, FolderOpen, MessageCircle,
 } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
 import AILearningTryoutSection from './AILearningTryoutSection';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import { fetchCachedJson } from '../utils/studentApiCache';
+import { useStudentDashboard } from './StudentDashboardContext';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
@@ -83,14 +85,37 @@ const CARD_STYLES = [
 
 const DEFAULT_STYLE = CARD_STYLES[4]; // amber — fallback while a subject's grid position is still resolving
 
+// Chapter status tiers for the "chapters overview" page — a chapter's
+// position in the list plus its own progress decide which tier it lands in
+// (see chapterStats in SubjectTopicsView). Purely presentational.
+const CHAPTER_STATUS_META = {
+  completed: { chip: 'bg-emerald-50 text-emerald-700', label: 'Completed', tile: 'bg-emerald-50 text-emerald-700', bar: 'bg-emerald-500' },
+  'almost-done': { chip: 'bg-violet-50 text-violet-700', label: 'Almost Done', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
+  'in-progress': { chip: 'bg-amber-50 text-amber-700', label: 'In Progress', tile: 'bg-violet-50 text-violet-700', bar: 'bg-amber-500' },
+  ready: { chip: 'bg-violet-50 text-violet-700', label: 'Ready to Start', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
+  'up-next': { chip: 'bg-slate-100 text-slate-500', label: 'Up Next', tile: 'bg-slate-100 text-slate-400', bar: 'bg-slate-300' },
+  upcoming: { chip: 'bg-slate-100 text-slate-500', label: 'Upcoming', tile: 'bg-slate-100 text-slate-400', bar: 'bg-slate-300' },
+};
+
+// Shared "glass" card recipe used across the Smart Learning pages: frosted
+// backdrop blur, soft purple border, gentle shadow. GLASS_INNER is the same
+// idea at a smaller radius for nested rows/tiles.
+const GLASS_CARD = 'rounded-3xl border border-violet-500/35 bg-white/60 backdrop-blur-[20px] backdrop-saturate-[1.8] shadow-[0_8px_32px_rgba(15,23,42,0.06)]';
+const GLASS_INNER = 'rounded-xl border border-violet-500/35 bg-white/50 backdrop-blur-[20px]';
+const GLASS_HOVER = 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_40px_rgba(139,92,246,0.14)]';
+
 const normalize = (value) => String(value || '').trim().toLowerCase();
 
 const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const SubjectIcon = style.icon;
   const navigate = useNavigate();
+  const { profile } = useStudentDashboard();
+  const firstName = String(profile?.name || '').trim().split(/\s+/)[0] || '';
   const [openChapterIndex, setOpenChapterIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterMode, setFilterMode] = useState('all');
   const topics = useMemo(() => Array.isArray(subject?.topics) ? subject.topics : [], [subject]);
   const chapters = useMemo(() => {
     const sourceChapters = Array.isArray(subject?.chapters) ? subject.chapters : [];
@@ -168,6 +193,76 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     return topics.find(topic => topicProgress[topic.title]?.percentage < 100);
   }, [topics, topicProgress]);
 
+  // "Your class" is a placeholder the allocated-subjects fetch falls back to
+  // when the timetable didn't supply a real class/section label — not
+  // worth surfacing as if it were one.
+  const classLabel = useMemo(() => {
+    const raw = Array.from(subject?.classNames || [])[0] || '';
+    return normalize(raw) === 'your class' ? '' : raw;
+  }, [subject]);
+
+  // Per-chapter display stats: progress totals, a status tier (ready / up
+  // next / upcoming / in progress / almost done / completed), and the CTA
+  // target topic. Computed once so both the list and the search/filter
+  // controls read from the same numbers.
+  const chapterStats = useMemo(() => {
+    let readyAssigned = false;
+    return chapters.map((chapter, index) => {
+      const chapterTopics = chapter.topics || [];
+      const totals = chapterTopics.reduce((acc, topic) => {
+        const item = topicProgress[topic.title] || { total: 0, completed: 0 };
+        return { total: acc.total + item.total, completed: acc.completed + item.completed };
+      }, { total: 0, completed: 0 });
+      const percentage = totals.total > 0 ? Math.round((totals.completed / totals.total) * 100) : 0;
+      const totalSubtopicCount = chapterTopics.reduce((sum, topic) => sum + (topic.subtopics?.length || 0), 0);
+      const durationLabel = chapter.meta?.duration
+        || (Array.isArray(chapter.meta?.instructionalFlow) && chapter.meta.instructionalFlow.length > 0
+          ? `${chapter.meta.instructionalFlow.reduce((sum, step) => sum + (Number(step?.duration) || 0), 0)} Min`
+          : '');
+      const dateLabel = chapter.meta?.date
+        ? new Date(chapter.meta.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '';
+
+      let status = 'upcoming';
+      if (percentage === 100 && totals.total > 0) status = 'completed';
+      else if (percentage >= 50) status = 'almost-done';
+      else if (percentage > 0) status = 'in-progress';
+      else if (!readyAssigned) { status = 'ready'; readyAssigned = true; }
+
+      return {
+        chapter,
+        originalIndex: index,
+        firstTopic: chapterTopics[0] || null,
+        topicCount: chapterTopics.length,
+        subtopicCount: totalSubtopicCount,
+        completed: totals.completed,
+        total: totals.total,
+        percentage,
+        durationLabel,
+        dateLabel,
+        status,
+      };
+    }).map((entry, index, all) => {
+      // A second pass upgrades the first not-yet-started chapter right
+      // after "ready" to "up-next" so the rest read as "upcoming".
+      if (entry.status !== 'upcoming') return entry;
+      const readyIndex = all.findIndex((e) => e.status === 'ready');
+      if (readyIndex !== -1 && index === readyIndex + 1) return { ...entry, status: 'up-next' };
+      return entry;
+    });
+  }, [chapters, topicProgress]);
+
+  const inProgressChapterCount = chapterStats.filter((c) => c.status === 'in-progress' || c.status === 'almost-done').length;
+
+  const visibleChapterStats = useMemo(() => {
+    const query = normalize(searchQuery);
+    return chapterStats.filter((entry) => {
+      if (filterMode === 'in-progress' && entry.status !== 'in-progress' && entry.status !== 'almost-done') return false;
+      if (query && !normalize(entry.chapter.title).includes(query)) return false;
+      return true;
+    });
+  }, [chapterStats, searchQuery, filterMode]);
+
   // Load completed subtopics from localStorage on mount
   useEffect(() => {
     const storageKey = `smart-learning-progress-${subject.key}`;
@@ -233,319 +328,385 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     });
   };
 
+  const teacherName = Array.from(subject?.teacherNames || [])[0] || '';
+  const moodLead = firstName ? `Keep going, ${firstName}!` : 'Keep going!';
+  const moodTrail = progress === 0 ? 'Ready to dive in?' : progress === 100 ? 'Subject complete!' : `You're ${progress}% through.`;
+
   return (
     <div className="space-y-6">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-      >
-        <ArrowLeft size={16} /> Back to Subjects
-      </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={onBack}
+            className={`inline-flex items-center gap-2 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-700 ${GLASS_HOVER} hover:text-violet-700`}
+          >
+            <ArrowLeft size={16} /> Back to Subjects
+          </button>
+          <div className="flex items-center gap-1.5 text-sm text-[#8e9aaf]">
+            <span>Learn</span>
+            <ChevronRight size={14} />
+            <span>{subject.title}</span>
+            <ChevronRight size={14} />
+            <span className="font-bold text-violet-600">{chapters.length > 0 ? 'Published Chapters' : 'Chapters'}</span>
+          </div>
+        </div>
+        {profile?.academicYear && (
+          <div className={`inline-flex items-center gap-1.5 self-start rounded-full ${GLASS_INNER} px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#8e9aaf] sm:self-auto`}>
+            <CalendarDays size={14} className="text-violet-500" /> {profile.academicYear}
+          </div>
+        )}
+      </div>
 
-      <section className={`relative overflow-hidden rounded-[2rem] bg-linear-to-br ${style.grad} p-5 shadow-lg sm:p-8`}>
-        {/* Decorative vector graphics */}
-        <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute -bottom-12 -left-8 h-36 w-36 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(white_1.5px,transparent_1.5px)] bg-size-[18px_18px] opacity-[0.06]" />
-        <SubjectIcon className="pointer-events-none absolute -bottom-8 -right-6 size-40 rotate-12 text-white/15 sm:size-56" />
-        <Sparkles className="pointer-events-none absolute right-16 top-8 size-6 text-white/30 sm:right-24" />
-        <Sparkles className="pointer-events-none absolute right-40 top-20 size-4 text-white/20 sm:right-60" />
+      <section className={`relative overflow-hidden ${GLASS_CARD} p-5 sm:p-8`}>
+        <div className="pointer-events-none absolute -bottom-16 -right-16 h-80 w-80 rounded-full bg-violet-300/25 blur-3xl" />
+        <div className="pointer-events-none absolute -top-8 -right-8 h-56 w-56 rounded-full bg-amber-100/50 blur-2xl" />
+        <SubjectIcon className="pointer-events-none absolute -bottom-8 -right-6 size-40 rotate-12 text-violet-900/[0.04] sm:size-56" />
 
-        <div className="relative z-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex-1">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/25 px-4 py-1 text-sm font-bold text-white backdrop-blur-sm">
-              <SubjectIcon size={14} />
-              {chapters.length > 0 ? 'PUBLISHED CHAPTERS' : 'COMING SOON'}
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white">
+              <SubjectIcon size={13} />
+              {chapters.length > 0 ? 'Published Chapters' : 'Coming Soon'}
             </span>
-            <h1 className="mt-3 text-2xl font-black text-white sm:text-4xl lg:text-5xl">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
-            <p className="mt-2 text-base text-white/85 sm:text-xl">
+            <h1 className="mt-3 text-2xl font-bold text-[#0f172a] sm:text-4xl">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
+            <p className="mt-2 max-w-xl text-sm text-[#64748b] sm:text-base">
               {chapters.length > 0
                 ? 'All chapters published by your teacher are listed here with their topics and subtopics.'
                 : 'Your teacher will publish lesson content here soon. Stay tuned!'}
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2 text-sm font-semibold text-slate-700`}>
+                <BookOpen size={16} className="text-violet-600" /> {chapters.length} Active Unit{chapters.length === 1 ? '' : 's'}
+              </div>
+              {subject.teacherCount > 0 && (
+                <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2 text-sm font-semibold text-slate-700`}>
+                  <Users size={16} className="text-violet-600" /> {subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
           </div>
 
           {chapters.length > 0 && (
-            <div className="w-full sm:min-w-[280px] sm:w-auto">
-              <div className="flex items-end justify-between mb-2">
-                <div>
-                  <p className="text-sm font-semibold text-white/80">Chapters</p>
-                  <p className="text-3xl font-black text-white">{completedChapterCount}/{chapters.length}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-white/80">Completion</p>
-                  <p className="text-3xl font-black text-white">{progress}%</p>
-                </div>
-              </div>
-              <div className="mt-4 h-5 w-full overflow-hidden rounded-full border-2 border-white/40 bg-white/25 shadow-inner">
-                <div
-                  className="h-full rounded-full bg-white transition-all duration-500 ease-out relative overflow-hidden"
-                  style={{ width: `${progress}%` }}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-shimmer"></div>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-sm font-medium text-white/85">
-                  {progress === 0 ? 'Start your journey!' : progress === 100 ? 'Complete!' : 'Keep going!'}
-                </p>
-                {progress > 0 && (
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <div
-                        key={i}
-                        className={`w-2 h-2 rounded-full ${
-                          i < Math.floor(progress / 20) ? 'bg-white' : 'bg-white/30'
-                        }`}
-                      />
-                    ))}
+            <div className="w-full lg:w-[300px]">
+              <div className={`flex flex-col gap-4 ${GLASS_CARD} p-5`}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Your Progress</span>
+                    <div className="mt-1 text-2xl font-bold text-[#0f172a]">
+                      {completedChapterCount}/{chapters.length} <span className="text-sm font-normal text-[#8e9aaf]">Chapters</span>
+                    </div>
                   </div>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-600">
+                    <Flag size={20} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-[#8e9aaf]">Course Completion</span>
+                    <span className="font-bold text-violet-600">{progress}%</span>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/70">
+                    <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+                <div className={`flex items-center gap-3 ${GLASS_INNER} px-3 py-2.5`}>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                    <Smile size={16} />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {moodLead} <span className="font-normal text-[#64748b]">{moodTrail}</span>
+                  </p>
+                </div>
+                {nextIncompleteTopic && progress > 0 && progress < 100 && (
+                  <button
+                    onClick={() => {
+                      const topicSlug = slugifyForUrl(String(nextIncompleteTopic.title || '').trim());
+                      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-violet-600"
+                  >
+                    Continue: {nextIncompleteTopic.title}
+                  </button>
                 )}
               </div>
-              {nextIncompleteTopic && progress > 0 && progress < 100 && (
-                <button
-                  onClick={() => {
-                    const topicSlug = slugifyForUrl(String(nextIncompleteTopic.title || '').trim());
-                    navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
-                  }}
-                  className={`mt-4 w-full rounded-xl bg-white px-6 py-3 font-bold ${style.accentText} hover:bg-white/90 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2`}
-                >
-                  Continue Learning: {nextIncompleteTopic.title}
-                </button>
-              )}
             </div>
           )}
         </div>
       </section>
 
-      <style>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-shimmer {
-          animation: shimmer 2s infinite;
-        }
-      `}</style>
-
       <section>
-        <h2 className="mb-4 text-2xl font-black text-slate-900 sm:text-3xl lg:text-4xl">
-          {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
-        </h2>
-
-        <div className="">
-          <div className="space-y-4 p-4 sm:p-6">
-            {chapters.length === 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-10 text-center">
-                <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-                  <BookOpen className="text-amber-600" size={32} />
-                </div>
-                <p className="text-xl font-bold text-slate-800 mb-2">No Lesson Plans Published Yet</p>
-                <p className="text-sm text-slate-600 max-w-md mx-auto">
-                  Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.
-                  Check back soon or ask your teacher about upcoming topics!
-                </p>
-                <div className="mt-6 inline-flex items-center gap-2 text-xs text-amber-700 bg-amber-100 px-4 py-2 rounded-full">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Lesson content will appear here once your teacher publishes it</span>
-                </div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-[#0f172a] sm:text-3xl">
+              {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
+            </h2>
+            <p className="text-sm text-[#64748b]">Select a module to view materials, notes, and quiz sheets</p>
+          </div>
+          {chapters.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2`}>
+                <Search size={16} className="text-[#8e9aaf]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search chapters..."
+                  className="w-36 bg-transparent text-sm text-slate-700 outline-none placeholder:text-[#8e9aaf] sm:w-48"
+                />
               </div>
-            ) : (
-              <div className="space-y-5">
-                {chapters.map((chapter, index) => {
-                const isOpen = openChapterIndex === index;
-                const chapterTopics = chapter.topics || [];
-                const chapterTotals = chapterTopics.reduce((acc, topic) => {
-                  const item = topicProgress[topic.title] || { total: 0, completed: 0 };
-                  return {
-                    total: acc.total + item.total,
-                    completed: acc.completed + item.completed,
-                  };
-                }, { total: 0, completed: 0 });
-                const chapterPercentage = chapterTotals.total > 0 ? Math.round((chapterTotals.completed / chapterTotals.total) * 100) : 0;
-                const isFullyCompleted = chapterPercentage === 100 && chapterTotals.total > 0;
-                const isInProgress = chapterPercentage > 0 && chapterPercentage < 100;
-                const firstTopic = chapterTopics[0];
+              <div className={`flex items-center gap-1 ${GLASS_INNER} p-1`}>
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('all')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${filterMode === 'all' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+                >
+                  All ({chapters.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('in-progress')}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${filterMode === 'in-progress' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+                >
+                  In Progress ({inProgressChapterCount})
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
-                // Determine accent + status styling
-                let accentBar = style.solid;
-                let badgeBg = style.accentBg;
-                let badgeText = style.accentText;
-                let statusBadge = null;
-                let progressFill = style.solid;
+        {chapters.length === 0 ? (
+          <div className="rounded-3xl border-2 border-dashed border-violet-500/30 bg-white/40 p-10 text-center backdrop-blur-[20px]">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+              <BookOpen className="text-amber-600" size={32} />
+            </div>
+            <p className="mb-2 text-xl font-bold text-slate-800">No Lesson Plans Published Yet</p>
+            <p className="mx-auto max-w-md text-sm text-[#64748b]">
+              Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.
+              Check back soon or ask your teacher about upcoming topics!
+            </p>
+          </div>
+        ) : visibleChapterStats.length === 0 ? (
+          <div className="rounded-3xl border-2 border-dashed border-violet-500/30 bg-white/40 p-10 text-center backdrop-blur-[20px]">
+            <p className="text-base font-bold text-slate-700">No chapters match your search</p>
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); setFilterMode('all'); }}
+              className="mt-2 text-sm font-bold text-violet-600 hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {visibleChapterStats.map((entry) => {
+              const { chapter, originalIndex, firstTopic, topicCount, subtopicCount, total, percentage, durationLabel, status } = entry;
+              const isOpen = openChapterIndex === originalIndex;
+              const meta = CHAPTER_STATUS_META[status];
+              const isLocked = status === 'up-next' || status === 'upcoming';
 
-                if (isFullyCompleted) {
-                  accentBar = 'bg-green-500';
-                  badgeBg = 'bg-green-100';
-                  badgeText = 'text-green-600';
-                  progressFill = 'bg-green-500';
-                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-full whitespace-nowrap">Completed</span>;
-                } else if (chapterPercentage >= 50) {
-                  accentBar = 'bg-emerald-500';
-                  progressFill = 'bg-emerald-500';
-                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full whitespace-nowrap">Almost Done</span>;
-                } else if (isInProgress) {
-                  accentBar = 'bg-amber-500';
-                  progressFill = 'bg-amber-500';
-                  statusBadge = <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full whitespace-nowrap">In Progress</span>;
-                }
-
-                return (
-                  <div
-                    key={`${chapter.id || chapter.title}-${index}`}
-                    className="relative flex overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 transition-all duration-300 hover:shadow-lg"
-                  >
-                    {/* Colored accent strip */}
-                    <span className={`w-1.5 shrink-0 sm:w-2 ${accentBar}`} />
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                          {/* Chapter number / completed badge */}
-                          <span className={`relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-lg font-black ${badgeBg} ${badgeText}`}>
-                            {isFullyCompleted ? (
-                              <CheckCircle2 size={26} strokeWidth={2.2} />
-                            ) : (
-                              String(index + 1).padStart(2, '0')
-                            )}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                              <h3 className="text-lg sm:text-xl font-black text-slate-900 truncate">{chapter.title}</h3>
-                              {statusBadge}
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                              <p className="text-sm font-medium text-slate-500">
-                                {chapterTopics.length} topic{chapterTopics.length === 1 ? '' : 's'} · {chapterTotals.completed}/{chapterTotals.total} subtopics
-                              </p>
-                              {chapterTotals.total > 0 && (
-                                <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-full sm:w-28 overflow-hidden rounded-full bg-slate-100">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-500 ${progressFill}`}
-                                      style={{ width: `${chapterPercentage}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs font-bold text-slate-500">{chapterPercentage}%</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start sm:gap-3 sm:self-auto">
-                          <button
-                            onClick={() => {
-                              if (!firstTopic) return;
-                              const topicSlug = slugifyForUrl(String(firstTopic.title || '').trim());
-                              navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`, {
-                                state: { smartLearningSubject: subject },
-                              });
-                            }}
-                            disabled={!firstTopic}
-                            className={`group/btn relative flex w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-all duration-300 overflow-hidden shadow-sm sm:w-auto sm:px-6 sm:py-3 sm:text-base ${
-                              !firstTopic
-                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                : isFullyCompleted
-                                ? 'bg-green-500 text-white hover:bg-green-600'
-                                : isInProgress
-                                ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                : `${style.solid} text-white ${style.solidHover}`
-                            } ${firstTopic ? 'hover:shadow-md hover:-translate-y-0.5' : ''}`}
-                          >
-                            {firstTopic && <Play size={14} className="relative z-10 fill-current" />}
-                            <span className="relative z-10 whitespace-nowrap">
-                              {!firstTopic ? 'No Topics' : isInProgress ? 'Continue' : isFullyCompleted ? 'Learn' : 'Start Learning'}
-                            </span>
-                            <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 ease-in-out"></div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOpenChapterIndex(isOpen ? -1 : index)}
-                            className={`rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-all duration-300 ${isOpen ? 'rotate-180' : ''}`}
-                            aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`}
-                            aria-expanded={isOpen}
-                          >
-                            <ChevronDown size={18} />
-                          </button>
-                        </div>
+              return (
+                <div
+                  key={chapter.id || `${chapter.title}-${originalIndex}`}
+                  className={`overflow-hidden ${GLASS_CARD} ${GLASS_HOVER}`}
+                >
+                  <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                    <div className="flex items-start gap-4 min-w-0">
+                      <div className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl ${meta.tile}`}>
+                        {status === 'completed' ? (
+                          <CheckCircle2 size={24} strokeWidth={2.2} />
+                        ) : (
+                          <>
+                            <span className="text-[10px] font-bold uppercase tracking-wide">Unit</span>
+                            <span className="text-xl font-bold leading-none">{String(originalIndex + 1).padStart(2, '0')}</span>
+                          </>
+                        )}
                       </div>
-
-                      {isOpen && (
-                        <div className="border-t border-slate-100 bg-slate-50/60 px-5 pb-5 pt-4 sm:px-6">
-                          {chapterTopics.length > 0 ? (
-                            <div className="space-y-3 border-l-2 border-dashed border-slate-200 pl-4 sm:pl-5">
-                              {chapterTopics.map((topic) => {
-                                const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
-                                return (
-                                  <div key={topic.title} className="relative rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                                    <span className={`absolute -left-5.25 top-6 h-2.5 w-2.5 rounded-full ring-4 ring-white sm:-left-6.25 ${style.solid}`} />
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                      <div className="min-w-0">
-                                        <p className="text-base font-black text-slate-900 truncate">{topic.title}</p>
-                                        <p className="text-xs font-medium text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p>
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          const topicSlug = slugifyForUrl(String(topic.title || '').trim());
-                                          navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
-                                        }}
-                                        className={`shrink-0 rounded-full ${style.solid} px-4 py-2 text-xs font-bold text-white transition ${style.solidHover} sm:text-sm`}
-                                      >
-                                        Open Topic
-                                      </button>
-                                    </div>
-                                    {topic.subtopics && topic.subtopics.length > 0 ? (
-                                      <div className="mt-4 space-y-2">
-                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Click to mark as complete</p>
-                                        {topic.subtopics.map((subtopic, idx) => {
-                                          const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
-                                          return (
-                                            <button
-                                              key={`${subtopic}-${idx}`}
-                                              onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
-                                              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all hover:shadow-sm ${
-                                                isSubtopicCompleted
-                                                  ? 'bg-green-50 border border-green-200'
-                                                  : 'bg-slate-50 border border-slate-200 hover:border-slate-300'
-                                              }`}
-                                            >
-                                              <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                                                isSubtopicCompleted ? 'bg-green-500' : 'bg-white border-2 border-slate-300'
-                                              }`}>
-                                                {isSubtopicCompleted && (
-                                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                    <polyline points="20 6 9 17 4 12"></polyline>
-                                                  </svg>
-                                                )}
-                                              </div>
-                                              <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-green-700 line-through' : 'text-slate-700'}`}>
-                                                {subtopic}
-                                              </span>
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <p className="mt-3 text-sm text-slate-500 italic">No subtopics available</p>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-500 italic">No subtopics available</p>
+                      <div className="min-w-0">
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>
+                          {classLabel && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-xs font-semibold text-[#64748b]">Class {classLabel}</span>
+                            </>
                           )}
                         </div>
-                      )}
+                        <h3 className="text-lg font-bold text-[#0f172a] sm:text-xl">{chapter.title}</h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#64748b]">
+                          <span className="inline-flex items-center gap-1"><Layers size={14} className="text-violet-500" /> {topicCount} topic{topicCount === 1 ? '' : 's'}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="inline-flex items-center gap-1"><List size={14} className="text-violet-500" /> {subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>
+                          {durationLabel && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="inline-flex items-center gap-1"><Clock size={14} /> {durationLabel}</span>
+                            </>
+                          )}
+                        </div>
+                        {total > 0 && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/70">
+                              <div className={`h-full rounded-full transition-all duration-500 ${meta.bar}`} style={{ width: `${percentage}%` }} />
+                            </div>
+                            <span className="text-xs font-bold text-[#8e9aaf]">{percentage}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!firstTopic) return;
+                          const topicSlug = slugifyForUrl(String(firstTopic.title || '').trim());
+                          navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`, {
+                            state: { smartLearningSubject: subject },
+                          });
+                        }}
+                        disabled={!firstTopic}
+                        className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-colors ${
+                          !firstTopic
+                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                            : status === 'completed'
+                            ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                            : status === 'in-progress' || status === 'almost-done'
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : status === 'ready'
+                            ? 'bg-violet-500 text-white hover:bg-violet-600'
+                            : 'bg-white/60 text-slate-700 hover:bg-white/80'
+                        }`}
+                      >
+                        <span>
+                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue' : status === 'ready' ? 'Start Learning' : 'Explore Chapter'}
+                        </span>
+                        {firstTopic && (isLocked ? <FolderOpen size={16} /> : <ArrowRight size={16} />)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOpenChapterIndex(isOpen ? -1 : originalIndex)}
+                        className={`rounded-xl p-2.5 text-[#8e9aaf] transition-transform hover:bg-white/60 hover:text-slate-600 ${isOpen ? 'rotate-180' : ''}`}
+                        aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`}
+                        aria-expanded={isOpen}
+                      >
+                        <ChevronDown size={18} />
+                      </button>
                     </div>
                   </div>
-                );
-                })}
-              </div>
-            )}
+
+                  {isOpen && (
+                    <div className="border-t border-violet-500/20 bg-white/30 px-5 pb-5 pt-4 backdrop-blur-[20px] sm:px-6">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-[#8e9aaf]">
+                        <span>Module Outline &amp; Learning Materials</span>
+                        {teacherName && <span className="normal-case font-semibold text-[#64748b]">Teacher: {teacherName}</span>}
+                      </div>
+                      {(chapter.topics || []).length > 0 ? (
+                        <div className="space-y-3 border-l-2 border-dashed border-violet-500/25 pl-4 sm:pl-5">
+                          {chapter.topics.map((topic) => {
+                            const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
+                            return (
+                              <div key={topic.title} className={`relative ${GLASS_INNER} p-4`}>
+                                <span className="absolute -left-5.25 top-6 h-2.5 w-2.5 rounded-full bg-violet-500 ring-4 ring-white sm:-left-6.25" />
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-base font-bold text-[#0f172a]">{topic.title}</p>
+                                    <p className="text-xs font-medium text-[#64748b]">{topicProg.completed}/{topicProg.total} subtopics complete</p>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const topicSlug = slugifyForUrl(String(topic.title || '').trim());
+                                      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
+                                    }}
+                                    className="shrink-0 rounded-full bg-violet-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-violet-600 sm:text-sm"
+                                  >
+                                    Open Topic
+                                  </button>
+                                </div>
+                                {topic.subtopics && topic.subtopics.length > 0 ? (
+                                  <div className="mt-4 space-y-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">Click to mark as complete</p>
+                                    {topic.subtopics.map((subtopic, idx) => {
+                                      const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
+                                      return (
+                                        <button
+                                          key={`${subtopic}-${idx}`}
+                                          onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
+                                          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border transition-all hover:shadow-sm ${
+                                            isSubtopicCompleted
+                                              ? 'border-emerald-300/60 bg-emerald-50/70'
+                                              : 'border-violet-500/25 bg-white/40 hover:border-violet-500/45'
+                                          }`}
+                                        >
+                                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                                            isSubtopicCompleted ? 'bg-emerald-500' : 'bg-white border-2 border-violet-500/30'
+                                          }`}>
+                                            {isSubtopicCompleted && (
+                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                <polyline points="20 6 9 17 4 12"></polyline>
+                                              </svg>
+                                            )}
+                                          </div>
+                                          <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>
+                                            {subtopic}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="mt-3 text-sm text-[#64748b] italic">No subtopics available</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#64748b] italic">No subtopics available</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+            <MessageCircle size={22} />
+          </div>
+          <div>
+            <h4 className="text-base font-bold text-[#0f172a]">Need help with a topic?</h4>
+            <p className="mt-1 text-sm text-[#64748b]">
+              {teacherName
+                ? `Ask your teacher ${teacherName} directly, or post in the Class Wall.`
+                : 'Post your question in the Class Wall and your teacher will see it.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/student/assignments-academic-alcove')}
+              className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-violet-600 hover:underline"
+            >
+              Ask on Class Wall <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+        <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
+            <FolderOpen size={22} />
+          </div>
+          <div>
+            <h4 className="text-base font-bold text-[#0f172a]">Explore other subjects</h4>
+            <p className="mt-1 text-sm text-[#64748b]">Head back to your subjects list to pick up another chapter.</p>
+            <button
+              type="button"
+              onClick={onBack}
+              className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-violet-600 hover:underline"
+            >
+              Back to Subjects <ArrowRight size={14} />
+            </button>
           </div>
         </div>
       </section>
@@ -768,7 +929,7 @@ const AILearningCoursesLanding = () => {
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#f8f7f6] text-slate-900 p-4 sm:p-6 md:p-8">
+    <div className="w-full min-h-screen bg-[#f1f5f9] text-slate-900 p-4 sm:p-6 md:p-8">
       <div className="mx-auto w-full max-w-[1200px]">
         {selectedSubject ? (
           <SubjectTopicsView

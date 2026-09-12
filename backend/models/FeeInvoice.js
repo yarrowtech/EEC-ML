@@ -39,4 +39,11 @@ const feeInvoiceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// GET /api/fees/invoices filters by schoolId (+ optional studentId) and sorts
+// by createdAt — this collection had no index covering that at all (only
+// organizationId and two nested snapshot fields), forcing a full collection
+// scan + in-memory sort on every call.
+feeInvoiceSchema.index({ schoolId: 1, createdAt: -1 });
+feeInvoiceSchema.index({ schoolId: 1, studentId: 1 });
+
 module.exports = mongoose.model('FeeInvoice', feeInvoiceSchema);

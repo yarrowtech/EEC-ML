@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const jwt = require('jsonwebtoken');
@@ -156,6 +157,14 @@ if (TRUST_PROXY && TRUST_PROXY.trim().length > 0) {
 }
 
 app.use(cors({ origin: corsOrigin }));
+// gzip every JSON response — several admin list/report endpoints return
+// several hundred KB to 1MB+ of JSON, and this connection's measured
+// bandwidth to the DB/network is poor enough that transferring those
+// uncompressed was the actual bottleneck (server-side query time was
+// consistently ~1ms; a 843KB fee-invoices response took 14s to transfer but
+// gzips down to ~30KB). Doesn't touch the Razorpay webhook route below,
+// which reads the raw request body, not the response.
+app.use(compression());
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {

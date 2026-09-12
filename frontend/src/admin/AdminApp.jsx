@@ -1,39 +1,42 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Component } from 'react';
+import { Component, lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from './AdminLayout';
 import Dashboard from './Dashboard';
-import Analytics from './Analytics';
-import ActivityLog from './pages/ActivityLog';
-import Teachers from './Teachers';
-import Students from './Students';
-import Wellbeing from './pages/Wellbeing';
-import SchoolsManagement from './pages/SchoolsManagement';
-import SchoolAdminsManagement from './pages/SchoolAdminsManagement';
-import Routines from './Routines';
-import FloorRoomManagement from './pages/FloorRoomManagement';
-import ExaminationManagement from './pages/ExaminationManagement';
-import ParentsManagement from './pages/ParentsManagement';
-import SubjectManagement from './pages/SubjectManagement';
-import AcademicSetup from './pages/AcademicSetup';
-import AttendanceManagement from './pages/AttendanceManagement';
-import Result from './pages/Result';
-import FeesCollection from './pages/FeesCollection';
-import FeesDashboard from './pages/FeesDashboard';
-import StudentFeeDetails from './pages/StudentFeeDetails';
-import FeesManagement from './pages/FeesManagement';
-import HR from './pages/HR';
-import SchoolRegistrations from './pages/SchoolRegistrations';
-import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import Support from './pages/Support';
-import NoticeManagement from './pages/NoticeManagement';
-import NoticeDetail from './pages/NoticeDetail';
-import AdminSettings from './pages/AdminSettings';
-import PaymentGatewaySettings from './pages/PaymentGatewaySettings';
-import StudentPromotion from './pages/StudentPromotion';
-import ReportCardManagement from './pages/ReportCardManagement';
-import HolidayList from './pages/HolidayList';
-import TeacherFeedbackOverview from './pages/TeacherFeedbackOverview';
-import { useState, useEffect, useMemo, useRef } from 'react';
+
+// Lazy-loaded: each admin page is only fetched when actually navigated to,
+// instead of all ~28 pages being bundled into the one chunk AdminApp ships
+// on first load (this was the same issue fixed on the student portal —
+// see Dashboard.jsx there).
+const Analytics = lazy(() => import('./Analytics'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
+const Teachers = lazy(() => import('./Teachers'));
+const Students = lazy(() => import('./Students'));
+const Wellbeing = lazy(() => import('./pages/Wellbeing'));
+const SchoolsManagement = lazy(() => import('./pages/SchoolsManagement'));
+const SchoolAdminsManagement = lazy(() => import('./pages/SchoolAdminsManagement'));
+const Routines = lazy(() => import('./Routines'));
+const FloorRoomManagement = lazy(() => import('./pages/FloorRoomManagement'));
+const ExaminationManagement = lazy(() => import('./pages/ExaminationManagement'));
+const ParentsManagement = lazy(() => import('./pages/ParentsManagement'));
+const SubjectManagement = lazy(() => import('./pages/SubjectManagement'));
+const AcademicSetup = lazy(() => import('./pages/AcademicSetup'));
+const AttendanceManagement = lazy(() => import('./pages/AttendanceManagement'));
+const Result = lazy(() => import('./pages/Result'));
+const FeesCollection = lazy(() => import('./pages/FeesCollection'));
+const FeesDashboard = lazy(() => import('./pages/FeesDashboard'));
+const StudentFeeDetails = lazy(() => import('./pages/StudentFeeDetails'));
+const FeesManagement = lazy(() => import('./pages/FeesManagement'));
+const HR = lazy(() => import('./pages/HR'));
+const SchoolRegistrations = lazy(() => import('./pages/SchoolRegistrations'));
+const Support = lazy(() => import('./pages/Support'));
+const NoticeManagement = lazy(() => import('./pages/NoticeManagement'));
+const NoticeDetail = lazy(() => import('./pages/NoticeDetail'));
+const AdminSettings = lazy(() => import('./pages/AdminSettings'));
+const PaymentGatewaySettings = lazy(() => import('./pages/PaymentGatewaySettings'));
+const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
+const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
+const HolidayList = lazy(() => import('./pages/HolidayList'));
+const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
 import { syncScopeFromProfile } from './utils/adminScope';
@@ -314,6 +317,13 @@ const AdminApp = () => {
         menuItems={menuItems}
         showAdminHeader={showAdminHeader}
       >
+        <Suspense
+          fallback={
+            <div className="flex min-h-[60vh] items-center justify-center" role="status">
+              <span className="sr-only">Loading</span>
+            </div>
+          }
+        >
         <Routes>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard setShowAdminHeader={setShowAdminHeader} />} />
@@ -361,6 +371,7 @@ const AdminApp = () => {
           {/* 404 catch-all — redirect unknown /admin/* paths to dashboard */}
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
         </Routes>
+        </Suspense>
       </AdminLayout>
     </AdminErrorBoundary>
   );

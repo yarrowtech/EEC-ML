@@ -1,0 +1,439 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-tertiary-fixed": "#2a1700",
+            "surface-variant": "#d3e4fe",
+            "tertiary": "#684000",
+            "outline": "#777587",
+            "on-tertiary-fixed-variant": "#653e00",
+            "on-secondary-fixed-variant": "#004c6e",
+            "inverse-primary": "#c3c0ff",
+            "on-error": "#ffffff",
+            "on-primary": "#ffffff",
+            "primary-container": "#4f46e5",
+            "on-primary-fixed": "#0f0069",
+            "error-container": "#ffdad6",
+            "surface-container-high": "#dce9ff",
+            "secondary-fixed-dim": "#89ceff",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "on-tertiary-container": "#ffd4a4",
+            "on-primary-container": "#dad7ff",
+            "tertiary-fixed": "#ffddb8",
+            "on-secondary-fixed": "#001e2f",
+            "tertiary-fixed-dim": "#ffb95f",
+            "error": "#ba1a1a",
+            "surface-bright": "#f8f9ff",
+            "background": "#f8f9ff",
+            "primary-fixed": "#e2dfff",
+            "on-surface": "#0b1c30",
+            "surface-container-highest": "#d3e4fe",
+            "on-surface-variant": "#464555",
+            "primary": "#3525cd",
+            "secondary-fixed": "#c9e6ff",
+            "surface-container": "#e5eeff",
+            "surface": "#f8f9ff",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-dim": "#cbdbf5",
+            "surface-container-low": "#eff4ff",
+            "inverse-surface": "#213145",
+            "surface-tint": "#4d44e3",
+            "on-primary-fixed-variant": "#3323cc",
+            "surface-container-lowest": "#ffffff",
+            "secondary": "#006591",
+            "on-secondary-container": "#004666",
+            "on-background": "#0b1c30",
+            "secondary-container": "#39b8fd",
+            "tertiary-container": "#885500",
+            "inverse-on-surface": "#eaf1ff",
+            "outline-variant": "#c7c4d8",
+            "on-tertiary": "#ffffff"
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "3xl": "1.5rem",
+            "full": "9999px"
+          },
+          fontFamily: {
+            "headline-sm": ["Plus Jakarta Sans"],
+            "headline-md": ["Plus Jakarta Sans"],
+            "headline-lg": ["Plus Jakarta Sans"],
+            "headline-xl": ["Plus Jakarta Sans"],
+            "label-sm": ["Plus Jakarta Sans"],
+            "label-md": ["Plus Jakarta Sans"],
+            "label-lg": ["Plus Jakarta Sans"],
+            "body-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-surface font-body-md text-body-md text-on-surface antialiased selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Left Sidebar Shell (Consistent Navigation) -->
+<aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-lowest z-50 flex flex-col shadow-[0_1px_12px_rgba(79,70,229,0.04)] overflow-y-auto">
+<!-- School Profile Info -->
+<div class="p-6 flex items-center gap-3 bg-surface-container-lowest border-b border-outline-variant/30">
+<div class="w-11 h-11 rounded-2xl bg-primary-container text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-[24px]">school</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-[16px] text-on-surface truncate leading-tight font-bold">Kelomal Santos...</span>
+<span class="font-label-sm text-[11px] text-on-surface-variant uppercase tracking-wider mt-0.5">Class 5 • Section A</span>
+</div>
+</div>
+<!-- Teacher Pill -->
+<div class="px-6 py-3.5 bg-surface-container-low/60 border-b border-outline-variant/20">
+<div class="flex items-center gap-2 px-3 py-1 bg-surface-container-high rounded-full w-fit">
+<span class="material-symbols-outlined text-[15px] text-secondary">person</span>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold truncate">Class Teacher: Ananya Sen</span>
+</div>
+</div>
+<!-- Navigation Links -->
+<nav class="flex-1 px-4 py-4 flex flex-col gap-1.5" data-active-classes="bg-primary-container text-on-primary font-bold shadow-sm">
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="dashboard" href="#">
+<span class="material-symbols-outlined text-[20px]">grid_view</span>
+<span class="">Dashboard</span>
+</a>
+<div class="mt-2">
+<div class="flex items-center justify-between px-4 py-1.5 font-label-sm text-[11px] text-on-surface-variant uppercase tracking-wider font-bold">
+<span class="">Learn</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</div>
+<div class="flex flex-col gap-1 pl-1 mt-1">
+<a aria-current="page" class="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all bg-primary-container text-on-primary font-bold shadow-md shadow-primary/20" data-path="learning-hub" href="#">
+<span class="material-symbols-outlined text-[20px]">local_library</span>
+<span class="">Learning Hub</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="assignments" href="#">
+<span class="material-symbols-outlined text-[20px]">assignment</span>
+<span class="">Assignments</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="journal" href="#">
+<span class="material-symbols-outlined text-[20px]">auto_stories</span>
+<span class="">Journal</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="class-wall" href="#">
+<span class="material-symbols-outlined text-[20px]">forum</span>
+<span class="">Class Wall</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="results" href="#">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+<span class="">Results</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="mastery-progress" href="#">
+<span class="material-symbols-outlined text-[20px]">trending_up</span>
+<span class="">Mastery Progress</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="error-analysis" href="#">
+<span class="material-symbols-outlined text-[20px]">troubleshoot</span>
+<span class="">Error Analysis</span>
+</a>
+</div>
+</div>
+<div class="mt-2 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="school" href="#">
+<span class="material-symbols-outlined text-[20px]">account_balance</span>
+<span class="">School</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="messages" href="#">
+<span class="material-symbols-outlined text-[20px]">chat_bubble</span>
+<span class="">Messages</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-xl font-label-lg text-label-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="wellbeing" href="#">
+<span class="material-symbols-outlined text-[20px]">favorite</span>
+<span class="">Wellbeing</span>
+</a>
+</div>
+</nav>
+<!-- User Profile Strip -->
+<div class="p-4 mt-auto bg-surface-container-lowest border-t border-outline-variant/30">
+<div class="p-2.5 rounded-2xl bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[20px]">face</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-lg text-sm text-on-surface font-bold truncate">Ishita Sarkar</span>
+<span class="font-label-sm text-[11px] text-on-surface-variant truncate">Roll: 5A-14</span>
+</div>
+</div>
+<a class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-colors" data-path="login" href="#" title="Logout">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main View Area -->
+<div class="pl-72">
+<!-- Top Bar Header -->
+<header class="fixed top-0 left-72 right-0 h-16 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.03)] z-40 flex items-center justify-between px-8 border-b border-outline-variant/30">
+<div class="flex items-center gap-2 bg-surface-container-lowest px-4 py-2 rounded-full border border-outline-variant/40 shadow-sm w-80">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">search</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Search lessons, tasks, badges...</span>
+</div>
+<div class="flex items-center gap-4">
+
+<button class="relative w-9 h-9 rounded-full flex items-center justify-center bg-surface-container-lowest border border-outline-variant/30 text-on-surface-variant hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-secondary-container ring-2 ring-surface"></span>
+</button>
+<div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-sm">
+          5A
+        </div>
+</div>
+</header>
+<main class="relative pt-20 bg-surface min-h-screen w-full px-8 pb-16">
+<div class="flex flex-col w-full max-w-6xl mx-auto gap-6">
+<!-- Top Breadcrumb & Back Action -->
+<div class="flex items-center justify-between pt-1">
+<a class="hover:text-primary transition-colors flex items-center gap-2 text-on-surface-variant text-sm font-semibold group" href="#">
+<span class="w-7 h-7 rounded-lg bg-surface-container-lowest border border-outline-variant/40 flex items-center justify-center group-hover:border-primary group-hover:bg-primary/5 transition-all">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span>
+</span>
+<span class="">Back to Chapter 1: How Computers Work</span>
+</a>
+<!-- Gamified Encouragement Pill -->
+
+</div>
+<!-- Fun Kid-Friendly Hero Assignment Card -->
+<div class="relative overflow-hidden rounded-3xl bg-surface-container-lowest p-6 sm:p-8 shadow-[0_4px_24px_rgba(79,70,229,0.06)] border border-outline-variant/40">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-2.5">
+<span class="px-3 py-1 rounded-full bg-primary-fixed text-primary font-label-sm text-xs font-bold uppercase tracking-wider">
+                  🎨 Hands-On Activity
+                </span>
+
+</div>
+<h1 class="font-headline-xl text-2xl sm:text-3xl text-on-surface font-extrabold tracking-tight">
+                Unit Assignment: Spot, Classify &amp; Draw
+              </h1>
+<div class="flex flex-wrap items-center gap-4 text-sm text-on-surface-variant pt-1">
+<span class="flex items-center gap-1.5 font-medium">
+<span class="material-symbols-outlined text-[18px] text-secondary">calendar_clock</span>
+<span class="">Due: <strong>Friday, 18 Sept • 5:00 PM</strong></span>
+</span>
+<span class="text-outline-variant">•</span>
+
+</div>
+</div>
+<!-- Helpful Friendly Teacher Callout -->
+
+</div>
+</div>
+<!-- 3-STEP SEQUENTIAL WORKFLOW (1 -> 2 -> 3) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<!-- LEFT SIDE: STEP 1 & STEP 2 (7 cols) -->
+<div class="lg:col-span-7 flex flex-col gap-6">
+<!-- STEP 1: READ THE PROMPT -->
+<div class="rounded-3xl bg-surface-container-lowest p-6 sm:p-7 shadow-[0_2px_12px_rgba(79,70,229,0.04)] border border-outline-variant/40 flex flex-col gap-5">
+<div class="flex items-center justify-between pb-3 border-b border-outline-variant/30">
+<div class="flex items-center gap-3">
+<span class="w-9 h-9 rounded-xl bg-primary text-on-primary flex items-center justify-center font-bold text-base shadow-sm">
+                    1
+                  </span>
+<div>
+<h2 class="font-headline-md text-lg sm:text-xl font-bold text-on-surface">Read Your 2 Simple Tasks</h2>
+<p class="font-body-sm text-xs text-on-surface-variant">Takes about 15 minutes</p>
+</div>
+</div>
+
+</div>
+<!-- Two cute visual tasks -->
+<div class="flex flex-col gap-3.5">
+<!-- Task 1 -->
+<div class="p-4 rounded-2xl bg-surface-container-low/70 border border-outline-variant/30 flex items-start gap-3.5 hover:bg-surface-container-low transition-colors">
+<div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">draw</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-sm font-bold text-on-surface">Task 1: Draw your computer setup or IPOS cycle</span>
+<p class="font-body-sm text-xs sm:text-sm text-on-surface-variant mt-0.5 leading-relaxed">
+                      Sketch the 4-step IPOS cycle diagram on your sheet with friendly labels (Input, CPU, Output, Storage).
+                    </p>
+</div>
+</div>
+<!-- Task 2 -->
+<div class="p-4 rounded-2xl bg-surface-container-low/70 border border-outline-variant/30 flex items-start gap-3.5 hover:bg-surface-container-low transition-colors">
+<div class="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">devices_other</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-sm font-bold text-on-surface">Task 2: Spot 3 input &amp; 3 output devices</span>
+<p class="font-body-sm text-xs sm:text-sm text-on-surface-variant mt-0.5 leading-relaxed">
+                      Look around your house or classroom and list 3 input tools (like a mouse or mic) and 3 output tools (like screen or speaker).
+                    </p>
+</div>
+</div>
+</div>
+<!-- Encouraging Kid Rubric Note -->
+
+</div>
+<!-- STEP 2: DOWNLOAD WORKSHEET -->
+
+<!-- Help / Teacher Callout Strip -->
+<div class="flex items-center justify-between p-4 rounded-2xl bg-surface-container-low/70 border border-outline-variant/30">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-xl bg-secondary-fixed text-secondary flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">support_agent</span>
+</div>
+<div class="flex flex-col">
+<span class="text-xs font-bold text-on-surface">Need help or have a question?</span>
+<span class="text-[11px] text-on-surface-variant">Send a quick message to Teacher Ananya Sen</span>
+</div>
+</div>
+<button class="text-xs font-bold text-secondary hover:text-primary px-3 py-1.5 rounded-lg hover:bg-surface-container-high transition-colors" type="button">
+                Ask Teacher
+              </button>
+</div>
+</div>
+<!-- RIGHT SIDE: STEP 3: TURN IN (5 cols) -->
+<div class="lg:col-span-5 flex flex-col gap-6 lg:sticky lg:top-20">
+<div class="rounded-3xl bg-surface-container-lowest p-6 sm:p-7 shadow-[0_6px_24px_rgba(79,70,229,0.08)] border-2 border-primary/20 flex flex-col gap-5">
+<!-- Card Header -->
+<div class="flex items-center justify-between pb-3 border-b border-outline-variant/30">
+<div class="flex items-center gap-3">
+<span class="w-9 h-9 rounded-xl bg-primary-container text-on-primary flex items-center justify-center font-bold text-base shadow-sm">
+                    3
+                  </span>
+<div>
+<h2 class="font-headline-md text-lg sm:text-xl font-bold text-on-surface">Submit Assignment</h2>
+<p class="font-body-sm text-xs text-on-surface-variant">Photo or PDF of your sheet</p>
+</div>
+</div>
+
+</div>
+<!-- Welcoming Upload Box with Drag & Drop or Photo Options -->
+<div class="relative group cursor-pointer rounded-2xl bg-surface-container-low p-6 flex flex-col items-center justify-center text-center transition-all duration-200 border-2 border-dashed border-primary/40 hover:border-primary hover:bg-surface-container" id="drop-zone">
+<input accept=".pdf,.png,.jpg,.jpeg,.heic" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" id="file-input" type="file">
+<div class="w-14 h-14 rounded-2xl bg-surface-container-lowest text-primary flex items-center justify-center shadow-md shadow-primary/10 group-hover:scale-105 transition-transform mb-3">
+<span class="material-symbols-outlined text-[32px]">add_a_photo</span>
+</div>
+<span class="font-headline-sm text-sm font-bold text-on-surface">
+                  Take a photo or upload drawing
+                </span>
+<span class="font-body-sm text-xs text-on-surface-variant mt-1 max-w-[220px]">
+                  Tap here, take a picture with your phone/tablet, or drag files
+                </span>
+<div class="flex items-center gap-3 mt-3.5">
+<span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-surface-container-lowest text-on-surface-variant shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-primary">photo_camera</span> Camera
+                  </span>
+<span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-surface-container-lowest text-on-surface-variant shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-primary">upload_file</span> Files / PDF
+                  </span>
+</div>
+</div>
+<!-- Attached Work Preview Card -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between text-xs font-bold text-on-surface-variant px-1">
+<span class="">Attached File (1)</span>
+
+</div>
+<div class="rounded-2xl bg-surface-container-low p-3.5 border border-outline-variant/40 flex items-center justify-between gap-3">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-11 h-11 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-[24px]">description</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-xs sm:text-sm font-bold text-on-surface truncate">
+                        Ishita_IPOS_Drawing.pdf
+                      </span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="text-[11px] text-on-surface-variant font-medium">3.2 MB • Added just now</span>
+</div>
+</div>
+</div>
+<!-- Actions: Preview & Remove -->
+<div class="flex items-center gap-1 shrink-0">
+<button class="w-8 h-8 rounded-lg flex items-center justify-center text-primary hover:bg-primary/10 transition-colors" title="Preview drawing" type="button">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</button>
+<button class="w-8 h-8 rounded-lg flex items-center justify-center text-error hover:bg-error-container hover:text-on-error-container transition-colors" title="Remove File" type="button">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Big Tactile Turn In Button -->
+<div class="flex flex-col gap-2 pt-2">
+<button class="w-full py-4 px-6 rounded-2xl text-on-primary font-headline-md text-base font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-primary/30 hover:bg-primary-container active:scale-[0.99] transition-all pointer-events-none bg-emerald-600 hover:bg-emerald-700" id="submit-btn" type="button">
+              <span class="material-symbols-outlined text-[22px]">task_alt</span>
+              <span class="">Turned In Successfully! 🎉</span>
+            </button>
+
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<script>
+    (function() {
+      const submitBtn = document.getElementById('submit-btn');
+      if (submitBtn) {
+        submitBtn.addEventListener('click', () => {
+          submitBtn.innerHTML = `
+            <span class="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
+            <span>Submitting your awesome work...</span>
+          `;
+          submitBtn.classList.add('opacity-90', 'pointer-events-none');
+          setTimeout(() => {
+            submitBtn.innerHTML = `
+              <span class="material-symbols-outlined text-[22px]">task_alt</span>
+              <span>Turned In Successfully! 🎉</span>
+            `;
+            submitBtn.classList.remove('opacity-90', 'bg-primary');
+            submitBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+          }, 1000);
+        });
+      }
+
+      const dropZone = document.getElementById('drop-zone');
+      if (dropZone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+          dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropZone.classList.add('bg-surface-container-high', 'border-primary');
+          }, false);
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+          dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-surface-container-high', 'border-primary');
+          }, false);
+        });
+      }
+    })();
+  </script>
+
+
+</body></html>
