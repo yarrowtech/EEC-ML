@@ -524,6 +524,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [scheduleApplyOpenFor, setScheduleApplyOpenFor] = useState('');
   const [scheduleApplyTargets, setScheduleApplyTargets] = useState([]); // keys picked in "Apply to Other Classes"
   const [newRoutineSubjectId, setNewRoutineSubjectId] = useState('');
+  const [customDurationRows, setCustomDurationRows] = useState(() => new Set()); // scheduleRowKeys showing the Hr/Min fields
   const [autoScheduling, setAutoScheduling] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [bulkEditDefaults, setBulkEditDefaults] = useState({ time: '10:00', duration: '60', buildingId: '', floorId: '', roomId: '' });
@@ -3879,7 +3880,43 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const getWizardSchedule = (classId, sectionId, subjectId) => wizardSchedule[wizardScheduleKey(classId, sectionId, subjectId)] || EMPTY_WIZARD_SCHEDULE;
   const setWizardScheduleField = (classId, sectionId, subjectId, patch) => {
     const key = wizardScheduleKey(classId, sectionId, subjectId);
-    setWizardSchedule((prev) => ({ ...prev, [key]: { ...(prev[key] || EMPTY_WIZARD_SCHEDULE), ...patch } }));
+    const currentRow = wizardSchedule[key] || EMPTY_WIZARD_SCHEDULE;
+    const nextRow = { ...currentRow, ...patch };
+
+    // A manual edit (date, time, duration, room, or teacher) can silently create
+    // a double-booking that Auto-Schedule would never have produced on its own —
+    // reject the edit outright (row stays exactly as it was) instead of letting
+    // it through with just a warning.
+    const touchesConflictFields = ['date', 'time', 'duration', 'roomId', 'primaryInstructor', 'secondaryInstructor']
+      .some((f) => f in patch);
+    if (touchesConflictFields && nextRow.date && nextRow.time && nextRow.duration) {
+      const roomClash = Boolean(nextRow.roomId) && (
+        allExamsForConflict.some((ex) =>
+          String(ex.roomId?._id || ex.roomId || '') === String(nextRow.roomId) && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, ex)
+        ) ||
+        Object.entries(wizardSchedule).some(([otherKey, s]) =>
+          otherKey !== key && String(s.roomId || '') === String(nextRow.roomId) && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, s)
+        )
+      );
+      const teacherClash = [nextRow.primaryInstructor, nextRow.secondaryInstructor]
+        .filter(Boolean)
+        .some((name) => isTeacherBusyElsewhere(name, nextRow.date, nextRow.time, nextRow.duration, key));
+
+      if (roomClash && teacherClash) {
+        toast.error('Both the room and the teacher are already booked at this date & time — change rejected.');
+        return;
+      }
+      if (roomClash) {
+        toast.error('This room is already booked at this date & time — change rejected.');
+        return;
+      }
+      if (teacherClash) {
+        toast.error('This teacher is already booked at this date & time — change rejected.');
+        return;
+      }
+    }
+
+    setWizardSchedule((prev) => ({ ...prev, [key]: nextRow }));
   };
 
   // Full marks is set once per (class, subject) in Step 3 — shared across every
@@ -5079,10 +5116,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 {wizardStep === 3 && (
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="relative">
-                      <button type="button" onClick={() => setCopyFromOpen((v) => !v)} disabled={wizardSelectedClasses.length < 2}
+                     {/* <button type="button" onClick={() => setCopyFromOpen((v) => !v)} disabled={wizardSelectedClasses.length < 2}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                         <Copy size={14} /> Copy Subjects From <ChevronDown size={13} />
-                      </button>
+                      </button> 
                       {copyFromOpen && (
                         <div className="absolute right-0 mt-2 z-20 w-52 rounded-xl border border-slate-100 bg-white shadow-xl py-1.5">
                           {wizardSelectedClasses.filter((c) => c.classId !== wizardActiveClassId).map((c) => (
@@ -5093,6 +5130,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                           ))}
                         </div>
                       )}
+                        */}
                     </div>
                     <button type="button" onClick={() => wizardActiveClassId && setWizardClassSubjectIds(wizardActiveClassId, wizardSubjectsForClass(wizardActiveClassId).map((s) => s._id))}
                       className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors">
@@ -5358,13 +5396,24 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                   </button>
                                   {applyToOpen && (
                                     <div className="absolute right-0 mt-2 z-20 w-56 rounded-xl border border-slate-100 bg-white shadow-xl p-3 space-y-2">
-                                      {wizardSelectedClasses.filter((c) => c.classId !== activeClass.classId).map((c) => (
-                                        <label key={c.classId} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                                          <input type="checkbox" checked={applyToTargets.includes(c.classId)}
-                                            onChange={() => setApplyToTargets((prev) => prev.includes(c.classId) ? prev.filter((id) => id !== c.classId) : [...prev, c.classId])} />
-                                          {c.className}
-                                        </label>
-                                      ))}
+                                      {(() => {
+                                        // Only classes that aren't already configured — applying
+                                        // to a class that already has subjects chosen would just
+                                        // silently overwrite its selection.
+                                        const unconfiguredTargets = wizardSelectedClasses.filter((c) =>
+                                          c.classId !== activeClass.classId && (wizardClassSubjects[c.classId] || []).length === 0
+                                        );
+                                        if (!unconfiguredTargets.length) {
+                                          return <p className="text-xs text-slate-400">Every other class already has subjects configured.</p>;
+                                        }
+                                        return unconfiguredTargets.map((c) => (
+                                          <label key={c.classId} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                            <input type="checkbox" checked={applyToTargets.includes(c.classId)}
+                                              onChange={() => setApplyToTargets((prev) => prev.includes(c.classId) ? prev.filter((id) => id !== c.classId) : [...prev, c.classId])} />
+                                            {c.className}
+                                          </label>
+                                        ));
+                                      })()}
                                       <button type="button" onClick={wizardApplyToOtherClasses} disabled={applyToTargets.length === 0}
                                         className="w-full mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40">
                                         Apply
@@ -5486,7 +5535,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                           <th className="px-2 py-1.5 w-20">Date</th>
                                           <th className="px-2 py-1.5 w-16">Start</th>
                                           <th className="px-2 py-1.5 w-16">End</th>
-                                          <th className="px-2 py-1.5 w-20">Duration</th>
+                                          <th className="px-2 py-1.5 w-28">Duration</th>
                                           <th className="px-2 py-1.5 w-32">Building / Floor / Room</th>
                                           <th className="px-2 py-1.5 w-28">Teacher / Associated</th>
                                           <th className="px-2 py-1.5 w-8">Action</th>
@@ -5519,10 +5568,47 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                                 </div>
                                               </td>
                                               <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap">{formatTimeLabel(addMinutesToTime(schedule.time, schedule.duration))}</td>
-                                              <td className="px-2 py-1.5">
-                                                <WizardSelect dense value={schedule.duration} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { duration: e.target.value })}>
-                                                  {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{formatDuration(d)}</option>)}
-                                                </WizardSelect>
+                                              <td className="px-2 py-1.5 space-y-1">
+                                                {(() => {
+                                                  const isPreset = DURATION_OPTIONS.includes(Number(schedule.duration));
+                                                  const showCustom = customDurationRows.has(scheduleRowKey) || !isPreset;
+                                                  return (
+                                                    <>
+                                                      <WizardSelect dense value={isPreset ? schedule.duration : ''}
+                                                        onChange={(e) => {
+                                                          if (e.target.value) {
+                                                            setCustomDurationRows((prev) => { if (!prev.has(scheduleRowKey)) return prev; const next = new Set(prev); next.delete(scheduleRowKey); return next; });
+                                                            setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { duration: e.target.value });
+                                                          } else {
+                                                            setCustomDurationRows((prev) => new Set(prev).add(scheduleRowKey));
+                                                          }
+                                                        }}>
+                                                        <option value="">Custom</option>
+                                                        {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{formatDuration(d)}</option>)}
+                                                      </WizardSelect>
+                                                      {showCustom && (
+                                                        <div className="flex items-center gap-1">
+                                                          <input type="number" min="0" max="23" value={Math.floor(Number(schedule.duration || 0) / 60)}
+                                                            onChange={(e) => {
+                                                              const hr = Math.max(0, Number(e.target.value) || 0);
+                                                              const min = Number(schedule.duration || 0) % 60;
+                                                              setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { duration: String(hr * 60 + min) });
+                                                            }}
+                                                            className="w-9 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-xs text-center focus:border-indigo-400 focus:outline-none" title="Hours" />
+                                                          <span className="text-[10px] text-slate-400 shrink-0">hr</span>
+                                                          <input type="number" min="0" max="59" step="5" value={Number(schedule.duration || 0) % 60}
+                                                            onChange={(e) => {
+                                                              const min = Math.min(59, Math.max(0, Number(e.target.value) || 0));
+                                                              const hr = Math.floor(Number(schedule.duration || 0) / 60);
+                                                              setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { duration: String(hr * 60 + min) });
+                                                            }}
+                                                            className="w-9 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-xs text-center focus:border-indigo-400 focus:outline-none" title="Minutes" />
+                                                          <span className="text-[10px] text-slate-400 shrink-0">min</span>
+                                                        </div>
+                                                      )}
+                                                    </>
+                                                  );
+                                                })()}
                                               </td>
                                               <td className="px-2 py-1.5 space-y-1">
                                                 <WizardSelect dense value={schedule.buildingId} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { buildingId: e.target.value, floorId: '', roomId: '' })}>
