@@ -74,6 +74,21 @@ const getAcademicCache = (key) => {
 };
 const setAcademicCache = (key, data) => academicListCache.set(key, { data, expires: Date.now() + ACADEMIC_LIST_TTL_MS });
 
+// Any successful write through this router (create/update/delete a year,
+// class, section, subject, building, floor or room) invalidates the whole
+// cache — otherwise an admin's own edit (e.g. bumping a room's seating
+// capacity) could still read back the pre-edit value for up to 30s. A blanket
+// clear on every mutation is simpler and safer than reconstructing each
+// affected cache key by hand, and costs nothing beyond a few extra recomputes.
+router.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    res.on('finish', () => {
+      if (res.statusCode < 400) academicListCache.clear();
+    });
+  }
+  next();
+});
+
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const SENIOR_SECONDARY_STANDARDS = new Set([11, 12]);
 const ALLOWED_CLASS_STREAMS = new Set(['science', 'commerce', 'arts', 'mixed']);
@@ -1323,6 +1338,54 @@ router.get('/buildings', adminAuth, async (req, res) => {
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/buildings/:id', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Academics']
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ error: 'Invalid building ID' });
+    }
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const { name, code, order, isActive } = req.body || {};
+
+    const existing = await Building.findOne(buildCampusFilter(schoolId, campusId))
+      .where({ _id: id })
+      .lean();
+    if (!existing) {
+      return res.status(404).json({ error: 'Building not found' });
+    }
+
+    const nextName = name === undefined ? existing.name : String(name).trim();
+    if (!nextName) {
+      return res.status(400).json({ error: 'Building name is required' });
+    }
+    const nextCode = code === undefined ? existing.code : String(code).trim().toUpperCase();
+    if (!nextCode) {
+      return res.status(400).json({ error: 'Building code is required' });
+    }
+
+    const updated = await Building.findByIdAndUpdate(
+      id,
+      {
+        name: nextName,
+        code: nextCode,
+        key: normalizeKey(nextName),
+        ...(order === undefined ? {} : { order: Number.isFinite(Number(order)) ? Number(order) : 0 }),
+        ...(isActive === undefined ? {} : { isActive: Boolean(isActive) }),
+      },
+      { new: true, runValidators: true }
+    ).lean();
+    res.json(updated);
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: 'Building name/code already exists' });
+    }
+    res.status(400).json({ error: err.message });
   }
 });
 

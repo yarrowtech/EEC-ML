@@ -92,8 +92,14 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
   const [newRoomFloorId, setNewRoomFloorId]   = useState('');
   const [newRoomNumber, setNewRoomNumber]     = useState('');
   const [newRoomCapacity, setNewRoomCapacity] = useState('');
-  const [editingCapacityId, setEditingCapacityId] = useState(null);
-  const [editingCapacityValue, setEditingCapacityValue] = useState('');
+
+  /* inline-edit state — one entity being edited at a time per type */
+  const [editingBuildingId, setEditingBuildingId] = useState(null);
+  const [editingBuildingForm, setEditingBuildingForm] = useState({ name: '', code: '' });
+  const [editingFloorId, setEditingFloorId] = useState(null);
+  const [editingFloorForm, setEditingFloorForm] = useState({ buildingId: '', name: '', floorCode: '' });
+  const [editingRoomId, setEditingRoomId] = useState(null);
+  const [editingRoomForm, setEditingRoomForm] = useState({ floorId: '', roomNumber: '', capacity: '' });
 
   /* accordion open state */
   const [openBuildings, toggleBuilding] = useSet([]);
@@ -169,6 +175,23 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
     } catch (e) { flash('error', e.message || 'Failed'); }
   };
 
+  const openEditBuilding = (building) => {
+    setEditingBuildingId(building._id);
+    setEditingBuildingForm({ name: building.name || '', code: building.code || '' });
+  };
+
+  const handleSaveBuilding = async (id) => {
+    const name = editingBuildingForm.name.trim(), code = editingBuildingForm.code.trim().toUpperCase();
+    if (!name) return flash('error', 'Enter building name');
+    if (!code) return flash('error', 'Enter building code');
+    try {
+      await academicApi.updateBuilding(id, { name, code });
+      setEditingBuildingId(null);
+      flash('ok', 'Building updated');
+      await loadData();
+    } catch (e) { flash('error', e.message || 'Failed'); }
+  };
+
   const handleDeleteBuilding = async (id) => {
     const confirm = await Swal.fire({
       icon: 'warning',
@@ -193,6 +216,28 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
       await academicApi.createFloor({ buildingId: bid, name, floorCode: fc });
       setNewFloorName(''); setNewFloorCode('');
       flash('ok', 'Floor created');
+      await loadData();
+    } catch (e) { flash('error', e.message || 'Failed'); }
+  };
+
+  const openEditFloor = (floor) => {
+    setEditingFloorId(floor._id);
+    setEditingFloorForm({
+      buildingId: String(floor.buildingId?._id || floor.buildingId || ''),
+      name: floor.name || '',
+      floorCode: floor.floorCode || '',
+    });
+  };
+
+  const handleSaveFloor = async (id) => {
+    const bid = editingFloorForm.buildingId.trim(), name = editingFloorForm.name.trim(), fc = editingFloorForm.floorCode.trim().toUpperCase();
+    if (!bid) return flash('error', 'Select a building');
+    if (!name) return flash('error', 'Enter floor name');
+    if (!fc)   return flash('error', 'Enter floor code');
+    try {
+      await academicApi.updateFloor(id, { buildingId: bid, name, floorCode: fc });
+      setEditingFloorId(null);
+      flash('ok', 'Floor updated');
       await loadData();
     } catch (e) { flash('error', e.message || 'Failed'); }
   };
@@ -225,15 +270,27 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
     } catch (e) { flash('error', e.message || 'Failed'); }
   };
 
-  const handleSaveRoomCapacity = async (roomId) => {
-    const value = editingCapacityValue.trim();
-    if (value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+  const openEditRoom = (room) => {
+    setEditingRoomId(room._id);
+    setEditingRoomForm({
+      floorId: String(room.floorId?._id || room.floorId || ''),
+      roomNumber: room.roomNumber || '',
+      capacity: room.capacity ? String(room.capacity) : '',
+    });
+  };
+
+  const handleSaveRoom = async (roomId) => {
+    const fid = editingRoomForm.floorId.trim(), rn = editingRoomForm.roomNumber.trim();
+    const capacityValue = editingRoomForm.capacity.trim();
+    if (!fid) return flash('error', 'Select a floor');
+    if (!rn)  return flash('error', 'Enter room number');
+    if (capacityValue !== '' && (!Number.isFinite(Number(capacityValue)) || Number(capacityValue) < 0)) {
       return flash('error', 'Capacity must be a non-negative number');
     }
     try {
-      await academicApi.updateRoom(roomId, { capacity: value === '' ? 0 : Number(value) });
-      setEditingCapacityId(null);
-      flash('ok', 'Seating capacity updated');
+      await academicApi.updateRoom(roomId, { floorId: fid, roomNumber: rn, capacity: capacityValue === '' ? 0 : Number(capacityValue) });
+      setEditingRoomId(null);
+      flash('ok', 'Room updated');
       await loadData();
     } catch (e) { flash('error', e.message || 'Failed'); }
   };
@@ -369,26 +426,48 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
                     className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/60 transition-all duration-200">
 
                     {/* ── Building row ── */}
-                    <div
-                      className="group flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-blue-50/60 transition-colors select-none"
-                      onClick={() => toggleBuilding(bid)}
-                    >
-                      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${bOpen ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'}`}>
-                        <Building2 size={14} />
-                      </span>
-                      <div className="flex flex-1 items-center gap-2 min-w-0">
-                        <span className="truncate font-semibold text-sm text-gray-800">{building.name}</span>
-                        <Badge color="blue">{building.code}</Badge>
-                        <Badge color="slate">{bFloors.length} floor{bFloors.length !== 1 ? 's' : ''}</Badge>
-                        <Badge color="teal">{roomCount} room{roomCount !== 1 ? 's' : ''}</Badge>
-                      </div>
-                      <div className="ml-auto flex items-center gap-2">
-                        <DelBtn onClick={() => handleDeleteBuilding(building._id)} label="Delete" />
-                        <span className={`transition-transform duration-200 text-gray-400 ${bOpen ? 'rotate-90' : ''}`}>
-                          <ChevronRight size={16} />
+                    {editingBuildingId === bid ? (
+                      <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-blue-50/40">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                          <Building2 size={14} />
                         </span>
+                        <input value={editingBuildingForm.name}
+                          onChange={(e) => setEditingBuildingForm((p) => ({ ...p, name: e.target.value }))}
+                          className="flex-1 min-w-[120px] rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                        <input value={editingBuildingForm.code}
+                          onChange={(e) => setEditingBuildingForm((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
+                          className="w-20 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                        <button type="button" onClick={() => handleSaveBuilding(building._id)}
+                          className="flex items-center justify-center h-8 w-8 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"><Check size={14} /></button>
+                        <button type="button" onClick={() => setEditingBuildingId(null)}
+                          className="flex items-center justify-center h-8 w-8 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"><X size={14} /></button>
                       </div>
-                    </div>
+                    ) : (
+                      <div
+                        className="group flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-blue-50/60 transition-colors select-none"
+                        onClick={() => toggleBuilding(bid)}
+                      >
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors ${bOpen ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600'}`}>
+                          <Building2 size={14} />
+                        </span>
+                        <div className="flex flex-1 items-center gap-2 min-w-0">
+                          <span className="truncate font-semibold text-sm text-gray-800">{building.name}</span>
+                          <Badge color="blue">{building.code}</Badge>
+                          <Badge color="slate">{bFloors.length} floor{bFloors.length !== 1 ? 's' : ''}</Badge>
+                          <Badge color="teal">{roomCount} room{roomCount !== 1 ? 's' : ''}</Badge>
+                        </div>
+                        <div className="ml-auto flex items-center gap-1">
+                          <button type="button" onClick={(e) => { e.stopPropagation(); openEditBuilding(building); }}
+                            className="rounded-md p-1.5 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-blue-50 hover:text-blue-600">
+                            <Pencil size={12} />
+                          </button>
+                          <DelBtn onClick={() => handleDeleteBuilding(building._id)} label="Delete" />
+                          <span className={`transition-transform duration-200 text-gray-400 ${bOpen ? 'rotate-90' : ''}`}>
+                            <ChevronRight size={16} />
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* ── Floors (collapsible) ── */}
                     {bOpen && (
@@ -405,25 +484,49 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
                               className="overflow-hidden rounded-xl border border-gray-100 bg-slate-50/80">
 
                               {/* ── Floor row ── */}
-                              <div
-                                className="group flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-indigo-50/60 transition-colors select-none"
-                                onClick={() => toggleFloor(fid)}
-                              >
-                                <span className="ml-4 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-100">
-                                  <Layers size={12} className="text-indigo-600" />
-                                </span>
-                                <div className="flex flex-1 items-center gap-2 min-w-0">
-                                  <span className="truncate text-sm font-medium text-gray-700">{floor.name}</span>
-                                  <Badge color="slate">{floor.floorCode || '—'}</Badge>
-                                  <Badge color="teal">{fRooms.length} room{fRooms.length !== 1 ? 's' : ''}</Badge>
+                              {editingFloorId === fid ? (
+                                <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 pl-9 bg-indigo-50/40">
+                                  <select value={editingFloorForm.buildingId}
+                                    onChange={(e) => setEditingFloorForm((p) => ({ ...p, buildingId: e.target.value }))}
+                                    className="rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100">
+                                    {buildings.map((b) => <option key={b._id} value={b._id}>{b.name}</option>)}
+                                  </select>
+                                  <input value={editingFloorForm.name}
+                                    onChange={(e) => setEditingFloorForm((p) => ({ ...p, name: e.target.value }))}
+                                    className="flex-1 min-w-[100px] rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+                                  <input value={editingFloorForm.floorCode}
+                                    onChange={(e) => setEditingFloorForm((p) => ({ ...p, floorCode: e.target.value.toUpperCase() }))}
+                                    className="w-16 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+                                  <button type="button" onClick={() => handleSaveFloor(floor._id)}
+                                    className="flex items-center justify-center h-7 w-7 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600"><Check size={12} /></button>
+                                  <button type="button" onClick={() => setEditingFloorId(null)}
+                                    className="flex items-center justify-center h-7 w-7 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50"><X size={12} /></button>
                                 </div>
-                                <div className="ml-auto flex items-center gap-2">
-                                  <DelBtn onClick={() => handleDeleteFloor(floor._id)} label="Delete" />
-                                  <span className={`transition-transform duration-200 text-gray-400 ${fOpen ? 'rotate-90' : ''}`}>
-                                    <ChevronRight size={14} />
+                              ) : (
+                                <div
+                                  className="group flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-indigo-50/60 transition-colors select-none"
+                                  onClick={() => toggleFloor(fid)}
+                                >
+                                  <span className="ml-4 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-100">
+                                    <Layers size={12} className="text-indigo-600" />
                                   </span>
+                                  <div className="flex flex-1 items-center gap-2 min-w-0">
+                                    <span className="truncate text-sm font-medium text-gray-700">{floor.name}</span>
+                                    <Badge color="slate">{floor.floorCode || '—'}</Badge>
+                                    <Badge color="teal">{fRooms.length} room{fRooms.length !== 1 ? 's' : ''}</Badge>
+                                  </div>
+                                  <div className="ml-auto flex items-center gap-1">
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); openEditFloor(floor); }}
+                                      className="rounded-md p-1.5 text-gray-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-indigo-50 hover:text-indigo-600">
+                                      <Pencil size={11} />
+                                    </button>
+                                    <DelBtn onClick={() => handleDeleteFloor(floor._id)} label="Delete" />
+                                    <span className={`transition-transform duration-200 text-gray-400 ${fOpen ? 'rotate-90' : ''}`}>
+                                      <ChevronRight size={14} />
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
                               {/* ── Rooms (collapsible) ── */}
                               {fOpen && (
@@ -433,41 +536,51 @@ const FloorRoomManagement = ({ setShowAdminHeader }) => {
                                   ) : (
                                     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 pt-1.5 pl-10">
                                       {fRooms.map((room) => (
-                                        <div key={room._id}
-                                          className="group flex flex-col gap-1 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2 hover:border-teal-200 hover:bg-teal-50/40 transition-colors">
-                                          <div className="flex items-center justify-between gap-1">
-                                            <div className="flex items-center gap-1.5 min-w-0">
-                                              <DoorOpen size={11} className="shrink-0 text-teal-500" />
-                                              <span className="truncate text-xs font-medium text-gray-700">{room.roomNumber}</span>
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteRoom(room._id)}
-                                              className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-                                            >
-                                              <Trash2 size={11} />
-                                            </button>
+                                        editingRoomId === room._id ? (
+                                          <div key={room._id}
+                                            className="col-span-2 sm:col-span-3 flex flex-wrap items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50/40 px-2.5 py-2">
+                                            <select value={editingRoomForm.floorId}
+                                              onChange={(e) => setEditingRoomForm((p) => ({ ...p, floorId: e.target.value }))}
+                                              className="rounded border border-teal-200 bg-white px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-300">
+                                              {floors.map((f) => (
+                                                <option key={f._id} value={f._id}>{f.buildingId?.name || 'Building'} / {f.name}</option>
+                                              ))}
+                                            </select>
+                                            <input value={editingRoomForm.roomNumber}
+                                              onChange={(e) => setEditingRoomForm((p) => ({ ...p, roomNumber: e.target.value }))}
+                                              placeholder="Room #"
+                                              className="w-16 rounded border border-teal-200 bg-white px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                                            <input type="number" min="0" value={editingRoomForm.capacity}
+                                              onChange={(e) => setEditingRoomForm((p) => ({ ...p, capacity: e.target.value }))}
+                                              placeholder="Seats"
+                                              className="w-14 rounded border border-teal-200 bg-white px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                                            <button type="button" onClick={() => handleSaveRoom(room._id)}
+                                              className="flex items-center justify-center h-6 w-6 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check size={11} /></button>
+                                            <button type="button" onClick={() => setEditingRoomId(null)}
+                                              className="flex items-center justify-center h-6 w-6 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"><X size={11} /></button>
                                           </div>
-                                          {editingCapacityId === room._id ? (
-                                            <div className="flex items-center gap-1">
-                                              <Users size={10} className="shrink-0 text-gray-400" />
-                                              <input type="number" min="0" autoFocus value={editingCapacityValue}
-                                                onChange={(e) => setEditingCapacityValue(e.target.value)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRoomCapacity(room._id); if (e.key === 'Escape') setEditingCapacityId(null); }}
-                                                className="w-12 rounded border border-teal-200 bg-white px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                                              <button type="button" onClick={() => handleSaveRoomCapacity(room._id)} className="text-emerald-500 hover:text-emerald-700"><Check size={11} /></button>
-                                              <button type="button" onClick={() => setEditingCapacityId(null)} className="text-gray-400 hover:text-gray-600"><X size={11} /></button>
+                                        ) : (
+                                          <div key={room._id}
+                                            className="group flex flex-col gap-1 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2 hover:border-teal-200 hover:bg-teal-50/40 transition-colors">
+                                            <div className="flex items-center justify-between gap-1">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <DoorOpen size={11} className="shrink-0 text-teal-500" />
+                                                <span className="truncate text-xs font-medium text-gray-700">{room.roomNumber}</span>
+                                              </div>
+                                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button type="button" onClick={() => openEditRoom(room)}
+                                                  className="text-gray-400 hover:text-teal-600"><Pencil size={11} /></button>
+                                                <button type="button" onClick={() => handleDeleteRoom(room._id)}
+                                                  className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
+                                              </div>
                                             </div>
-                                          ) : (
-                                            <button type="button"
-                                              onClick={() => { setEditingCapacityId(room._id); setEditingCapacityValue(room.capacity ? String(room.capacity) : ''); }}
+                                            <button type="button" onClick={() => openEditRoom(room)}
                                               className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-teal-600 transition-colors">
                                               <Users size={10} className="shrink-0" />
                                               {room.capacity ? `${room.capacity} seats` : 'Set capacity'}
-                                              <Pencil size={9} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                                             </button>
-                                          )}
-                                        </div>
+                                          </div>
+                                        )
                                       ))}
                                     </div>
                                   )}

@@ -233,6 +233,21 @@ export const academicApi = {
     }
   },
 
+  // Update building
+  updateBuilding: async (buildingId, payload) => {
+    try {
+      const res = await fetch(`${API_BASE}/academic/buildings/${buildingId}`, {
+        method: 'PUT',
+        headers: createHeaders(true),
+        body: JSON.stringify(payload || {})
+      });
+      return handleResponse(res);
+    } catch (error) {
+      console.error('Error updating building:', error);
+      throw error;
+    }
+  },
+
   // Delete building
   deleteBuilding: async (buildingId) => {
     try {
@@ -327,6 +342,21 @@ export const academicApi = {
       return handleResponse(res);
     } catch (error) {
       console.error('Error creating floor:', error);
+      throw error;
+    }
+  },
+
+  // Update floor
+  updateFloor: async (floorId, payload) => {
+    try {
+      const res = await fetch(`${API_BASE}/academic/floors/${floorId}`, {
+        method: 'PUT',
+        headers: createHeaders(true),
+        body: JSON.stringify(payload || {})
+      });
+      return handleResponse(res);
+    } catch (error) {
+      console.error('Error updating floor:', error);
       throw error;
     }
   },
